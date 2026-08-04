@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+/.pytest_cache/
+/dist/
+/build/
+
+# Benchmark output. The harness is tracked; a run's numbers are not -- they belong to one box on
+# one day, and BENCHMARK.md is where the ones worth keeping get written down with their conditions.
+/benchmarks/results/*
+!/benchmarks/results/.gitkeep
+
+# Editor / tooling caches
+/.cache/
+/.claude/settings.local.json
+
+# Profiler output
+.rocprofv3/
+*.pftrace
+*.json.gz
+
+# Manual backups
+*.bak
+
+
+/.vscode

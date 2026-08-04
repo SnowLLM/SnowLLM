@@ -1,0 +1,14 @@
+ARG BASE=rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.10.0
+FROM ${BASE}
+
+RUN python -c "import torch; print('torch', torch.__version__, 'hip', torch.version.hip)"
+
+COPY pyproject.toml /tmp/pyproject.toml
+RUN python - <<'PY'
+import subprocess, sys, tomllib
+p = tomllib.load(open("/tmp/pyproject.toml", "rb"))["project"]
+deps = p["dependencies"] + p["optional-dependencies"]["test"]
+deps = [d for d in deps if not d.startswith(("snowllm-kernels", "torch"))]
+print("installing:", " ".join(deps))
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-q", *deps])
+PY

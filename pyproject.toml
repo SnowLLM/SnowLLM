@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snowllm"
+dynamic = ["version"]
+description = "Hand-written HIP kernels for Qwen3.6-35B-A3B on AMD gfx1151 (Strix Halo)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "ColorsWind", email = "14761584+ColorsWind@users.noreply.github.com" }]
+keywords = ["hip", "rocm", "amd", "llm", "inference"]
+dependencies = ["snowllm-kernels", "fastapi", "uvicorn", "pydantic>=2", "transformers", "pillow"]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: GPU",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+test = ["openai", "httpx", "safetensors", "transformers", "numpy", "pillow"]
+
+[project.scripts]
+snowllm = "snowllm.cli:main"
+
+
+[project.urls]
+Repository = "https://github.com/SnowLLM/SnowLLM"
+Issues = "https://github.com/SnowLLM/SnowLLM/issues"
+
+
+[tool.setuptools.dynamic]
+version = { attr = "snowllm._version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["snowllm*"]
