@@ -144,7 +144,8 @@ class AsyncEngine:
               f"decode {dd_t / dd_s if dd_s else 0.0:7.1f} tok/s | "
               f"AL {dd_t / dd_r if dd_r else 0.0:.3f} | "
               f"running {st.running:3d} waiting {st.waiting:4d} | KV {kv * 100:4.1f}% "
-              f"preempted {st.preemptions}", flush=True)
+              f"preempted {st.preemptions} | cache {st.cache_hits}/"
+              f"{st.cache_hits + st.cache_misses} saving {st.prefill_tokens_saved} tok", flush=True)
 
     def _fail_all(self) -> None:
         for r in self._live:

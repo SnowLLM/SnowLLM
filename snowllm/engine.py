@@ -13,6 +13,7 @@ from ._capi import SnowLLMError
 from .block_manager import BlockAllocator, StateSlots, block_tables, slot_mapping
 from .forward_context import Batch, i32, i64, positions, prefill_rows
 from .model import DEFAULT_GPU_UTIL, Runner
+from .prefix_cache import CKPT_EVERY, PrefixCache, StateStore, checkpoints, thin
 from .request import Request, SamplingParams
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, SpecDecoder
@@ -66,6 +67,11 @@ class EngineStats:
     free_slots: int
     free_kv_blocks: int
     preemptions: int
+    cache_hits: int
+    cache_misses: int
+    cached_prefixes: int
+    cached_blocks: int
+    prefill_tokens_saved: int
     graph_sizes: list[int]
     graph_replays: int
     eager_forwards: int
@@ -81,7 +87,7 @@ class Engine:
                  mtp_sinks: int = 64,
                  prefill_chunk: "int | str" = "auto", batch_prefill: bool = False,
                  account: bool = False, gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
-                 preempt: bool = True):
+                 preempt: bool = True, prefix_cache_gib: float = 0.0):
         self.max_blocks = ops.kv_blocks_for(max_model_len)
         mpt = "auto" if prefill_chunk == "auto" else min(int(prefill_chunk), max_model_len)
         self.runner = Runner(model, num_kv_blocks, self.max_blocks, max_num_seqs,
@@ -116,6 +122,14 @@ class Engine:
         self.n_batched_prefills = 0
         self.n_preemptions = 0
         self.preempt = preempt
+        self.cache = None
+        if prefix_cache_gib > 0 and self.runner.linear_mods:
+            each = StateStore.bytes_each(self.runner.linear_mods)
+            n = int(prefix_cache_gib * (1 << 30)) // each
+            if n:
+                self.cache = PrefixCache(self.blocks,
+                                         StateStore(self.runner.linear_mods, n),
+                                         self.runner.block_size)
         self.acct = StepAccounting() if account else None
 
         self._active_factor: float | None = None
@@ -191,21 +205,39 @@ class Engine:
         return self.sampler.stop_token_ids
 
     def stats(self) -> EngineStats:
-        r = self.runner
+        r, c = self.runner, self.cache
         return EngineStats(
             running=len(self.running), waiting=len(self.waiting),
             free_slots=len(self.slots.free), free_kv_blocks=len(self.blocks.free),
             preemptions=self.n_preemptions,
+            cache_hits=c.hits if c else 0, cache_misses=c.misses if c else 0,
+            cached_prefixes=len(c.entries) if c else 0,
+            cached_blocks=c.held_blocks() if c else 0,
+            prefill_tokens_saved=c.saved_tokens if c else 0,
             graph_sizes=self.graph_sizes,
             graph_replays=r.n_graph_replays, eager_forwards=r.n_eager_forwards,
             accounting=self.acct.snapshot() if self.acct else {})
 
-    def _admit(self, r: Request) -> bool:
-        blocks = self.blocks.alloc(ops.kv_blocks_for(r.prefill_len))
+    def _alloc_blocks(self, n: int, keep=None) -> "list[int] | None":
+        while True:
+            got = self.blocks.alloc(n)
+            if got is not None or self.cache is None or not self.cache.evict(keep):
+                return got
+
+    def _admit(self, r: Request, use_cache: bool = True) -> bool:
+        hit = (self.cache.lookup(r.prefill_src, r.prefill_len)
+               if self.cache is not None and use_cache else None)
+        shared = len(hit.blocks) if hit is not None else 0
+        blocks = self._alloc_blocks(ops.kv_blocks_for(r.prefill_len) - shared, hit)
         if blocks is None:
             return False
-        r.blocks = blocks
+        if self.cache is not None and use_cache:
+            self.cache.took(hit)
+        r.blocks = (self.blocks.retain(hit.blocks) + blocks) if hit is not None else blocks
         self.slots.take(r)
+        if hit is not None:
+            r.num_prefilled = len(hit.tokens)
+            self.cache.store.restore(hit.ckpt, self.slots.name(r, 1)[0])
         if self._active_factor != r.rope_factor:
             self._active_factor = r.rope_factor
             self._activate_rope(r.rope_factor)
@@ -230,6 +262,8 @@ class Engine:
             batch = [r for r in decodable if self.blocks.grow(r, rows)]
             if len(batch) == len(decodable):
                 return batch
+            if self.cache is not None and self.cache.evict():
+                continue
             if not self.preempt:
                 raise SnowLLMError(
                     f"KV pool exhausted mid-decode over {len(decodable)} requests and this engine "
@@ -313,11 +347,22 @@ class Engine:
     def _prefill_chunk(self, r: Request) -> None:
         lo = r.num_prefilled
         hi = min(lo + self.prefill_chunk, r.prefill_len)
+        marks, idx = [], []
+        if self.cache is not None:
+            marks = checkpoints(lo, hi)
+            idx = self.cache.reserve(len(marks))
+            marks = thin(marks, len(idx))
         b = self._prefill([(r, lo, hi)])
+        if marks:
+            b.ckpt_at = i32([[m - lo for m in marks]])
+            b.ckpt_slots = i32([idx])
+            b.ckpt_n = len(marks)
         M = b.input_ids.numel()
 
         out = self.runner.forward(b)
         r.num_prefilled = hi
+        for m, i in zip(marks, idx):
+            self.cache.insert(r.prefill_src[:m], r.blocks, i)
         if not b.need_logits:
             if self.spec:
                 self.spec.propose_after_prefill(r, b, lo, hi, M)
@@ -346,7 +391,7 @@ class Engine:
                 break
             if prefill_rows(tokens + len(r.prompt)) > self.runner.max_prefill_tokens:
                 break
-            if not self._admit(r):
+            if not self._admit(r, use_cache=False):
                 break
             self.waiting.remove(r)
             self.running.append(r)

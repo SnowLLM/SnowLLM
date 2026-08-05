@@ -29,14 +29,26 @@ class BlockAllocator:
     def __init__(self, num_blocks: int):
         self.free = list(range(num_blocks))
         self.total = num_blocks
+        self.ref = [0] * num_blocks
 
     def alloc(self, n: int) -> list[int] | None:
         if n > len(self.free):
             return None
-        return [self.free.pop() for _ in range(n)]
+        out = [self.free.pop() for _ in range(n)]
+        for b in out:
+            self.ref[b] = 1
+        return out
+
+    def retain(self, blocks: list[int]) -> list[int]:
+        for b in blocks:
+            self.ref[b] += 1
+        return list(blocks)
 
     def release(self, blocks: list[int]) -> None:
-        self.free.extend(blocks)
+        for b in blocks:
+            self.ref[b] -= 1
+            if self.ref[b] == 0:
+                self.free.append(b)
 
     def grow(self, r: Request, n: int = 1) -> bool:
         need = ops.kv_blocks_for(r.num_cached + n)

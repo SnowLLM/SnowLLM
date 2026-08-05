@@ -119,12 +119,15 @@ class GatedDeltaNet(nn.Module):
         super().__init__()
         self.w = w
         self.state: tuple[torch.Tensor, torch.Tensor] | None = None
+        self.ckpt: tuple[torch.Tensor, torch.Tensor] | None = None
 
     def forward(self, ctx: ForwardContext, x: torch.Tensor, out: torch.Tensor) -> None:
         b, (conv, rec) = ctx.batch, self.state
+        ckpt = ((b.ckpt_at, b.ckpt_slots, b.ckpt_n, *self.ckpt)
+                if b.ckpt_n and self.ckpt is not None else None)
         with span("fused_linear_attn"):
             ops.fused_linear_attn(x, self.w, b.cu_seqlens, b.has_state, b.state_indices, conv, rec,
-                                  ctx.lin_ws, out, b.batch_size, ctx.path, b.num_accepted)
+                                  ctx.lin_ws, out, b.batch_size, ctx.path, b.num_accepted, ckpt)
 
 
 class FusedMoE(nn.Module):

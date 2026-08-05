@@ -11,6 +11,7 @@ import time
 from .async_engine import AsyncEngine
 from .engine import SPEC_MAX_STEP_ROWS, Engine
 from .model import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
+from .prefix_cache import CKPT_EVERY, DEFAULT_PREFIX_CACHE_GIB, StateStore
 from .state import Alias, ServerState, install
 from . import loader, ops
 
@@ -35,7 +36,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           served_names: list[str] | None = None, batch_prefill: bool = False,
           allow_image_urls: bool = False, limit_mm_per_prompt: int = 4,
           stats_interval: float = 0.0,
-          gpu_memory_utilization: float = DEFAULT_GPU_UTIL) -> ServerState:
+          gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
+          prefix_cache_gib: float = DEFAULT_PREFIX_CACHE_GIB) -> ServerState:
     from transformers import AutoTokenizer
 
     root = pathlib.Path(model_path).expanduser()
@@ -61,7 +63,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                     mtp_window=mtp_window, mtp_sinks=mtp_sinks,
                     prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
                     account=stats_interval > 0,
-                    gpu_memory_utilization=gpu_memory_utilization)
+                    gpu_memory_utilization=gpu_memory_utilization,
+                    prefix_cache_gib=prefix_cache_gib)
     blocks = engine.blocks.total
     _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
          f"(engine init + capture {time.time() - t1:.1f}s total)")
@@ -91,6 +94,12 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     _log(f"{max_num_seqs} slots, {blocks} KV blocks = {tokens} tokens "
          f"({engine.runner.kv_bytes / (1 << 30):.1f} GiB, {tokens // max_num_seqs} per slot at full "
          f"concurrency), prefill chunk {engine.prefill_chunk}, ctx {max_model_len}, stop {eos}")
+    if engine.cache is None:
+        _log("prefix cache off")
+    else:
+        each = StateStore.bytes_each(engine.runner.linear_mods)
+        _log(f"prefix cache: {engine.cache.store.capacity} checkpoints x "
+             f"{each / (1 << 20):.1f} MiB of pinned host RAM, one every {CKPT_EVERY} tokens")
     _log(f"served: {', '.join(f'{n} (factor {a.factor}, ctx {a.ctx})' for n, a in aliases.items())}")
     if profile_dir:
         _log(f"profiling armed -> {profile_dir} (POST /start_profile, /stop_profile)")
@@ -143,6 +152,16 @@ def main() -> None:
                         "workspace and the logits are down -- measured, not modelled. Raise it "
                         "toward 1.0 if the GPU is yours alone; what it holds back is fragmentation "
                         "headroom for the caching allocator.")
+    g.add_argument("--prefix-cache-gib", type=float, default=DEFAULT_PREFIX_CACHE_GIB,
+                   metavar="G",
+                   help=f"host RAM for cached prefixes, 0 to disable. A shared prompt is only "
+                        f"skippable if the linear-attn state at its end was kept, and that state is "
+                        f"61.4 MiB whatever the prefix length -- so this budget, not the KV pool, is "
+                        f"what bounds how many prefixes are remembered. Their KV stays in the pool "
+                        f"and is shared, not copied. A checkpoint is taken every {CKPT_EVERY} "
+                        f"tokens, so a hit lands at the last multiple of {CKPT_EVERY} at or before "
+                        f"the shared prefix rather than at a coarse boundary. A prefix shorter than "
+                        f"{CKPT_EVERY} tokens is never cached.")
     g.add_argument("--num-kv-blocks", type=_size, default=None, metavar="N",
                    help=f"pin the KV pool at N blocks of {ops.KV_BLOCK_SIZE} tokens instead of "
                         f"sizing it from --gpu-memory-utilization. It must still hold one "
@@ -216,6 +235,7 @@ def main() -> None:
           batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
           prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
           gpu_memory_utilization=a.gpu_memory_utilization,
+          prefix_cache_gib=a.prefix_cache_gib,
           limit_mm_per_prompt=a.limit_mm_per_prompt))
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")
 

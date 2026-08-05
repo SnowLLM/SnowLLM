@@ -52,7 +52,8 @@ def fused_linear_attn(hidden: torch.Tensor, w: LinearAttnWeights, cu_seqlens: to
                       has_state: torch.Tensor | None, state_indices: torch.Tensor | None,
                       conv_state: torch.Tensor, recurrent_state: torch.Tensor,
                       workspace: torch.Tensor, out: torch.Tensor, B: int, path: Path,
-                      num_accepted: torch.Tensor | None = None) -> None:
+                      num_accepted: torch.Tensor | None = None,
+                      ckpt: "tuple | None" = None) -> None:
     M = hidden.shape[0]
     decode = path == Path.DECODE
     _chk(hidden, "hidden", torch.bfloat16, M, hidden.shape[1])
@@ -61,9 +62,14 @@ def fused_linear_attn(hidden: torch.Tensor, w: LinearAttnWeights, cu_seqlens: to
         _chk(state_indices, "state_indices", torch.int32, M if decode else B)
     if num_accepted is not None:
         _chk(num_accepted, "num_accepted", torch.int32, B)
+    at, slots, n, ck_conv, ck_rec = ckpt or (None, None, 0, None, None)
+    if n:
+        _chk(at, "ckpt_at", torch.int32, B, n)
+        _chk(slots, "ckpt_slots", torch.int32, B, n)
     check(lib.snowllm_fused_linear_attn(_p(hidden), *w.ptrs, _p(cu_seqlens), _p(has_state),
                                         _p(state_indices), _p(num_accepted), _p(conv_state),
-                                        _p(recurrent_state), _p(workspace), _p(out), B, M,
+                                        _p(recurrent_state), _p(at), _p(slots), n, _p(ck_conv),
+                                        _p(ck_rec), _p(workspace), _p(out), B, M,
                                         int(path), _stream()), "fused_linear_attn")
 
 

@@ -75,6 +75,7 @@ Common flags (`snowllm --help` lists every option):
 | `--max-num-seqs`           | Concurrency ceiling, up to 256. A memory choice, not a kernel limit: each request pins linear-attention state for its whole life. |
 | `--max-model-len`          | Context length, e.g. `32k`. A per-request ceiling, not a reservation: the KV pool is shared, and a request that outgrows it is preempted and re-prefilled. |
 | `--gpu-memory-utilization` | Fraction of the GPU the server may occupy, `0.9` by default. The KV pool is whatever is left under it once everything else is down. |
+| `--prefix-cache-gib`       | Host RAM for remembering shared prompt prefixes, `4` by default, `0` to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s; the first one pays ~1%. |
 | `--max-num-batched-tokens` | Tokens per launch, i.e. the prefill chunk. `auto` sizes it to a fifth of the memory left after the state pool. |
 | `--num-spec`               | Speculative depth. The optimum is workload-dependent; 2 is a robust default. |
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |

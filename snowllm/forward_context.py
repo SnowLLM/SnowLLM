@@ -47,6 +47,9 @@ class Batch:
     need_logits: bool = True
     embeds: torch.Tensor | None = None
     embed_rows: torch.Tensor | None = None
+    ckpt_at: torch.Tensor | None = None
+    ckpt_slots: torch.Tensor | None = None
+    ckpt_n: int = 0
 
     @property
     def batch_size(self) -> int:

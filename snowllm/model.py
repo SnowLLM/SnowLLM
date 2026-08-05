@@ -157,6 +157,7 @@ class Runner:
                 nxt += 1
         full = [(i, m) for i, m in pooled if isinstance(m, FullAttention)]
         linear = [(i, m) for i, m in pooled if isinstance(m, GatedDeltaNet)]
+        self.linear_mods = linear
 
         geo = self.geo
         slots = max_num_seqs * self.T + 1
