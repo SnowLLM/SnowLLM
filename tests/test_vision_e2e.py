@@ -44,7 +44,8 @@ def main() -> int:
     tok = proc.tokenizer
 
     eng = Engine(model, num_kv_blocks=4096, max_num_seqs=4, max_model_len=4096,
-                 stop_token_ids=tuple(tok.all_special_ids), num_spec=0, enforce_eager=True)
+                 stop_token_ids=tuple(tok.all_special_ids), num_spec=0, enforce_eager=True,
+                 preempt=False)
 
     ok = True
     for rgb, want in COLORS:

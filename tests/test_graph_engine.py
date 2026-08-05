@@ -53,7 +53,7 @@ def run(engine, tok, n=NEW):
 def main():
     tok = _harness.tokenizer(CKPT)
     model = loader.load(CKPT)
-    kw = dict(num_kv_blocks=2048, max_num_seqs=4, max_model_len=2048, seed=0)
+    kw = dict(num_kv_blocks=2048, max_num_seqs=4, max_model_len=2048, seed=0, preempt=False)
     pages = (len(PROMPTS[0]) + NEW) // 16
     ok = True
 

@@ -25,7 +25,7 @@ def main():
     tok = _harness.tokenizer(CKPT)
     model = loader.load(CKPT, mtp=False)
     eng = Engine(model, num_kv_blocks=512, max_num_seqs=4, max_model_len=1024,
-                 stop_token_ids=_harness.stop_tokens(CKPT), seed=0)
+                 stop_token_ids=_harness.stop_tokens(CKPT), seed=0, preempt=False)
 
     # (1) factor=1.0 path unchanged: still "Paris".
     greedy = SamplingParams(temperature=0.0, max_new_tokens=4)

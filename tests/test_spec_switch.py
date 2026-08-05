@@ -52,7 +52,7 @@ def main():
 
     Runner.forward = hooked
     eng = Engine(model, num_kv_blocks=4096, max_num_seqs=max_seqs, max_model_len=1024, seed=0,
-                 enforce_eager=True, num_spec=NUM_SPEC)
+                 enforce_eager=True, num_spec=NUM_SPEC, preempt=False)
     probe = eng.add(tok.encode(PROBE), SamplingParams(temperature=0.0, max_new_tokens=64))
     # Alone first, so the probe records a deep step's num_accepted; the fillers then widen the
     # batch UNDER it and force a shallower one. Admitting everything at once only ever deepens.

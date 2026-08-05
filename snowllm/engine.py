@@ -12,7 +12,7 @@ from . import ops
 from ._capi import SnowLLMError
 from .block_manager import BlockAllocator, StateSlots, block_tables, slot_mapping
 from .forward_context import Batch, i32, i64, positions, prefill_rows
-from .model import Runner
+from .model import DEFAULT_GPU_UTIL, Runner
 from .request import Request, SamplingParams
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, SpecDecoder
@@ -65,6 +65,7 @@ class EngineStats:
     waiting: int
     free_slots: int
     free_kv_blocks: int
+    preemptions: int
     graph_sizes: list[int]
     graph_replays: int
     eager_forwards: int
@@ -72,18 +73,29 @@ class EngineStats:
 
 
 class Engine:
-    def __init__(self, model: torch.nn.Module, num_kv_blocks: int, max_num_seqs: int = 16,
+    def __init__(self, model: torch.nn.Module, num_kv_blocks: "int | None" = None,
+                 max_num_seqs: int = 16,
                  max_model_len: int = 8192, stop_token_ids: Sequence[int] = (),
                  seed: int | None = None, enforce_eager: bool = False, num_spec: int = 0,
                  kv_int8: bool = False, mtp_window: int = 0,
                  mtp_sinks: int = 64,
                  prefill_chunk: "int | str" = "auto", batch_prefill: bool = False,
-                 account: bool = False):
+                 account: bool = False, gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
+                 preempt: bool = True):
         self.max_blocks = ops.kv_blocks_for(max_model_len)
         mpt = "auto" if prefill_chunk == "auto" else min(int(prefill_chunk), max_model_len)
         self.runner = Runner(model, num_kv_blocks, self.max_blocks, max_num_seqs,
-                             max_prefill_tokens=mpt, num_spec=num_spec, kv_int8=kv_int8)
+                             max_prefill_tokens=mpt, num_spec=num_spec, kv_int8=kv_int8,
+                             gpu_memory_utilization=gpu_memory_utilization)
         self.prefill_chunk = self.runner.max_prefill_tokens
+        num_kv_blocks = self.runner.num_kv_blocks
+        if num_kv_blocks < self.max_blocks:
+            raise SnowLLMError(
+                f"the KV pool holds {num_kv_blocks} blocks ({num_kv_blocks * self.runner.block_size}"
+                f" tokens) but one sequence at max_model_len={max_model_len} needs "
+                f"{self.max_blocks}. A request that long could be admitted and then never finish, "
+                f"so this is refused here: lower max_model_len, or lower max_num_seqs to leave the "
+                f"pool more room.")
 
         self.num_spec = self.runner.num_spec
         self.T = self.num_spec + 1
@@ -102,6 +114,8 @@ class Engine:
         self._prefill_turn = True
         self.batch_prefill = batch_prefill
         self.n_batched_prefills = 0
+        self.n_preemptions = 0
+        self.preempt = preempt
         self.acct = StepAccounting() if account else None
 
         self._active_factor: float | None = None
@@ -181,12 +195,13 @@ class Engine:
         return EngineStats(
             running=len(self.running), waiting=len(self.waiting),
             free_slots=len(self.slots.free), free_kv_blocks=len(self.blocks.free),
+            preemptions=self.n_preemptions,
             graph_sizes=self.graph_sizes,
             graph_replays=r.n_graph_replays, eager_forwards=r.n_eager_forwards,
             accounting=self.acct.snapshot() if self.acct else {})
 
     def _admit(self, r: Request) -> bool:
-        blocks = self.blocks.alloc(ops.kv_blocks_for(len(r.prompt)))
+        blocks = self.blocks.alloc(ops.kv_blocks_for(r.prefill_len))
         if blocks is None:
             return False
         r.blocks = blocks
@@ -210,11 +225,37 @@ class Engine:
         return next((r for r in self.running if not r.prefilled and not r.done), None)
 
     def _decodable_batch(self, rows: int) -> list[Request]:
-        decodable = [r for r in self.running if r.prefilled]
-        batch = [r for r in decodable if self.blocks.grow(r, rows)]
-        if len(batch) != len(decodable):
-            raise SnowLLMError("KV pool exhausted mid-decode; this engine has no preemption")
-        return batch
+        while True:
+            decodable = [r for r in self.running if r.prefilled]
+            batch = [r for r in decodable if self.blocks.grow(r, rows)]
+            if len(batch) == len(decodable):
+                return batch
+            if not self.preempt:
+                raise SnowLLMError(
+                    f"KV pool exhausted mid-decode over {len(decodable)} requests and this engine "
+                    f"was built with preempt=False, which is a promise that it would not have to: "
+                    f"{self.blocks.total} blocks is too few for this workload")
+            if self._preempt() is None:
+                raise SnowLLMError(
+                    f"KV pool exhausted mid-decode with one request running and nothing left to "
+                    f"preempt: {self.blocks.total} blocks cannot carry it to max_model_len="
+                    f"{self.max_model_len}")
+
+    def _preempt(self) -> "Request | None":
+        if len(self.running) < 2:
+            return None
+        r = self.running.pop()
+        self.blocks.release(r.blocks)
+        self.slots.give_back(r)
+        r.blocks = []
+        r.slot = r.state_head = -1
+        r.replay = len(r.tokens) - 1 if r.out else 0
+        r.num_prefilled = 0
+        r.drafts.clear()
+        r.n_accepted = 1
+        self.waiting.appendleft(r)
+        self.n_preemptions += 1
+        return r
 
     def _rope_table(self, factor: float):
         if factor not in self._rope_cache:
@@ -238,11 +279,8 @@ class Engine:
         erows, eparts = [], []
         for i, (r, lo, hi) in enumerate(spans):
             base, li = off, hi - lo
-            ids[base:base + li] = torch.tensor(r.prompt[lo:hi], dtype=torch.int64)
-            if r.mrope is None:
-                pos[:, base:base + li] = torch.arange(lo, hi, dtype=torch.int64)
-            else:
-                pos[:, base:base + li] = r.mrope[:, lo:hi]
+            ids[base:base + li] = torch.tensor(r.prefill_src[lo:hi], dtype=torch.int64)
+            pos[:, base:base + li] = r.prefill_positions(lo, hi)
             rows += [(i, p) for p in range(lo, hi)]
             ks = [k for k, p in enumerate(r.embed_rows) if lo <= p < hi]
             if ks:
@@ -267,14 +305,14 @@ class Engine:
             has_state=i32(resuming) if any(resuming) else None,
             total_q_blocks=total_q,
             q_block_map=qmap,
-            need_logits=all(hi == len(r.prompt) for r, _, hi in spans),
+            need_logits=all(hi == r.prefill_len and not r.replay for r, _, hi in spans),
             embeds=torch.cat(eparts) if eparts else None,
             embed_rows=i64(erows) if erows else None,
         )
 
     def _prefill_chunk(self, r: Request) -> None:
         lo = r.num_prefilled
-        hi = min(lo + self.prefill_chunk, len(r.prompt))
+        hi = min(lo + self.prefill_chunk, r.prefill_len)
         b = self._prefill([(r, lo, hi)])
         M = b.input_ids.numel()
 
@@ -297,7 +335,7 @@ class Engine:
         if not self.batch_prefill or self.num_spec:
             return []
         cands = [r for r in self.waiting
-                 if r.num_prefilled == 0 and len(r.prompt) <= self.prefill_chunk
+                 if r.num_prefilled == 0 and not r.replay and len(r.prompt) <= self.prefill_chunk
                  and (self._active_factor is None or r.rope_factor == self._active_factor)]
         if len(cands) < 2:
             return []

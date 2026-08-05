@@ -64,7 +64,7 @@ def main():
         print(f"\nnum_spec={num_spec}")
         eng = Engine(model, num_kv_blocks=1024, max_num_seqs=4, max_model_len=1024,
                      stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=num_spec,
-                     account=True)
+                     account=True, preempt=False)
         reqs = [eng.add(list(p), SamplingParams(temperature=0.0, max_new_tokens=NEW))
                 for p in prompts]
         eng.run()
@@ -97,7 +97,7 @@ def main():
 
     # Off by default, and then it must not even build the counters.
     eng = Engine(model, num_kv_blocks=256, max_num_seqs=1, max_model_len=512,
-                 stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=0)
+                 stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=0, preempt=False)
     eng.add(list(prompts[0]), SamplingParams(temperature=0.0, max_new_tokens=4))
     eng.run()
     print()

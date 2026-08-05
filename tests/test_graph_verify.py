@@ -43,7 +43,7 @@ def main() -> None:
     eos = _harness.stop_tokens(CKPT)
     greedy = SamplingParams(temperature=0.0, max_new_tokens=NEW)
     kw = dict(num_kv_blocks=1024, max_num_seqs=len(PROMPTS), max_model_len=1024,
-              stop_token_ids=eos, seed=0, num_spec=K)
+              stop_token_ids=eos, seed=0, num_spec=K, preempt=False)
 
     def run(eager: bool):
         eng = Engine(model, enforce_eager=eager, **kw)

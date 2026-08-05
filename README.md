@@ -36,18 +36,22 @@ only supported model today is [`Qwen3.6-35B-A3B-FP8`](https://huggingface.co/Qwe
 
 - Linux x86_64, AMD gfx1151 (Ryzen AI Max 300 series — Strix Halo)
 - ROCm **7.x**.
-- Python ≥ 3.10, and a ROCm build of PyTorch — see below.
+- Python ≥ 3.10, and ROCm builds of torch and torchvision — see below.
 
 ## Install
 
-torch must be installed from AMD's index:
+torch and torchvision must come from AMD's index:
 
 ```sh
 # https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html
 pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
-    "torch[device-gfx1151]==2.12.0+rocm7.14.0"
+    "torch[device-gfx1151]==2.12.0+rocm7.14.0" \
+    "torchvision==0.27.0+rocm7.14.0"
 pip install snowllm snowllm-kernels
 ```
+
+torchvision is not optional: the supported model takes image input, and its processor fails to load
+without it.
 
 ## Get a model
 
@@ -69,8 +73,9 @@ Common flags (`snowllm --help` lists every option):
 | Flag                       | What it does                                                 |
 | -------------------------- | ------------------------------------------------------------ |
 | `--max-num-seqs`           | Concurrency ceiling, up to 256. A memory choice, not a kernel limit: each request pins linear-attention state for its whole life. |
-| `--max-model-len`          | Context length, e.g. `32k`. KV is provisioned worst-case over it. |
-| `--max-num-batched-tokens` | Tokens per launch, i.e. the prefill chunk. `auto` sizes it to the memory left after the context pools. |
+| `--max-model-len`          | Context length, e.g. `32k`. A per-request ceiling, not a reservation: the KV pool is shared, and a request that outgrows it is preempted and re-prefilled. |
+| `--gpu-memory-utilization` | Fraction of the GPU the server may occupy, `0.9` by default. The KV pool is whatever is left under it once everything else is down. |
+| `--max-num-batched-tokens` | Tokens per launch, i.e. the prefill chunk. `auto` sizes it to a fifth of the memory left after the state pool. |
 | `--num-spec`               | Speculative depth. The optimum is workload-dependent; 2 is a robust default. |
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
@@ -80,7 +85,6 @@ Common flags (`snowllm --help` lists every option):
 
 - More models
 - Tensor parallelism at any degree
-- Adaptive KV cache pool
 - NPU/GPU co-working prefill
 - Native INT4 quantization
 

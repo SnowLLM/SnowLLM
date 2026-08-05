@@ -14,7 +14,10 @@ from .trace import span
 
 
 PREFILL_CHUNK_CANDIDATES = (32768, 16384, 8192)
-PREFILL_AUTOSIZE_RESERVE = 4 << 30
+PREFILL_WS_SHARE = 0.2
+KV_AUTOSIZE_RESERVE = 512 << 20
+
+DEFAULT_GPU_UTIL = 0.9
 
 MAX_NUM_SEQS = 256
 DEFAULT_MAX_NUM_SEQS = 128
@@ -59,19 +62,54 @@ class Runner:
         return (sum(M * math.prod(shape) * dt.itemsize for shape, dt in act.values())
                 + sum(size(M) for size in scratch.values()))
 
-    def _autosize_prefill_tokens(self, ctx_cap: int) -> int:
+    def _allowance(self) -> int:
         free, total = torch.cuda.mem_get_info()
-        budget = free - max(PREFILL_AUTOSIZE_RESERVE, total // 10)
+        return int(total * self.gpu_util) - (total - free)
+
+    def _autosize_prefill_tokens(self, ctx_cap: int) -> int:
+        budget = self._allowance() * PREFILL_WS_SHARE
         for c in PREFILL_CHUNK_CANDIDATES:
             M = prefill_rows(min(c, ctx_cap))
             if self._prefill_ws_bytes(M) <= budget:
                 return M
         return prefill_rows(min(PREFILL_CHUNK_CANDIDATES[-1], ctx_cap))
 
-    def __init__(self, model, num_kv_blocks: int, max_blocks_per_seq: int,
+    def _kv_block_bytes(self, pools: int) -> int:
+        n = sum(ops.kv_pool_bytes(1, self.kv_int8))
+        if self.kv_int8:
+            n += sum(ops.kv_scale_bytes(1))
+        return pools * n
+
+    def _autosize_kv_blocks(self, pools: int) -> int:
+        per_block = self._kv_block_bytes(pools)
+        blocks = (self._allowance() - KV_AUTOSIZE_RESERVE) // per_block
+        if blocks < 1:
+            free, total = torch.cuda.mem_get_info()
+            raise ValueError(
+                f"nothing left for the KV pool: {(total - free) / (1 << 30):.1f} GiB of this "
+                f"device's {total / (1 << 30):.1f} GiB is already taken by the weights and the "
+                f"pools sized off max_num_seqs={self.max_num_seqs}, against a "
+                f"gpu_memory_utilization={self.gpu_util} ceiling. Lower max_num_seqs, or raise "
+                f"gpu_memory_utilization if this device is yours alone.")
+        return int(blocks)
+
+    def _check_state_pool(self, slots: int, per_slot: int, layers: int) -> None:
+        need = slots * per_slot * layers
+        allow = self._allowance()
+        if need <= allow:
+            return
+        fits = max(1, int(allow / 2 / (self.T * per_slot * layers)))
+        raise ValueError(
+            f"the linear-attn state pool for max_num_seqs={self.max_num_seqs} x (num_spec + 1) = "
+            f"{self.T} wants {need / (1 << 30):.1f} GiB and only {allow / (1 << 30):.1f} GiB is "
+            f"left after the weights. Try --max-num-seqs {fits}, which leaves about as much again "
+            f"for the KV pool (or lower --num-spec, which divides this pool by (num_spec + 1)).")
+
+    def __init__(self, model, num_kv_blocks: "int | None", max_blocks_per_seq: int,
                  max_num_seqs: int = DEFAULT_MAX_NUM_SEQS,
                  max_prefill_tokens: "int | str" = "auto", num_spec: int = 0,
-                 kv_int8: bool = False, block_size: int | None = None):
+                 kv_int8: bool = False, block_size: int | None = None,
+                 gpu_memory_utilization: float = DEFAULT_GPU_UTIL):
         self.geo = model.geo
         self.block_size = ops.KV_BLOCK_SIZE if block_size is None else block_size
         if self.block_size != ops.KV_BLOCK_SIZE:
@@ -91,7 +129,7 @@ class Runner:
         self.model = model
         self.max_num_seqs = max_num_seqs
         self.max_blocks_per_seq = max_blocks_per_seq
-        self.num_kv_blocks = num_kv_blocks
+        self.gpu_util = gpu_memory_utilization
         self.dummy_slot = max_num_seqs * self.T
 
         H = self.geo.hidden
@@ -102,35 +140,38 @@ class Runner:
         self.kv_scale = {}
         self.state = {}
 
-        def bind(idx: int, attn) -> None:
-            if isinstance(attn, FullAttention):
-                attn.kv = self.kv[idx] = self._alloc_kv(num_kv_blocks)
-                if self.kv_int8:
-                    attn.kv_scale = self.kv_scale[idx] = self._alloc_kv_scale(num_kv_blocks)
-            elif isinstance(attn, GatedDeltaNet):
-                slots = max_num_seqs * self.T + 1
-                attn.state = self.state[idx] = (
-                    torch.zeros(slots, self.geo.lin_conv_state, self.geo.lin_conv_dim,
-                                dtype=torch.bfloat16, device="cuda"),
-                    torch.zeros(slots, self.geo.lin_num_v_heads, self.geo.lin_head_k,
-                                self.geo.lin_head_v,
-                                dtype=torch.float32, device="cuda"),
-                )
-
         POOLED = (FullAttention, GatedDeltaNet)
+        pooled: list[tuple[int, object]] = []
         bound = set()
         for i, layer in enumerate(model.layers):
             for m in layer.modules():
                 if isinstance(m, POOLED) and id(m) not in bound:
                     bound.add(id(m))
-                    bind(i, m)
+                    pooled.append((i, m))
         nxt = len(model.layers)
         self.mtp_layer = nxt if model.mtp is not None else None
         for m in model.modules():
             if isinstance(m, POOLED) and id(m) not in bound:
                 bound.add(id(m))
-                bind(nxt, m)
+                pooled.append((nxt, m))
                 nxt += 1
+        full = [(i, m) for i, m in pooled if isinstance(m, FullAttention)]
+        linear = [(i, m) for i, m in pooled if isinstance(m, GatedDeltaNet)]
+
+        geo = self.geo
+        slots = max_num_seqs * self.T + 1
+        self._check_state_pool(
+            slots,
+            geo.lin_conv_state * geo.lin_conv_dim * 2
+            + geo.lin_num_v_heads * geo.lin_head_k * geo.lin_head_v * 4,
+            len(linear))
+        for idx, attn in linear:
+            attn.state = self.state[idx] = (
+                torch.zeros(slots, geo.lin_conv_state, geo.lin_conv_dim,
+                            dtype=torch.bfloat16, device="cuda"),
+                torch.zeros(slots, geo.lin_num_v_heads, geo.lin_head_k, geo.lin_head_v,
+                            dtype=torch.float32, device="cuda"),
+            )
 
         if max_prefill_tokens == "auto":
             self.max_prefill_tokens = self._autosize_prefill_tokens(
@@ -179,6 +220,15 @@ class Runner:
         self.d_sidx = torch.full((self.decode_rows,), self.dummy_slot, dtype=torch.int32,
                                  device="cuda")
         self.d_nacc = torch.ones(B, dtype=torch.int32, device="cuda")
+
+        self.num_kv_blocks = (self._autosize_kv_blocks(len(full)) if num_kv_blocks is None
+                              else int(num_kv_blocks))
+        self.kv_bytes = self.num_kv_blocks * self._kv_block_bytes(len(full))
+        for idx, attn in full:
+            attn.kv = self.kv[idx] = self._alloc_kv(self.num_kv_blocks)
+            if self.kv_int8:
+                attn.kv_scale = self.kv_scale[idx] = self._alloc_kv_scale(self.num_kv_blocks)
+
         self.graphs: dict[int, torch.cuda.CUDAGraph] = {}
         self.vgraphs: dict[int, tuple[int, torch.cuda.CUDAGraph]] = {}
         self._pool = None

@@ -100,7 +100,7 @@ def run(model, prompts, capture_rows, tag):
     their first decode token, not at a width that grows under them. Nothing retires early either,
     so the width is constant for the whole run."""
     eng = Engine(model, num_kv_blocks=8192, max_num_seqs=len(prompts), max_model_len=1024, seed=0,
-                 enforce_eager=True, num_spec=0)
+                 enforce_eager=True, num_spec=0, preempt=False)
     widths, rows = [], []
     orig = Runner.forward
 

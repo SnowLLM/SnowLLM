@@ -44,6 +44,7 @@ class Request:
     state_head: int = -1
 
     num_prefilled: int = 0
+    replay: int = 0
     done: bool = False
     finish_reason: str | None = None
 
@@ -61,8 +62,16 @@ class Request:
     embed_rows: list[int] = field(default_factory=list)
 
     @property
+    def prefill_len(self) -> int:
+        return self.replay or len(self.prompt)
+
+    @property
+    def prefill_src(self) -> list[int]:
+        return self.tokens[:self.replay] if self.replay else self.prompt
+
+    @property
     def prefilled(self) -> bool:
-        return self.num_prefilled >= len(self.prompt)
+        return self.num_prefilled >= self.prefill_len
 
     @property
     def num_cached(self) -> int:
@@ -71,3 +80,13 @@ class Request:
     @property
     def tokens(self) -> list[int]:
         return self.prompt + self.out
+
+    def prefill_positions(self, lo: int, hi: int) -> torch.Tensor:
+        if self.mrope is None:
+            return torch.arange(lo, hi, dtype=torch.int64).view(1, -1).expand(3, -1)
+        n = self.mrope.shape[1]
+        if hi <= n:
+            return self.mrope[:, lo:hi]
+        tail = (torch.arange(max(lo, n), hi, dtype=torch.int64, device=self.mrope.device)
+                + self.pos_delta).view(1, -1).expand(3, -1)
+        return torch.cat((self.mrope[:, lo:n], tail), dim=1) if lo < n else tail

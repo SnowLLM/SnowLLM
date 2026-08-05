@@ -43,7 +43,8 @@ def main():
 
     def run(num_spec):
         eng = Engine(model, num_kv_blocks=1024, max_num_seqs=2, max_model_len=1024,
-                     stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=num_spec)
+                     stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=num_spec,
+                     preempt=False)
         reqs = [eng.add(tok.encode(p), greedy) for p in PROMPTS]
         eng.run()
         return [r.out for r in reqs]
@@ -69,7 +70,7 @@ def main():
     # Acceptance rate: with one draft per step, a step emits 1 or 2 tokens, so this is what the
     # whole exercise buys before the extra draft pass is charged against it.
     eng = Engine(model, num_kv_blocks=1024, max_num_seqs=1, max_model_len=1024,
-                 stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=1)
+                 stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=1, preempt=False)
     r = eng.add(tok.encode(PROMPTS[1]), SamplingParams(temperature=0.0, max_new_tokens=NEW))
     eng.step()  # prefill: emits a token of its own, and is not a verify step
     n0, steps = len(r.out), 0

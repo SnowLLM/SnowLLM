@@ -37,7 +37,7 @@ def generate(chunk: int, k: int) -> list[int]:
     ops.moe_variant_force(VARIANT)
     try:
         eng = Engine(model, num_kv_blocks=2048, max_num_seqs=1, max_model_len=S + 256,
-                     seed=0, num_spec=k, prefill_chunk=chunk)
+                     seed=0, num_spec=k, prefill_chunk=chunk, preempt=False)
         r = eng.add(prompt, SamplingParams(temperature=0.0, max_new_tokens=NEW))
         eng.run()
         out = list(r.out)

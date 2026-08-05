@@ -150,7 +150,7 @@ class SpecDecoder:
         from dataclasses import replace
 
         ids_next = torch.zeros(M, dtype=torch.int64, device="cuda")
-        nxt = r.prompt[lo + 1:hi] + [sampled] if sampled is not None else r.prompt[lo + 1:hi + 1]
+        nxt = r.tokens[lo + 1:hi] + [sampled] if sampled is not None else r.tokens[lo + 1:hi + 1]
         ids_next[:len(nxt)] = torch.tensor(nxt, dtype=torch.int64)
         return self.runner.mtp_draft(self.runner.last_hidden, ids_next,
                                      replace(b, input_ids=ids_next))

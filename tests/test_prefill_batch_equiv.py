@@ -118,7 +118,7 @@ def main():
     del runner
     torch.cuda.empty_cache()
     eng = Engine(model, num_kv_blocks=512, max_num_seqs=8, max_model_len=256, seed=0,
-                 batch_prefill=True)
+                 batch_prefill=True, preempt=False)
     gp = lambda: SamplingParams(temperature=0.0, max_new_tokens=8)
     alone = []
     for p in prompts:                     # one at a time -> each is a B=1 prefill

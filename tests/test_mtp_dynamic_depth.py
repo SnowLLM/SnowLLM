@@ -44,7 +44,7 @@ def run(model, num_spec, cap):
     spec_mod.SPEC_MAX_STEP_ROWS = cap
     try:
         eng = Engine(model, num_kv_blocks=2048, max_num_seqs=8, max_model_len=512, seed=0,
-                     enforce_eager=True, num_spec=num_spec)
+                     enforce_eager=True, num_spec=num_spec, preempt=False)
         depths = []
         orig = eng.spec.verify_step
 

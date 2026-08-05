@@ -45,7 +45,7 @@ def main():
 
     eos = _harness.stop_tokens(CKPT)
     eng = Engine(model, num_kv_blocks=2048, max_num_seqs=4, max_model_len=2048,
-                 stop_token_ids=eos, seed=0)
+                 stop_token_ids=eos, seed=0, preempt=False)
     print(f"  stop tokens {eos}")
     mem("+ engine buffers")
     print(f"  KV pool {eng.blocks.total} blocks x {eng.runner.kv.__len__()} full-attn layers; "
