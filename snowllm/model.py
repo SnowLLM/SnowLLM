@@ -22,10 +22,11 @@ DEFAULT_MAX_NUM_SEQS = 128
 
 class Runner:
     def _alloc_kv(self, nb: int):
-        return tuple(ops.zero_bytes(n) for n in ops.kv_pool_bytes(nb, self.kv_int8))
+        pools = tuple(ops.zero_bytes(n) for n in ops.kv_pool_bytes(nb, self.kv_int8))
+        return tuple(t.view(torch.int8) for t in pools) if self.kv_int8 else pools
 
     def _alloc_kv_scale(self, nb: int):
-        return tuple(ops.zero_bytes(n) for n in ops.kv_scale_bytes(nb))
+        return tuple(ops.zero_bytes(n).view(torch.bfloat16) for n in ops.kv_scale_bytes(nb))
 
     def _m_buffers(self) -> tuple[dict, dict]:
         geo = self.geo

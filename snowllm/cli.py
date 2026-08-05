@@ -10,7 +10,7 @@ import time
 
 from .async_engine import AsyncEngine
 from .engine import SPEC_MAX_STEP_ROWS, Engine
-from .model import DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
+from .model import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
 from .state import Alias, ServerState, install
 from . import loader, ops
 
@@ -34,7 +34,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           prefill_chunk: "int | str" = "auto",
           served_names: list[str] | None = None, batch_prefill: bool = False,
           allow_image_urls: bool = False, limit_mm_per_prompt: int = 4,
-          stats_interval: float = 0.0) -> ServerState:
+          stats_interval: float = 0.0,
+          gpu_memory_utilization: float = DEFAULT_GPU_UTIL) -> ServerState:
     from transformers import AutoTokenizer
 
     root = pathlib.Path(model_path).expanduser()
@@ -53,14 +54,15 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     model = loader.load(root)
     _log(f"loaded in {time.time() - t0:.1f}s")
 
-    blocks = num_kv_blocks or max_num_seqs * ops.kv_blocks_for(max_model_len)
     t1 = time.time()
-    engine = Engine(model, num_kv_blocks=blocks, max_num_seqs=max_num_seqs,
+    engine = Engine(model, num_kv_blocks=num_kv_blocks, max_num_seqs=max_num_seqs,
                     max_model_len=max_model_len, stop_token_ids=eos, seed=seed,
                     enforce_eager=enforce_eager, num_spec=num_spec, kv_int8=kv_int8,
                     mtp_window=mtp_window, mtp_sinks=mtp_sinks,
                     prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
-                    account=stats_interval > 0)
+                    account=stats_interval > 0,
+                    gpu_memory_utilization=gpu_memory_utilization)
+    blocks = engine.blocks.total
     _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
          f"(engine init + capture {time.time() - t1:.1f}s total)")
 
@@ -85,7 +87,10 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         default_max_tokens=default_max_tokens, allow_image_urls=allow_image_urls,
         limit_mm_per_prompt=limit_mm_per_prompt)
 
-    _log(f"{max_num_seqs} slots, {blocks} KV blocks, ctx {max_model_len}, stop {eos}")
+    tokens = blocks * ops.KV_BLOCK_SIZE
+    _log(f"{max_num_seqs} slots, {blocks} KV blocks = {tokens} tokens "
+         f"({engine.runner.kv_bytes / (1 << 30):.1f} GiB, {tokens // max_num_seqs} per slot at full "
+         f"concurrency), prefill chunk {engine.prefill_chunk}, ctx {max_model_len}, stop {eos}")
     _log(f"served: {', '.join(f'{n} (factor {a.factor}, ctx {a.ctx})' for n, a in aliases.items())}")
     if profile_dir:
         _log(f"profiling armed -> {profile_dir} (POST /start_profile, /stop_profile)")
@@ -125,13 +130,23 @@ def main() -> None:
                         f"a step whose batch is too big to verify decodes plainly instead. Each "
                         f"request pins (num-spec + 1) x 61.4 MiB of linear-attn state for its whole "
                         f"life, so 128 costs 23.0 GiB at --num-spec 2 and 256 costs 46.1 GiB "
-                        f"against a ~40 GiB model.")
+                        f"against a ~40 GiB model. That pool is the one thing here provisioned "
+                        f"worst-case, so this is the knob that decides whether the engine starts.")
     g.add_argument("--max-model-len", type=_size, default=32768, metavar="N",
                    help="context length; thinking generations are long, so this is 32K not 8K "
-                        "(the model supports 256K). KV is provisioned worst-case over it.")
+                        "(the model supports 256K). It is a per-request ceiling, not a reservation: "
+                        "the KV pool is shared, and a request that outgrows what is left is "
+                        "preempted and re-prefilled rather than pre-allocated for.")
+    g.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_UTIL, metavar="F",
+                   help="fraction of the device the whole process may occupy. The KV pool is "
+                        "whatever is left under it once the weights, the state pool, the prefill "
+                        "workspace and the logits are down -- measured, not modelled. Raise it "
+                        "toward 1.0 if the GPU is yours alone; what it holds back is fragmentation "
+                        "headroom for the caching allocator.")
     g.add_argument("--num-kv-blocks", type=_size, default=None, metavar="N",
-                   help="KV blocks to allocate; default is enough for max-num-seqs full-length "
-                        "sequences")
+                   help=f"pin the KV pool at N blocks of {ops.KV_BLOCK_SIZE} tokens instead of "
+                        f"sizing it from --gpu-memory-utilization. It must still hold one "
+                        f"max-model-len sequence; below that the engine refuses to start.")
 
     g = p.add_argument_group("throughput", "Every one of these is measured; the numbers and the "
                                            "shapes they were taken at are in docs/ablations.md.")
@@ -147,8 +162,9 @@ def main() -> None:
                         "int8_per_token_head; int8 beat fp8 by 3.2x on this model's KV "
                         "(docs/ablations.md).")
     g.add_argument("--max-num-batched-tokens", default="auto", metavar="N",
-                   help="tokens per launch, or 'auto' to pick the largest that fits after the "
-                        "context pools. A step is one prefill chunk or one decode, so this is the "
+                   help="tokens per launch, or 'auto' to pick the largest whose workspace stays "
+                        "under a fifth of what the state pool leaves -- the rest goes to KV. A "
+                        "step is one prefill chunk or one decode, so this is the "
                         "prefill chunk: it bounds every M-sized buffer -- 30 GB of scratch for a "
                         "one-shot 200K prefill against 1 GB at 8192 -- and changes no arithmetic.")
     g.add_argument("--batch-prefill", action="store_true",
@@ -199,6 +215,7 @@ def main() -> None:
           mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,
           batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
           prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
+          gpu_memory_utilization=a.gpu_memory_utilization,
           limit_mm_per_prompt=a.limit_mm_per_prompt))
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")
 

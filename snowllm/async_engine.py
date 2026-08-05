@@ -143,7 +143,8 @@ class AsyncEngine:
               f"prefill {dp_t / dp_s if dp_s else 0.0:7.1f} tok/s | "
               f"decode {dd_t / dd_s if dd_s else 0.0:7.1f} tok/s | "
               f"AL {dd_t / dd_r if dd_r else 0.0:.3f} | "
-              f"running {st.running:3d} waiting {st.waiting:4d} | KV {kv * 100:4.1f}%", flush=True)
+              f"running {st.running:3d} waiting {st.waiting:4d} | KV {kv * 100:4.1f}% "
+              f"preempted {st.preemptions}", flush=True)
 
     def _fail_all(self) -> None:
         for r in self._live:
