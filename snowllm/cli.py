@@ -138,12 +138,12 @@ def main() -> None:
                    help=f"concurrency ceiling, up to {MAX_NUM_SEQS}. Speculating does not lower it: "
                         f"a step whose batch is too big to verify decodes plainly instead. Each "
                         f"request pins (num-spec + 1) x 61.4 MiB of linear-attn state for its whole "
-                        f"life, so 128 costs 23.0 GiB at --num-spec 2 and 256 costs 46.1 GiB "
+                        f"life, so 16 costs 2.9 GiB at --num-spec 2 and 256 costs 46.1 GiB "
                         f"against a ~40 GiB model. That pool is the one thing here provisioned "
                         f"worst-case, so this is the knob that decides whether the engine starts.")
-    g.add_argument("--max-model-len", type=_size, default=32768, metavar="N",
-                   help="context length; thinking generations are long, so this is 32K not 8K "
-                        "(the model supports 256K). It is a per-request ceiling, not a reservation: "
+    g.add_argument("--max-model-len", type=_size, default=262144, metavar="N",
+                   help="context length; this defaults to the 256K the model supports. "
+                        "It is a per-request ceiling, not a reservation: "
                         "the KV pool is shared, and a request that outgrows what is left is "
                         "preempted and re-prefilled rather than pre-allocated for.")
     g.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_UTIL, metavar="F",
