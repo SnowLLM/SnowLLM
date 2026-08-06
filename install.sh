@@ -9,6 +9,7 @@
 #   SNOWLLM_HOME       where the environment lives        (default: $XDG_DATA_HOME/snowllm)
 #   SNOWLLM_BIN_DIR    where the snowllm command goes     (default: $XDG_BIN_HOME)
 #   SNOWLLM_PYTHON     interpreter to build the venv with (default: autodetected)
+#   SNOWLLM_ALLOW_WSL  proceed on WSL2, which nobody has verified
 
 # Wrapped in main() so a truncated download cannot execute half a script.
 main() {
@@ -86,10 +87,43 @@ no_python() {
     exit 1
 }
 
+is_wsl() {
+    case "$(uname -r)" in *icrosoft*|*WSL*|*wsl*) return 0 ;; esac
+    return 1
+}
+
+wsl_note() {
+    cat >&2 <<'EOF'
+install.sh: this looks like WSL2, which SnowLLM has never been tested on.
+
+WSL2 has no /dev/kfd -- ROCm reaches the GPU through /dev/dxg instead -- so the
+GPU checks below cannot tell you whether yours will work. Set WSL up with AMD's
+guide first:
+
+  https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html
+
+If ROCm then reports far less memory than the machine has, check that Resizable
+BAR is enabled in the BIOS. To try anyway:
+
+    SNOWLLM_ALLOW_WSL=1 curl -fsSL https://snowllm.dev/install.sh | sh
+
+Native Linux is the supported path.
+EOF
+    exit 1
+}
+
 check_machine() {
     [ "$(uname -s)" = Linux ] || die "SnowLLM runs on Linux only (this is $(uname -s))."
     [ "$(uname -m)" = x86_64 ] || die "SnowLLM runs on x86_64 only (this is $(uname -m))."
     have curl || die "curl is required."
+
+    if is_wsl; then
+        [ -n "${SNOWLLM_ALLOW_WSL:-}" ] || wsl_note
+        warn "WSL2 detected. This is untested; the GPU checks below are being skipped."
+        [ -c /dev/dxg ] || die \
+            "no /dev/dxg: this distro cannot reach the GPU. Set WSL up with AMD's guide first."
+        return 0
+    fi
 
     [ -c /dev/kfd ] || die "no /dev/kfd: the amdgpu driver is not loaded, or there is no AMD GPU here."
     { [ -r /dev/kfd ] && [ -w /dev/kfd ]; } || die \
