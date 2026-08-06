@@ -62,9 +62,10 @@ def _cut(text: str, at: list[str]) -> tuple[str, bool]:
     return (text[:best], True) if best >= 0 else (text, False)
 
 
-def usage(prompt: list[int], r: Request) -> dict:
-    return {"prompt_tokens": len(prompt), "completion_tokens": len(r.out),
-            "total_tokens": len(prompt) + len(r.out)}
+def usage(prompt: list[int], r: "Request | None") -> dict:
+    n = len(r.out) if r is not None else 0
+    return {"prompt_tokens": len(prompt), "completion_tokens": n,
+            "total_tokens": len(prompt) + n}
 
 
 THINK_CLOSE = "</think>"

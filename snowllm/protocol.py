@@ -4,6 +4,10 @@
 from pydantic import BaseModel, Field
 
 
+class StreamOptions(BaseModel):
+    include_usage: bool = False
+
+
 class Common(BaseModel):
     model: str | None = None
     max_tokens: int | None = None
@@ -15,6 +19,7 @@ class Common(BaseModel):
     repetition_penalty: float = Field(1.0, gt=0.0)
     stop: str | list[str] | None = None
     stream: bool = False
+    stream_options: StreamOptions | None = None
     seed: int | None = None
 
 

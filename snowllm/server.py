@@ -77,17 +77,25 @@ async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = F
     model = req.model or serving().model_name
 
     if req.stream:
+        want_usage = req.stream_options is not None and req.stream_options.include_usage
+
         async def sse() -> AsyncIterator[str]:
+            def body_of(choices: list[dict]) -> dict:
+                return {"id": rid, "object": f"{kind}.chunk" if chat else kind, "created": created,
+                        "model": model, "choices": choices}
+
             def chunk(delta: dict, finish: str | None) -> str:
                 choice = {"index": 0, "finish_reason": finish}
                 choice["delta" if chat else "text"] = delta if chat else delta.get("content", "")
-                body = {"id": rid, "object": f"{kind}.chunk" if chat else kind, "created": created,
-                        "model": model, "choices": [choice]}
+                body = body_of([choice])
+                if want_usage:
+                    body["usage"] = None
                 return f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
 
             if chat:
                 yield chunk({"role": "assistant", "content": ""}, None)
             fr = "stop"
+            done = None
             async for ev in gen.generate(prompt, req, reasoning=reasoning, types=types, mm=mm):
                 if isinstance(ev, ReasoningDelta):
                     yield chunk({"reasoning_content": ev.text}, None)
@@ -96,8 +104,12 @@ async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = F
                 elif isinstance(ev, ToolCallDone):
                     yield chunk({"tool_calls": _tool_calls_field([ev], streaming=True)}, None)
                 elif isinstance(ev, Finish):
-                    fr = ev.finish_reason
+                    fr, done = ev.finish_reason, ev.request
             yield chunk({}, fr)
+            if want_usage:
+                body = body_of([])
+                body["usage"] = gen.usage(prompt, done)
+                yield f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream")
