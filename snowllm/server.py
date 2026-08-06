@@ -158,6 +158,7 @@ async def chat_completions(req: ChatRequest):
     st = serving()
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
     msgs, images = _split_images([m.model_dump(exclude_none=True) for m in req.messages])
+    template_kwargs = req.template_kwargs()
     mm = None
     if images:
         if len(images) > st.limit_mm_per_prompt:
@@ -167,10 +168,10 @@ async def chat_completions(req: ChatRequest):
             raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
                                      "images")
         mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools,
-                                **req.chat_template_kwargs)
+                                **template_kwargs)
         prompt = mm.pop("prompt")
     else:
-        prompt = gen.chat_prompt(msgs, req.chat_template_kwargs, tools)
+        prompt = gen.chat_prompt(msgs, template_kwargs, tools)
     return await _serve(prompt, req, chat=True, reasoning=gen.thinking_open(prompt),
                         types=tool_parser.tool_types(tools), mm=mm)
 

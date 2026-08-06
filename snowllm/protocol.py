@@ -28,8 +28,15 @@ class ChatMessage(BaseModel):
 class ChatRequest(Common):
     messages: list[ChatMessage]
     chat_template_kwargs: dict = Field(default_factory=dict)
+    enable_thinking: bool | None = None
     tools: list[dict] | None = None
     tool_choice: str | dict = "auto"
+
+    def template_kwargs(self) -> dict:
+        kw = dict(self.chat_template_kwargs)
+        if self.enable_thinking is not None:
+            kw.setdefault("enable_thinking", self.enable_thinking)
+        return kw
 
 
 class CompletionRequest(Common):
