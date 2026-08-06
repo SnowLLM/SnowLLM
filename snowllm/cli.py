@@ -211,7 +211,13 @@ def main() -> None:
     g.add_argument("--enforce-eager", action="store_true", help="skip CUDA-graph capture")
     g.add_argument("--profile-dir", default=os.environ.get("SNOWLLM_TORCH_PROFILER_DIR"),
                    metavar="DIR",
-                   help="enable POST /start_profile and /stop_profile, writing traces here")
+                   help="enable POST /start_profile and /stop_profile, writing traces here. "
+                        "Unless this, SNOWLLM_TRACE or HSA_TOOLS_LIB is set, "
+                        "HSA_TOOLS_DISABLE_REGISTER=1 is set so ROCm's profiler does not "
+                        "intercept queue creation -- its interception leaves a signal the "
+                        "runtime cannot sleep on, and one core then spins for the process's "
+                        "whole life, idle or not. Anything that profiles or traces needs it "
+                        "back, and costs that core.")
     g.add_argument("--stats-interval", type=float, default=0.0, metavar="SECONDS",
                    help="log prefill/decode throughput and accepted length every SECONDS, and "
                         "carry the cumulative pair on /health. OFF by default because splitting "
@@ -226,6 +232,10 @@ def main() -> None:
     model = positional or a.model_flag
     if not model:
         p.error("the checkpoint directory is required: `snowllm PATH`")
+
+    if not (a.profile_dir or os.environ.get("SNOWLLM_TRACE")
+            or os.environ.get("HSA_TOOLS_LIB")):
+        os.environ.setdefault("HSA_TOOLS_DISABLE_REGISTER", "1")
 
     install(build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
           default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
