@@ -1,0 +1,19 @@
+.DS_Store
+Thumbs.db
+
+/.vscode
+*.bak
+
+# This branch is an orphan and shares a working tree with the code branches, so
+# everything they carry shows up here as untracked. Listing it keeps `git add -A`
+# on this branch from committing the whole source tree into the published site.
+/benchmarks/
+/build/
+/dist/
+/scripts/
+/snowllm/
+/snowllm.egg-info/
+/tests/
+/.pytest_cache/
+__pycache__/
+*.py[cod]
