@@ -59,16 +59,25 @@ def _find_lib() -> str:
     return lib
 
 
+_HIP_RUNTIMES = (("_rocm_sdk_core", "libamdhip64.so.7"), ("torch", "libamdhip64.so"))
+
+
 def _preload_hip_runtime() -> None:
-    spec = importlib.util.find_spec("_rocm_sdk_core")
-    if spec is None or not spec.submodule_search_locations:
-        return
-    sdk = os.path.join(spec.submodule_search_locations[0], "lib", "libamdhip64.so.7")
-    if os.path.exists(sdk):
+    for pkg, soname in _HIP_RUNTIMES:
         try:
-            ctypes.CDLL(sdk, mode=ctypes.RTLD_GLOBAL)
+            spec = importlib.util.find_spec(pkg)
+        except (ImportError, ValueError):
+            continue
+        if spec is None or not spec.submodule_search_locations:
+            continue
+        path = os.path.join(spec.submodule_search_locations[0], "lib", soname)
+        if not os.path.exists(path):
+            continue
+        try:
+            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
         except OSError:
-            pass
+            continue
+        return
 
 
 _preload_hip_runtime()
