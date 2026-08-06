@@ -36,11 +36,19 @@ only supported model today is [`Qwen3.6-35B-A3B-FP8`](https://huggingface.co/Qwe
 
 - Linux x86_64, AMD gfx1151 (Ryzen AI Max 300 series — Strix Halo)
 - ROCm **7.x**.
-- Python ≥ 3.10, and ROCm builds of torch and torchvision — see below.
+- Python **3.10 – 3.14**, and ROCm builds of torch and torchvision — see below.
 
 ## Install
 
-torch and torchvision must come from AMD's index:
+```sh
+curl -fsSL https://raw.githubusercontent.com/SnowLLM/SnowLLM/main/install.sh | sh
+```
+
+- Checks the machine before downloading anything: GPU, driver access, Python, disk, network
+- Installs into `~/.local/share/snowllm`, links `snowllm` into `~/.local/bin`
+- Re-run to upgrade; `sh -s -- --uninstall` to remove
+
+Or do it by hand — torch and torchvision must come from AMD's index:
 
 ```sh
 # https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html
