@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 529.17 72.00" width="529" height="72" role="img" aria-label="SnowLLM">
+<title>SnowLLM</title>
+<style>
+.ink{fill:none;stroke:#101820}
+.sub{fill:none;stroke:#5a6874}
+.core{fill:#2fd3e8;stroke:none}
+@media (prefers-color-scheme:dark){.ink{stroke:#dfe8ed}.sub{stroke:#8a9aa6}.core{fill:#0b7285}}
+.markfill{fill:#101820}
+@media (prefers-color-scheme:dark){.markfill{fill:#dfe8ed}}
+</style>
+<mask id="sl-lock"><polygon points="42.00,-2.06 9.04,16.97 9.04,55.03 42.00,74.06 74.96,55.03 74.96,16.97" fill="#fff"/><path d="M42.00 36.00L42.00 8.44M42.00 18.94L32.91 13.69M42.00 18.94L51.09 13.69M42.00 36.00L18.13 22.22M27.22 27.47L18.13 32.72M27.22 27.47L27.22 16.97M42.00 36.00L18.13 49.78M27.22 44.53L27.22 55.03M27.22 44.53L18.13 39.28M42.00 36.00L42.00 63.56M42.00 53.06L51.09 58.31M42.00 53.06L32.91 58.31M42.00 36.00L65.87 49.78M56.78 44.53L65.87 39.28M56.78 44.53L56.78 55.03M42.00 36.00L65.87 22.22M56.78 27.47L56.78 16.97M56.78 27.47L65.87 32.72" stroke="#000" stroke-width="7.22" stroke-linecap="round" fill="none"/></mask><rect x="0" y="-6.00" width="84.0" height="84.0" class="markfill" mask="url(#sl-lock)"/><rect class="core" x="36.09" y="30.09" width="11.81" height="11.81"/><g stroke-width="10.0" stroke-linecap="round" stroke-linejoin="round"><path class="ink" d="M158.00 6.00L125.00 6.00L116.00 15.00L116.00 26.00L125.00 35.00L149.00 35.00L158.00 44.00L158.00 57.00L149.00 66.00L116.00 66.00M171.00 66.00L171.00 6.00L205.64 66.00L205.64 6.00M239.62 6.00L265.60 21.00L265.60 51.00L239.62 66.00L213.64 51.00L213.64 21.00L239.62 6.00M273.60 6.00L290.92 66.00L308.24 6.00L325.56 66.00L342.88 6.00"/><path class="sub" d="M358.88 6.00L358.88 66.00L392.88 66.00M406.88 6.00L406.88 66.00L440.88 66.00M453.88 66.00L453.88 6.00L488.53 48.00L523.17 6.00L523.17 66.00"/></g><rect class="core" x="231.62" y="28.00" width="16" height="16"/>
+</svg>

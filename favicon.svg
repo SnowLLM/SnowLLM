@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="sl-mini-t">
+<title id="sl-mini-t">SnowLLM</title>
+<style>
+.ink{fill:#101820}
+.core{fill:#2fd3e8}
+@media (prefers-color-scheme:dark){.ink{fill:#dfe8ed}.core{fill:#0b7285}}
+</style>
+<mask id="sl-mini">
+<polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/>
+<path d="M64 64L64.00 20.00M64 64L25.89 42.00M64 64L25.89 86.00M64 64L64.00 108.00M64 64L102.11 86.00M64 64L102.11 42.00" stroke="#000" stroke-width="12" stroke-linecap="round" fill="none"/>
+</mask>
+<rect width="128" height="128" class="ink" mask="url(#sl-mini)"/>
+<rect x="55" y="55" width="18" height="18" class="core"/>
+</svg>
