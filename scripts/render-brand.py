@@ -198,7 +198,7 @@ def card():
     d.text((80, 286), "76.7", font=big, fill=INK)
     d.text((80 + d.textlength("76.7", font=big) + 22, 320), "TOK/S", font=unit, fill=MUTED)
 
-    d.text((80, 472), "Local LLM inference for AMD Ryzen AI Max", font=font(31), fill=INK)
+    d.text((80, 472), "Local LLM inference for Ryzen AI Max+ 395", font=font(31), fill=INK)
     d.text((80, 516), "Strix Halo / gfx1151  ·  Qwen3.6-35B-A3B-FP8  ·  8K context",
            font=font(24), fill=MUTED)
     d.text((80, 556), "snowllm.dev", font=font(26, True), fill=ACCENT)
