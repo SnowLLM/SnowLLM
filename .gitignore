@@ -11,6 +11,11 @@ __pycache__/
 /benchmarks/results/*
 !/benchmarks/results/.gitkeep
 
+# Brand rasters for GitHub. render-brand.py is tracked; the avatar and social preview it draws are
+# not -- nothing here reads them, they are uploaded by hand in a settings page and that is the whole
+# of their life. web/og.png is the exception and stays tracked, because the site serves it.
+/brand/
+
 # Editor / tooling caches
 /.cache/
 /.claude/settings.local.json
