@@ -97,6 +97,11 @@ Common flags (`snowllm --help` lists every option):
 - NPU/GPU co-working prefill
 - Native INT4 quantization
 
+## Questions
+
+Ask in [Discussions](https://github.com/SnowLLM/SnowLLM/discussions). Hardware reports from the rest of the
+Ryzen AI 300 series are especially useful — only the 395 has been tested here.
+
 ## License
 
 - SnowLLM: [Apache-2.0](LICENSE)
