@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Assert that web/ still says what the rest of the tree says.
 #
-# The page restates things it does not own: the torch pins install.sh installs, the Python range
-# install.sh accepts, and throughput figures BENCHMARK.md measured. Nothing stops one from moving
-# without the other, so this checks them and fails the build when they disagree.
+# The page restates things it does not own: the command that fetches install.sh, the torch pins it
+# installs, the Python range it accepts, and throughput figures BENCHMARK.md measured. Nothing stops
+# one from moving without the other, so this checks them and fails the build when they disagree.
 #
 # Usage: scripts/check-site.py
 
@@ -38,6 +38,22 @@ def check_pins():
         for name, text in (("README.md", README), ("web/index.html", PAGE)):
             if pin not in text:
                 problems.append(f"install.sh pins {pin}, {name} does not mention it")
+
+
+def check_install_command():
+    m = need(r"^# (curl [^\n]*\| sh)$", INSTALL, "the usage line in install.sh")
+    if not m:
+        return
+    command = m.group(1)
+    for name, text in (("README.md", README), ("web/index.html", PAGE)):
+        if command not in text:
+            problems.append(f"install.sh documents `{command}`, {name} shows something else")
+
+    domain = (ROOT / "web" / "CNAME").read_text().strip()
+    for name, text in (("install.sh", INSTALL), ("README.md", README), ("web/index.html", PAGE)):
+        for host in set(re.findall(r"https://([^/\s]+)/[^\s]*install\.sh", text)):
+            if host != domain:
+                problems.append(f"{name} fetches install.sh from {host}, web/CNAME serves {domain}")
 
 
 def check_python_range():
@@ -91,6 +107,7 @@ def check_figures():
 
 
 check_pins()
+check_install_command()
 check_python_range()
 check_figures()
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# curl -fsSL https://raw.githubusercontent.com/SnowLLM/SnowLLM/main/install.sh | sh
+# curl -fsSL https://snowllm.dev/install.sh | sh
 #
 # Options:
 #   --uninstall        remove SnowLLM
@@ -209,7 +209,7 @@ Get a model, then serve it:
     hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
     snowllm ~/models/Qwen3.6-35B-A3B-FP8
 
-Uninstall:  curl -fsSL https://raw.githubusercontent.com/SnowLLM/SnowLLM/main/install.sh | sh -s -- --uninstall
+Uninstall:  curl -fsSL https://snowllm.dev/install.sh | sh -s -- --uninstall
 EOF
 
 }

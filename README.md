@@ -41,7 +41,7 @@ only supported model today is [`Qwen3.6-35B-A3B-FP8`](https://huggingface.co/Qwe
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/SnowLLM/SnowLLM/main/install.sh | sh
+curl -fsSL https://snowllm.dev/install.sh | sh
 ```
 
 - Checks the machine before downloading anything: GPU, driver access, Python, disk, network

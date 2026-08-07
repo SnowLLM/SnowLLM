@@ -11,10 +11,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: false
-
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -32,6 +28,9 @@ jobs:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -43,6 +42,10 @@ jobs:
       - name: Date the sitemap from the last change to the site
         run: |
           stamp=$(git log -1 --format=%cs -- web)
+          [ -n "$stamp" ] || {
+              echo "::error::no commit touches web/, so the sitemap cannot be dated" >&2
+              exit 1
+          }
           python - "$stamp" <<'PY'
           import pathlib, re, sys
           p = pathlib.Path("web/sitemap.xml")
@@ -53,6 +56,9 @@ jobs:
           p.write_text(out)
           print(f"sitemap lastmod = {sys.argv[1]}")
           PY
+
+      - name: Serve the installer the site tells people to pipe
+        run: cp install.sh web/install.sh
 
       - uses: actions/configure-pages@v5
 
