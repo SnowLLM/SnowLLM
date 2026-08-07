@@ -1,0 +1,64 @@
+name: Site
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: The site agrees with the tree it is published from
+        run: scripts/check-site.py
+
+  publish:
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Date the sitemap from the last change to the site
+        run: |
+          stamp=$(git log -1 --format=%cs -- web)
+          python - "$stamp" <<'PY'
+          import pathlib, re, sys
+          p = pathlib.Path("web/sitemap.xml")
+          s = p.read_text()
+          out, n = re.subn(r"<lastmod>[^<]*</lastmod>", f"<lastmod>{sys.argv[1]}</lastmod>", s)
+          if n != 1:
+              sys.exit(f"::error::expected one <lastmod> in web/sitemap.xml, found {n}")
+          p.write_text(out)
+          print(f"sitemap lastmod = {sys.argv[1]}")
+          PY
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

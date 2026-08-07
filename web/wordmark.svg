@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 419.17 72.00" width="419" height="72" role="img" aria-label="SnowLLM">
+<title>SnowLLM</title>
+<style>
+.ink{fill:none;stroke:#101820}
+.sub{fill:none;stroke:#5a6874}
+.core{fill:#2fd3e8;stroke:none}
+@media (prefers-color-scheme:dark){.ink{stroke:#dfe8ed}.sub{stroke:#8a9aa6}.core{fill:#0b7285}}
+</style>
+<g stroke-width="10.0" stroke-linecap="round" stroke-linejoin="round"><path class="ink" d="M48.00 6.00L15.00 6.00L6.00 15.00L6.00 26.00L15.00 35.00L39.00 35.00L48.00 44.00L48.00 57.00L39.00 66.00L6.00 66.00M61.00 66.00L61.00 6.00L95.64 66.00L95.64 6.00M129.62 6.00L155.60 21.00L155.60 51.00L129.62 66.00L103.64 51.00L103.64 21.00L129.62 6.00M163.60 6.00L180.92 66.00L198.24 6.00L215.56 66.00L232.88 6.00"/><path class="sub" d="M248.88 6.00L248.88 66.00L282.88 66.00M296.88 6.00L296.88 66.00L330.88 66.00M343.88 66.00L343.88 6.00L378.53 48.00L413.17 6.00L413.17 66.00"/></g><rect class="core" x="121.62" y="28.00" width="16" height="16"/>
+</svg>
