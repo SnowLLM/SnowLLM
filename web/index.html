@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)</title>
-<meta name="description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 76.7 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta name="description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://snowllm.dev/">
 <meta name="robots" content="index, follow, max-image-preview:large">
@@ -14,17 +14,17 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SnowLLM">
 <meta property="og:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta property="og:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 76.7 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta property="og:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
 <meta property="og:url" content="https://snowllm.dev/">
 <meta property="og:image" content="https://snowllm.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="SnowLLM — 76.7 tokens per second on Qwen3.6-35B-A3B-FP8, and output throughput across context length.">
+<meta property="og:image:alt" content="SnowLLM — 62.4 tokens per second on Qwen3.6-35B-A3B-FP8, and output throughput across context length.">
 <meta property="og:locale" content="en_US">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta name="twitter:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 76.7 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta name="twitter:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
 <meta name="twitter:image" content="https://snowllm.dev/og.png">
 
 <script type="application/ld+json">
@@ -33,11 +33,11 @@
   "@type": "SoftwareApplication",
   "name": "SnowLLM",
   "url": "https://snowllm.dev/",
-  "description": "Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 76.7 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.",
+  "description": "Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.",
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "LLM inference server",
-  "operatingSystem": "Linux x86_64",
-  "processorRequirements": "AMD Ryzen AI Max+ 395 (gfx1151, Strix Halo)",
+  "operatingSystem": "Linux x86_64, Windows 11",
+  "processorRequirements": "AMD gfx1151 — Ryzen AI Max 300 and 400 series (Strix Halo, Gorgon Halo)",
   "softwareRequirements": "ROCm 7.x, Python 3.10-3.14",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "codeRepository": "https://github.com/SnowLLM/SnowLLM",
@@ -59,19 +59,20 @@
     --hair: #dde5ea;
     --accent: #0b7285;
     --accent-soft: #0b728514;
-    --c0: #4fb3d9;
-    --c1: #7cb8bf;
     --c2: #eda23f;
     --c3: #e2551f;
     --core: #2fd3e8;
-    --shadow: 0 1px 0 #ffffff inset, 0 1px 2px #10182010;
 
     --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
     --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Source Serif 4", "Noto Serif", Georgia, serif;
 
-    --rail: 10.5rem;
-    --gap: 2.25rem;
-    --measure: 34rem;
+    --measure: 40rem;
+
+    --fs-label: 0.66rem;
+    --fs-ui: 0.74rem;
+    --fs-code: 0.83rem;
+    --fs-note: 0.93rem;
+    --fs-rail: 1.02rem;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -85,12 +86,9 @@
       --hair: #222e37;
       --accent: #2fd3e8;
       --accent-soft: #2fd3e81f;
-      --c0: #5cc3ea;
-      --c1: #86c5cc;
       --c2: #f5b45a;
       --c3: #f2683a;
       --core: #0b7285;
-      --shadow: none;
     }
   }
 
@@ -104,12 +102,9 @@
     --hair: #222e37;
     --accent: #2fd3e8;
     --accent-soft: #2fd3e81f;
-    --c0: #5cc3ea;
-    --c1: #86c5cc;
     --c2: #f5b45a;
     --c3: #f2683a;
     --core: #0b7285;
-    --shadow: none;
   }
 
   :root[data-theme="light"] {
@@ -122,12 +117,9 @@
     --hair: #dde5ea;
     --accent: #0b7285;
     --accent-soft: #0b728514;
-    --c0: #4fb3d9;
-    --c1: #7cb8bf;
     --c2: #eda23f;
     --c3: #e2551f;
     --core: #2fd3e8;
-    --shadow: 0 1px 0 #ffffff inset, 0 1px 2px #10182010;
   }
 
   :root { color-scheme: light dark; }
@@ -143,18 +135,65 @@
     font-size: 17px;
     line-height: 1.65;
     margin: 0;
-    padding: 0 1.5rem 6rem;
+
+    padding: 0 clamp(1.5rem, 4vw, 4rem) 6rem;
   }
 
-  .wrap { max-width: 62rem; margin: 0 auto; }
+  .wrap {
+    max-width: 78rem;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 3.5rem;
+  }
 
-  /* ---------- section skeleton ---------- */
+  .main { padding-right: clamp(0.5rem, 3.5vw, 4.5rem); }
+
+  .side {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+    padding: 2.5rem 0 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.6rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .side .mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    font-size: var(--fs-rail);
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-decoration: none;
+  }
+
+  .side-nav { display: flex; flex-direction: column; gap: 0.55rem; }
+
+  .side-nav a {
+    color: var(--faint);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    padding-left: 0.7rem;
+    margin-left: -0.7rem;
+  }
+
+  .side-nav a:hover { color: var(--accent); }
+
+  .side-nav a.on { color: var(--ink); border-left-color: var(--accent); }
+
+  .side-rule { height: 1px; background: var(--hair); margin: 0.35rem 0; }
+
+  .side .theme { align-self: start; }
 
   .band {
-    display: grid;
-    grid-template-columns: var(--rail) minmax(0, 1fr);
-    gap: var(--gap);
-    padding: 3.25rem 0;
+    padding: 2.75rem 0;
     border-top: 1px solid var(--hair);
   }
 
@@ -162,34 +201,16 @@
 
   .rail {
     font-family: var(--mono);
-    font-size: 0.7rem;
-    line-height: 1.6;
-    letter-spacing: 0.11em;
+    font-size: var(--fs-rail);
+    line-height: 1.4;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--faint);
-    align-self: start;
+    margin: 0 0 1.4rem;
   }
 
   .rail b {
-    display: block;
-    color: var(--muted);
+    color: var(--ink);
     font-weight: 600;
-  }
-
-  .rail span {
-    display: block;
-    text-transform: none;
-    letter-spacing: 0.02em;
-    margin-top: 0.5rem;
-  }
-
-  h2 {
-    font-family: var(--mono);
-    font-size: 1.05rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    margin: 0 0 1.1rem;
-    text-wrap: balance;
   }
 
   p { margin: 0 0 1rem; max-width: var(--measure); }
@@ -217,38 +238,12 @@
   }
 
   .note {
-    font-size: 0.93rem;
+    font-size: var(--fs-note);
     color: var(--muted);
     max-width: var(--measure);
   }
 
-  /* ---------- masthead ---------- */
-
-  .top {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 2.5rem 0 0;
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  .top .mark {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.55em;
-    font-size: 1.15rem;
-    color: var(--ink);
-    font-weight: 700;
-    letter-spacing: 0.16em;
-  }
-
   .glyph { width: 1.6em; height: 1.6em; flex: none; }
-  .top nav { display: flex; align-items: center; gap: 1.4rem; color: var(--muted); }
 
   .theme {
     display: inline-flex;
@@ -291,19 +286,18 @@
 
   .lede em { font-style: normal; color: var(--muted); }
 
-  /* ---------- the readout ---------- */
-
   .readout {
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(0, 1fr);
     align-items: end;
-    gap: clamp(1.5rem, 5vw, 4rem);
+    gap: clamp(1.5rem, 4cqw, 3rem);
     margin: 2.75rem 0 0;
+    container-type: inline-size;
   }
 
   .figure {
     font-family: var(--mono);
-    font-size: clamp(4rem, 13vw, 8.5rem);
+    font-size: clamp(3.5rem, 15cqw, 8.5rem);
     font-weight: 500;
     line-height: 0.84;
     letter-spacing: -0.055em;
@@ -321,13 +315,13 @@
 
   .caliper {
     font-family: var(--mono);
-    font-size: 0.7rem;
+    font-size: var(--fs-ui);
     letter-spacing: 0.05em;
     color: var(--muted);
     margin-top: 1.1rem;
     border-top: 1px solid var(--line);
     padding-top: 0.6rem;
-    max-width: 22rem;
+    max-width: 19rem;
   }
 
   .caliper dl {
@@ -346,104 +340,120 @@
 
   .decay figcaption {
     font-family: var(--mono);
-    font-size: 0.68rem;
+    font-size: var(--fs-label);
     letter-spacing: 0.06em;
     color: var(--faint);
     margin-top: 0.75rem;
     text-transform: uppercase;
   }
 
-  /* ---------- install ---------- */
+  .install { margin: 2.75rem 0 0; }
 
-  .install { margin: 2.75rem 0 0; max-width: 47rem; }
-
-  .tabs {
-    display: flex;
-    border-bottom: 1px solid var(--line);
+  .selector {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1px;
+    width: 100%;
+    margin: 0 0 1rem;
+    background: var(--line);
+    border: 1px solid var(--line);
   }
 
-  .tab {
+  .axis { display: contents; }
+
+  .axis-label {
+    display: flex;
+    align-items: center;
+    padding: 0 0.9rem;
+    background: var(--ground);
     font-family: var(--mono);
-    font-size: 0.68rem;
+    font-size: var(--fs-label);
+    font-weight: 600;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--faint);
-    background: transparent;
+  }
+
+  .selector .opts {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .opt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    background: var(--panel);
     border: 0;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    padding: 0.5rem 1rem 0.45rem;
+    padding: 0.3rem 0.7rem;
     cursor: pointer;
   }
 
-  .tab:first-child { padding-left: 0; }
-  .tab:hover { color: var(--accent); }
-  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .opt:hover { color: var(--accent); }
 
-  .panel { display: block; padding-top: 1rem; }
-  .panel[hidden] { display: none; }
-
-  .platforms {
-    margin: 1.15rem 0 0;
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--hair);
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    line-height: 1.75;
-    letter-spacing: 0.03em;
-    color: var(--muted);
-    max-width: 44rem;
+  .opt[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
-  .platforms i { font-style: normal; color: var(--ink); font-weight: 600; }
+  .opt[disabled] { color: var(--hair); cursor: not-allowed; }
+  .opt[disabled]:hover { color: var(--hair); }
 
-  .platforms u {
-    text-decoration: none;
-    color: var(--faint);
-    text-transform: uppercase;
-    letter-spacing: 0.11em;
-  }
-
-  .platforms span { display: block; }
-
-  .platforms {
+  .toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem 1.6rem;
-    margin: 1.1rem 0 0;
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--hair);
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
-    color: var(--muted);
+    align-items: center;
+    gap: 0.5rem 0.85rem;
+    width: 100%;
+    margin: 0 0 1rem;
   }
 
-  .platforms b { color: var(--ink); font-weight: 600; }
+  .tool { display: flex; align-items: center; min-width: 0; }
 
-  .platforms .tag {
-    color: var(--faint);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
+  .tool + .tool { border-left: 1px solid var(--hair); padding-left: 0.85rem; }
+
+  .tool-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .platforms span { display: block; }
+  .toolbar .opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    min-width: 0;
+    background: var(--hair);
+    border: 1px solid var(--hair);
+  }
+
+  .toolbar .opt { min-height: 0; }
 
   .cmd {
     display: flex;
     align-items: flex-start;
     gap: 0.85rem;
     background: var(--panel);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-    padding: 0.85rem 0.9rem 0.85rem 1rem;
-    margin: 0 0 0.9rem;
+    padding: 0.8rem 0.9rem;
+    min-width: 0;
     overflow-x: auto;
   }
 
   .cmd pre {
     font-family: var(--mono);
-    font-size: 0.83rem;
+    font-size: var(--fs-code);
     line-height: 1.65;
     margin: 0;
     flex: 1;
@@ -459,7 +469,7 @@
   .copy {
     flex: none;
     font-family: var(--mono);
-    font-size: 0.66rem;
+    font-size: var(--fs-label);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--muted);
@@ -473,7 +483,7 @@
 
   pre.block {
     font-family: var(--mono);
-    font-size: 0.8rem;
+    font-size: var(--fs-code);
     line-height: 1.6;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -507,14 +517,11 @@
     background: var(--line);
   }
 
-  /* ---------- measured bars ---------- */
-
-  .series { margin: 0 0 2rem; }
-  .series:last-child { margin-bottom: 0; }
-
-  .series h3 {
+  .group { margin: 0 0 2rem; }
+  .group:last-child { margin-bottom: 0; }
+  .group h3, .group h4 {
     font-family: var(--mono);
-    font-size: 0.7rem;
+    font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -524,69 +531,26 @@
     border-bottom: 1px solid var(--hair);
   }
 
-  .row {
-    display: grid;
-    grid-template-columns: 6.6rem minmax(0, 1fr) 4.75rem;
-    align-items: center;
-    gap: 0.9rem;
-    padding: 0.3rem 0;
-    font-family: var(--mono);
-    font-size: 0.76rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .row .k { color: var(--muted); letter-spacing: 0.04em; }
-
-  .row.head {
-    font-size: 0.62rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--faint);
-    padding-bottom: 0.4rem;
-  }
-
-  .row.head .v { font-weight: 400; }
-
-  .row .track {
-    height: 0.85rem;
-    background: var(--hair);
-    position: relative;
-    min-width: 0;
-  }
-
-  .row .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: var(--w);
-    background: var(--bar);
-    transform-origin: left center;
-  }
-
-  .row .v { text-align: right; font-weight: 600; }
-  .row .v small { font-weight: 400; color: var(--faint); font-size: 0.85em; }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .row .fill { animation: grow 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
-    @keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  }
-
-  .legend {
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    color: var(--faint);
-    letter-spacing: 0.04em;
-    margin-top: 0.75rem;
-  }
-
-  /* ---------- tables ---------- */
-
   .scroll { overflow-x: auto; margin: 0 0 1rem; }
+
+  td.series-cell {
+    white-space: normal;
+    min-width: 14rem;
+    max-width: 22rem;
+    padding-right: 1.5rem;
+  }
+
+  td.series-cell .sub {
+    display: block;
+    color: var(--faint);
+    padding-left: 1.15em;
+  }
 
   table {
     border-collapse: collapse;
     width: 100%;
     font-family: var(--mono);
-    font-size: 0.76rem;
+    font-size: var(--fs-ui);
     font-variant-numeric: tabular-nums;
   }
 
@@ -601,14 +565,14 @@
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    font-size: 0.66rem;
+    font-size: var(--fs-label);
     color: var(--faint);
     white-space: nowrap;
   }
 
   td.desc {
     font-family: var(--serif);
-    font-size: 0.92rem;
+    font-size: var(--fs-note);
     line-height: 1.5;
     color: var(--muted);
     min-width: 20rem;
@@ -616,7 +580,273 @@
 
   td.flag { white-space: nowrap; color: var(--ink); }
 
-  /* ---------- footer ---------- */
+  .jstable { margin: 0 0 1rem; }
+
+  .jstable .empty {
+    font-family: var(--serif);
+    font-size: var(--fs-note);
+    color: var(--muted);
+  }
+
+  .jstable .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1.25rem;
+    margin: 0 0 0.75rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.04em;
+    color: var(--faint);
+  }
+
+  .jstable .controls label { display: inline-flex; align-items: center; gap: 0.5em; }
+
+  .jstable select {
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.25em 0.5em;
+  }
+
+  .jstable th[data-key] { cursor: pointer; user-select: none; }
+  .jstable th[data-key]:hover { color: var(--ink); }
+
+  .jstable th .arrow {
+    display: inline-block;
+    width: 0.9em;
+    opacity: 0.35;
+  }
+
+  .jstable th[aria-sort="ascending"] .arrow,
+  .jstable th[aria-sort="descending"] .arrow {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .jstable .off { color: var(--faint); }
+
+  .jstable .rowinfo {
+    font: inherit;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    text-decoration: underline dotted var(--line);
+    text-underline-offset: 0.2em;
+  }
+
+  .jstable .rowinfo:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+  [popover].card {
+    max-width: min(34rem, calc(100vw - 3rem));
+    margin: auto;
+    padding: 1.3rem 1.4rem;
+    background: var(--panel);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    box-shadow: 0 12px 40px #10182033;
+    font-family: var(--serif);
+    font-size: var(--fs-note);
+  }
+
+  [popover].card::backdrop { background: #10182047; }
+
+  [popover].card h4 {
+    font-family: var(--mono);
+    font-size: var(--fs-label);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 0.75rem;
+  }
+
+  [popover].card p { margin: 0 0 1rem; max-width: none; }
+
+  [popover].card dl {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    gap: 0.3rem 0.9rem;
+    margin: 0;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+  }
+
+  [popover].card dt { color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; }
+  [popover].card dd { margin: 0; }
+
+  @supports not selector(:popover-open) {
+    [popover].card { display: none; }
+    .jstable .rowinfo { text-decoration: none; cursor: default; }
+  }
+
+  .jstable .sub {
+    display: block;
+    color: var(--faint);
+    font-size: 0.94em;
+    margin-top: 0.15rem;
+  }
+
+  td.name-cell { white-space: normal; min-width: 10rem; }
+
+  .jstable td[data-heat] {
+    font-weight: 600;
+    border-radius: 3px;
+  }
+
+  .chart { margin: 0 0 1.5rem; }
+
+  .chart .chart-svg svg { display: block; width: 100%; height: auto; }
+
+  .chart .legend.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.4rem;
+    margin: 0 0 0.7rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .chart .swatch b { font-weight: 600; color: var(--ink); }
+  .chart .swatch b + span { color: var(--faint); }
+
+  .chart .axis-caption {
+    margin: 0.55rem 0 0;
+    max-width: none;
+    font-family: var(--mono);
+    font-size: var(--fs-label);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .chart .swatch { display: inline-flex; align-items: center; gap: 0.5em; }
+
+  .chart .swatch i {
+    display: inline-block;
+    width: 0.65em;
+    height: 0.65em;
+    border-radius: 50%;
+  }
+
+  .chart .controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 0.75rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.04em;
+    color: var(--faint);
+  }
+
+  .chart .controls label { display: inline-flex; align-items: center; gap: 0.5em; }
+
+  .chart select {
+    font: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.25em 0.5em;
+  }
+
+  .picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.1rem;
+    margin: 0 0 0.75rem;
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+    letter-spacing: 0.03em;
+  }
+
+  .picker .pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    cursor: pointer;
+    color: var(--faint);
+  }
+
+  .picker .pick.on { color: var(--ink); }
+
+  .picker .pick input { accent-color: var(--accent); }
+
+  .picker .pick i {
+    display: inline-block;
+    width: 0.65em;
+    height: 0.65em;
+    border-radius: 50%;
+    flex: none;
+  }
+
+  #benchmarks-picker {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--ground);
+    padding: 0.7rem 0 0.55rem;
+    border-bottom: 1px solid var(--hair);
+    margin-bottom: 1.25rem;
+  }
+
+  .toolbar .opt { padding: 0.35rem 0.7rem; font-size: var(--fs-ui); }
+
+  .toolbar .dropdown {
+    padding: 0.3rem 0.6rem;
+    position: relative;
+    border-radius: 0;
+  }
+
+  .toolbar .dropdown[open] > .picker.stacked {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    z-index: 3;
+    min-width: 20rem;
+    max-height: 60vh;
+    overflow: auto;
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    background: var(--panel);
+    border: 1px solid var(--hair);
+    border-radius: 0.4rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  .picker.stacked { flex-direction: column; gap: 0.35rem; margin: 0.6rem 0 0.2rem; }
+
+  .picker .pick.group-head {
+    color: var(--ink);
+    font-weight: 600;
+    margin-top: 0.5rem;
+  }
+
+  .picker .pick.group-head:first-child { margin-top: 0; }
+
+  .picker .pick.group-item { padding-left: 1.1rem; }
+
+  .dropdown {
+    border: 1px solid var(--hair);
+    border-radius: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: var(--fs-ui);
+  }
+
+  .dropdown summary { cursor: pointer; color: var(--ink); letter-spacing: 0.03em; }
+
+  .dropdown[open] { padding-bottom: 0.55rem; }
 
   .foot {
     display: flex;
@@ -626,16 +856,29 @@
     padding: 2.5rem 0 0;
     border-top: 1px solid var(--hair);
     font-family: var(--mono);
-    font-size: 0.7rem;
+    font-size: var(--fs-ui);
     letter-spacing: 0.06em;
     color: var(--faint);
   }
 
   @media (max-width: 860px) {
-    :root { --gap: 1.1rem; }
-    .band { grid-template-columns: minmax(0, 1fr); padding: 2.5rem 0; }
+
+    .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .side {
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem 1.1rem;
+      padding: 1.5rem 0 1rem;
+      border-bottom: 1px solid var(--hair);
+    }
+    .side-nav { flex-direction: row; flex-wrap: wrap; gap: 0.5rem 1.1rem; }
+    .side-nav a { border-left: 0; padding-left: 0; margin-left: 0; }
+    .side-nav a.on { color: var(--accent); }
+    .side-rule { display: none; }
+    .band { padding: 2.25rem 0; }
     .readout { grid-template-columns: minmax(0, 1fr); align-items: start; }
-    .row { grid-template-columns: 6rem minmax(0, 1fr) 4.5rem; gap: 0.65rem; }
     td.desc { min-width: 14rem; }
   }
 </style>
@@ -651,189 +894,168 @@
 <body>
 <div class="wrap">
 
-  <header class="top">
-    <span class="mark"><svg class="glyph" viewBox="0 0 128 128" aria-hidden="true" focusable="false"><mask id="sl-head"><polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/><path d="M64 64L64.00 22.00M64.00 38.00L50.14 30.00M64.00 38.00L77.86 30.00M64 64L27.63 43.00M41.48 51.00L27.63 59.00M41.48 51.00L41.48 35.00M64 64L27.63 85.00M41.48 77.00L41.48 93.00M41.48 77.00L27.63 69.00M64 64L64.00 106.00M64.00 90.00L77.86 98.00M64.00 90.00L50.14 98.00M64 64L100.37 85.00M86.52 77.00L100.37 69.00M86.52 77.00L86.52 93.00M64 64L100.37 43.00M86.52 51.00L86.52 35.00M86.52 51.00L100.37 59.00" stroke="#000" stroke-width="11" stroke-linecap="round" fill="none"/></mask><rect width="128" height="128" fill="currentColor" mask="url(#sl-head)"/><rect x="55" y="55" width="18" height="18" fill="var(--core)"/></svg>SnowLLM</span>
-    <nav>
+  <aside class="side">
+    <a class="mark" href="#top"><svg class="glyph" viewBox="0 0 128 128" aria-hidden="true" focusable="false"><mask id="sl-head"><polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/><path d="M64 64L64.00 22.00M64.00 38.00L50.14 30.00M64.00 38.00L77.86 30.00M64 64L27.63 43.00M41.48 51.00L27.63 59.00M41.48 51.00L41.48 35.00M64 64L27.63 85.00M41.48 77.00L41.48 93.00M41.48 77.00L27.63 69.00M64 64L64.00 106.00M64.00 90.00L77.86 98.00M64.00 90.00L50.14 98.00M64 64L100.37 85.00M86.52 77.00L100.37 69.00M86.52 77.00L86.52 93.00M64 64L100.37 43.00M86.52 51.00L86.52 35.00M86.52 51.00L100.37 59.00" stroke="#000" stroke-width="11" stroke-linecap="round" fill="none"/></mask><rect width="128" height="128" fill="currentColor" mask="url(#sl-head)"/><rect x="55" y="55" width="18" height="18" fill="var(--core)"/></svg>SnowLLM</a>
+    <nav class="side-nav">
       <a href="#install">Install</a>
-      <a href="#measured">Measured</a>
-      <a href="#hardware">Hardware</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#run">Run</a>
+      <a href="#recipes">Recipes</a>
+      <a href="#flags">Flags</a>
+      <span class="side-rule"></span>
       <a href="https://github.com/SnowLLM/SnowLLM">GitHub</a>
       <a href="https://github.com/SnowLLM/SnowLLM/discussions">Discuss</a>
-      <button class="theme" type="button" id="theme">
+    </nav>
+    <button class="theme" type="button" id="theme">
         <span class="pair moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>Dark</span>
         <span class="pair sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.22 4.22l1.56 1.56M18.22 18.22l1.56 1.56M2.5 12h2.2M19.3 12h2.2M4.22 19.78l1.56-1.56M18.22 5.78l1.56-1.56"/></svg>Light</span>
       </button>
-    </nav>
-  </header>
+  </aside>
+
+  <main class="main" id="top">
 
   <h1 class="lede">Local LLM inference, hand-tuned for one chip. <em>The Ryzen AI Max+ 395.</em></h1>
 
   <div class="install" id="install">
-    <div class="tabs" role="tablist" aria-label="Install method">
-      <button class="tab" type="button" role="tab" id="tab-curl" aria-controls="panel-curl" aria-selected="true">curl | sh</button>
-      <button class="tab" type="button" role="tab" id="tab-pip" aria-controls="panel-pip" aria-selected="false" tabindex="-1">pip</button>
-    </div>
-
-    <div class="panel" id="panel-curl" role="tabpanel" aria-labelledby="tab-curl" tabindex="0">
-      <div class="cmd">
-        <pre><span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh</pre>
-        <button class="copy" type="button" data-copy="panel-curl">Copy</button>
+    <div class="selector" id="panel-install">
+      <div class="axis">
+        <span class="axis-label">OS</span>
+        <div class="opts" data-axis="os">
+          <button class="opt" type="button" data-value="linux" aria-pressed="true">Linux</button>
+          <button class="opt" type="button" data-value="wsl2" aria-pressed="false">WSL2</button>
+          <button class="opt" type="button" data-value="windows" aria-pressed="false">Windows</button>
+        </div>
       </div>
-      <p class="note">Checks the machine before downloading anything, then installs into
-        <code>~/.local/share/snowllm</code> and links <code>snowllm</code> into
-        <code>~/.local/bin</code>. Re-run to upgrade.</p>
-    </div>
-
-    <div class="panel" id="panel-pip" role="tabpanel" aria-labelledby="tab-pip" tabindex="0" hidden>
-      <div class="cmd">
-        <pre><span class="p">$</span>pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
-      "torch[device-gfx1151]==2.12.0+rocm7.14.0" \
-      "torchvision==0.27.0+rocm7.14.0"
-<span class="p">$</span>pip install snowllm snowllm-kernels</pre>
-        <button class="copy" type="button" data-copy="panel-pip">Copy</button>
+      <div class="axis">
+        <span class="axis-label">Install</span>
+        <div class="opts" data-axis="how">
+          <button class="opt" type="button" data-value="script" aria-pressed="true">installer</button>
+          <button class="opt" type="button" data-value="pip" aria-pressed="false">pip</button>
+        </div>
+      </div>
+      <div class="axis">
+        <span class="axis-label">GPU</span>
+        <div class="opts" data-axis="gpu">
+          <button class="opt" type="button" data-value="gfx1151" aria-pressed="true">gfx1151</button>
+        </div>
+      </div>
+      <div class="axis">
+        <span class="axis-label">Run</span>
+        <div class="cmd">
+          <pre id="install-cmd"></pre>
+          <button class="copy" type="button" data-copy="panel-install">Copy</button>
+        </div>
       </div>
     </div>
 
-    <p class="platforms">
-      <span><i>Linux x86_64</i> &mdash; <u>tested</u></span>
-      <span><i>Windows 11 + WSL2</i> &mdash; <u>not verified</u> &middot; ROCm reaches the GPU
-        through <code>/dev/dxg</code> there rather than <code>/dev/kfd</code>, so set it up with
-        <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html">AMD's WSL guide</a> first. Nobody has run SnowLLM this way.</span>
-    </p>
+    <p class="note" id="install-note"></p>
   </div>
 
   <div class="readout">
     <div>
-      <span class="figure">76.7<sup>tok/s</sup></span>
+      <!-- headline:begin -->
+      <span class="figure">62.4<sup>tok/s</sup></span>
       <div class="caliper">
         <dl>
           <dt>Model</dt><dd>Qwen3.6-35B-A3B-FP8</dd>
           <dt>Machine</dt><dd>Ryzen AI Max+ 395</dd>
           <dt>Shape</dt><dd>8K in / 1K out, one user</dd>
-          <dt>Spec</dt><dd>MTP depth 2, AL 2.983</dd>
+          <dt>Spec</dt><dd>MTP depth 2, AL 2.371</dd>
+          <dt>4 users</dt><dd>128.4 tok/s total</dd>
+          <dt>AIME 2026</dt><dd>91.7% avg@4, &plusmn;4.2 &mdash; Qwen reports 92.7 avg@8</dd>
         </dl>
       </div>
+      <!-- headline:end -->
     </div>
 
     <figure class="decay">
-      <svg viewBox="0 0 420 150" role="img" aria-label="Output throughput falls from 86.9 tokens per second at a 1K-token input context to 49.3 at 220K tokens.">
+      <!-- decay:begin -->
+      <svg viewBox="0 0 420 150" role="img" aria-label="Output throughput falls from 67.4 tokens per second at a 1K-token input context to 39.4 at 220K tokens.">
         <g stroke="var(--hair)" stroke-width="1">
           <line x1="0" y1="10" x2="420" y2="10" />
           <line x1="0" y1="50" x2="420" y2="50" />
           <line x1="0" y1="90" x2="420" y2="90" />
           <line x1="0" y1="130" x2="420" y2="130" />
         </g>
-        <polyline points="8,25 109,44 210,53 311,86 412,100"
+        <polyline points="8,25 109,29 210,34 311,53 412,69"
                   fill="none" stroke="var(--c2)" stroke-width="2"
                   stroke-linejoin="round" stroke-linecap="round" />
         <g fill="var(--ground)" stroke="var(--c2)" stroke-width="2">
           <circle cx="8" cy="25" r="3.5" />
-          <circle cx="109" cy="44" r="3.5" />
-          <circle cx="210" cy="53" r="3.5" />
-          <circle cx="311" cy="86" r="3.5" />
+          <circle cx="109" cy="29" r="3.5" />
+          <circle cx="210" cy="34" r="3.5" />
+          <circle cx="311" cy="53" r="3.5" />
         </g>
-        <circle cx="412" cy="100" r="4.5" fill="var(--c3)" stroke="none" />
+        <circle cx="412" cy="69" r="4.5" fill="var(--c3)" stroke="none" />
         <g font-family="ui-monospace, monospace" font-size="11" fill="var(--faint)">
           <text x="8" y="148">1K</text>
-          <text x="102" y="148">8K</text>
-          <text x="200" y="148">32K</text>
-          <text x="297" y="148">128K</text>
+          <text x="109" y="148">8K</text>
+          <text x="210" y="148">32K</text>
+          <text x="311" y="148">128K</text>
           <text x="384" y="148">220K</text>
         </g>
         <g font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="var(--muted)">
-          <text x="8" y="16">86.9</text>
-          <text x="380" y="93">49.3</text>
+          <text x="8" y="16">67.4</text>
+          <text x="380" y="62">39.4</text>
         </g>
       </svg>
-      <figcaption>Output tok/s by input context length, one user &mdash; the five measured points, evenly spaced</figcaption>
+      <!-- decay:end -->
+      <figcaption>Output tok/s by input context, one user &mdash; five measured points, evenly spaced</figcaption>
     </figure>
   </div>
 
-  <section class="band" id="measured">
-    <div class="rail">
-      <b>Measured</b>
-      <span>One Ryzen AI Max+ 395. Qwen3.6-35B-A3B-FP8. ROCm torch 2.12.0. Median of 3 reps.</span>
-    </div>
+  <section class="band" id="benchmarks">
+    <div class="rail"><b>Benchmarks</b></div>
     <div>
-      <h2>Every number here has its conditions attached.</h2>
-      <p>Speculative decoding is on at depth 2 in all rows below. Prefill and decode are reported
-        separately, split at the last request's first token.</p>
+      <p>One client, one server per arm, the same OpenAI request at the same five context
+        lengths. Prompts are real text (Project Gutenberg via PG-19) sized exactly by tokenizer,
+        not synthetic filler &mdash; see <code>benchmarks/perf_sweep.sh</code>. The rungs are
+        chosen lengths, drawn evenly spaced &mdash; the x axis has no scale.</p>
+      <p>A line is one (engine, model, drafter). Metrics sharing a unit share a chart; since
+        <code>decode tok/s = AL &times; step/s</code>, the gap between an arm's two lines there is
+        its acceptance.</p>
 
-      <div class="series">
-        <h3>Concurrency &mdash; 8K in, 1K out</h3>
-        <div class="row head"><span class="k">Users</span><span></span><span class="v">Output tok/s</span></div>
-        <div class="row"><span class="k">1 user</span><span class="track"><span class="fill" style="--w:43.4%;--bar:var(--c1)"></span></span><span class="v">76.7</span></div>
-        <div class="row"><span class="k">2 users</span><span class="track"><span class="fill" style="--w:73.5%;--bar:var(--c2)"></span></span><span class="v">130.0</span></div>
-        <div class="row"><span class="k">3 users</span><span class="track"><span class="fill" style="--w:81.1%;--bar:var(--c2)"></span></span><span class="v">143.5</span></div>
-        <div class="row"><span class="k">4 users</span><span class="track"><span class="fill" style="--w:100%;--bar:var(--c3)"></span></span><span class="v">176.9</span></div>
-        <p class="legend">Total output tok/s. Prefill holds 3430&ndash;3467 tok/s throughout; TTFT runs 2.1 s at one user to 5.3 s at four.</p>
-      </div>
+      <div id="benchmarks-picker" data-src="benchmarks.json" data-empty="Loading&hellip;"></div>
+      <div id="benchmarks-charts"><p class="empty">Loading charts&hellip;</p></div>
 
-      <div class="series">
-        <h3>Context length &mdash; one user, 1K output tokens each</h3>
-        <div class="row head"><span class="k">Input context</span><span></span><span class="v">Output tok/s</span></div>
-        <div class="row"><span class="k">1K tokens</span><span class="track"><span class="fill" style="--w:100%;--bar:var(--c2)"></span></span><span class="v">86.9</span></div>
-        <div class="row"><span class="k">8K tokens</span><span class="track"><span class="fill" style="--w:88.5%;--bar:var(--c2)"></span></span><span class="v">76.9</span></div>
-        <div class="row"><span class="k">32K tokens</span><span class="track"><span class="fill" style="--w:83.1%;--bar:var(--c1)"></span></span><span class="v">72.2</span></div>
-        <div class="row"><span class="k">128K tokens</span><span class="track"><span class="fill" style="--w:64.8%;--bar:var(--c1)"></span></span><span class="v">56.3</span></div>
-        <div class="row"><span class="k">220K tokens</span><span class="track"><span class="fill" style="--w:56.7%;--bar:var(--c0)"></span></span><span class="v">49.3</span></div>
-        <p class="legend">Rows are the prompt length; every run generates 1K tokens on top of it. Prefill falls from 2315 to 1227 tok/s across the sweep, and time to first token at 220K is 168 s.</p>
-      </div>
-    </div>
-  </section>
+      <noscript><p class="note">These charts need JavaScript. The numbers are also in
+        <a href="benchmarks.json">benchmarks.json</a> directly.</p></noscript>
 
-  <section class="band">
-    <div class="rail">
-      <b>Accuracy</b>
-      <span>AIME 2026, 30 problems, avg@4. Graded on the last boxed integer.</span>
-    </div>
-    <div>
-      <h2>91.7% &mdash; against a model card that reports 92.7 at twice the depth.</h2>
-      <p>110 of 120 samples, &plusmn;4.2. Qwen reports 92.7 avg@8 for the same checkpoint. The gap
-        sits inside the error bar, so treat it as agreement, not as a difference.</p>
-      <p class="note">28 of 30 problems scored 3/4 or better. One problem has never converged on this
-        checkpoint and alone accounts for 8% of the run's output tokens.</p>
-    </div>
-  </section>
-
-  <section class="band" id="hardware">
-    <div class="rail">
-      <b>Hardware</b>
-      <span>Tested on one machine. No cross-hardware comparison implied.</span>
-    </div>
-    <div>
-      <h2>It runs on one chip, and one model.</h2>
-      <ul class="terse">
-        <li>Linux x86_64 with an AMD <b>gfx1151</b> GPU &mdash; the Ryzen AI Max 300 series, Strix Halo</li>
-        <li>ROCm 7.x, and Python 3.10&ndash;3.14</li>
-        <li><a href="https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8">Qwen3.6-35B-A3B-FP8</a>, the only supported model today</li>
-      </ul>
-      <p class="note">Only the <a href="https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html">Ryzen AI Max+ 395</a>
-        has been tested. The rest of the 300 series shares the same GPU and should work, but nobody
-        has checked. The installer refuses to run on anything else rather than fail later.</p>
     </div>
   </section>
 
   <section class="band" id="run">
-    <div class="rail">
-      <b>Run</b>
-      <span>A local safetensors checkpoint, then one command.</span>
-    </div>
+    <div class="rail"><b>Run</b></div>
     <div>
-      <h2>Point it at a checkpoint.</h2>
-      <pre class="block">hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
-snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
+      <pre class="block">snowllm pull qwen3.6-35b-a3b-fp8
+snowllm qwen3.6-35b-a3b-fp8</pre>
+      <p class="note">A recipe is one model at one precision, and <code>snowllm recipes</code>
+        lists them. The pull runs over several connections at once and resumes where it stopped,
+        checking every file against the sha256 the repository publishes. A local safetensors
+        directory works just as well.</p>
+      <p class="note">A GGUF works too &mdash; <code>snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash</code>
+        gets the UD-Q4_K_XL quant with its DFlash drafter beside it: a smaller download, and
+        llama.cpp serves the same file.</p>
       <p class="note">Serves an OpenAI-compatible API. <code>snowllm --help</code> lists every flag.</p>
-      <p class="note">If huggingface.co is slow from where you are, <code>hf</code> honours the
+      <p class="note">If huggingface.co is slow from where you are, the pull honours the
         <code>HF_ENDPOINT</code> environment variable &mdash; point it at a mirror you trust.</p>
     </div>
   </section>
 
-  <section class="band">
-    <div class="rail">
-      <b>Flags</b>
-      <span>The ones worth knowing before the first run.</span>
+  <section class="band" id="recipes">
+    <div class="rail"><b>Recipes</b></div>
+    <div>
+      <p>Read live off the catalogue <code>snowllm recipes</code> shows and
+        <code>snowllm pull</code> resolves &mdash; never fresher than your last page reload.</p>
+
+      <div class="jstable" id="recipes-table" data-src="recipe.json" data-empty="Loading recipes&hellip;"></div>
+      <noscript><p class="note">This table needs JavaScript. Run <code>snowllm recipes</code>,
+        or read <a href="recipe.json">recipe.json</a> directly.</p></noscript>
     </div>
+  </section>
+
+  <section class="band" id="flags">
+    <div class="rail"><b>Flags</b></div>
     <div>
       <div class="scroll">
         <table>
@@ -841,6 +1063,10 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
             <tr><th scope="col">Flag</th><th scope="col">What it does</th></tr>
           </thead>
           <tbody>
+            <tr>
+              <td class="flag">--host --port</td>
+              <td class="desc">Where the OpenAI-compatible API listens. <code>127.0.0.1:8000</code> by default &mdash; loopback, so reaching it from another machine takes <code>--host 0.0.0.0</code>.</td>
+            </tr>
             <tr>
               <td class="flag">--max-num-seqs</td>
               <td class="desc">Concurrency ceiling, up to 256. A memory choice: each request pins linear-attention state for its whole life.</td>
@@ -854,8 +1080,8 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
               <td class="desc">Fraction of the GPU the server may occupy, 0.9 by default.</td>
             </tr>
             <tr>
-              <td class="flag">--prefix-cache-gib</td>
-              <td class="desc">Host RAM for remembering shared prompt prefixes, 4 by default. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s; the first one pays about 1%.</td>
+              <td class="flag">--prefix-memory-ratio</td>
+              <td class="desc">Share of the memory budget spent remembering prompt prefixes, 0.08 by default, 0 to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s.</td>
             </tr>
             <tr>
               <td class="flag">--num-spec</td>
@@ -865,24 +1091,47 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
               <td class="flag">--kv-cache-dtype</td>
               <td class="desc">bf16 or int8. int8 halves KV bytes: more decode throughput at long context, less prefill.</td>
             </tr>
+            <tr>
+              <td class="flag">--dflash PATH</td>
+              <td class="desc">Speculate with a block-diffusion drafter instead of the MTP head, given the draft's directory. A recipe that ships one sets this for you.</td>
+            </tr>
+            <tr>
+              <td class="flag">--device-map</td>
+              <td class="desc">Which weight groups live in pinned host memory instead of the carve-out, trading a slower decode step for KV pool. <code>auto</code> is what the DeepSeek recipes use to fit their context.</td>
+            </tr>
           </tbody>
         </table>
       </div>
-    </div>
-  </section>
 
-  <section class="band">
-    <div class="rail">
-      <b>Caveats</b>
-      <span>What the numbers above do not cover.</span>
-    </div>
-    <div>
-      <ul class="terse">
-        <li>One machine, one thermal state, TDP unpinned. Run-to-run spread is 6.8&ndash;11.1% with speculation on.</li>
-        <li>Concurrency was measured to four users, no further.</li>
-        <li>The speculative rows sit at 99% draft acceptance on synthetic prompts. Expect 10&ndash;20% below that on real text.</li>
-        <li>Speed and accuracy are separate runs. No row pairs throughput with a quality metric.</li>
-      </ul>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th scope="col">Environment</th><th scope="col">What it does</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="flag">SNOWLLM_MODELS</td>
+              <td class="desc">Where checkpoints land and are looked for, <code>~/models</code> by default.</td>
+            </tr>
+            <tr>
+              <td class="flag">HF_ENDPOINT</td>
+              <td class="desc">Mirror to pull from instead of huggingface.co. The token below goes to whatever host this names.</td>
+            </tr>
+            <tr>
+              <td class="flag">HF_TOKEN</td>
+              <td class="desc">For gated repositories. <code>SNOWLLM_HF_TOKEN</code> overrides it where you want one token for this and another for everything else.</td>
+            </tr>
+            <tr>
+              <td class="flag">SNOWLLM_RECIPES_URL</td>
+              <td class="desc">Catalogue to resolve recipe ids against. A local path works, which is how you serve a recipe that is not published yet.</td>
+            </tr>
+            <tr>
+              <td class="flag">SNOWLLM_HOME</td>
+              <td class="desc">Where <code>install.sh</code> puts the environment, <code>~/.local/share/snowllm</code> by default; <code>SNOWLLM_BIN_DIR</code> and <code>SNOWLLM_PYTHON</code> move the launcher and pick the interpreter.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -897,6 +1146,8 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
       </ul>
     </div>
   </section>
+
+  </main>
 
   <footer class="foot">
     <span>SnowLLM &mdash; Apache-2.0 &middot; SnowLLM-Kernels &mdash; all rights reserved</span>
@@ -931,28 +1182,75 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
 
   label();
 
-  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  var TORCH_LINES =
+    '<span class="p">$</span>pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \\\n'
+    + '      "torch[device-gfx1151]==2.12.0+rocm7.14.0" \\\n'
+    + '      "torchvision==0.27.0+rocm7.14.0"\n';
+  var SNOWLLM_LINE = '<span class="p">$</span>pip install snowllm snowllm-kernels';
+  var CURL_LINE = '<span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh';
 
-  function select(tab) {
-    tabs.forEach(function (t) {
-      var on = t === tab;
-      t.setAttribute("aria-selected", on ? "true" : "false");
-      t.tabIndex = on ? 0 : -1;
-      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+  var WSL_NOTE = ' Under WSL2, ROCm uses <code>/dev/dxg</code>, not <code>/dev/kfd</code> — '
+    + 'follow <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/'
+    + 'installryz/wsl/howto_wsl.html">AMD\'s WSL guide</a> first.';
+  var SCRIPT_NOTE = 'Installs into <code>~/.local/share/snowllm</code>. Re-run to upgrade.';
+  var PIP_NOTE = 'torch and torchvision come from <a href="https://rocm.docs.amd.com/projects/'
+    + 'ai-ecosystem/en/latest/frameworks/pytorch/install.html">AMD\'s index</a>.';
+
+  var choice = { os: "linux", how: "script", gpu: "gfx1151" };
+  var cmdEl = document.getElementById("install-cmd");
+  var noteEl = document.getElementById("install-note");
+
+  function renderInstall() {
+    var scriptBtn = document.querySelector('.opts[data-axis="how"] .opt[data-value="script"]');
+    var windows = choice.os === "windows";
+    scriptBtn.disabled = windows;
+    if (windows && choice.how === "script") choice.how = "pip";
+
+    document.querySelectorAll(".opts").forEach(function (group) {
+      var axis = group.dataset.axis;
+      group.querySelectorAll(".opt").forEach(function (b) {
+        b.setAttribute("aria-pressed", choice[axis] === b.dataset.value ? "true" : "false");
+      });
     });
+
+    if (choice.how === "script") {
+      cmdEl.innerHTML = CURL_LINE;
+      noteEl.innerHTML = SCRIPT_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "");
+    } else {
+      cmdEl.innerHTML = TORCH_LINES + SNOWLLM_LINE;
+      noteEl.innerHTML = PIP_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "");
+    }
   }
 
-  tabs.forEach(function (tab, i) {
-    tab.addEventListener("click", function () { select(tab); });
-    tab.addEventListener("keydown", function (e) {
-      var step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
-      if (!step) return;
-      e.preventDefault();
-      var next = tabs[(i + step + tabs.length) % tabs.length];
-      select(next);
-      next.focus();
+  document.querySelectorAll(".opts .opt").forEach(function (button) {
+    button.addEventListener("click", function () {
+      if (button.disabled) return;
+      choice[button.parentNode.dataset.axis] = button.dataset.value;
+      renderInstall();
     });
   });
+
+  renderInstall();
+
+  var spied = Array.prototype.slice.call(document.querySelectorAll(".side-nav a[href^='#']"));
+  var byId = {};
+  spied.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  var targets = spied.map(function (a) {
+    return document.getElementById(a.getAttribute("href").slice(1));
+  }).filter(Boolean);
+
+  if (window.IntersectionObserver && targets.length) {
+    var visible = {};
+    var spy = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
+      var current = null;
+      targets.forEach(function (t) { if (visible[t.id] && !current) current = t.id; });
+      spied.forEach(function (a) {
+        a.classList.toggle("on", a.getAttribute("href") === "#" + current);
+      });
+    }, { rootMargin: "0px 0px -67% 0px" });
+    targets.forEach(function (t) { spy.observe(t); });
+  }
 
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {
@@ -970,5 +1268,6 @@ snowllm ~/models/Qwen3.6-35B-A3B-FP8</pre>
     });
   });
 </script>
+<script src="site.js" defer></script>
 </body>
 </html>

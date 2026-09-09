@@ -3,7 +3,21 @@ name: Site
 on:
   push:
     branches: [main]
+    paths: &site
+      - web/**
+      - recipes/**
+      - benchmarks/runs/*.json
+      - install.sh
+      - README.md
+      - pyproject.toml
+      - snowllm/hub/recipes.py
+      - snowllm/_version.py
+      - scripts/check-site.py
+      - scripts/build-recipes.py
+      - scripts/build-benchmarks.py
+      - .github/workflows/pages.yml
   pull_request:
+    paths: *site
   workflow_dispatch:
 
 permissions:
@@ -21,8 +35,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Every recipe is well formed
+        run: scripts/build-recipes.py --check
+
+      - name: Assemble the benchmark data the page draws
+        run: scripts/build-benchmarks.py
+
       - name: The site agrees with the tree it is published from
         run: scripts/check-site.py
+
+      - name: web/index.html carries what build-benchmarks.py generates
+        run: git diff --exit-code web/index.html
 
   publish:
     needs: check
@@ -59,6 +82,12 @@ jobs:
 
       - name: Serve the installer the site tells people to pipe
         run: cp install.sh web/install.sh
+
+      - name: Assemble the catalogue `snowllm pull` reads
+        run: scripts/build-recipes.py
+
+      - name: Assemble the benchmark data the page draws
+        run: scripts/build-benchmarks.py
 
       - uses: actions/configure-pages@v5
 

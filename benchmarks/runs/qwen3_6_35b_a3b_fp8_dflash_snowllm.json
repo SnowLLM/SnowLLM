@@ -1,0 +1,237 @@
+[
+ {
+  "label": "qwen3_6_35b_a3b_fp8_dflash_snowllm",
+  "isl_target": 1024,
+  "isl": 1041,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 0.48785237898118794,
+  "ttft_s_reps": [
+   0.48785237898118794,
+   0.4870313399587758,
+   0.33186081500025466,
+   0.3311980849830434
+  ],
+  "decode_tok_s": 68.52673136564371,
+  "prefill_tok_s": 2133.8422130358044,
+  "edge_before_c": 59,
+  "edge_after_c": 71,
+  "accept_unit": "AL",
+  "accept_mean": 3.120279632855852,
+  "accept_stdev": 0.0646974358993903,
+  "accept_reps": [
+   3.0357142857142856,
+   3.1481481481481484,
+   3.1875,
+   3.1097560975609757
+  ],
+  "step_s": 0.04566026135777357,
+  "step_s_reps": [
+   0.04554018434525156,
+   0.04566925266659877,
+   0.04582952861237572,
+   0.045651270048948374
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "fe and marriage, noting how simple expectations contrast with reality.\n   - **Task:** Summarize the passage.\n\n2.  **Identify Key Elements:**\n   - **Setting/Time",
+   "an (Palmer) and a woman (Grace) are arguing.\n     - Grace is Palmer's former lover/girlfriend. She's recently recovered from a serious illness.\n     - Palmer is",
+   "ter, clerk confirms. Suggests they come back in the afternoon, assumes the girl helps.\n     - *Abrupt shift in the text:* \"A succession of misfortunes, of which",
+   "ngry because Wilson is taking a \"pretty girl\" (Sidney) to Schwitter's, which Joe sees as a betrayal/insult. Joe tries to start his car, struggles, curses at the"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_dflash_snowllm",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.276816466008313,
+  "ttft_s_reps": [
+   2.276816466008313,
+   0.5268999059917405,
+   0.3632319680182263,
+   0.36416060698684305
+  ],
+  "decode_tok_s": 62.5311698692994,
+  "prefill_tok_s": 3605.472870807158,
+  "edge_before_c": 71,
+  "edge_after_c": 74,
+  "accept_unit": "AL",
+  "accept_mean": 2.9309394143479994,
+  "accept_stdev": 0.17986142422109766,
+  "accept_reps": [
+   2.7127659574468086,
+   3.1481481481481484,
+   2.897727272727273,
+   2.9651162790697674
+  ],
+  "step_s": 0.04687955651638587,
+  "step_s_reps": [
+   0.04672438762722874,
+   0.04706878343203255,
+   0.046895418079326526,
+   0.046863694953445216
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "acter. Describes her as naturally good, poetic, innocent, and deeply connected to nature. She's a dreamer, uncorrupted by materialism, despite her poverty.\n    ",
+   "m his laundry.\n     - Chapter II: Focuses on Jennie's character. She's described as naturally pure, poetic, deeply connected to nature, and inherently good. She",
+   "s. The clerk directs Mrs. Gerhardt to Senator Brander, who agrees to give them his laundry and invites them into his luxurious room. Jennie is fascinated by his",
+   " to get credit for food, which he reluctantly grants. Jennie's brother Bass suggests they get laundry work from hotel guests. The clerk directs Mrs. Gerhardt to"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_dflash_snowllm",
+  "isl_target": 32768,
+  "isl": 32783,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 10.856793358980212,
+  "ttft_s_reps": [
+   10.856793358980212,
+   0.7020059619680978,
+   0.466203122981824,
+   0.46672453702194616
+  ],
+  "decode_tok_s": 58.08700262674108,
+  "prefill_tok_s": 3019.5840443885295,
+  "edge_before_c": 74,
+  "edge_after_c": 75,
+  "accept_unit": "AL",
+  "accept_mean": 2.871809723324411,
+  "accept_stdev": 0.1587556793718936,
+  "accept_reps": [
+   2.6842105263157894,
+   3.0357142857142856,
+   2.9651162790697674,
+   2.802197802197802
+  ],
+  "step_s": 0.04964284167392641,
+  "step_s_reps": [
+   0.04953901308441633,
+   0.05033658409541073,
+   0.049676027325615504,
+   0.049609656022237304
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ionship becomes intimate (he kisses her, calls her his \"girl,\" proposes marriage and sending her to seminary).\n     - Family dynamics: Father Gerhardt is strict",
+   "rupt shift if necessary, but focus on the primary story.)\n   - **Task:** Summarize the passage above.\n\n2.  **Identify Key Elements of the Main Narrative (Jennie",
+   "nie meets Senator Brander, who is charmed by her innocence and beauty. He begins helping them financially (laundry money, Christmas gifts, a watch, etc.). Their",
+   "kes a liking to her, gives her money, gifts, and offers to help the family.\n       - Their relationship grows closer; Brander kisses her, proposes marriage, and"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_dflash_snowllm",
+  "isl_target": 131072,
+  "isl": 131086,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 72.36822781898081,
+  "ttft_s_reps": [
+   72.36822781898081,
+   1.4276343620149419,
+   0.9291641730233096,
+   0.9301642199861817
+  ],
+  "decode_tok_s": 42.233764286441414,
+  "prefill_tok_s": 1811.375018438943,
+  "edge_before_c": 75,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.8088784183296376,
+  "accept_stdev": 0.2877604325118263,
+  "accept_reps": [
+   2.5757575757575757,
+   3.1097560975609757,
+   2.55,
+   3.0
+  ],
+  "step_s": 0.06857308565311676,
+  "step_s_reps": [
+   0.06069529143448994,
+   0.06576860034142666,
+   0.07208634819020517,
+   0.07137757096480687
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   ". That's not *Sister Carrie*. Let me re-read carefully.\n   - Actually, the first ~90% of the text is from Theodore Dreiser's *The Financier* or *The Titan*? No,",
+   "*? Actually, the novel is *Sister Carrie*? Wait, the main character is Jennie Gerhardt. The novel is *Sister Carrie*? No, it's *Sister Carrie*? I recall a novel",
+   "cago, lives with him, faces family opposition, newspaper exposure, father's death, inheritance conditions, travels to Europe, meets Letty Pace/Gerald, etc. This",
+   " Let me think: Theodore Dreiser wrote a novel called *Sister Carrie* (1900), but also *The Financier* (1912), *The Titan* (1914), *The Stoic* (1947). Wait, Jenn"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_dflash_snowllm",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 172.8518212629715,
+  "ttft_s_reps": [
+   172.8518212629715,
+   2.14389577700058,
+   1.3722952289972454,
+   1.3754511630395427
+  ],
+  "decode_tok_s": 25.61972579152758,
+  "prefill_tok_s": 1303.4112013042663,
+  "edge_before_c": 59,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.4756403224816665,
+  "accept_stdev": 0.2043957514026684,
+  "accept_reps": [
+   2.451923076923077,
+   2.7717391304347827,
+   2.3394495412844036,
+   2.3394495412844036
+  ],
+  "step_s": 0.09849457852433449,
+  "step_s_reps": [
+   0.09157946315379098,
+   0.10136766648919666,
+   0.10268702966090583,
+   0.09562149055947233
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "and \"BOOK II. HENRY CLAVERING\". This is from Henry James's \"The Bostonians\"? No. Wait, the characters are Mr. Gryce, Everett Raymond, Eleanore Leavenworth, Mary",
+   " he was going to marry Christine but didn't tell Grace because she was sick. He tries to comfort her, but she's upset. She reveals she got a job at a department",
+   " Kane, etc.). Wait, let me verify: The names Jennie Gerhardt, Senator Brander, Lester Kane, Vesta, Gerhardt, Mrs. Gerhardt, etc. This is definitely Theodore Dre",
+   "ion of Henry Clavering.\n     - Then it abruptly switches again to a completely different, much shorter scene about a garage, men talking about \"Schwitter's\" and"
+  ]
+ }
+]

@@ -1,0 +1,212 @@
+[
+ {
+  "label": "qwen3_8_27b_q4_k_xl_llama",
+  "isl_target": 1024,
+  "isl": 1083,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 3.597527073987294,
+  "ttft_s_reps": [
+   3.597527073987294,
+   3.630787081026938,
+   3.6861781700281426,
+   3.627889661991503
+  ],
+  "decode_tok_s": 17.651159683070972,
+  "prefill_tok_s": 301.04012498776405,
+  "edge_before_c": 58,
+  "edge_after_c": 76,
+  "accept_unit": "accept%",
+  "accept_mean": 0.6034665477264773,
+  "accept_stdev": 0.05672540766872258,
+  "accept_reps": [
+   0.6728110599078341,
+   0.5537190082644629,
+   0.6266666666666667,
+   0.5606694560669456
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "\"? No. Maybe \"The House of the Seven Gables\" not. \"The House of the Seven Gables\" has Hepzibah and Phoebe? 1850? No.\n\nThe passage: \"One morning, in the fall of ",
+   "l in English. Need maybe mention setting, characters, conflict. Let's craft 1-2 paragraphs. Ensure no spoilers beyond passage. Use \"Summarise\" British spelling?",
+   "a poor middle-aged woman and her eighteen-year-old daughter arrive at a hotel in Columbus, Ohio, in 1880, humbly asking for cleaning work. Their evident poverty",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_llama",
+  "isl_target": 8192,
+  "isl": 8251,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 27.44604840799002,
+  "ttft_s_reps": [
+   27.44604840799002,
+   7.306350836995989,
+   7.279053239966743,
+   7.285318931972142
+  ],
+  "decode_tok_s": 23.54365055078093,
+  "prefill_tok_s": 300.6261548966004,
+  "edge_before_c": 76,
+  "edge_after_c": 79,
+  "accept_unit": "accept%",
+  "accept_mean": 0.9868676050591595,
+  "accept_stdev": 0.0028729770161838863,
+  "accept_reps": [
+   0.9883040935672515,
+   0.9883040935672515,
+   0.9883040935672515,
+   0.9825581395348837
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_llama",
+  "isl_target": 32768,
+  "isl": 32825,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 119.07489328103838,
+  "ttft_s_reps": [
+   119.07489328103838,
+   12.336301284027286,
+   12.320003541011829,
+   12.353275811998174
+  ],
+  "decode_tok_s": 17.268771702149376,
+  "prefill_tok_s": 275.666843744525,
+  "edge_before_c": 79,
+  "edge_after_c": 81,
+  "accept_unit": "accept%",
+  "accept_mean": 0.8363638102395894,
+  "accept_stdev": 0.18540030373954272,
+  "accept_reps": [
+   0.9825581395348837,
+   0.7574257425742574,
+   0.611353711790393,
+   0.9941176470588236
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   " \"The House of Mirth\" is about Lily Bart. Jennie Gerhardt is from \"The House of Mirth\"? I think Jennie Gerhardt is from \"The House of Mirth\"? Let's check memory",
+   "lines. In first, a poor mother and daughter seek work at a hotel; Jennie's poetic nature; Senator Brander gives laundry and becomes attracted; later he seduces/",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_llama",
+  "isl_target": 131072,
+  "isl": 131128,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 1116.9689153609797,
+  "ttft_s_reps": [
+   1116.9689153609797,
+   45.17810274200747,
+   44.920045224018395,
+   44.90269925101893
+  ],
+  "decode_tok_s": 14.348808325288296,
+  "prefill_tok_s": 117.39628399383193,
+  "edge_before_c": 78,
+  "edge_after_c": 77,
+  "accept_unit": "accept%",
+  "accept_mean": 0.841940711658751,
+  "accept_stdev": 0.1581607618140272,
+  "accept_reps": [
+   0.6728110599078341,
+   0.9767441860465116,
+   0.7414634146341463,
+   0.9767441860465116
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "nocence, The Custom of the Country, Ethan Frome, The Glimpses of the Moon, Old Fashioned, A Son of the Wedding, The Children, The Mother, The Valley of Decision",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   "Jennie Gerhardt \u662f Theodoor Dreiser \u7684\u5c0f\u8bf4 \"Sister Carrie\"? \u8ba9\u6211\u60f3\uff1aTheodoor Dreiser \u5199\u4e86 \"Sister Carrie\" \u4e3b\u89d2 Carrie Meeber\uff0c\"The Financier\" \u4e3b\u89d2 Frank Cowperwood\uff0c\"Jennie Ger",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_llama",
+  "isl_target": 225280,
+  "isl": 225339,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 3392.350021848979,
+  "ttft_s_reps": [
+   3392.350021848979,
+   79.37399040994933,
+   78.62266033695778,
+   76.49631879205117
+  ],
+  "decode_tok_s": 9.563148221934693,
+  "prefill_tok_s": 66.42563371959488,
+  "edge_before_c": 59,
+  "edge_after_c": 78,
+  "accept_unit": "accept%",
+  "accept_mean": 0.7094959099562752,
+  "accept_stdev": 0.19482566723020636,
+  "accept_reps": [
+   0.5829787234042553,
+   1.0,
+   0.6238938053097345,
+   0.6311111111111111
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " clerk's desk principal hotel in Columbus, Ohio. They seek cleaning/scrubbing. Daughter Jennie? Later Senator Brander gives washing. This is from Frank Norris's",
+   "l/immoral place? Joe overhears that Max Wilson, a surgeon, is taking Sidney to Schwitter's. Jealous/angry, Joe tries to start his car, fails, then drives to Sch",
+   "e is helpless, fleshy, frank, distressed; daughter timid. Poverty driving them. Clerk affected, calls housekeeper. Work: main staircase and parlor hall unswept.",
+   "en gossiping about Max Wilson taking Sidney to Schwitter's and drives there angrily; then a detective plot to clear Eleanore Leavenworth of murder, involving Mr"
+  ]
+ }
+]

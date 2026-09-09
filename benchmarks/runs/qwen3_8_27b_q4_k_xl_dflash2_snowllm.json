@@ -1,0 +1,237 @@
+[
+ {
+  "label": "qwen3_8_27b_q4_k_xl_dflash2_snowllm",
+  "isl_target": 1024,
+  "isl": 1083,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.1156192399794236,
+  "ttft_s_reps": [
+   2.1156192399794236,
+   1.2863073319895193,
+   1.2858381679980084,
+   1.2951813170220703
+  ],
+  "decode_tok_s": 28.90277838958665,
+  "prefill_tok_s": 511.9068590104773,
+  "edge_before_c": 59,
+  "edge_after_c": 76,
+  "accept_unit": "AL",
+  "accept_mean": 3.416816049116375,
+  "accept_stdev": 0.28318674653557374,
+  "accept_reps": [
+   3.1875,
+   3.2278481012658227,
+   3.8059701492537314,
+   3.445945945945946
+  ],
+  "step_s": 0.11544947209761525,
+  "step_s_reps": [
+   0.11533838311297587,
+   0.11535553911426752,
+   0.11558727038774029,
+   0.11554340508096299
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " on household responsibilities, and Sidney criticizes him for abandoning his identity, but he explains he has found stability and purpose after drifting; Sidney",
+   "an, accompanied by a young girl of eighteen, presented herself at the clerk's desk of the principal hotel in Columbus, Ohio...\" This sounds from \"The House of M",
+   "l of 1880, a middle-aged woman, accompanied by a young girl of eighteen, presented herself at the clerk's desk of the principal hotel in Columbus, Ohio...\" That",
+   "hwitter's. Meanwhile Max feels uplifted by Carlotta's nearness and Sidney's affection, heading to Schwitter's. Need maybe mention \"Carlotta's nearness\" and \"Sid"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_dflash2_snowllm",
+  "isl_target": 8192,
+  "isl": 8251,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 13.690450941037852,
+  "ttft_s_reps": [
+   13.690450941037852,
+   1.3830842080060393,
+   1.382018441974651,
+   1.3810754839796573
+  ],
+  "decode_tok_s": 24.61023331807788,
+  "prefill_tok_s": 602.6828506625147,
+  "edge_before_c": 76,
+  "edge_after_c": 78,
+  "accept_unit": "AL",
+  "accept_mean": 2.9016028812677868,
+  "accept_stdev": 0.1216015160294212,
+  "accept_reps": [
+   2.7419354838709675,
+   2.9310344827586206,
+   3.0357142857142856,
+   2.897727272727273
+  ],
+  "step_s": 0.1179794359397781,
+  "step_s_reps": [
+   0.11792613255856459,
+   0.11798509236775745,
+   0.11797377951179874,
+   0.11886623136392287
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "e with Sidney and K. It may be an error in prompt. We can summarize as presented, noting the last section shifts to a different domestic conversation. But maybe",
+   " suggests getting laundry from hotel guests. Mrs. Gerhardt asks clerk, sent to Senator Brander room. He gives them laundry, asks questions, is charmed by Jennie",
+   "Family struggles, brother Bass wants to associate with hotel world and tells Jennie not to acknowledge him. Chapter II describes Jennie's gentle, poetic nature.",
+   " Wire and sin\"? Maybe not. User asks summarise passage above. We can summarize all: In 1880 Columbus, poor German glassblower family; mother and daughter Jennie"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_dflash2_snowllm",
+  "isl_target": 32768,
+  "isl": 32825,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 65.35479920404032,
+  "ttft_s_reps": [
+   65.35479920404032,
+   2.871388219995424,
+   1.6880150819779374,
+   1.68209224101156
+  ],
+  "decode_tok_s": 18.65640447785519,
+  "prefill_tok_s": 502.258447731115,
+  "edge_before_c": 78,
+  "edge_after_c": 79,
+  "accept_unit": "AL",
+  "accept_mean": 3.1727278265107213,
+  "accept_stdev": 0.1460324472535642,
+  "accept_reps": [
+   3.3552631578947367,
+   3.0,
+   3.1875,
+   3.1481481481481484
+  ],
+  "step_s": 0.1658074506867278,
+  "step_s_reps": [
+   0.1424269664865661,
+   0.1615792932235362,
+   0.17003560814991941,
+   0.1705917209382514
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   ", Jennie, family, scandal, father's opposition, brother jailed, Jennie goes to Senator at night, he helps, kisses her, promises marriage, gives money. The final",
+   " to Senator at night, he helps, they become lovers, he promises marriage. The final fragment about Grace and Palmer seems separate; maybe include as separate: a",
+   " long? Desired oververbosity 9, but summary can be detailed. Need ensure no copyright? User provided text, can summarize. Need not quote extensively. Need maybe",
+   "ser just asks summarize passage above. We can summarize main narrative.\n\nNeed maybe include key plot points:\n- 1880 Columbus, Ohio. Poor German family Gerhardt:"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_dflash2_snowllm",
+  "isl_target": 131072,
+  "isl": 131128,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 374.1257745969924,
+  "ttft_s_reps": [
+   374.1257745969924,
+   5.122886150027625,
+   2.8856613960233517,
+   2.871485551004298
+  ],
+  "decode_tok_s": 13.839398392720971,
+  "prefill_tok_s": 350.4917567928883,
+  "edge_before_c": 79,
+  "edge_after_c": 79,
+  "accept_unit": "AL",
+  "accept_mean": 3.1535230608432663,
+  "accept_stdev": 0.25548108093918076,
+  "accept_reps": [
+   3.0357142857142856,
+   3.493150684931507,
+   2.897727272727273,
+   3.1875
+  ],
+  "step_s": 0.22168090202265542,
+  "step_s_reps": [
+   0.22918783595239453,
+   0.22005660347927566,
+   0.2225178344200355,
+   0.22084396962527533
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " just says summarise. We can provide a structured summary: main plot, characters, themes. Need be careful with spoilers? It's a passage. We can summarize.\n\nNeed",
+   "o detailed. But user just says summarise. We can give a comprehensive summary with sections. Need ensure not too verbose? Could be around 1000-1500 words? Maybe",
+   ". Need not be too long? Desired oververbosity 9, but user just asks summarize. We can provide a structured summary: overview, plot by parts, themes. Need ensure",
+   "se but thorough. Desired oververbosity 9, but user just asks summarize. Could provide a detailed summary of plot and themes. Need maybe note the passage appears"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_dflash2_snowllm",
+  "isl_target": 225280,
+  "isl": 225339,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 827.4684723039973,
+  "ttft_s_reps": [
+   827.4684723039973,
+   7.247700116015039,
+   4.0411027450463735,
+   4.0303051299997605
+  ],
+  "decode_tok_s": 11.463763368700691,
+  "prefill_tok_s": 272.32336643904716,
+  "edge_before_c": 58,
+  "edge_after_c": 78,
+  "accept_unit": "AL",
+  "accept_mean": 3.0581051491611837,
+  "accept_stdev": 0.2328683263353545,
+  "accept_reps": [
+   3.311688311688312,
+   3.1875,
+   2.9310344827586206,
+   2.802197802197802
+  ],
+  "step_s": 0.2611613217653814,
+  "step_s_reps": [
+   0.2823614936749838,
+   0.26059943832442517,
+   0.2617232052063377,
+   0.25932518721962405
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "is's \"The Octopus\"? No, this is \"The Pit\"? \n\nWait - I need to think more carefully. Jennie Gerhardt, Lester Kane, the Kane carriage company, the story of a poor",
+   "g.\n\nThis is actually Frank Norris's novel \"The Call of the Wild\"? No. The characters Jennie Gerhardt, Lester Kane, Vesta, the Kane family - this is Frank Norris",
+   " This appears to be from \"The Leavenworth Murder\" or a similar mystery novel.\n\n3. The very last paragraph seems to be from yet another story - something about a",
+   "re Leavenworth, Mary Leavenworth, and James Harwell (the secretary). This appears to be from a different novel - possibly \"The Leavenworth Murder\" or similar.\n\n"
+  ]
+ }
+]

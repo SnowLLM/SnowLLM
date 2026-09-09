@@ -1,0 +1,175 @@
+[
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm_128k",
+  "isl_target": 1024,
+  "isl": 1033,
+  "osl": 203,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.864908724965062,
+  "ttft_s_reps": [
+   2.864908724965062,
+   2.8591541769565083,
+   2.848425222968217,
+   2.8694473619689234
+  ],
+  "decode_tok_s": 23.09228164215262,
+  "prefill_tok_s": 360.5699514956092,
+  "edge_before_c": 59,
+  "edge_after_c": 75,
+  "accept_unit": "AL",
+  "accept_mean": 2.679059783437548,
+  "accept_stdev": 0.11035234496700955,
+  "accept_reps": [
+   2.5569620253164556,
+   2.819277108433735,
+   2.7,
+   2.64
+  ],
+  "step_s": 0.11524634144753315,
+  "step_s_reps": [
+   0.11525836897286029,
+   0.11471047633788607,
+   0.11523431392220602,
+   0.11602334014567911
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "han something you control. K. responds with quiet agreement, and Sidney continues to express her disillusionment with how simple she once thought life would be.",
+   "She plans to work during the January white sale and hopes to be kept on if she performs well. Palmer expresses support for her decision to live a straight life.",
+   " piano, which caused Tillie to move out to the barn. K. goes to see Tillie, promising to help Schwitter by not revealing his troubles to Mrs. McKee's household.",
+   "eanwhile, Max Wilson, the surgeon, is enjoying the evening with Carlotta, feeling pleased that Sidney loves him and that his happiness is built on her devotion."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm_128k",
+  "isl_target": 8192,
+  "isl": 8202,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 13.023983952007256,
+  "ttft_s_reps": [
+   13.023983952007256,
+   12.88042433798546,
+   12.887572940962855,
+   12.91675849101739
+  ],
+  "decode_tok_s": 21.896604867334936,
+  "prefill_tok_s": 629.7612182435089,
+  "edge_before_c": 75,
+  "edge_after_c": 79,
+  "accept_unit": "AL",
+  "accept_mean": 2.5667598167598165,
+  "accept_stdev": 0.17214829888876032,
+  "accept_reps": [
+   2.802197802197802,
+   2.4864864864864864,
+   2.4025974025974026,
+   2.5757575757575757
+  ],
+  "step_s": 0.11537468232393311,
+  "step_s_reps": [
+   0.11491641482392038,
+   0.11628357731494977,
+   0.11581280582944516,
+   0.11493655881842108
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   ". The passage ends with a brief, unrelated excerpt from another story involving a character named Sidney and a man referred to as \"K.,\" discussing domestic life",
+   "om illness, tells Palmer she has found a job in a store and intends to live a respectable life. Palmer, now married, is relieved and supportive of her decision.",
+   "tter, learning that Schwitter has taken Tillie from her job and that she has moved to the barn in protest. K. promises to speak to Tillie on Schwitter's behalf.",
+   "ed Joe, who is enraged upon hearing that a man named Max Wilson is taking a woman named Sidney to a disreputable establishment called Schwitter's. Joe struggles"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm_128k",
+  "isl_target": 32768,
+  "isl": 32777,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 51.852952357032336,
+  "ttft_s_reps": [
+   51.852952357032336,
+   13.505521029990632,
+   13.491048071999103,
+   13.431211760966107
+  ],
+  "decode_tok_s": 20.781445383036157,
+  "prefill_tok_s": 632.1144411279555,
+  "edge_before_c": 79,
+  "edge_after_c": 81,
+  "accept_unit": "AL",
+  "accept_mean": 2.469829415460483,
+  "accept_stdev": 0.10051357340682072,
+  "accept_reps": [
+   2.55,
+   2.407766990291262,
+   2.361111111111111,
+   2.5604395604395602
+  ],
+  "step_s": 0.1190783814600751,
+  "step_s_reps": [
+   0.11803882609994616,
+   0.11971154038684773,
+   0.11878793527796883,
+   0.11936882764218137
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "otion, seduces her, giving her money and promising to marry her and take her away.\n\nJennie returns home, keeping the encounter secret, and waits for him to send",
+   "giving her money before leaving for Washington.\n\nThe passage ends with the Senator departing, leaving Jennie in a state of hopeful uncertainty about her future.",
+   "Chapter III: Senator Brander's Interest**\nSenator Brander is a wealthy, influential, and unmarried man who feels lonely. He becomes increasingly fascinated with",
+   " a surgeon named Wilson is taking his girlfriend Sidney to a disreputable establishment. Joe attempts to drive to confront them, but struggles to start his car."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm_128k",
+  "isl_target": 131072,
+  "isl": 131082,
+  "osl": 137,
+  "reps": 1,
+  "warm": 0,
+  "ttft_s": 192.37976545403944,
+  "ttft_s_reps": [
+   192.37976545403944
+  ],
+  "decode_tok_s": 19.927432365649192,
+  "prefill_tok_s": 681.3710355173304,
+  "edge_before_c": 71,
+  "edge_after_c": 83,
+  "accept_unit": "AL",
+  "accept_mean": 2.6153846153846154,
+  "accept_stdev": null,
+  "accept_reps": [
+   2.6153846153846154
+  ],
+  "step_s": 0.13124543932177646,
+  "step_s_reps": [
+   0.13124543932177646
+  ],
+  "loop_period_reps": [
+   0
+  ],
+  "text_tails": [
+   "'s youth and hope, and he realizes he will lose her. The passage ends with a memory of Wilson taking a photograph of a girl in the Tyrol, a girl who later died."
+  ]
+ }
+]

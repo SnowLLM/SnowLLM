@@ -1,0 +1,193 @@
+[
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm_hero",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 1024,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.2258431460359134,
+  "ttft_s_reps": [
+   2.2258431460359134,
+   0.4552107750205323,
+   0.3181591739994474,
+   0.3210888780304231
+  ],
+  "decode_tok_s": 62.40206567632025,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 3688.0406486053216,
+  "edge_before_c": 45,
+  "edge_after_c": 62,
+  "accept_unit": "AL",
+  "accept_mean": 2.371235757609533,
+  "accept_stdev": 0.037140097832664684,
+  "accept_reps": [
+   2.4127358490566038,
+   2.3517241379310345,
+   2.3302961275626424,
+   2.3901869158878504
+  ],
+  "step_s": 0.03803451663968668,
+  "step_s_reps": [
+   0.03799043144571665,
+   0.03788538272184823,
+   0.038078601833656724,
+   0.03810312380596982
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "loving, selfless.\n   - Covers Chapter III: Brander's background, moral compromises, \"All in a lifetime\" phrase.\n   - Notes the abrupt shift at the end (optional",
+   "erished Mrs. Gerhardt and her eighteen-year-old daughter, Genevieve (Jennie), arrive at a Columbus hotel seeking work. After securing a job scrubbing stairs and",
+   "ck Against Requirements:**\n   - Covers all chapters? Yes.\n   - Captures main plot, characters, themes? Yes.\n   - Notes the abrupt ending? Yes, appropriately.\n  ",
+   "arage scene involving jealousy/anger over a woman (Sidney/Carlotta) and a doctor (Max Wilson), with a character named Joe driving off aggressively.\n\n3.  **Draft"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm_hero_c2",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 2048,
+  "conc": 2,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.3883023550151847,
+  "ttft_s_reps": [
+   2.3883023550151847,
+   2.403255633020308,
+   2.3482531029731035,
+   2.336707320995629
+  ],
+  "decode_tok_s": 93.37841817418848,
+  "decode_tok_s_user": 46.68920908709424,
+  "prefill_tok_s": 6874.338990423017,
+  "edge_before_c": 62,
+  "edge_after_c": 66,
+  "accept_unit": "AL",
+  "accept_mean": 2.373795743580655,
+  "accept_stdev": 0.027798524285532405,
+  "accept_reps": [
+   2.335616438356164,
+   2.395784543325527,
+   2.3707995365005794,
+   2.3929824561403508
+  ],
+  "step_s": 0.025346899879044593,
+  "step_s_reps": [
+   0.02466636651603705,
+   0.02477438376278196,
+   0.025919415995307223,
+   0.025991317811519192
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "\u2019s compromised sophistication.\n\n5.  **Check Against Requirements:**\n   - Covers main plot? Yes.\n   - Captures characterizations? Yes.\n   - Notes themes? Yes.\n  ",
+   "omplex moral landscapes of early 1880s urban life.\n\n4.  **Check Against Original Text:**\n   - Covers Ch I: Gerhardt family's poverty, hotel job, meeting Senator",
+   "regret of a past love affair that ended due to his financial struggles. The passage abruptly shifts to an unrelated scene involving characters named K., Tillie,",
+   "ions? Yes (Jennie's innocence, Brander's pragmatism, family's poverty).\n   - Notes the structural anomaly? Yes, important for accuracy.\n   - Concise? Yes, about"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm_hero_c4",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 4096,
+  "conc": 4,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 8.948865823971573,
+  "ttft_s_reps": [
+   8.948865823971573,
+   7.16808148502605,
+   7.175696889986284,
+   8.97111704602139
+  ],
+  "decode_tok_s": 128.3645450580796,
+  "decode_tok_s_user": 31.84942094347807,
+  "prefill_tok_s": 3669.291801430445,
+  "edge_before_c": 66,
+  "edge_after_c": 69,
+  "accept_unit": "AL",
+  "accept_mean": 2.370520617288422,
+  "accept_stdev": 0.014252593655834011,
+  "accept_reps": [
+   2.3680555555555554,
+   2.3517241379310345,
+   2.377687391051714,
+   2.3846153846153846
+  ],
+  "step_s": 0.018435238505738426,
+  "step_s_reps": [
+   0.018634007789437326,
+   0.018510673365603556,
+   0.018339754722826975,
+   0.018359803645873297
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "are meager, and they struggle to afford food and coal. Through the hotel clerk\u2019s kindness, they secure work cleaning the main staircase. During their first day,",
+   "inst Requirements:**\n   - Covers all chapters? Yes.\n   - Captures main plot, characters, themes? Yes.\n   - Notes the disjointed ending? Yes, appropriately.\n   -",
+   "ls. I'll also explicitly mention the likely textual anomaly at the end to show careful reading.\n\n5.  **Final Output Generation:** (matches the refined draft)\n  ",
+   "- Covers all chapters/sections? Yes.\n   - Captures main plot points? Yes (poverty, hotel work, Brander's interest, Jennie's nature, Brander's background, abrupt"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm_hero",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 1024,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 184.8022492020391,
+  "ttft_s_reps": [
+   184.8022492020391,
+   2.199199861031957,
+   1.3722555990098044
+  ],
+  "decode_tok_s": 38.194547582845416,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1219.1247724138311,
+  "edge_before_c": 38,
+  "edge_after_c": 69,
+  "accept_unit": "AL",
+  "accept_mean": 2.441873347054555,
+  "accept_stdev": 0.03574018736015887,
+  "accept_reps": [
+   2.483009708737864,
+   2.4184397163120566,
+   2.424170616113744
+  ],
+  "step_s": 0.06360434687617844,
+  "step_s_reps": [
+   0.06360434687617844,
+   0.06379946842964254,
+   0.06346902292416547
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ible, or slightly more if needed for clarity.\n\n   Draft structure:\n   - Introduction: Note the composite nature.\n   - Summary of Part 1 (Jennie Gerhardt excerpt",
+   " captures the essence. Ready.\u2705\nIn this emotionally tense exchange, Grace confronts Palmer about his impending marriage to Christine, her jealousy and resentment",
+   " knowledge of the pistol.\n     - Missing servant Hannah Chester is crucial to the case.\n     - Narrator: Everett Raymond, a young lawyer representing the family"
+  ]
+ }
+]

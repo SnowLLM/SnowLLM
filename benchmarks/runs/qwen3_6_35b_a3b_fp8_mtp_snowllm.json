@@ -1,0 +1,247 @@
+[
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
+  "isl_target": 1024,
+  "isl": 1041,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 0.4060941640054807,
+  "ttft_s_reps": [
+   0.4060941640054807,
+   0.40515793301165104,
+   0.2943398450152017,
+   0.2875731500098482
+  ],
+  "decode_tok_s": 67.39076670224108,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 2563.444866412684,
+  "edge_before_c": 57,
+  "edge_after_c": 67,
+  "accept_unit": "AL",
+  "accept_mean": 2.503986077464,
+  "accept_stdev": 0.11558838533447356,
+  "accept_reps": [
+   2.4056603773584904,
+   2.4056603773584904,
+   2.6288659793814433,
+   2.5757575757575757
+  ],
+  "step_s": 0.03694925126168502,
+  "step_s_reps": [
+   0.03690910024539883,
+   0.036894805301617796,
+   0.036989402277971206,
+   0.03701954992956039
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "sionment with life (\"life is a terrible thing... it's got us\"). The passage cuts off mid-sentence at the end.\n   - **Task:** Summarize the passage.\n\n2.  **Ident",
+   "\n     - Later, a man named Palmer (Grace's former lover/paramour)\n     - Grace (the daughter, now named)\n     - Christine (Palmer's wife, mentioned)\n     - Miss",
+   "; clerk confirms. Suggests they come back in the afternoon, with the girl helping.\n     - *Abrupt transition/fragment:* \"A succession of misfortunes, of which /",
+   " about a surgeon named Wilson who now goes to \"Schwitter's\" (likely a rival business/establishment). One man mentions Wilson took a \"pretty girl\" with him. This"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.13143048301572,
+  "ttft_s_reps": [
+   2.13143048301572,
+   0.46006367198424414,
+   0.32201530499150977,
+   0.32317618501838297
+  ],
+  "decode_tok_s": 65.0996212880382,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 3851.4040525427995,
+  "edge_before_c": 67,
+  "edge_after_c": 67,
+  "accept_unit": "AL",
+  "accept_mean": 2.4810677424639582,
+  "accept_stdev": 0.1339885960426868,
+  "accept_reps": [
+   2.3394495412844036,
+   2.4285714285714284,
+   2.5,
+   2.65625
+  ],
+  "step_s": 0.03785423499549001,
+  "step_s_reps": [
+   0.03764988573421852,
+   0.037865297990806755,
+   0.03784317200017326,
+   0.03788603229137758
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "cuses on Jennie's character. Describes her as naturally poetic, gentle, appreciative of nature, and selfless. She finds beauty in simple things and feels a deep",
+   "et laundry work from hotel guests. The clerk directs Mrs. Gerhardt to Senator Brander, who agrees to give them his laundry.\n     - Chapter II: Focuses on Jennie",
+   "tel guests. The clerk directs Mrs. Gerhardt to Senator Brander, who kindly gives them laundry and invites them in, showing particular interest in Jennie.\n     -",
+   " to get credit for food, which he reluctantly grants. Jennie's brother Bass suggests they get laundry work from hotel guests. The clerk directs Mrs. Gerhardt to"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
+  "isl_target": 32768,
+  "isl": 32783,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 10.806694794970099,
+  "ttft_s_reps": [
+   10.806694794970099,
+   0.647314051981084,
+   0.4284335169941187,
+   0.4336205219733529
+  ],
+  "decode_tok_s": 61.8998732093008,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 3033.5824803027303,
+  "edge_before_c": 67,
+  "edge_after_c": 70,
+  "accept_unit": "AL",
+  "accept_mean": 2.5066688880426504,
+  "accept_stdev": 0.04181777649326519,
+  "accept_reps": [
+   2.451923076923077,
+   2.5247524752475248,
+   2.5,
+   2.55
+  ],
+  "step_s": 0.04067196166412021,
+  "step_s_reps": [
+   0.040705764269380156,
+   0.04053794727764452,
+   0.040638159058860264,
+   0.0407122194301337
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "s gifts.\n     - Their relationship develops: Brander becomes affectionate, kisses her, gives her a gold watch, proposes marriage, and wants to send her to a sem",
+   "e, proud, gets arrested for coal theft)\n     - Other children: George, Martha, William, Veronica\n     - Minor characters: Hotel clerk, housekeeper, Mr. Bauman (",
+   "/lover)\n     - Sebastian \"Bass\" Gerhardt (oldest son, apprentice, proud, gets arrested for coal theft)\n     - Other children: George, Martha, William, Veronica\n",
+   "(oldest son, apprentice, proud, gets arrested for coal theft)\n     - Other children: George, Martha, William, Veronica\n   - **Plot Summary (Chapters I-VIII):**\n"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
+  "isl_target": 131072,
+  "isl": 131086,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 76.17743224598235,
+  "ttft_s_reps": [
+   76.17743224598235,
+   1.4496475639753044,
+   0.9250069280387834,
+   0.9252469270140864
+  ],
+  "decode_tok_s": 49.58906727304667,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1720.7983537265209,
+  "edge_before_c": 70,
+  "edge_after_c": 70,
+  "accept_unit": "AL",
+  "accept_mean": 2.5734794882790166,
+  "accept_stdev": 0.11813884330710589,
+  "accept_reps": [
+   2.5757575757575757,
+   2.65625,
+   2.4056603773584904,
+   2.65625
+  ],
+  "step_s": 0.05255162776948147,
+  "step_s_reps": [
+   0.052662915757720856,
+   0.05284191344799183,
+   0.05220478430186081,
+   0.052440339781242074
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "\"Sidney sprang to her feet.\" \"Katie has a new prescription--recipe--for bread.\" This is definitely from Theodore Dreiser's *Sister Carrie*? Wait, *Sister Carrie",
+   " Gerhardt is *Sister Carrie*? No, it's *Sister Carrie*? I'm confusing myself. Let's search my knowledge: Theodore Dreiser's novel featuring Jennie Gerhardt is *",
+   "Lester's father Archibald and brother Robert), and Jennie's hidden past/child.\n     - Lester's family discovers the relationship, causing scandal.\n     - Lester",
+   "? No. Let me think: Theodore Dreiser wrote *Sister Carrie*, *The Financier*, *The Titan*, *The Stoic*, *Jennie Gerhardt*. Yes! The novel is *Jennie Gerhardt* by"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 185.4926550979726,
+  "ttft_s_reps": [
+   185.4926550979726,
+   2.1958723239949904,
+   1.3856453629559837,
+   1.3701465409831144
+  ],
+  "decode_tok_s": 39.37776024717199,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1214.5871753304934,
+  "edge_before_c": 58,
+  "edge_after_c": 72,
+  "accept_unit": "AL",
+  "accept_mean": 2.477463280566015,
+  "accept_stdev": 0.07536564381137233,
+  "accept_reps": [
+   2.55,
+   2.383177570093458,
+   2.451923076923077,
+   2.5247524752475248
+  ],
+  "step_s": 0.06327856926940637,
+  "step_s_reps": [
+   0.06335887459048535,
+   0.06323539210313704,
+   0.06305784296161548,
+   0.0633217464356757
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "**\n   - The input is extremely long and contains *multiple distinct stories/sections* pasted together.\n   - The first major section is clearly from Theodore Dre",
+   " around the hospital staff. Grace reveals she got a job at a department store (Lipton and Homburg's) through a nurse named Miss Page, and she's determined to be",
+   "ng. This is Wilkie Collins' *The Woman in White*? No, the names and style match Wilkie Collins' *The Woman in White*? Wait, \"Mr. Gryce\", \"Eleanore Leavenworth\",",
+   "* by Theodore Dreiser.\n     - The last ~10% suddenly shifts to a completely different story: \"The men in the garage were talking... To Schwitter's, of course..."
+  ]
+ }
+]

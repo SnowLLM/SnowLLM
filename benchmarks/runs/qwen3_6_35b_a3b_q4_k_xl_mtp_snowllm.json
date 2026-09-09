@@ -1,0 +1,237 @@
+[
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm",
+  "isl_target": 1024,
+  "isl": 1041,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 0.48522381903603673,
+  "ttft_s_reps": [
+   0.48522381903603673,
+   0.4878585730330087,
+   0.31472242600284517,
+   0.313949926989153
+  ],
+  "decode_tok_s": 86.39823019495228,
+  "prefill_tok_s": 2145.4016871391195,
+  "edge_before_c": 58,
+  "edge_after_c": 71,
+  "accept_unit": "AL",
+  "accept_mean": 2.4890630203130204,
+  "accept_stdev": 0.06499787569565156,
+  "accept_reps": [
+   2.5,
+   2.4285714285714284,
+   2.5757575757575757,
+   2.451923076923077
+  ],
+  "step_s": 0.028631797487534735,
+  "step_s_reps": [
+   0.028702342656769735,
+   0.02853570151408868,
+   0.028651573677015763,
+   0.02861202129805371
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ssage cuts off mid-sentence at the end.\n   - **Task:** Summarize the passage.\n\n2.  **Identify Key Elements:**\n   - **Setting/Time:** Fall 1880, Columbus, Ohio (",
+   "eaning work.\n     - Palmer: Grace's former lover/boyfriend. He's married (or about to be), works at a hospital, avoids her during her illness to avoid scandal.\n",
+   "ion of misfortunes, of which...\" then jumps to dialogue: \"I am not leaving you,\" she told him... \"So it happened that K., making a spring pilgrimage to see Till",
+   "n to Max Wilson and Carlotta (note: the text says \"Carlotta's nearness\" but earlier mentions \"Sidney\" - this might be a typo in the original or a character name"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.1566021890030243,
+  "ttft_s_reps": [
+   2.1566021890030243,
+   0.5359004850033671,
+   0.34400427201762795,
+   0.34450382099021226
+  ],
+  "decode_tok_s": 83.83517027818932,
+  "prefill_tok_s": 3806.450740827143,
+  "edge_before_c": 71,
+  "edge_after_c": 76,
+  "accept_unit": "AL",
+  "accept_mean": 2.4680364278578564,
+  "accept_stdev": 0.11789103753389456,
+  "accept_reps": [
+   2.3181818181818183,
+   2.5,
+   2.451923076923077,
+   2.6020408163265305
+  ],
+  "step_s": 0.029515151094362833,
+  "step_s_reps": [
+   0.029516308718170462,
+   0.029513993470555208,
+   0.029553790374708257,
+   0.029432040744945785
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "er go to a fancy hotel (Columbus House) to ask for cleaning work. They get hired by the housekeeper to clean stairs/hallways. They meet Senator George Sylvester",
+   "or Brander's room, where she successfully requests laundry work. Brander is charmed by Jennie.\n     - Chapter II: Focuses on Jennie's character. She's described",
+   "ests they get laundry work from hotel guests. The clerk directs Mrs. Gerhardt to Senator Brander's room to ask for laundry. He agrees, is charmed by Jennie, and",
+   "an) to get credit for food, which he reluctantly grants. Jennie's brother Bass suggests they get laundry work from hotel guests. The clerk directs Mrs. Gerhardt"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm",
+  "isl_target": 32768,
+  "isl": 32783,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 8.483268510957714,
+  "ttft_s_reps": [
+   8.483268510957714,
+   0.7241369560360909,
+   0.45597916503902525,
+   0.4549168139928952
+  ],
+  "decode_tok_s": 75.55375575180452,
+  "prefill_tok_s": 3864.430314524959,
+  "edge_before_c": 76,
+  "edge_after_c": 75,
+  "accept_unit": "AL",
+  "accept_mean": 2.4522664835164836,
+  "accept_stdev": 0.033672529761755346,
+  "accept_reps": [
+   2.451923076923077,
+   2.5,
+   2.4285714285714284,
+   2.4285714285714284
+  ],
+  "step_s": 0.03242968874792976,
+  "step_s_reps": [
+   0.03232197871189923,
+   0.03253739878396029,
+   0.03264131325662934,
+   0.03227414680933136
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " hotel. Jennie meets Senator Brander, who is charmed by her innocence and beauty. He begins giving them money, gifts, and laundry work. Their relationship grows",
+   "rrative (Chapters I-VIII):**\n   - **Setting:** Columbus, Ohio, fall of 1880.\n   - **Characters:** \n     - Jennie Gerhardt (18, beautiful, innocent, poetic, poor",
+   "ie & Brander) while noting the abrupt shift at the end.\n\n2.  **Identify Main Narrative (Jennie Gerhardt & Senator Brander):**\n   - **Setting/Context:** Fall 188",
+   "y (laundry money, Christmas gifts, a gold watch).\n     - A romantic/affair-like relationship develops between Brander and Jennie, though Jennie remains innocent"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm",
+  "isl_target": 131072,
+  "isl": 131086,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 74.25828477897448,
+  "ttft_s_reps": [
+   74.25828477897448,
+   1.5305393200251274,
+   0.9599808359635063,
+   0.9603276790003292
+  ],
+  "decode_tok_s": 54.403567014981824,
+  "prefill_tok_s": 1765.2710453812654,
+  "edge_before_c": 75,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.5565397036474162,
+  "accept_stdev": 0.14955550187891187,
+  "accept_reps": [
+   2.4285714285714284,
+   2.4285714285714284,
+   2.65625,
+   2.7127659574468086
+  ],
+  "step_s": 0.0467252857998184,
+  "step_s_reps": [
+   0.04412415877173078,
+   0.044806701828548234,
+   0.04864386977108855,
+   0.0504273657874016
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "e Gerhardt\", \"Senator Brander\", \"Lester Kane\", \"Vesta\" are from *Sister Carrie*. Yes, Jennie Gerhardt is the protagonist. The text covers her life from poverty,",
+   "ever marries her due to family/social pressures and his own reservations.\n     - Jennie hides Vesta's existence from Lester initially, causing tension when it's",
+   "ie Gerhardt is the main character of Theodore Dreiser's novel *Sister Carrie*? Wait, I'm mixing things up. Let me recall: Theodore Dreiser wrote *Sister Carrie*",
+   "o, *Sister Carrie* is about Carrie Meeber. Jennie Gerhardt is the protagonist of Dreiser's novel *Sister Carrie*? No, it's *The Financier*? I'm mixing things up"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 181.11061030294513,
+  "ttft_s_reps": [
+   181.11061030294513,
+   2.2950226250104606,
+   1.4523650500341319,
+   1.4578721930156462
+  ],
+  "decode_tok_s": 33.588264519532515,
+  "prefill_tok_s": 1243.9746054808381,
+  "edge_before_c": 58,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.4648465890051483,
+  "accept_stdev": 0.05914772700133584,
+  "accept_reps": [
+   2.5247524752475248,
+   2.4757281553398056,
+   2.4757281553398056,
+   2.383177570093458
+  ],
+  "step_s": 0.07232957199890519,
+  "step_s_reps": [
+   0.0627861617134174,
+   0.07237493318451332,
+   0.07552102132015454,
+   0.07228421081329704
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "above.\"\n\n2.  **Identify Key Components & Structure:**\n   - The passage is actually two distinct literary works spliced together.\n   - **Part 1: *Jennie Gerhardt",
+   "ie Collins' *The Woman in White*? Wait, no. Let me check. Actually, it's *The Woman in White*? No, the names are Leavenworth, Eleanore, Mary, Gryce, Raymond, Cl",
+   " compilation of excerpts from at least two (possibly three) different literary works:\n     - *Jennie Gerhardt* by Theodore Dreiser (Chapters I-LXII)\n     - *The",
+   " her relationship with Senator Brander, then Lester Kane, their life together, the scandal, separation, Vesta's death, Lester's marriage to Mrs. Gerald, and his"
+  ]
+ }
+]

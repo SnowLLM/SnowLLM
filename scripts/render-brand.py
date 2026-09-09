@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-# Render the raster brand assets from the same geometry the SVGs use.
-#
-# SVG is the source for anything a browser draws, but three places need pixels: link previews, the
-# GitHub social preview, and the organisation avatar. None of them accept SVG. Keeping the geometry
-# here rather than in a drawing file means the mark cannot drift between the site and the avatar.
-#
-#   web/og.png                   1200x630   og:image, the size the meta tags declare
-#   brand/social-preview.png     1280x640   repo Settings -> General -> Social preview
-#   brand/avatar.png              512x512   organisation Settings -> Profile -> Picture
-#
-# brand/ is not tracked. Those two are uploaded by hand and read by nothing here, so the script
-# is the artefact worth keeping; web/og.png stays tracked because the site serves it.
-#
-# The avatar is fitted to the hexagon's own bounding box rather than the 128 unit drawing
-# box, which carries margin of its own; AVATAR_FILL is that fit as a fraction of the square.
-#
-# Usage: scripts/render-brand.py
 
 import math
 import pathlib
@@ -47,7 +30,7 @@ MONO_CANDIDATES = [
 ]
 
 
-def font(size, bold=False):
+def font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     for pattern in MONO_CANDIDATES:
         path = pathlib.Path(pattern.format("-Bold" if bold else ""))
         if path.exists():
@@ -55,14 +38,14 @@ def font(size, bold=False):
     sys.exit("render-brand.py: no monospace font found -- install fonts-dejavu-core")
 
 
-def mark(px):
+def mark(px: int) -> Image.Image:
     n = px * SS
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     k = n / 128.0
     off = 0.0
 
-    def P(x, y):
+    def P(x: float, y: float) -> tuple[float, float]:
         return (off + x * k, off + y * k)
 
     d.polygon([P(64 + 58 * math.cos(math.radians(90 + 60 * i)),
@@ -92,14 +75,14 @@ HEX_R = 58.0
 AVATAR_FILL = 0.88
 
 
-def avatar(px):
+def avatar(px: int) -> Image.Image:
     n = px * SS
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     k = (n * AVATAR_FILL) / (2 * HEX_R)
     c = n / 2
 
-    def P(x, y):
+    def P(x: float, y: float) -> tuple[float, float]:
         return (c + (x - 64) * k, c + (y - 64) * k)
 
     d.polygon([P(64 + HEX_R * math.cos(math.radians(90 + 60 * i)),
@@ -135,7 +118,7 @@ KERN = {("S", "N"): -2, ("N", "O"): -7, ("O", "W"): -7,
         ("W", "L"): 1, ("L", "L"): -1, ("L", "M"): -2}
 
 
-def glyphs():
+def glyphs() -> dict[str, tuple[float, list[list[tuple[float, float]]]]]:
     leg = 60.0 / DIAG
     hexo = [(30 * math.sqrt(3) / 2 + 30 * math.sin(math.radians(60 * i)),
              30 - 30 * math.cos(math.radians(60 * i))) for i in range(6)]
@@ -150,7 +133,7 @@ def glyphs():
     }
 
 
-def wordmark(cap):
+def wordmark(cap: int) -> Image.Image:
     g = glyphs()
     placed, x = [], 0.0
     word = "SNOWLLM"
@@ -184,7 +167,7 @@ def wordmark(cap):
 DECAY = [("1K", 86.9), ("8K", 76.9), ("32K", 72.2), ("128K", 56.3), ("220K", 49.3)]
 
 
-def card():
+def card() -> Image.Image:
     img = Image.new("RGBA", (1200, 630), GROUND)
     d = ImageDraw.Draw(img)
 
@@ -226,7 +209,7 @@ def card():
     return img
 
 
-def write(img, relative):
+def write(img: Image.Image, relative: str) -> None:
     path = ROOT / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     img.convert("RGB").save(path, "PNG", optimize=True)

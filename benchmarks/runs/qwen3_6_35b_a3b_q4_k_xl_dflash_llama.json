@@ -1,0 +1,212 @@
+[
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
+  "isl_target": 1024,
+  "isl": 1041,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 1.1902127700159326,
+  "ttft_s_reps": [
+   1.1902127700159326,
+   0.9815123839653097,
+   0.98836461402243,
+   1.0084260539733805
+  ],
+  "decode_tok_s": 57.40341906996644,
+  "prefill_tok_s": 874.6335329489574,
+  "edge_before_c": 58,
+  "edge_after_c": 73,
+  "accept_unit": "accept%",
+  "accept_mean": 0.3038503867734612,
+  "accept_stdev": 0.02091808055063572,
+  "accept_reps": [
+   0.2847457627118644,
+   0.28862478777589134,
+   0.31305903398926654,
+   0.32897196261682243
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "per. Housekeeper confirms the girl is the daughter and says she can come back in the afternoon, with the girl helping.\n     - *Scene 3:* Abrupt shift in setting",
+   " hotel.\n       - Scene shifts to Palmer and Grace meeting. Grace is angry/upset because Palmer is engaged/marrying Christine.\n       - Palmer explains he couldn",
+   " mentions \"A succession of misfortunes, of which\" (incomplete sentence), then jumps to \"I am not leaving you,\" she told him... \"So it happened that K., making a",
+   " Men are talking about a surgeon named Wilson who now goes to \"Schwitter's\" (likely a brothel or gambling den) instead of the garage, bringing a \"pretty girl\" ("
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
+  "isl_target": 8192,
+  "isl": 8209,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 7.717591396009084,
+  "ttft_s_reps": [
+   7.717591396009084,
+   2.0520842950209044,
+   2.043346702994313,
+   2.0496787319425493
+  ],
+  "decode_tok_s": 45.961308739256324,
+  "prefill_tok_s": 1063.6738301855464,
+  "edge_before_c": 73,
+  "edge_after_c": 76,
+  "accept_unit": "accept%",
+  "accept_mean": 0.25771704387936606,
+  "accept_stdev": 0.035734394890616486,
+  "accept_reps": [
+   0.24205748865355523,
+   0.22334293948126802,
+   0.25873015873015875,
+   0.3067375886524823
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " grocery store to get credit for food, which the grocer reluctantly grants. They return home to a sick child (Veronica) and a struggling household.\n   - *Scene ",
+   "nd quiet suffering. Describes her dreamy, idealistic nature contrasted with the harsh material world.\n     - Chapter III: Introduces Senator George Sylvester Br",
+   "work from Senator George Sylvester Brander (Room 22).\n     - The Senator is charmed by Jennie's innocence and beauty, gives them the laundry, and is left with a",
+   "They get a job scrubbing floors at a hotel. The scene shifts briefly to a garage where men gossip about a surgeon (Wilson) taking a girl (Sidney/Carlotta?) to a"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
+  "isl_target": 32768,
+  "isl": 32783,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 33.301740712020546,
+  "ttft_s_reps": [
+   33.301740712020546,
+   3.248313630989287,
+   3.2495826119557023,
+   3.2453501609852538
+  ],
+  "decode_tok_s": 41.823166316524315,
+  "prefill_tok_s": 984.4230151058349,
+  "edge_before_c": 76,
+  "edge_after_c": 77,
+  "accept_unit": "accept%",
+  "accept_mean": 0.23532615176834135,
+  "accept_stdev": 0.02286499364504162,
+  "accept_reps": [
+   0.24279210925644917,
+   0.26324237560192615,
+   0.22496371552975328,
+   0.21030640668523676
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "oduced; he's ambitious, wants to climb socially, and advises Jennie to get laundry work from hotel guests.\n   - *Chapter II:* Focuses on Jennie's character. She",
+   "vester Brander, who is charmed by Jennie and offers them laundry work.\n   - *Chapter II:* Focuses on Jennie's pure, nature-loving, and innocent temperament. She",
+   "eamer, untouched by worldly cynicism.\n     - Chapter III: Introduces Senator George Sylvester Brander. He's a wealthy, politically connected man with a somewhat",
+   "lves a conflict with the law (brother's arrest), and takes Jennie as his mistress, promising marriage. Jennie is naive, drawn to the luxury and attention, while"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
+  "isl_target": 131072,
+  "isl": 131086,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 269.8580693890108,
+  "ttft_s_reps": [
+   269.8580693890108,
+   8.080963502987288,
+   8.03190355800325,
+   8.037544029008131
+  ],
+  "decode_tok_s": 27.864841584897526,
+  "prefill_tok_s": 485.7590521446831,
+  "edge_before_c": 77,
+  "edge_after_c": 79,
+  "accept_unit": "accept%",
+  "accept_mean": 0.23101503730204576,
+  "accept_stdev": 0.03640630658780177,
+  "accept_reps": [
+   0.22286541244573083,
+   0.211484593837535,
+   0.2051983584131327,
+   0.2845117845117845
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "dt family (Jennie's father and siblings), Robert Kane (Lester's brother).\n   - *Plot Points:*\n     - Lester's father dies, leaving a will that conditions Lester",
+   "ester Kane (wealthy heir, Jennie's lover), Jennie Gerhardt (former maid, Lester's companion), Mr. Leavenworth (Lester's uncle, murdered), Eleanore Leavenworth (",
+   "and supports her financially. They have a daughter, Vesta. Brander dies, leaving Jennie in a difficult position.\n   - *Middle Chapters (IV-XVIII):* Jennie moves",
+   "I, XLVII).\n     - It contains repeated/interleaved fragments (e.g., \"The men in the garage were talking...\" appears multiple times, likely due to OCR/copy-paste"
+  ]
+ },
+ {
+  "label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 756.8944950200384,
+  "ttft_s_reps": [
+   756.8944950200384,
+   12.556608088023495,
+   12.514845961995889,
+   12.543277031974867
+  ],
+  "decode_tok_s": 20.419685368383828,
+  "prefill_tok_s": 297.6597154323805,
+  "edge_before_c": 59,
+  "edge_after_c": 80,
+  "accept_unit": "accept%",
+  "accept_mean": 0.20444176367148872,
+  "accept_stdev": 0.029445298680296324,
+  "accept_reps": [
+   0.20355191256830601,
+   0.24617737003058104,
+   0.18053777208706787,
+   0.1875
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "erhardt, Lester Kane, Senator Brander, Gerhardt (father), Vesta (daughter), Mrs. Gerald/Letty Pace, Robert Kane, etc. Plot: Jennie's affair with Senator Brander",
+   "e*? Wait, no. The names: Mr. Leavenworth, Eleanore Leavenworth, Mary Leavenworth, Mr. Gryce, Everett Raymond, James Harwell, Henry Clavering. This is actually *",
+   " and Mary Leavenworth, a secretary named James Harwell, a detective named Mr. Gryce, and a narrator named Everett Raymond. This is Wilkie Collins' *The Woman in",
+   "s looks like it might be from another novel, possibly *The Financier* or *The Titan* (Frank Cowperwood series)? Actually, the garage scene with Joe, Max Wilson,"
+  ]
+ }
+]

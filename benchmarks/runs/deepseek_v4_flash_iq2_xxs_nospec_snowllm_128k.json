@@ -1,0 +1,175 @@
+[
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_snowllm_128k",
+  "isl_target": 1024,
+  "isl": 1033,
+  "osl": 211,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.789090569014661,
+  "ttft_s_reps": [
+   2.789090569014661,
+   2.80540154495975,
+   2.7954526909743436,
+   2.803165460994933
+  ],
+  "decode_tok_s": 18.15432635827394,
+  "prefill_tok_s": 370.3716227346972,
+  "edge_before_c": 43,
+  "edge_after_c": 67,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.05508332789868091,
+  "step_s_reps": [
+   0.05513205553118682,
+   0.05503686250891146,
+   0.055129793288450364,
+   0.0550240640050429
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "indward.\" Sidney reflects on how young and naive she used to think life was, but now sees it as something that controls people rather than the other way around.",
+   "ng the January white sale. Palmer approves of her decision to live a straight life, though he still has selfish feelings about her not belonging to anyone else.",
+   "he barn. Schwitter asks K. to speak with her and to assure her that the Street doesn\u2019t know about their troubles. K. agrees and goes to find Tillie in the barn.",
+   "eanwhile, Max Wilson, the surgeon, is enjoying the evening with Carlotta, feeling pleased that Sidney loves him and that his happiness is built on her devotion."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_snowllm_128k",
+  "isl_target": 8192,
+  "isl": 8202,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 12.928615276003256,
+  "ttft_s_reps": [
+   12.928615276003256,
+   12.851120057981461,
+   12.803887484013103,
+   12.723690879007336
+  ],
+  "decode_tok_s": 18.134052744496927,
+  "prefill_tok_s": 634.4066881798002,
+  "edge_before_c": 67,
+  "edge_after_c": 74,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.05514504740492447,
+  "step_s_reps": [
+   0.055020113101950395,
+   0.055298858423708144,
+   0.0552436665551165,
+   0.05504642825473245
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "l change, which appears to be from a different story or a continuation of another narrative.\n\nThe overall summary: the opening chapters introduce Jennie, a poor",
+   "s she has found a job at a department store and intends to live an honest life. Palmer, who had been supporting her, is relieved and supportive of her decision.",
+   "fallen into questionable business practices and is estranged from his wife Tillie, who has moved to the barn. K. promises to speak to her on Schwitter\u2019s behalf.",
+   "g a character named Joe, who is enraged upon hearing that a man named Max Wilson is taking a woman (Sidney) to a place called Schwitter's. Joe attempts to start"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_snowllm_128k",
+  "isl_target": 32768,
+  "isl": 32777,
+  "osl": 240,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 51.535660271008965,
+  "ttft_s_reps": [
+   51.535660271008965,
+   13.4472748109838,
+   13.436992814997211,
+   13.453400940983556
+  ],
+  "decode_tok_s": 17.782403987098334,
+  "prefill_tok_s": 636.0062106051735,
+  "edge_before_c": 74,
+  "edge_after_c": 79,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.05623559802872609,
+  "step_s_reps": [
+   0.05639196582776376,
+   0.055993681850925306,
+   0.056121416415736154,
+   0.056349779641716016
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "rld. This section appears to be from a different story or a later part of the narrative, focusing on themes of change, home, and the loss of youthful illusions.",
+   "ator Brander is a wealthy, influential, but lonely man. He becomes increasingly fascinated with Jennie. He begins to help the Gerhardt family, giving them money",
+   "**\nSenator Brander is a wealthy, influential, but lonely man. He becomes increasingly fascinated with Jennie. He begins to help the Gerhardt family, giving them",
+   "ene involving a man named Joe, who is enraged upon learning that his girlfriend Sidney has been taken to a disreputable establishment by a surgeon named Wilson."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_snowllm_128k",
+  "isl_target": 131072,
+  "isl": 131082,
+  "osl": 139,
+  "reps": 1,
+  "warm": 0,
+  "ttft_s": 192.05470027896808,
+  "ttft_s_reps": [
+   192.05470027896808
+  ],
+  "decode_tok_s": 16.558345955915364,
+  "prefill_tok_s": 682.5243006789082,
+  "edge_before_c": 59,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": null,
+  "accept_reps": [
+   1.0
+  ],
+  "step_s": 0.060392505547497415,
+  "step_s_reps": [
+   0.060392505547497415
+  ],
+  "loop_period_reps": [
+   0
+  ],
+  "text_tails": [
+   "is drawn to Sidney's youth and hope, but knows he will lose her. The passage ends with a memory of Wilson taking a photo of a girl in the Tyrol, who later died."
+  ]
+ }
+]

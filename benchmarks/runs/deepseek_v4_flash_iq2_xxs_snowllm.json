@@ -1,0 +1,237 @@
+[
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm",
+  "isl_target": 1024,
+  "isl": 1033,
+  "osl": 203,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.8635266210185364,
+  "ttft_s_reps": [
+   2.8635266210185364,
+   2.8589752800180577,
+   2.866344316978939,
+   2.8638070870074444
+  ],
+  "decode_tok_s": 23.057867396699628,
+  "prefill_tok_s": 360.74398345651457,
+  "edge_before_c": 59,
+  "edge_after_c": 76,
+  "accept_unit": "AL",
+  "accept_mean": 2.679059783437548,
+  "accept_stdev": 0.11035234496700955,
+  "accept_reps": [
+   2.5569620253164556,
+   2.819277108433735,
+   2.7,
+   2.64
+  ],
+  "step_s": 0.11554332434076942,
+  "step_s_reps": [
+   0.11550076478673237,
+   0.11505509069906811,
+   0.11558588389480645,
+   0.11601090709844292
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "han something you control. K. responds with quiet agreement, and Sidney continues to express her disillusionment with how simple she once thought life would be.",
+   "She plans to work during the January white sale and hopes to be kept on if she performs well. Palmer expresses support for her decision to live a straight life.",
+   " piano, which caused Tillie to move out to the barn. K. goes to see Tillie, promising to help Schwitter by not revealing his troubles to Mrs. McKee's household.",
+   "eanwhile, Max Wilson, the surgeon, is enjoying the evening with Carlotta, feeling pleased that Sidney loves him and that his happiness is built on her devotion."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm",
+  "isl_target": 8192,
+  "isl": 8202,
+  "osl": 168,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 13.036771813000087,
+  "ttft_s_reps": [
+   13.036771813000087,
+   12.864368929003831,
+   12.89626968401717,
+   12.85421610600315
+  ],
+  "decode_tok_s": 21.90413415374604,
+  "prefill_tok_s": 629.1434810434497,
+  "edge_before_c": 76,
+  "edge_after_c": 79,
+  "accept_unit": "AL",
+  "accept_mean": 2.550636595718563,
+  "accept_stdev": 0.14336022236081908,
+  "accept_reps": [
+   2.737704918032787,
+   2.4864864864864864,
+   2.4025974025974026,
+   2.5757575757575757
+  ],
+  "step_s": 0.11550965265271305,
+  "step_s_reps": [
+   0.11527934995151169,
+   0.11633564792920066,
+   0.11573995535391442,
+   0.11481037970709924
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ts to distance himself from them. The narrative explores themes of poverty, social class, innocence, and the search for beauty and meaning in a difficult world.",
+   "om illness, tells Palmer she has found a job in a store and intends to live a respectable life. Palmer, now married, is relieved and supportive of her decision.",
+   "tter, learning that Schwitter has taken Tillie from her job and that she has moved to the barn in protest. K. promises to speak to Tillie on Schwitter's behalf.",
+   "ed Joe, who is enraged upon hearing that a man named Max Wilson is taking a woman named Sidney to a disreputable establishment called Schwitter's. Joe struggles"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm",
+  "isl_target": 32768,
+  "isl": 32777,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 51.823297673952766,
+  "ttft_s_reps": [
+   51.823297673952766,
+   13.51153327798238,
+   13.505515659984667,
+   13.385439147008583
+  ],
+  "decode_tok_s": 20.729625232958995,
+  "prefill_tok_s": 632.4761539919189,
+  "edge_before_c": 79,
+  "edge_after_c": 80,
+  "accept_unit": "AL",
+  "accept_mean": 2.469829415460483,
+  "accept_stdev": 0.10051357340682072,
+  "accept_reps": [
+   2.55,
+   2.407766990291262,
+   2.361111111111111,
+   2.5604395604395602
+  ],
+  "step_s": 0.11936622306799152,
+  "step_s_reps": [
+   0.11823358285007997,
+   0.12006478206958533,
+   0.11911565115776655,
+   0.1196167949782165
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "otion, seduces her, giving her money and promising to marry her and take her away.\n\nJennie returns home, keeping the encounter secret, and waits for him to send",
+   "giving her money before leaving for Washington.\n\nThe passage ends with the Senator departing, leaving Jennie in a state of hopeful uncertainty about her future.",
+   "Chapter III: Senator Brander's Interest**\nSenator Brander is a wealthy, influential, and unmarried man who feels lonely. He becomes increasingly fascinated with",
+   " a surgeon named Wilson is taking his girlfriend Sidney to a disreputable establishment. Joe attempts to drive to confront them, but struggles to start his car."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm",
+  "isl_target": 131072,
+  "isl": 131082,
+  "osl": 110,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 192.6425686830189,
+  "ttft_s_reps": [
+   192.6425686830189,
+   16.722228880040348,
+   16.7291688460391,
+   16.747107581992168
+  ],
+  "decode_tok_s": 18.427030457224753,
+  "prefill_tok_s": 680.4415083131864,
+  "edge_before_c": 80,
+  "edge_after_c": 81,
+  "accept_unit": "AL",
+  "accept_mean": 2.4202904807958,
+  "accept_stdev": 0.2322133256391881,
+  "accept_reps": [
+   2.3191489361702127,
+   2.5714285714285716,
+   2.142857142857143,
+   2.647727272727273
+  ],
+  "step_s": 0.13281379421898232,
+  "step_s_reps": [
+   0.13301659812460206,
+   0.13241799436946894,
+   0.13328739468170117,
+   0.13261099031336254
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "stability and belonging. Sidney then reflects on her disillusionment with life, having recently learned it is more complex and difficult than she once believed.",
+   "d to tell her. Grace then reveals that she has found a job at a department store and intends to live a respectable, \"straight\" life, a decision Palmer supports.",
+   "pt the change and moved out of the house to live in the barn. K. goes to find her there, promising Schwitter to speak with her and help mend their relationship.",
+   "nowing that Sidney loves him, even though she is not physically present with him at that moment\u2014her heart is with him, which forms the basis of his contentment."
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_snowllm",
+  "isl_target": 225280,
+  "isl": 225287,
+  "osl": 38,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 438.84765792498365,
+  "ttft_s_reps": [
+   438.84765792498365,
+   11.45591775298817,
+   11.436872388003394,
+   11.458933651039843
+  ],
+  "decode_tok_s": 16.664930668667104,
+  "prefill_tok_s": 513.3603790099535,
+  "edge_before_c": 59,
+  "edge_after_c": 81,
+  "accept_unit": "AL",
+  "accept_mean": 2.4083885941644563,
+  "accept_stdev": 0.14341666277903395,
+  "accept_reps": [
+   2.466666666666667,
+   2.5833333333333335,
+   2.3076923076923075,
+   2.2758620689655173
+  ],
+  "step_s": 0.14431109203451065,
+  "step_s_reps": [
+   0.14330222429007,
+   0.1453506133394646,
+   0.1431853097747642,
+   0.14531995977895132
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "rize the passage as it does not appear to be a coherent text. It seems to be a collection of fragments from different works, possibly due to a formatting error.",
+   "s with the Senator's continued patronage and his developing romantic feelings for Jennie, setting the stage for a tragic relationship that will define her life.",
+   "personal conflict.\n\nIf you are looking for a summary or analysis of a specific public-domain work, I would be happy to help if you provide the title and author.",
+   "nd the other is a narrative about a character named Joe who is experiencing jealousy. The passage is not coherent and seems to be a jumble of unrelated content."
+  ]
+ }
+]

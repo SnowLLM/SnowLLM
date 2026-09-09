@@ -1,0 +1,141 @@
+[
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_llama",
+  "isl_target": 1024,
+  "isl": 1033,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 5.765782412956469,
+  "ttft_s_reps": [
+   5.765782412956469,
+   5.740619153017178,
+   5.760951150965411,
+   5.770512679009698
+  ],
+  "decode_tok_s": 15.364154205785223,
+  "prefill_tok_s": 179.16042021958955,
+  "edge_before_c": 58,
+  "edge_after_c": 75,
+  "accept_unit": null,
+  "accept_mean": null,
+  "accept_stdev": null,
+  "accept_reps": [],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " to summarize each passage separately, as they are clearly distinct narratives with different characters and settings.\n\n2.  **Analyze Passage 1 (First excerpt):",
+   "lness. Palmer has married another woman (Christine). Grace is angry and bitter about his marriage and his absence during her illness. Palmer tries to reconcile.",
+   "t):* A character named K. is making a spring pilgrimage to see Tillie. He stops at a little house that has been transformed into a bustling bar/inn (automobiles",
+   "ed mist, cold hands, hot head) because he knows Wilson and Schwitter's. He tries to start his car, fails, snaps at the other men, and eventually gets it started"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_llama",
+  "isl_target": 8192,
+  "isl": 8202,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 46.31111466902075,
+  "ttft_s_reps": [
+   46.31111466902075,
+   13.081410237995442,
+   13.083868302986957,
+   13.079186071001459
+  ],
+  "decode_tok_s": 12.909017801955077,
+  "prefill_tok_s": 177.1065123052766,
+  "edge_before_c": 75,
+  "edge_after_c": 77,
+  "accept_unit": null,
+  "accept_mean": null,
+  "accept_stdev": null,
+  "accept_reps": [],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "s disillusionment with life after being out in the world.\n\nThe passage seems to be from two different works or possibly two different sections of a larger work.",
+   "Palmer. Grace has been ill. Palmer has married another woman (Christine). Grace is angry and hurt. Palmer visits her flat. Grace reveals she has gotten a job at",
+   "ss-blower, there are six children, they are deeply in debt. They get food on credit. Jennie's brother Bass suggests they ask for laundry work. They meet Senator",
+   "d summarize both, or ask for clarification. But the instruction is \"Summarise the passage above\" - singular. Given the context, the first passage is the primary"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_llama",
+  "isl_target": 32768,
+  "isl": 32777,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 219.43862687097862,
+  "ttft_s_reps": [
+   219.43862687097862,
+   21.143829022999853,
+   20.98224180599209,
+   20.629552883969154
+  ],
+  "decode_tok_s": 11.748365309583026,
+  "prefill_tok_s": 149.36750410524397,
+  "edge_before_c": 77,
+  "edge_after_c": 79,
+  "accept_unit": null,
+  "accept_mean": null,
+  "accept_stdev": null,
+  "accept_reps": [],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "e Gerhardt)**:\n    *   **Setting**: Columbus, Ohio, fall 1880.\n    *   **Characters**: Mrs. Gerhardt (mother), Jennie (18-year-old daughter), William Gerhardt (",
+   "line.\n- Then a separate passage about Grace and Palmer.\n\nThe instruction is \"Summarise the passage above.\" Since the user pasted two distinct passages, I should",
+   "ping the family (Christmas presents, a job for the father).\n        *   Jennie is naive and innocent, charmed by his wealth and kindness.\n        *   The father",
+   "g both the Dreiser chapters and the garage scene, to be thorough. But wait, the Dreiser excerpt is huge. A summary of that would be a summary of the plot of the"
+  ]
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_nospec_llama",
+  "isl_target": 131072,
+  "isl": 131082,
+  "osl": 256,
+  "reps": 1,
+  "warm": 0,
+  "ttft_s": 1802.1136468720506,
+  "ttft_s_reps": [
+   1802.1136468720506
+  ],
+  "decode_tok_s": 8.77407200806173,
+  "prefill_tok_s": 72.73792095605098,
+  "edge_before_c": 58,
+  "edge_after_c": 81,
+  "accept_unit": null,
+  "accept_mean": null,
+  "accept_stdev": null,
+  "accept_reps": [],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0
+  ],
+  "text_tails": [
+   "ts, and thematic elements without excessive detail. The user likely wants a concise overview of the passage's content.The passage from *Jennie Gerhardt* chronic"
+  ]
+ }
+]

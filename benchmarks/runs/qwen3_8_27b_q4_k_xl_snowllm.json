@@ -1,0 +1,237 @@
+[
+ {
+  "label": "qwen3_8_27b_q4_k_xl_snowllm",
+  "isl_target": 1024,
+  "isl": 1083,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.149846540996805,
+  "ttft_s_reps": [
+   2.149846540996805,
+   1.2887811239925213,
+   1.2842929339967668,
+   1.295905442966614
+  ],
+  "decode_tok_s": 20.275155468943964,
+  "prefill_tok_s": 503.7568865254227,
+  "edge_before_c": 57,
+  "edge_after_c": 75,
+  "accept_unit": "AL",
+  "accept_mean": 2.283756215183463,
+  "accept_stdev": 0.07591370615431149,
+  "accept_reps": [
+   2.1982758620689653,
+   2.2767857142857144,
+   2.383177570093458,
+   2.2767857142857144
+  ],
+  "step_s": 0.11229436936689391,
+  "step_s_reps": [
+   0.11221938649120194,
+   0.11226088090188568,
+   0.11232785783190212,
+   0.1123278696338405
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "eking work at a hotel; second scene shifts to a domestic conversation where Sidney confronts K about taking on household duties and losing independence, while K",
+   " to be straight, Palmer. He says good for you. Nurse Miss Page got her job at Lipton and Homburg's for January white sale. He... cut off. Need summarize passage",
+   "rt in New York? Not sure. The second part with K., Tillie, Schwitter, Mrs. McKee, Street, barn, automobiles, beer, piano. Could be from \"The House of Mirth\"? K.",
+   "o, with Sidney the basis of his happiness, he made the mo\" It seems maybe two different stories? Need summarize coherently. Maybe user expects summary of entire"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_snowllm",
+  "isl_target": 8192,
+  "isl": 8251,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 13.684928254049737,
+  "ttft_s_reps": [
+   13.684928254049737,
+   1.3783817749936134,
+   1.3787397040287033,
+   1.3856088150059804
+  ],
+  "decode_tok_s": 19.264486789239015,
+  "prefill_tok_s": 602.9260692366661,
+  "edge_before_c": 75,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.217810578740224,
+  "accept_stdev": 0.035213591751246026,
+  "accept_reps": [
+   2.1982758620689653,
+   2.256637168141593,
+   2.236842105263158,
+   2.1794871794871793
+  ],
+  "step_s": 0.11507983003859241,
+  "step_s_reps": [
+   0.11501317263775553,
+   0.11507183375234709,
+   0.11520778182424245,
+   0.11508782632483774
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "e with Sidney and K. It may be an error in prompt. We can summarize as presented, noting the last section shifts to a different domestic conversation. But maybe",
+   "ndry from hotel guests. Next day mother asks clerk, who directs them to Senator Brander. He gives them washing, asks questions, is charmed by Jennie. They leave",
+   ". Chapter III describes Senator Brander: opportunist, sympathetic, unmarried, morally compromised but kind. Then sudden different scene: K. visits Tillie at Sch",
+   "cking Max Wilson taking Sidney to Schwitter's, becomes jealous/angry, drives to Schwitter's; Max feels happy with Sidney. Need maybe identify that the last part"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_snowllm",
+  "isl_target": 32768,
+  "isl": 32825,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 65.70246262702858,
+  "ttft_s_reps": [
+   65.70246262702858,
+   2.9043022469850257,
+   1.7071326149743982,
+   1.711387068964541
+  ],
+  "decode_tok_s": 15.290395936687524,
+  "prefill_tok_s": 499.60075600722615,
+  "edge_before_c": 77,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.1889611338398596,
+  "accept_stdev": 0.018629456458211457,
+  "accept_reps": [
+   2.1982758620689653,
+   2.1610169491525424,
+   2.1982758620689653,
+   2.1982758620689653
+  ],
+  "step_s": 0.14258859395844464,
+  "step_s_reps": [
+   0.1257535562070753,
+   0.13955663182176806,
+   0.14562055609512126,
+   0.14700104425016966
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ot, themes, characters. Desired oververbosity 9, but user just says summarize. Could provide a detailed summary, maybe with sections. Need include the odd final",
+   " to Senator at night, he helps, they become lovers, he promises marriage. The final fragment about Grace and Palmer seems separate; maybe include as separate: a",
+   "or German family in Columbus 1880, mother and daughter Jennie seek work at hotel; Senator Brander notices Jennie, gives laundry and money, becomes patron/lover;",
+   "ser just asks summarize passage above. We can summarize main narrative.\n\nNeed maybe include key plot points:\n- 1880 Columbus, Ohio. Poor German family Gerhardt:"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_snowllm",
+  "isl_target": 131072,
+  "isl": 131128,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 381.29999390704324,
+  "ttft_s_reps": [
+   381.29999390704324,
+   5.251761469990015,
+   2.956678149988875,
+   2.968182629032526
+  ],
+  "decode_tok_s": 10.308270883274364,
+  "prefill_tok_s": 343.8971993059291,
+  "edge_before_c": 77,
+  "edge_after_c": 78,
+  "accept_unit": "AL",
+  "accept_mean": 2.278670325545326,
+  "accept_stdev": 0.07524248671892769,
+  "accept_reps": [
+   2.1794871794871793,
+   2.2767857142857144,
+   2.2972972972972974,
+   2.361111111111111
+  ],
+  "step_s": 0.22088992163387,
+  "step_s_reps": [
+   0.22055155379472807,
+   0.2212282894730119,
+   0.22249906656787488,
+   0.2199854487590966
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ybe produce a structured summary: setting, characters, plot progression, themes. Since user just says summarise, likely wants a summary of the provided passage.",
+   "ng, a detailed summary by parts. Need not quote too much. Need include key events: Jennie's poverty, Senator Brander's patronage and affair, his death, Jennie's",
+   "ifferent text, maybe appended. User asks summarize passage above. We need summarize entire passage? Could mention it appears to be a long narrative about Jennie",
+   " from Jennie Gerhardt and summarize plot. Need include main events: Jennie Gerhardt, poor family in Columbus, Senator Brander, relationship, pregnancy, father's"
+  ]
+ },
+ {
+  "label": "qwen3_8_27b_q4_k_xl_snowllm",
+  "isl_target": 225280,
+  "isl": 225339,
+  "osl": 256,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 850.6494569769711,
+  "ttft_s_reps": [
+   850.6494569769711,
+   7.51914674899308,
+   4.167290620971471,
+   4.175654770981055
+  ],
+  "decode_tok_s": 9.225872416366153,
+  "prefill_tok_s": 264.90230276617973,
+  "edge_before_c": 58,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.463942307692308,
+  "accept_stdev": 0.024038461538461453,
+  "accept_reps": [
+   2.451923076923077,
+   2.5,
+   2.451923076923077,
+   2.451923076923077
+  ],
+  "step_s": 0.2677377687471907,
+  "step_s_reps": [
+   0.2896427086346264,
+   0.2680237481864763,
+   0.26745178930790503,
+   0.2641013009616962
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "s's \"The Octopus\"? No, this is \"The Pit\"? \n\nWait - I need to think more carefully. Jennie Gerhardt, Lester Kane, the Kane carriage company, the Gerhardt family,",
+   "g.\n\nThis is actually Frank Norris's novel \"The Call of the Wild\"? No. The characters Jennie Gerhardt, Lester Kane, Vesta, the Kane family - this is Frank Norris",
+   " This appears to be from \"The Leavenworth Murder\" or a similar mystery novel.\n\n3. The very last paragraph seems to be from yet another story - something about a",
+   "re Leavenworth, Mary Leavenworth, and James Harwell (the secretary). This appears to be from a different novel - possibly \"The Leavenworth Murder\" or similar.\n\n"
+  ]
+ }
+]
