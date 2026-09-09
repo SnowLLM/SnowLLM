@@ -1,0 +1,21 @@
+{
+  "id": "qwen3.6-35b-a3b-fp8-mtp",
+  "model": "Qwen3.6-35B-A3B",
+  "precision": "FP8",
+  "dir": "Qwen3.6-35B-A3B-FP8",
+  "bytes": 37493014098,
+  "repo": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "revision": "main",
+  "include": [
+    "*"
+  ],
+  "exclude": [
+    ".gitattributes"
+  ],
+  "defaults": {
+    "num_spec": 2
+  },
+  "priority": 99,
+  "summary": "The same FP8 weights, decoding through the MTP head the checkpoint already ships. No extra download.",
+  "serve_as": "Qwen3.6-35B-A3B-FP8"
+}

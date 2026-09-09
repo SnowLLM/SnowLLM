@@ -1,0 +1,31 @@
+{
+  "id": "deepseek-v4-flash-iq2-xxs",
+  "model": "DeepSeek-V4-Flash-0731",
+  "precision": "IQ2_XXS",
+  "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
+  "bytes": 101756794368,
+  "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+  "revision": "main",
+  "include": [
+    "UD-IQ2_XXS/*.gguf"
+  ],
+  "sources": [
+    {
+      "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+      "revision": "main",
+      "include": [
+        "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf"
+      ]
+    }
+  ],
+  "spec": "DSpark",
+  "requires": "0.3.0",
+  "summary": "284B at a shade over two bits, drafted by DeepSeek's own DSpark. The one to run by default.",
+  "note": "It serves. All 43 layers, the expert block, absorbed MLA over its window and its compressed blocks, both compressors, the indexer and the four residual streams, each checked against llama.cpp on these weights -- and now through the engine, with paged KV over three cache lengths, chunked prefill and several requests at once. Measured on one gfx1151, 256 new tokens each: 17.5 tok/s at a single request and 57.4 across eight, loading in 21s. WHY IT SETS --gpu-memory-utilization 0.93: this is 84.6 GiB of weights, and the usual 0.9 does not leave a KV pool at all, so a recipe that leaves the default alone cannot start on its own settings. 0.93 is the measured value that keeps the prefill chunk at 4096; below it the runner narrows the chunk instead of refusing, and a 1024 chunk costs 12% of prefill, which on a long prompt is most of the request. Context is not the second thing. Its attention reads a 128-key window of the raw latent and nothing below it, so that axis -- 86 of the 98 KiB a token -- is a ring each request carries rather than a pool that grows, and what scales with context is the compressed axes at 12 KiB. At 0.98 and one request that is about 430K tokens where it was 56K. Decode has its own attention grid: absorbed MLA has one kv head and a decode step one query tile, so the prefill kernel would put the whole compressed key axis through a single workgroup, and this one partitions that axis across CTAs and folds the partials back with log-sum-exp. The 10.1 GiB beside the quant is DeepSeek's own DSpark drafter, three more layers of this same architecture that propose a block for the model to verify; it is this recipe's default (dflash: @model) and the paragraph below is what it buys. Decode graphs are captured and replayed here like everywhere else, and they buy very little: capturing a whole step and replaying it measured 60.5 ms against 61.0 eager, so the step is arithmetic-bound rather than launch-bound and a graph has almost nothing to take. THE DRAFTER RUNS AS IT SHIPS, and the reason is worth knowing: this part is unified memory. dspark-*-Q8_0.gguf is 10.14 GiB and nine MXFP4 expert tensors are 94.3% of it, which does not fit beside 84.6 GiB of target inside a 96 GiB carve-out -- but the carve-out is not the budget. The GPU also reaches a 15.2 GiB GTT window into system memory, and it is the same LPDDR5X: measured, a kernel reads pinned host memory at 99.6 GB/s against the carve-out's 102.1. So the drafter's weights are allocated there and take 0.26 GiB of carve-out rather than 10.14, which leaves 6.3 GiB for KV where holding it in the carve-out left 1.9. Speculation wins 1.4-1.8x at B=1 depending on how repetitive the text is: the drafter accepts 2.8-3.5 of 6 rows at 113 ms a step against 58 ms undrafted. TAKE THE WHOLE BLOCK. DSpark drafts block_size tokens, not block_size - 1 -- its Markov head denoises the anchor row too -- so five drafts verify in six rows, and acceptance rises monotonically with every one of them even though a six-row step costs 1.94x a one-row step. WHAT LONG CONTEXT ACTUALLY COSTS HERE, measured one user at a time: 27597 tokens of input is 64 s to the first token, 132334 is 598 s and 264999 is 1949 s. That is quadratic -- t = 1.722e-3 n + 2.125e-8 n^2 fits the three to 0.3% -- and it puts 524288 at 112 minutes and 1048576 at SEVEN HOURS. Decode falls away too, 23.8 tok/s at 27K against 15.5 at 265K: the 128-key window bounds the raw axis and nothing bounds the compressed ones, which are n/4 + n/128 rows a step. A PREFIX CACHE CHANGES WHICH OF THOSE NUMBERS YOU PAY. A turn that shares a prefix with the last one prefills only what is new: MEASURED through the server, a 15081-token prompt asked twice went 32.58 s then 7.97 s, 12288 tokens skipped, byte-for-byte the same answer. So the three numbers above are what a COLD prompt costs, and the usable ceiling for one of those is around 64K; a conversation that has already paid its first prefill can sit well above that. What is still open is #83, where prefill computes 16x what the compressed attention asks for -- fix that and the whole table moves down.",
+  "defaults": {
+    "device_map": "auto",
+    "dflash": "@model",
+    "gpu_memory_utilization": 0.93
+  },
+  "serve_as": "DeepSeek-V4-Flash-0731"
+}

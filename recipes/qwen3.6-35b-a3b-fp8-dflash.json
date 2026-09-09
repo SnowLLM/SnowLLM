@@ -1,0 +1,32 @@
+{
+  "id": "qwen3.6-35b-a3b-fp8-dflash",
+  "model": "Qwen3.6-35B-A3B",
+  "precision": "FP8",
+  "dir": "Qwen3.6-35B-A3B-FP8-DFlash",
+  "bytes": 38264834994,
+  "repo": "Qwen/Qwen3.6-35B-A3B-FP8",
+  "revision": "main",
+  "include": [
+    "*"
+  ],
+  "exclude": [
+    ".gitattributes"
+  ],
+  "sources": [
+    {
+      "repo": "z-lab/Qwen3.6-35B-A3B-DFlash",
+      "revision": "main",
+      "subdir": "dflash",
+      "include": [
+        "config.json",
+        "model.safetensors"
+      ]
+    }
+  ],
+  "defaults": {
+    "dflash": "@model/dflash"
+  },
+  "priority": 100,
+  "summary": "The same FP8 weights with z-lab's DFlash drafter beside them, which proposes a whole block every step instead of one token.",
+  "serve_as": "Qwen3.6-35B-A3B-FP8"
+}

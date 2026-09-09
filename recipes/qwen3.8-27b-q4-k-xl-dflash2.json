@@ -1,0 +1,38 @@
+{
+  "id": "qwen3.8-27b-q4-k-xl-dflash2",
+  "model": "Qwen3.8-27B",
+  "precision": "UD-Q4_K_XL",
+  "dir": "Qwen3.8-27B-UD-Q4_K_XL",
+  "bytes": 20546740167,
+  "repo": "unsloth/Qwen3.8-27B-GGUF",
+  "revision": "main",
+  "include": [
+    "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+    "mmproj-BF16.gguf"
+  ],
+  "sources": [
+    {
+      "repo": "Qwen/Qwen3.8-27B",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ]
+    },
+    {
+      "repo": "z-lab/Qwen3.8-27B-DFlash2-GGUF",
+      "revision": "main",
+      "subdir": "dflash2",
+      "include": [
+        "Qwen3.8-27B-DFlash2-Q8_0.gguf"
+      ]
+    }
+  ],
+  "defaults": {
+    "dflash": "@model/dflash2"
+  },
+  "priority": 93,
+  "requires": "0.3.0",
+  "serve_as": "Qwen3.8-27B-UD-Q4_K_XL",
+  "summary": "The same GGUF with z-lab's DFlash 2 drafter beside it, which accepts far better than this checkpoint's own MTP head.",
+  "note": "SAME DIRECTORY AS qwen3.8-27b-q4-k-xl -- only the drafter is extra, 1.06 GiB into dflash2/. WHY IT EXISTS: Qwen3.8's own MTP head accepts far less than Qwen3.6's did. Measured 2026-08-26 over six prompts, SnowLLM and llama.cpp on the same file at --spec-draft-n-max 2: 3.6 gets 2.570+-0.097 and 2.547+-0.114, 3.8 gets 2.284+-0.268 and 2.284+-0.236. Two engines, one number, so it is the checkpoint's head and not either engine -- forcing every projection to bf16 moves it by -1.4%, inside the prompt spread. WHAT THIS BUYS, measured on the same six prompts and the same build: acceptance length 2.284 on the MTP head, 2.032 running these weights WITHOUT the convolution and the selector (which is what a DFlash 1 engine would do with them), 3.385 with both. AT THE RUNG, all three arms measured 2026-08-26 on the same client (benchmarks/perf_sweep.sh, ISL 1082 / OSL 256, 4 reps, warm-up discarded) with the prefix cache warm and the part at 63-78 C, so no arm is a cold start against a hot one:\n    arm             AL     tok/s   step ms\n    MTP head        2.156  19.18   112.4\n    DFlash2 bf16    2.639  21.18   124.6\n    DFlash2 Q8_0    2.640  22.53   117.2\nThis recipe is the last row: +17.5% of decode against the checkpoint's own head. It gets there by proposing better, not by being cheaper -- its step is 5 ms LONGER than the MTP path's because it runs a 1.9B drafter inside it, and it wins because acceptance goes 2.156 -> 2.640. THE DRAFTER IS THE Q8_0 GGUF, not the bf16 safetensors z-lab also publishes: it is read on every decode step beside the target, and 3.35 GiB of bf16 was 18% of the step spent on the model that only guesses. Q8_0 and not the smaller Q4_K_M because it is the one z-lab quantized uniformly -- every weight is Q8_0, so no fused group (qkv, gate|up, the whole stack's ctx k|v) has members that disagree about a format and has to fall back to bf16. MEASURED 2026-08-26 against the bf16 drafter, same build, same six prompts, both runs at 79-87 C so neither is a cold start: read per step 3.347 -> 1.789 GiB, step time -6.25 ms (-5.1%), acceptance 3.351 -> 3.338 which is no change at all -- four of the six prompts give a bit-identical AL and five of the six give byte-identical text. The KV pool takes what the drafter gave back, 36.4 -> 38.8 GiB at ctx 16384. If you already have model.safetensors in dflash2/ from an earlier version of this recipe, it is dead weight now -- the GGUF beside it wins -- and can be deleted."
+}

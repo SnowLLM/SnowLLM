@@ -1,0 +1,32 @@
+{
+  "id": "qwen3.8-flash-next-q3-k-xl",
+  "model": "Qwen3.8-Flash-Next",
+  "precision": "UD-Q3_K_XL",
+  "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
+  "bytes": 93680465024,
+  "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+  "revision": "main",
+  "include": [
+    "UD-Q3_K_XL/*.gguf",
+    "mmproj-BF16.gguf",
+    "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf"
+  ],
+  "spec": "MTP k=2",
+  "summary": "177B over 512 experts at three bits, with a vision tower beside it. The 26.82 GiB n-gram table stays on disk and is read per batch.",
+  "note": "WHAT THE CHECKPOINT IS: qwen4exp, 48 layers at hidden 2560, 512 experts of 640 with 10 live, a full-attention layer every fourth and a gated-delta layer in between (conv 4, state 128, 16 groups, 48 value heads over an inner 6144), a 4-head indexer at 128 keys keeping the top 2048, four residual streams mixed per block through a rank-320 pair, 262144 context, a Qwen3-VL tower beside it (27 blocks of 1152, patch 16, merge 2) and a one-layer MTP head that shares the target's embedding and output.\nWHERE THE 83.80 GiB IS, counted from the tensor headers: 51.99 routed experts, 26.82 ONE TENSOR, 3.87 the rest of the dense stack, 1.11 embedding and lm_head. That one tensor is per_layer_token_embd -- 320001536 rows of 160 at IQ4_NL, the table a 3-gram hash of 16 heads reads at layer 1 and nowhere else. A token touches 16 of those rows, about 1.4 KiB, so it is never made resident: the host reads them out of the file per batch with posix_fadvise(WILLNEED) and hands the gathered activation to the GEMMs, which is 0.8-1.6% of a 4000-token prefill. 60.1 GiB of weights land on the device and 262144 of context fits beside them at gpu_memory_utilization 0.9, so this one wants no --device-map.\nWHY THIS PRECISION AND NOT THE SMALLER FILE. UD-IQ3_XXS is 7.5 GiB smaller and stores gate/up at IQ2_S, which the three-plane i-quant layout pads to 3.0625 bpw -- exactly what IQ3_XXS occupies -- so 5.0 of those 7.5 GiB come back at load. MEASURED(2026-08-11, benchmarks/moe/bench_moe_lowbit, medians of 7, H=2048 I=512 TOPK=8): at that same width IQ2_S costs 0.599 ms against IQ3_XXS's 0.435 at M=8, and 3.678 against 2.785 at M=512. The smaller file runs its experts a third slower for bytes it does not save. UD-Q4_K_XL, the next one up, stores ffn_down_exps at Q5_1, which no part of this build reads.\nTHE EXPERTS ARE NOT ONE FORMAT: gate/up is IQ3_XXS on 47 layers and IQ4_XS on layer 2, down is IQ4_NL on 43 and Q8_0 on layers 2, 4, 30, 46 and 47. fused_moe_lowbit_kquant_down_split takes an i-quant gate/up over a k-quant down for the 47 layers that need it; layer 2 is k-quant on both sides and calls the older split.\nSPECULATIVE DECODING IS THE CHECKPOINT'S OWN HEAD. MTP/ holds layer 48 -- a whole qwen4exp block over the four residual streams, plus nextn.{enorm,hnorm,eh_proj} in front of it and its own hyper-connection fold behind -- and it shares the target's embedding and output. It costs 2.6 GiB resident and drafts well. MEASURED at depth 2 by benchmarks/perf_sweep.sh, decode tok/s without -> with, acceptance length in brackets: 1K 22.3 -> 34.6 [2.25], 8K 21.9 -> 33.9 [2.25], 32K 20.8 -> 31.5 [2.20], 131K 16.9 -> 26.8 [2.30], 220K 14.3 -> 24.2 [2.39]. Prefill pays 3% for running the head over the chunk. Depth 4 buys another 4% and is not the default.\nQSA IS WIRED, and it is what makes the long context cheap. The indexer mean-pools every four cells into one key, scores them with its own four heads, and the top 512 blocks plus the unscored tail are the only keys the twelve full-attention layers read -- the reference's rule, not an approximation of it. A decode row gathers its own 2051 cells; a prefill tile of 16 query positions shares the UNION of its rows' picks (measured at 2461 blocks against 7168 visible, on real text at 32768) and a per-row mask cuts it back. MEASURED against the dense path in the same build, prefill tok/s then decode tok/s: at 131072 context 721 -> 1275 (1.77x) and 17.3 -> 21.5 (1.24x); at 32768 1242 -> 1394 and 21.5 -> 22.6; at 8192 both within 2%, where the budget covers the whole context and the two are the same attention token for token.",
+  "defaults": {
+    "num_spec": 2
+  },
+  "serve_as": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
+  "sources": [
+    {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ]
+    }
+  ],
+  "priority": 40,
+  "requires": "0.3.0"
+}

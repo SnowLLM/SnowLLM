@@ -1,0 +1,32 @@
+{
+  "id": "deepseek-v4-flash-iq2-xxs-640k",
+  "model": "DeepSeek-V4-Flash-0731",
+  "precision": "IQ2_XXS",
+  "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
+  "bytes": 101756794368,
+  "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+  "revision": "main",
+  "include": [
+    "UD-IQ2_XXS/*.gguf"
+  ],
+  "sources": [
+    {
+      "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+      "revision": "main",
+      "include": [
+        "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf"
+      ]
+    }
+  ],
+  "spec": "DSpark",
+  "requires": "0.3.0",
+  "summary": "The same 284B, still drafted -- the longest context that keeps the 4096 prefill chunk.",
+  "note": "Same weights, same files and same directory as deepseek-v4-flash-iq2-xxs; what differs is that the context is 655360 instead of 262144, and the utilisation that buys it is 0.98. This is the top of the drafted range, and the thing that puts the top there is the PREFILL CHUNK rather than the context: DSpark's KV pool is one for one with the context (#96), so a context token costs 6.72 KiB for the model plus 6.00 for the drafter, and past 640K the runner has to narrow the chunk to pay for it. MEASURED, one slot: 655360 holds chunk 4096 with a 4352-token raw window, 4.4 GiB of KV and 3.8 of draft pools; 786432 starts but falls to chunk 1024 and a 1280-token window, and a 1024 chunk costs 12% of prefill (#60) -- on a long prompt prefill is most of the request, so the extra 128K is not worth what it charges. 917504 refuses outright. IF YOU WANT MORE CONTEXT THAN THIS, the drafter is what has to go: deepseek-v4-flash-iq2-xxs-1m runs the checkpoint's full million at chunk 4096 without it. There is no configuration on a 96 GiB part that has both, and the wall is HOST memory rather than the carve-out -- --device-map can only pin what MemAvailable has spare. THIS IS A CAPACITY DEMONSTRATION, NOT A CONFIGURATION TO WORK IN. It proves the pools build and the server answers at this context; it does not mean you can work at this length. WHAT LONG CONTEXT ACTUALLY COSTS HERE, measured one user at a time: 27597 tokens of input is 64 s to the first token, 132334 is 598 s and 264999 is 1949 s. That is quadratic -- t = 1.722e-3 n + 2.125e-8 n^2 fits the three to 0.3% -- and it puts 524288 at 112 minutes and 1048576 at SEVEN HOURS. Decode falls away too, 23.8 tok/s at 27K against 15.5 at 265K: the 128-key window bounds the raw axis and nothing bounds the compressed ones, which are n/4 + n/128 rows a step. A PREFIX CACHE CHANGES WHICH OF THOSE NUMBERS YOU PAY. A turn that shares a prefix with the last one prefills only what is new: MEASURED through the server, a 15081-token prompt asked twice went 32.58 s then 7.97 s, 12288 tokens skipped, byte-for-byte the same answer. So the three numbers above are what a COLD prompt costs, and the usable ceiling for one of those is around 64K; a conversation that has already paid its first prefill can sit well above that. What is still open is #83, where prefill computes 16x what the compressed attention asks for -- fix that and the whole table moves down. THE PREFIX CACHE COMES OUT TO NOTHING HERE, and no setting says so -- the runner works it out. It is asked for last, against what the ceiling still has once the context and the prefill chunk have been served, and on this tier the context is what the affordance caps, so there is nothing left and it gets nothing. That is the right answer: a cache would cost checkpoints out of the ceiling and compressed pages out of the very pool the context comes from, and here the pool IS the product. Chat on the 256K recipe, which has the slack for it and the repeats to spend it on.",
+  "defaults": {
+    "device_map": "auto",
+    "dflash": "@model",
+    "max_model_len": 655360,
+    "gpu_memory_utilization": 0.98
+  },
+  "serve_as": "DeepSeek-V4-Flash-0731"
+}
