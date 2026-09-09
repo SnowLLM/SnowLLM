@@ -4,10 +4,34 @@
 import collections
 import json
 import pathlib
+import time
+from collections.abc import KeysView
 
 import torch
 
-from ._capi import SnowLLMError, check, lib
+from .. import ops, term
+from .._capi import SnowLLMError, check, lib
+
+PROGRESS_EVERY = 2.0
+_seen = 0
+_t0 = _next = 0.0
+
+
+def note_bytes(n: int) -> None:
+    global _seen, _t0, _next
+    now = time.monotonic()
+    if not _t0:
+        _t0 = _next = now
+    _seen += n
+    if now >= _next + PROGRESS_EVERY:
+        _next = now
+        print(f"{term.stamp(time.strftime('%H:%M:%S'))}   {_seen / (1 << 30):.1f} GiB read, "
+              f"{_seen / (now - _t0) / 1e9:.2f} GB/s", flush=True)
+
+
+def read_bytes() -> int:
+    return _seen
+
 
 _DTYPE = {
     "BF16": torch.bfloat16,
@@ -32,7 +56,7 @@ def _chk_dst(key: str, out: torch.Tensor, nbytes: int, held: str = "") -> None:
 
 
 class Shard:
-    def __init__(self, path: pathlib.Path):
+    def __init__(self, path: pathlib.Path) -> None:
         self.path = str(path)
         with open(path, "rb") as f:
             n = int.from_bytes(f.read(8), "little")
@@ -40,15 +64,16 @@ class Shard:
         self.data_start = 8 + n
         self.meta = {k: v for k, v in header.items() if k != "__metadata__"}
 
-    def spec(self, key):
+    def spec(self, key: str) -> tuple[torch.dtype, tuple[int, ...], int, int]:
         m = self.meta[key]
         start, end = m["data_offsets"]
         return _DTYPE[m["dtype"]], tuple(m["shape"]), self.data_start + start, end - start
 
 
 class Reader:
-    def __init__(self, root, queue_depth: int = 8, chunk_bytes: int = 4 << 20,
-                 num_buffers: int = 12, shard_cache: int = 0):
+    def __init__(self, root: str | pathlib.Path, queue_depth: int = 8,
+                 chunk_bytes: int = 4 << 20, num_buffers: int = 12,
+                 shard_cache: int = 0) -> None:
         self.root = pathlib.Path(root)
         index = self.root / "model.safetensors.index.json"
         if index.exists():
@@ -65,7 +90,7 @@ class Reader:
             raise SnowLLMError("io_uring_setup failed (is io_uring disabled on this kernel?)")
 
         self._cache_cap = shard_cache
-        self._cache: "collections.OrderedDict[str, tuple]" = collections.OrderedDict()
+        self._cache: collections.OrderedDict[str, tuple] = collections.OrderedDict()
 
     def _shard(self, key: str) -> Shard:
         if key not in self.weight_map:
@@ -75,13 +100,19 @@ class Reader:
             self._shards[name] = Shard(self.root / name)
         return self._shards[name]
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return self.weight_map.keys()
 
-    def spec(self, key: str):
+    def spec(self, key: str) -> tuple[torch.dtype, tuple[int, ...], int, int]:
         return self._shard(key).spec(key)
 
     def to_device(self, key: str, out: torch.Tensor | None = None) -> torch.Tensor:
+        dry = ops.drying()
+        if dry is not None:
+            if out is not None:
+                return out
+            dtype, shape, _, _ = self._shard(key).spec(key)
+            return dry.meta(shape, dtype)
         if self._cache_cap > 0:
             return self._from_cache(key, out)
         s = self._shard(key)
@@ -97,6 +128,7 @@ class Reader:
             ),
             f"file_reader_read({key})",
         )
+        note_bytes(nbytes)
         return out
 
     def _from_cache(self, key: str, out: torch.Tensor | None) -> torch.Tensor:
@@ -137,6 +169,7 @@ class Reader:
             ),
             f"file_reader_read({name})",
         )
+        note_bytes(hi - lo)
 
         views = {}
         for k, (dtype, shape, off, n) in specs.items():
@@ -150,18 +183,18 @@ class Reader:
             views[k] = buf[a:a + n].view(dtype).view(shape)
         return buf, views
 
-    def close(self):
+    def close(self) -> None:
         if getattr(self, "_cache", None) is not None:
             self._cache.clear()
         if getattr(self, "_r", None):
             lib.snowllm_file_reader_destroy(self._r)
             self._r = None
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.close()
 
-    def __enter__(self):
+    def __enter__(self) -> "Reader":
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, *_: object) -> None:
         self.close()

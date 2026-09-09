@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The loader against the checkpoint's own modules, on the checkpoint's own weights.
-
-What is exercised here and nowhere else is the path from disk: the parameter names, the `1 +
-weight` gamma, the fused-QKV and in_proj concatenations, the shared-expert slab, and the bf16->f32
-conversions. Each is checked against the matching HF module loaded with the SAME real tensors, so
-nothing in the reference comes from the loader's own reading of the checkpoint.
-
-Needs the real checkpoint; skips (exit 0) if it is not in the HF cache.
-"""
-
 import sys
 
 import torch
@@ -25,16 +15,16 @@ from transformers.models.qwen3_5_moe.configuration_qwen3_5_moe import (  # noqa:
     Qwen3_5MoeTextConfig,
 )
 
-from snowllm import loader, ops  # noqa: E402
+from snowllm.checkpoint import loader
+from snowllm import ops  # noqa: E402
 from snowllm._capi import build_geometry
 
 CFG = build_geometry()
-LIN_LAYER, FULL_LAYER = 0, 3  # layer_types: [linear, linear, linear, full, ...]
+LIN_LAYER, FULL_LAYER = 0, 3
 check = _harness.Checks(34)
 
 
 def hf_state(prefix: str) -> dict:
-    """The real tensors under `prefix`, keyed as the matching HF module expects them."""
     import json
     idx = json.loads((CKPT / "model.safetensors.index.json").read_text())["weight_map"]
     out, handles = {}, {}
@@ -47,13 +37,12 @@ def hf_state(prefix: str) -> dict:
     return out
 
 
-def main():
+def main() -> int:
     m = loader.load(CKPT, layers=range(0, FULL_LAYER + 1))
     cfg = Qwen3_5MoeTextConfig(**{k: v for k, v in m.config.items()
                                   if k in Qwen3_5MoeTextConfig().to_dict()})
     torch.manual_seed(5)
 
-    # 1. gamma: Qwen3_5MoeRMSNorm applies (1 + weight). The loader must fold the +1 in.
     M = 256
     x = torch.randn(M, CFG.hidden, dtype=torch.bfloat16, device="cuda")
     hf_norm = mod.Qwen3_5MoeRMSNorm(CFG.hidden, eps=m.eps).cuda()
@@ -63,8 +52,6 @@ def main():
     ops.synchronize()
     check.close("input_layernorm (1 + weight)", out, hf_norm(x.float()), 0.01)
 
-    # 2. fused QKV: three checkpoint Linears, one slab. The scale/query interleave lives inside
-    #    q_proj's own columns, so a wrong concat order shows up immediately.
     p = f"model.language_model.layers.{FULL_LAYER}.self_attn."
     st = hf_state(p)
     hidden = torch.randn(M, CFG.hidden, dtype=torch.bfloat16, device="cuda") * 0.5
@@ -77,7 +64,6 @@ def main():
     ops.synchronize()
     check.close("fused qkv_proj (q|k|v concat)", proj, want, 0.02)
 
-    # 3. Gated DeltaNet block, real weights, vs the checkpoint's own module.
     Mlin = 512
     hf_lin = mod.Qwen3_5MoeGatedDeltaNet(cfg, layer_idx=LIN_LAYER).cuda()
     hf_lin.load_state_dict(hf_state(f"model.language_model.layers.{LIN_LAYER}.linear_attn."))
@@ -95,19 +81,13 @@ def main():
     ws = ops.empty_bytes(ops.fused_linear_attn_workspace_bytes(Mlin))
     ops.fused_linear_attn(h.view(Mlin, CFG.hidden), lw,
                           torch.tensor([0, Mlin], dtype=torch.int32, device="cuda"),
-                          torch.zeros(1, dtype=torch.int32, device="cuda"), None,  # None = slot b
+                          torch.zeros(1, dtype=torch.int32, device="cuda"), None,
                           conv_state, rec, ws, out, 1, ops.Path.PREFILL)
     ops.synchronize()
     check.close("fused_linear_attn (real weights)", out, want.view(Mlin, CFG.hidden), 0.03)
     del hf_lin
 
-    # 4. MoE block, real weights. Scored on DECIDED routing only: top-8 is a hard selection, so a
-    #    token whose 8th and 9th router logits sit closer together than the router GEMM's own bf16
-    #    rounding can legitimately pick a different 8th expert than fp32 HF did -- and then its
-    #    output is not approximately wrong, it is a different function. A plain rel L2 over all
-    #    tokens is dominated by those few percent and would pass a real layout bug under a loose
-    #    tolerance. The split is on the 8th-vs-9th gap against that rounding scale.
-    Mmoe = 4096  # fused_moe supports decode (<=16) or prefill (>=4096); the middle aborts
+    Mmoe = 4096
     hf_moe = mod.Qwen3_5MoeSparseMoeBlock(cfg).cuda()
     hf_moe.load_state_dict(hf_state(f"model.language_model.layers.{LIN_LAYER}.mlp."))
     hf_moe = hf_moe.float().eval()
@@ -129,8 +109,6 @@ def main():
     decided = gap > 4.0 * logits.abs().mean() * 2**-8
     check.close("fused_moe (real weights, decided)", out[decided], want[decided], 0.02)
     per = (out.float() - want.float()).norm(dim=1) / want.float().norm(dim=1).clamp_min(1e-9)
-    # A genuine mis-route would land here: a token whose routing bf16 CANNOT have flipped, yet
-    # whose output is wrong anyway.
     stray = int(((per > 0.05) & decided).sum())
     check("stray high-error, decided", stray == 0, f"{stray} (must be 0)")
     return check.done()
