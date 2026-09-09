@@ -1,27 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""Paged attention must not read what it does not own.
-
-A block's slots past a request's context hold whatever the previous tenant left. The causal mask
-gives them probability +0.0, and for a long time that looked like enough. It is not: a NEGATIVE
-leftover V still nudges the fp32 accumulator, by about one bf16 ulp. Both kernels therefore exclude
-those slots outright instead of trusting the zero probability to neutralise them --
-docs/engine_determinism.md is the story, this file is the guard it left behind.
-
-The probe is NaN, because the same read has three very different volumes and only one of them can
-be tested reliably: +0.0 leftovers really are inert; a negative one costs a bf16 ulp on roughly one
-length in a hundred, far too rare to assert on; and 0 * NaN = NaN eats the WHOLE output, every
-time. They are the same read, so a test built on NaN fails the instant the guard is removed, where
-one built on the signed cases would pass by luck. Those are still swept, as a second opinion.
-
-No model, no checkpoint: this is a property of the kernel and it runs in seconds.
-"""
-
 import math
 import sys
 
 import torch
+
+import _harness  # noqa: F401
+from collections.abc import Callable, Sequence
 
 from snowllm import ops
 from snowllm._capi import build_geometry
@@ -32,40 +18,35 @@ SCALE = D ** -0.5
 NBLK = 512
 
 
-def pools(fill, gen):
-    """A KV pool whose every slot holds `fill`; the caller then overwrites the in-context ones, so
-    whatever is left is exactly what the kernel has no business reading.
-
-    Painted through a FLAT view of opaque bytes: "every element is X" is a statement about the
-    buffer's contents, not its order, so the fills need no shape -- which is the point."""
-    def one(nbytes):
+def pools(fill: str, gen: torch.Generator) -> tuple[torch.Tensor, ...]:
+    def one(nbytes: int) -> torch.Tensor:
         buf = ops.empty_bytes(nbytes)
         x = buf.view(torch.bfloat16)
         if fill == "zero":
             x.zero_()
         elif fill == "nan":
             x.fill_(float("nan"))
-        elif fill == "neg":       # the sign bit is what does the damage, not the magnitude
+        elif fill == "neg":
             x.copy_(-torch.rand(x.numel(), generator=gen, device="cuda") - 0.5)
-        elif fill == "negzero":   # numerically zero, and it still moved the output
-            buf.view(torch.int16).fill_(-32768)  # 0x8000
+        elif fill == "negzero":
+            buf.view(torch.int16).fill_(-32768)
         else:
             raise ValueError(fill)
         return buf
-    return tuple(one(n) for n in ops.kv_pool_bytes(NBLK, False))
+    return tuple(one(n) for n in ops.kv_pool_bytes(NBLK, False, ops.KV_BLOCK_SIZES[0]))
 
 
-def _write(kc, vc, bt, b, k_real, v_real, S):
-    """Request b's real KV into the pool, through the production writer. Where a slot lands is
-    answered by resolve_slots, so this file never does page arithmetic."""
+def _write(kc: torch.Tensor, vc: torch.Tensor, bt: torch.Tensor, b: int, k_real: torch.Tensor,
+           v_real: torch.Tensor, S: int) -> None:
     seq = torch.full((S,), b, dtype=torch.int32, device="cuda")
     pos = torch.arange(S, dtype=torch.int32, device="cuda")
     row = HKV * D
     ops.reshape_and_cache(k_real.reshape(S, row), v_real.reshape(S, row), kc, vc,
-                          ops.resolve_slots(bt, seq, pos), row, row)
+                          ops.resolve_slots(bt, seq, pos, ops.KV_BLOCK_SIZES[0]), row, row, ops.KV_BLOCK_SIZES[0])
 
 
-def prefill(S, blocks, width, fill, k_real, v_real, q, gen):
+def prefill(S: int, blocks: Sequence[int], width: int, fill: str, k_real: torch.Tensor,
+            v_real: torch.Tensor, q: torch.Tensor, gen: torch.Generator) -> torch.Tensor:
     kc, vc = pools(fill, gen)
     bt = torch.zeros(1, width, dtype=torch.int32, device="cuda")
     bt[0, : len(blocks)] = torch.tensor(blocks, dtype=torch.int32)
@@ -75,12 +56,15 @@ def prefill(S, blocks, width, fill, k_real, v_real, q, gen):
     q_total, qmap = ops.prefill_q_plan([S])
     ops.paged_attn_prefill(q[:M], kc, vc, out,
                            torch.tensor([0, S], dtype=torch.int32, device="cuda"), bt,
-                           torch.tensor([S], dtype=torch.int32, device="cuda"), q_total, SCALE, qmap)
+                           torch.tensor([S], dtype=torch.int32, device="cuda"), q_total, SCALE,
+                           qmap, ops.KV_BLOCK_SIZES[0])
     ops.synchronize()
     return out[:S]
 
 
-def decode(seqs, blocks_of, width, fill, ks, vs, q, gen):
+def decode(seqs: Sequence[int], blocks_of: Sequence[Sequence[int]], width: int, fill: str,
+           ks: Sequence[torch.Tensor], vs: Sequence[torch.Tensor], q: torch.Tensor,
+           gen: torch.Generator) -> torch.Tensor:
     kc, vc = pools(fill, gen)
     B = len(seqs)
     bt = torch.zeros(B, width, dtype=torch.int32, device="cuda")
@@ -93,23 +77,22 @@ def decode(seqs, blocks_of, width, fill, ks, vs, q, gen):
     plan = torch.zeros(ops.paged_decode_plan_elems(B, nslots), dtype=torch.int32, device="cuda")
     out = torch.zeros(B, HQ, D, dtype=torch.bfloat16, device="cuda")
     seq_lens = torch.tensor(seqs, dtype=torch.int32, device="cuda")
-    ops.paged_attn_decode_plan(seq_lens, plan, nslots)
-    ops.paged_attn_decode(q, seq_lens, kc, vc, out, bt, plan, ws, B, nslots, SCALE)
+    ops.paged_attn_decode_plan(seq_lens, plan, nslots, ops.KV_BLOCK_SIZES[0])
+    ops.paged_attn_decode(q, seq_lens, kc, vc, out, bt, plan, ws, B, nslots, SCALE, ops.KV_BLOCK_SIZES[0])
     ops.synchronize()
     return out
 
 
-def blocks_desc(S, top):
+def blocks_desc(S: int, top: int) -> tuple[list[int], int]:
     nb = -(-S // BS)
-    return list(range(top - nb, top)), top - nb  # descending, like the engine's allocator
+    return list(range(top - nb, top)), top - nb
 
 
 FILLS = ("nan", "neg", "negzero")
 bad = 0
 
 
-def sweep(run):
-    """`run(fill)` once per fill, each against the zero-filled reference. One cell per fill."""
+def sweep(run: Callable[[str], torch.Tensor]) -> list[str]:
     global bad
     ref = run("zero")
     cells = []
@@ -122,7 +105,7 @@ def sweep(run):
     return cells
 
 
-def main():
+def main() -> int:
     gen = torch.Generator(device="cuda").manual_seed(11)
 
     print("  prefill -- the slots past the context filled with, in turn:")

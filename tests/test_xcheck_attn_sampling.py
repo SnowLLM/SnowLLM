@@ -1,17 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""Paged attention and sampling against torch.
-
-The reference is `scaled_dot_product_attention`, `topk` and `cumsum` -- not a reference written
-here. Attention masking is subtle enough that a reference and a kernel written from the same
-reading of it would agree on a misreading.
-
-So the causal mask is derived from the DEFINITION: query token i of a request sits at absolute
-position `seq_len - S_b + i` in its sequence (the cache already holds `seq_len - S_b` earlier
-tokens), and causal means it attends to every key at position <= its own.
-"""
-
 import sys
 
 import torch
@@ -23,14 +12,15 @@ from snowllm._capi import build_geometry, check as launched, lib
 import _harness
 
 CFG = build_geometry()
-BS = CFG.block_size
+PAGE = ops.KV_BLOCK_SIZES[0]
+BS = PAGE
 Hq, Hk, D = CFG.num_heads, CFG.num_kv_heads, CFG.head_size
 check = _harness.Checks(46)
 
 
-def build_cache(seq_lens, max_blocks):
-    """A paged pool with a SHUFFLED block table -- a kernel that ignored the indirection and read
-    the pool linearly would still pass with an identity table."""
+def build_cache(
+    seq_lens: list[int], max_blocks: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     B = len(seq_lens)
     num_blocks = B * max_blocks
     g = torch.Generator(device="cuda").manual_seed(4)
@@ -38,51 +28,43 @@ def build_cache(seq_lens, max_blocks):
     v_cache = torch.randn(num_blocks, BS, Hk, D, generator=g, device="cuda").to(torch.bfloat16)
     phys = torch.randperm(num_blocks, device="cuda").to(torch.int32)
     block_tables = phys.view(B, max_blocks).contiguous()
-    # The pool is NOT stored in this natural [block, slot, head, d] order, and how it IS stored is
-    # the library's business -- so the same values go in through the production writer, one whole
-    # block per call, and the REFERENCE keeps the natural-layout tensors. Agreement then means the
-    # kernel read both the block-table indirection and its own layout correctly, rather than that
-    # both sides were handed the same rearrangement.
-    k_kernel, v_kernel = (ops.empty_bytes(n) for n in ops.kv_pool_bytes(num_blocks, False))
+    k_kernel, v_kernel = (ops.empty_bytes(n)
+                          for n in ops.kv_pool_bytes(num_blocks, False, PAGE))
     row = Hk * D
     ident = torch.arange(num_blocks, dtype=torch.int32, device="cuda").reshape(num_blocks, 1)
     seq = torch.arange(num_blocks, dtype=torch.int32, device="cuda").repeat_interleave(BS)
     pos = torch.arange(BS, dtype=torch.int32, device="cuda").repeat(num_blocks)
     ops.reshape_and_cache(k_cache.reshape(-1, row), v_cache.reshape(-1, row), k_kernel, v_kernel,
-                          ops.resolve_slots(ident, seq, pos), row, row)
+                          ops.resolve_slots(ident, seq, pos, PAGE), row, row, PAGE)
     return k_cache, k_kernel, v_cache, v_kernel, block_tables
 
 
-def gather_kv(k_cache, v_cache, block_tables, b, seq_len):
-    """The request's keys/values in logical order, straight out of the block table."""
+def gather_kv(k_cache: torch.Tensor, v_cache: torch.Tensor, block_tables: torch.Tensor, b: int,
+              seq_len: int) -> tuple[torch.Tensor, torch.Tensor]:
     ks, vs = [], []
     for j in range((seq_len + BS - 1) // BS):
         p = int(block_tables[b, j])
         ks.append(k_cache[p])
         vs.append(v_cache[p])
-    return torch.cat(ks)[:seq_len], torch.cat(vs)[:seq_len]  # [T, Hk, D]
+    return torch.cat(ks)[:seq_len], torch.cat(vs)[:seq_len]
 
 
-def sdpa_ref(q, k, v, q_len):
-    """torch's SDPA with the mask written from the definition of causal attention.
-    q [S, Hq, D], k/v [T, Hk, D] -> [S, Hq, D] fp32."""
+def sdpa_ref(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, q_len: int) -> torch.Tensor:
     T = k.shape[0]
     rep = Hq // Hk
-    kk = k.float().repeat_interleave(rep, dim=1).permute(1, 0, 2)  # [Hq, T, D]
+    kk = k.float().repeat_interleave(rep, dim=1).permute(1, 0, 2)
     vv = v.float().repeat_interleave(rep, dim=1).permute(1, 0, 2)
-    qq = q.float().permute(1, 0, 2)  # [Hq, S, D]
+    qq = q.float().permute(1, 0, 2)
 
-    pos = torch.arange(T - q_len, T, device=q.device).unsqueeze(1)  # each query's absolute position
+    pos = torch.arange(T - q_len, T, device=q.device).unsqueeze(1)
     key = torch.arange(T, device=q.device).unsqueeze(0)
-    mask = key <= pos  # causal: attend to every key at or before your own position
+    mask = key <= pos
     out = F.scaled_dot_product_attention(qq, kk, vv, attn_mask=mask, scale=D ** -0.5)
-    return out.permute(1, 0, 2)  # [S, Hq, D]
+    return out.permute(1, 0, 2)
 
 
-def test_prefill():
-    # Mixed: a fresh request, one continuing from a long context (S << seq_len -- the case where a
-    # bottom-right-aligned mask differs from a plain lower-triangular one), and a ragged tail.
-    cases = [(48, 48), (7, 500), (129, 129), (1, 33), (64, 200)]  # (S_b, seq_len_b)
+def test_prefill() -> None:
+    cases = [(48, 48), (7, 500), (129, 129), (1, 33), (64, 200)]
     S = [c[0] for c in cases]
     seq = [c[1] for c in cases]
     B = len(cases)
@@ -99,7 +81,7 @@ def test_prefill():
     total_q_blocks, qmap = ops.prefill_q_plan(list(S))
     out = torch.empty(M, Hq, D, dtype=torch.bfloat16, device="cuda")
     ops.paged_attn_prefill(q, k_kernel, v_kernel, out, cu, bt, seq_lens, total_q_blocks, D ** -0.5,
-                           qmap)
+                           qmap, PAGE)
     ops.synchronize()
 
     off = 0
@@ -111,7 +93,7 @@ def test_prefill():
         off += S[b]
 
 
-def test_decode():
+def test_decode() -> None:
     seq = [1, 16, 17, 300, 4096]
     B = len(seq)
     max_blocks = max((t + BS - 1) // BS for t in seq)
@@ -125,23 +107,19 @@ def test_decode():
     ws = ops.empty_bytes(ops.paged_decode_workspace_size(nslots))
     plan = torch.zeros(ops.paged_decode_plan_elems(B, nslots), dtype=torch.int32, device="cuda")
     out = torch.empty(B, Hq, D, dtype=torch.bfloat16, device="cuda")
-    ops.paged_attn_decode_plan(seq_lens, plan, nslots)
-    ops.paged_attn_decode(q, seq_lens, k_kernel, v_kernel, out, bt, plan, ws, B, nslots, D ** -0.5)
+    ops.paged_attn_decode_plan(seq_lens, plan, nslots, PAGE)
+    ops.paged_attn_decode(q, seq_lens, k_kernel, v_kernel, out, bt, plan, ws, B, nslots,
+                          D ** -0.5, PAGE)
     ops.synchronize()
 
     for b in range(B):
         k, v = gather_kv(k_cache, v_cache, bt, b, seq[b])
-        want = sdpa_ref(q[b:b + 1], k, v, 1)[0]  # decode: one query, sees everything
-        # Max abs err rather than rel L2: one decode row's norm is small enough that a rel score
-        # is dominated by whichever element happened to be near zero.
+        want = sdpa_ref(q[b:b + 1], k, v, 1)[0]
         e = (out[b].float() - want).abs().max().item()
         check(f"req {b}: seq_len={seq[b]}", e < 0.05, f"max abs err {e:.5f}")
 
 
-def test_decode_verify():
-    """T query rows per request -- the speculative verify step. Each row must see the earlier rows
-    of its OWN step (they are already in the cache) and nothing after itself, so an off-by-one in
-    the tail mask shows up here and nowhere else. seq_lens counts all T rows."""
+def test_decode_verify() -> None:
     seq = [17, 64, 300, 4096]
     B = len(seq)
     max_blocks = max((t + BS - 1) // BS for t in seq)
@@ -156,9 +134,9 @@ def test_decode_verify():
         ws = ops.empty_bytes(ops.paged_decode_workspace_size(nslots, T))
         plan = torch.zeros(ops.paged_decode_plan_elems(B, nslots), dtype=torch.int32, device="cuda")
         out = torch.empty(B * T, Hq, D, dtype=torch.bfloat16, device="cuda")
-        ops.paged_attn_decode_plan(seq_lens, plan, nslots)
+        ops.paged_attn_decode_plan(seq_lens, plan, nslots, PAGE)
         ops.paged_attn_decode(q, seq_lens, k_kernel, v_kernel, out, bt, plan, ws, B, nslots,
-                              D ** -0.5, T)
+                              D ** -0.5, PAGE, T)
         ops.synchronize()
 
         for b in range(B):
@@ -168,19 +146,18 @@ def test_decode_verify():
             check(f"req {b}: seq_len={seq[b]}", e < 0.05, f"max abs err {e:.5f}")
 
 
-def torch_filter(probs_row, k, top_p):
-    """torch's own top-k, then the filter from its stated semantics: renormalize the k survivors,
-    zero everything past cumulative mass top_p, renormalize again. -> (probs[k], ids[k])."""
+def torch_filter(probs_row: torch.Tensor, k: int,
+                 top_p: float) -> tuple[torch.Tensor, torch.Tensor]:
     w_p, w_i = torch.topk(probs_row, k, dim=-1)
     w_p = w_p / w_p.sum(-1, keepdim=True)
     cum = w_p.cumsum(-1)
     keep = torch.ones_like(w_p, dtype=torch.bool)
-    keep[..., 1:] = cum[..., :-1] < top_p  # slot 0 always survives, whatever top_p is
+    keep[..., 1:] = cum[..., :-1] < top_p
     w_p = torch.where(keep, w_p, torch.zeros_like(w_p))
     return w_p / w_p.sum(-1, keepdim=True), w_i
 
 
-def test_sampling():
+def test_sampling() -> None:
     print("\n=== sampling vs torch (uniform batch) ===")
     B, V, k = 8, CFG.vocab_size, 64
     torch.manual_seed(12)
@@ -209,7 +186,6 @@ def test_sampling():
     check.exact("top-k indices == torch.topk", top_idx, w_i)
     check.close("top-p filtered probs", top_probs, w_p, 1e-4)
 
-    # multinomial: same uniforms into both, so the draw is a function, not a distribution.
     uni = torch.rand(B, dtype=torch.float32, device="cuda")
     tok = torch.empty(B, dtype=torch.int64, device="cuda")
     launched(lib.snowllm_sampling_multinomial(top_probs.data_ptr(), top_idx.data_ptr(),
@@ -226,24 +202,19 @@ def test_sampling():
     check.exact("argmax == torch.argmax", tok, logits.argmax(-1))
 
 
-def test_sampling_per_row():
-    """The whole point of the per-row parameters: a batch where every row wants something DIFFERENT.
-    A kernel that quietly used row 0's parameters for everyone, or the batch-wide width k for every
-    row's cut, passes every uniform-batch test above and fails here.
-
-    Row 0 is greedy expressed as top_k=1, which must come out EXACTLY equal to torch.argmax."""
+def test_sampling_per_row() -> None:
     print("\n=== sampling vs torch (per-row parameters) ===")
     s = torch.cuda.current_stream().cuda_stream
 
-    rows = [  # (temperature, top_k, top_p)
-        (1.0, 1, 1.0),     # greedy: top_k=1 IS argmax
-        (0.7, 20, 0.95),   # the checkpoint's generation_config
+    rows = [
+        (1.0, 1, 1.0),
+        (0.7, 20, 0.95),
         (1.3, 64, 0.8),
-        (0.5, 5, 1.0),     # no top-p cut
-        (1.0, 50, 0.3),    # aggressive nucleus
+        (0.5, 5, 1.0),
+        (1.0, 50, 0.3),
     ]
     B, V = len(rows), CFG.vocab_size
-    k = max(r[1] for r in rows)  # the output WIDTH; every row cuts to its own top_k inside it
+    k = max(r[1] for r in rows)
     torch.manual_seed(21)
     logits = (torch.randn(B, V, device="cuda") * 3.0).float()
 
@@ -268,11 +239,11 @@ def test_sampling_per_row():
 
     for b, (t, kk, pp) in enumerate(rows):
         want_probs = torch.softmax(logits[b:b + 1] / t, dim=-1)
-        w_p, w_i = torch_filter(want_probs, kk, pp)  # torch cuts at THIS row's own k
+        w_p, w_i = torch_filter(want_probs, kk, pp)
 
         e_probs = _harness.rel(top_probs[b, :kk], w_p[0])
         same_idx = torch.equal(top_idx[b, :kk], w_i[0])
-        pads_zero = bool((top_probs[b, kk:] == 0).all())  # slots past this row's k must be dead
+        pads_zero = bool((top_probs[b, kk:] == 0).all())
 
         slot = torch.searchsorted(w_p.cumsum(-1).contiguous(), uni[b].view(1, 1)).clamp_(max=kk - 1)
         same_tok = int(tok[b]) == int(w_i.gather(1, slot).squeeze())
@@ -284,7 +255,7 @@ def test_sampling_per_row():
     check("row 0 (top_k=1) == torch.argmax", int(tok[0]) == int(logits[0].argmax()))
 
 
-def main():
+def main() -> int:
     test_prefill()
     test_decode()
     test_decode_verify()

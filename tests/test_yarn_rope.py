@@ -1,14 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""loader.yarn_rope_table against transformers' own YaRN, on this checkpoint's rope geometry.
-
-YaRN is the whole long-context ([512K]/[1M]) extension, and its inv_freq blend is exactly the kind
-of shape-preserving math that crashes nothing when wrong. So the reference is
-transformers._compute_yarn_parameters, never a formula this repo re-derived. CPU-only; no
-checkpoint weights needed.
-"""
-
 import sys
 
 import torch
@@ -16,9 +8,8 @@ import torch
 from transformers import PretrainedConfig  # noqa: E402
 from transformers.modeling_rope_utils import _compute_yarn_parameters  # noqa: E402
 
-from snowllm import loader  # noqa: E402
+from snowllm.checkpoint import loader  # noqa: E402
 
-# The shipped Qwen3.6-35B-A3B rope geometry (config.json text_config), rope_type forced to yarn.
 HEAD_DIM, PRF, THETA, ORIG_MAX = 256, 0.25, 10000000, 262144
 CFG = {"head_dim": HEAD_DIM, "max_position_embeddings": ORIG_MAX,
        "rope_parameters": {"rope_theta": THETA, "partial_rotary_factor": PRF}}
@@ -36,7 +27,6 @@ def _ref(factor: float) -> tuple[torch.Tensor, float]:
 
 
 def main() -> None:
-    # factor=1.0 must be the plain base table, bit-for-bit -- the [256K] default must not shift.
     dr = int(HEAD_DIM * PRF)
     i = torch.arange(0, dr, 2, dtype=torch.float32)
     base_inv = 1.0 / (THETA ** (i / dr))

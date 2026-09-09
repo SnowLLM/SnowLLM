@@ -1,18 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The fused qk_norm+RoPE kernel against torch, not against the two kernels it replaces.
-
-`qk_norm_rope` folds RoPE into qk_norm's epilogue and stays in fp32 through the rotate, where the
-two-kernel path (qk_norm -> q/k in bf16 -> rope_apply) rounds once in between. So the reference is
-torch fp32 -- the same order HF uses. Two extra checks pin the design claim: the fused result is
-CLOSE to the two-kernel path (a bounded ~1-ulp difference, not a bug), and it is no FURTHER from the
-fp32 reference than the two-kernel path is (the round-trip it drops was real error).
-
-No checkpoint needed: proj/gamma are synthetic and cos/sin are handed to both kernel and reference,
-so this isolates the norm+rotate arithmetic, not rope_cos_sin (covered elsewhere).
-"""
-
 import sys
 
 import torch
@@ -24,12 +12,12 @@ import _harness
 
 CFG = build_geometry()
 H, Hk, D = CFG.num_heads, CFG.num_kv_heads, CFG.head_size
-DR, EPS = 64, 1e-6  # partial rotary dims; eps as the model uses
+DR, EPS = 64, 1e-6
 check = _harness.Checks(44)
 
 
-def ref(x_in, gamma, cos, sin):
-    """RMSNorm(fp32) * gamma, then partial rotary on the first DR dims -- HF's own order."""
+def ref(x_in: torch.Tensor, gamma: torch.Tensor, cos: torch.Tensor,
+        sin: torch.Tensor) -> torch.Tensor:
     xn = x_in * torch.rsqrt(x_in.pow(2).mean(-1, keepdim=True) + EPS) * gamma
     x1, x2 = xn[..., : DR // 2].clone(), xn[..., DR // 2: DR].clone()
     c, s = cos[:, None, : DR // 2], sin[:, None, : DR // 2]
@@ -38,16 +26,16 @@ def ref(x_in, gamma, cos, sin):
     return xn.to(torch.bfloat16)
 
 
-def main():
+def main() -> int:
     torch.manual_seed(7)
-    M = 300  # not a multiple of the block's 8 heads/wave, to exercise the tail
-    q_stride, off_k = 2 * D, 2 * H * D  # per-head interleaved q, then k -- attention_full.h
+    M = 300
+    q_stride, off_k = 2 * D, 2 * H * D
 
     proj = (torch.randn(M, CFG.qkv_proj_n, device="cuda") * 0.5).to(torch.bfloat16)
     q_gamma = (1 + 0.1 * torch.randn(D, device="cuda")).to(torch.bfloat16)
     k_gamma = (1 + 0.1 * torch.randn(D, device="cuda")).to(torch.bfloat16)
     ang = torch.rand(M, DR // 2, device="cuda") * 6.28
-    cos = torch.cos(ang).repeat(1, 2).contiguous()  # [M, DR], halves equal (rope_cos_sin's layout)
+    cos = torch.cos(ang).repeat(1, 2).contiguous()
     sin = torch.sin(ang).repeat(1, 2).contiguous()
 
     q = torch.empty(M, H, D, dtype=torch.bfloat16, device="cuda")
@@ -65,7 +53,6 @@ def main():
     check("q vs torch fp32 ref (rel L2)", rq < 3e-3, f"{rq:.2e}")
     check("k vs torch fp32 ref (rel L2)", rk < 3e-3, f"{rk:.2e}")
 
-    # The non-rotary tail (dims DR..255) must be plain norm -- catches a rotate that runs too wide.
     check("non-rotary dims untouched by rotate", _harness.rel(q[..., DR:], q_ref[..., DR:]) < 3e-3)
 
     print("\n=== vs the two-kernel path it replaces (qk_norm -> rope_apply) ===")

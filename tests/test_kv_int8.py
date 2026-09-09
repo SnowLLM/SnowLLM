@@ -4,7 +4,8 @@ import sys
 
 import torch
 
-from snowllm import loader, ops
+from snowllm.checkpoint import loader
+from snowllm import ops
 from snowllm.engine import Engine, SamplingParams
 
 import _harness
@@ -19,7 +20,8 @@ PROMPTS = [
 BLOCKS = 2048
 
 
-def generate(model, eos, ids, kv_int8):
+def generate(model: object, eos: tuple[int, ...], ids: list[list[int]],
+             kv_int8: bool) -> tuple:
     eng = Engine(model, num_kv_blocks=BLOCKS, max_num_seqs=4, max_model_len=1024,
                  stop_token_ids=eos, seed=0, num_spec=0, enforce_eager=True, kv_int8=kv_int8,
                  preempt=False)
@@ -34,7 +36,7 @@ def generate(model, eos, ids, kv_int8):
     return got
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     eos = _harness.stop_tokens(CKPT)
     ids = [tok.encode(p) for p, _ in PROMPTS]
@@ -50,7 +52,7 @@ def main():
     c("bf16 pools stay raw byte buffers", bf16_dtypes == {torch.uint8},
       f"{sorted(str(d) for d in bf16_dtypes)}")
 
-    want_bytes = BLOCKS * pools * (sum(ops.kv_pool_bytes(1, True)) + sum(ops.kv_scale_bytes(1)))
+    want_bytes = BLOCKS * pools * (sum(ops.kv_pool_bytes(1, True, ops.KV_BLOCK_SIZES[0])) + sum(ops.kv_scale_bytes(1, ops.KV_BLOCK_SIZES[0])))
     c("the sizer counted the scale pools too", int8_bytes == want_bytes,
       f"{int8_bytes} vs {want_bytes}")
     c("int8 plus its scales is about half of bf16", 0.5 <= int8_bytes / bf16_bytes <= 0.55,

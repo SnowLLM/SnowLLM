@@ -3,6 +3,7 @@
 
 import contextlib
 import os
+from collections.abc import Iterator
 
 import torch
 from torch.cuda import nvtx
@@ -13,12 +14,12 @@ _NULL = contextlib.nullcontext()
 
 
 @contextlib.contextmanager
-def _region(name: str):
+def _region(name: str) -> Iterator[None]:
     with record_function(name), nvtx.range(name):
         yield
 
 
-def span(name: str):
+def span(name: str) -> contextlib.AbstractContextManager[None]:
     if _FORCE or torch.autograd._profiler_enabled():
         return _region(name)
     return _NULL
