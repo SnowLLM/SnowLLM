@@ -1,20 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""An image through the whole stack: vision tower -> token stream -> generated answer.
-
-The reference is not a fixture and not another snowllm call -- it is what the model is known to say
-about a picture whose content is unambiguous. Every piece this exercises fails silently rather than
-loudly: vision rows scattered to the wrong positions, mrope's t/h/w rows collapsed to one, or a
-generated token placed at the prompt length instead of past the image's maximum position, all
-produce fluent text about the wrong thing.
-
-It also checks the two invariants that no text-only test can see:
-  * mrope's three rows genuinely DIFFER across an image (text repeats one row three times, so any
-    section map passes on text alone);
-  * the image rows the engine overwrites are exactly the placeholder positions.
-"""
-
 import sys
 
 import numpy as np
@@ -22,17 +8,16 @@ from PIL import Image
 
 import _harness
 
-CKPT = _harness.checkpoint()
+CKPT = _harness.checkpoint(sys.argv[1] if len(sys.argv) > 1 else _harness.BF16)
 
-from transformers import AutoProcessor  # noqa: E402
-
-from snowllm import loader, multimodal  # noqa: E402
+from snowllm.checkpoint import loader
+from snowllm.models import multimodal  # noqa: E402
 from snowllm.engine import Engine, SamplingParams  # noqa: E402
 
 COLORS = [((220, 30, 30), "red"), ((30, 120, 220), "blue"), ((40, 170, 60), "green")]
 
 
-def solid(rgb, h=224, w=224):
+def solid(rgb: tuple[int, int, int], h: int = 224, w: int = 224) -> Image.Image:
     return Image.fromarray(np.full((h, w, 3), rgb, dtype=np.uint8))
 
 
@@ -40,11 +25,12 @@ def main() -> int:
     model = loader.load(CKPT)
     if model.visual is None:
         _harness.skip("checkpoint carries no vision tower")
-    proc = AutoProcessor.from_pretrained(str(CKPT))
-    tok = proc.tokenizer
+    tok, eos = loader.load_tokenizer(CKPT)
+    proc = loader.load_processor(CKPT, tok)
+    stops = tuple(dict.fromkeys(list(eos) + list(tok.all_special_ids)))
 
     eng = Engine(model, num_kv_blocks=4096, max_num_seqs=4, max_model_len=4096,
-                 stop_token_ids=tuple(tok.all_special_ids), num_spec=0, enforce_eager=True,
+                 stop_token_ids=stops, num_spec=0, enforce_eager=True,
                  preempt=False)
 
     ok = True
@@ -54,7 +40,6 @@ def main() -> int:
             {"type": "text", "text": "What color is this image? Answer with one word."}]}]
         kw = multimodal.prepare(model, proc, msgs, [solid(rgb)], enable_thinking=False)
 
-        # --- the invariants a text prompt cannot exercise -------------------------------------
         pos = kw["mrope"]
         differ = int((pos[0] != pos[1]).sum() + (pos[1] != pos[2]).sum())
         rows = kw["embed_rows"]

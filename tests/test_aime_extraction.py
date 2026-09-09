@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""`\\boxed{}` extraction and judging, for benchmarks/eval_aime.py.
-
-Extraction is the one part of a benchmark with nothing to check it against: a model that answers
-correctly and an extractor that cannot see the answer produce the same 0.0, and the run costs three
-hours either way. It gets a test with no GPU in it so it can be wrong loudly instead of quietly.
-
-The case that motivated this file: `\\boxed{277}` scored as no-answer, because the scan skipped the
-opening brace the search string had consumed without opening the depth counter to match, so the
-first `}` took depth to -1 and nothing ever closed.
-"""
 import pathlib
 import sys
 
@@ -21,7 +11,7 @@ from eval_aime import boxed, scored  # noqa: E402
 ok = True
 
 
-def check(name, got, want):
+def check(name: str, got: object, want: object) -> None:
     global ok
     hit = got == want
     ok &= hit

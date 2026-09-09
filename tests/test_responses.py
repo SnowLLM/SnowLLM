@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The /v1/responses endpoint, driven by the REAL openai SDK (same rationale as test_server.py: the
-client's own response models reject a wrong shape before any assertion runs). In-process over
-ASGITransport; needs the checkpoint and GPU, and skips as a pass without them.
-"""
-
 import asyncio
 import json
 import sys
@@ -18,8 +13,9 @@ CKPT = _harness.checkpoint()
 
 from openai import AsyncOpenAI  # noqa: E402
 
-from snowllm import cli, server  # noqa: E402
-from snowllm.state import install, serving  # noqa: E402
+from snowllm import cli  # noqa: E402
+from snowllm.serve import api as server  # noqa: E402
+from snowllm.serve.state import install, serving  # noqa: E402
 
 check = _harness.Checks(40)
 
@@ -29,7 +25,7 @@ WEATHER = [{"type": "function", "name": "get_weather", "description": "Current w
                 "city": {"type": "string"}, "days": {"type": "integer"}}}}]
 
 
-async def main():
+async def main() -> int:
     install(cli.build(str(CKPT), max_num_seqs=4, max_model_len=4096, num_kv_blocks=None,
                       default_max_tokens=64, seed=0, profile_dir=None))
     serving().engine.start()
@@ -67,8 +63,6 @@ async def main():
     check("reasoning streamed before content", last_reason < first_text)
     check("final answer matches", "96" in final.output_text, repr(final.output_text[:60]))
 
-    # A big token budget: this is a thinking model, and it spends ~900 tokens reasoning before it
-    # emits the call. A tight cap truncates generation mid-<think>, so no call is ever reached.
     print("\n=== responses: function calling round-trip ===")
     q = "What's the weather in Paris? Use the get_weather tool."
     r = await c.responses.create(model="m", temperature=0.0, max_output_tokens=1024, tools=WEATHER,
@@ -81,7 +75,6 @@ async def main():
         check("call is get_weather", fcs[0].name == "get_weather", fcs[0].name)
         check("city is a string 'Paris'", isinstance(args.get("city"), str)
               and "paris" in args["city"].lower(), args)
-        # Feed the tool result back; the model should now answer from it, not call again.
         conv = [{"role": "user", "content": q}] + list(r.output) + [
             {"type": "function_call_output", "call_id": fcs[0].call_id,
              "output": "Paris: 22C, sunny."}]
@@ -101,7 +94,7 @@ async def main():
     check("still calls the tool (thinking off)", "function_call" in kinds, kinds)
 
     print("\n=== responses: 400 paths ===")
-    async def expect_400(label, **kw):
+    async def expect_400(label: str, **kw: object) -> None:
         try:
             await c.responses.create(model="m", **kw)
             check(f"400 {label}", False, "no error")

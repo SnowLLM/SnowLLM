@@ -12,6 +12,7 @@ from . import generation as gen
 from . import tool_parser
 from .generation import ContentDelta, Finish, ReasoningDelta, ToolCallDone, new_id
 from .protocol import Common, ResponsesRequest
+from ..engine.request import Request
 from .state import serving
 
 router = APIRouter()
@@ -45,7 +46,7 @@ def _to_chat_tools(tools: list[dict] | None) -> list[dict]:
     return out
 
 
-def _text_of(content) -> str:
+def _text_of(content: str | list | None) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
@@ -64,7 +65,7 @@ def _reasoning_text(item: dict) -> str:
     return ""
 
 
-def _input_to_messages(inp, instructions: str | None) -> list[dict]:
+def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[dict]:
     msgs: list[dict] = []
     if instructions:
         msgs.append({"role": "system", "content": instructions})
@@ -74,13 +75,13 @@ def _input_to_messages(inp, instructions: str | None) -> list[dict]:
 
     pending: dict | None = None
 
-    def flush():
+    def flush() -> None:
         nonlocal pending
         if pending is not None:
             msgs.append(pending)
             pending = None
 
-    def assistant():
+    def assistant() -> dict:
         nonlocal pending
         if pending is None or pending.get("role") != "assistant":
             flush()
@@ -113,7 +114,7 @@ def _input_to_messages(inp, instructions: str | None) -> list[dict]:
     return msgs
 
 
-def _loads_args(arguments):
+def _loads_args(arguments: str | dict | None) -> dict:
     if isinstance(arguments, str):
         try:
             return json.loads(arguments)
@@ -122,7 +123,7 @@ def _loads_args(arguments):
     return arguments or {}
 
 
-def _usage(prompt_len: int, r) -> dict:
+def _usage(prompt_len: int, r: Request) -> dict:
     out = len(r.out)
     return {"input_tokens": prompt_len, "input_tokens_details": {"cached_tokens": 0},
             "output_tokens": out, "output_tokens_details": {"reasoning_tokens": 0},
@@ -135,7 +136,9 @@ def _status(fr: str) -> tuple[str, dict | None]:
     return "completed", None
 
 
-def _response_obj(rid, created, model, req, output, usage, status, incomplete) -> dict:
+def _response_obj(rid: str, created: int, model: str, req: ResponsesRequest,
+                  output: list[dict], usage: dict, status: str,
+                  incomplete: dict | None) -> dict:
     return {"id": rid, "object": "response", "created_at": created, "model": model,
             "status": status, "output": output, "usage": usage,
             "incomplete_details": incomplete, "error": None,
@@ -176,8 +179,8 @@ def _output_items(reasoning_text: str, content_text: str, calls: list) -> list[d
     return items
 
 
-@router.post("/v1/responses")
-async def responses(req: ResponsesRequest):
+@router.post("/v1/responses", response_model=None)
+async def responses(req: ResponsesRequest) -> StreamingResponse | dict:
     _validate(req)
     expose = gen.check_tool_choice(req.tool_choice)
     chat_tools = _to_chat_tools(req.tools) if expose else None
@@ -202,16 +205,18 @@ async def responses(req: ResponsesRequest):
                          _usage(len(prompt), r), status, incomplete)
 
 
-async def _sse(prompt, common, req, reasoning, types, rid, created, model) -> AsyncIterator[str]:
+async def _sse(prompt: list[int], common: Common, req: ResponsesRequest, reasoning: bool,
+               types: dict | None, rid: str, created: int,
+               model: str) -> AsyncIterator[str]:
     seq = 0
 
-    def emit(type_: str, **kw) -> str:
+    def emit(type_: str, **kw: object) -> str:
         nonlocal seq
         body = {"type": type_, "sequence_number": seq, **kw}
         seq += 1
         return f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
 
-    def item_ev(type_: str, **kw) -> str:
+    def item_ev(type_: str, **kw: object) -> str:
         return emit(type_, output_index=out_index, item_id=cur_id, content_index=0, **kw)
 
     output: list[dict] = []

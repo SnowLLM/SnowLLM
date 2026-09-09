@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from torch import nn
     from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
-    from .async_engine import AsyncEngine
+    from ..engine.async_engine import AsyncEngine
 
 
 @dataclass(frozen=True)

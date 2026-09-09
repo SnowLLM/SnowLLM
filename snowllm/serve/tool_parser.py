@@ -38,7 +38,7 @@ def tool_types(tools: list[dict] | None) -> dict[str, dict[str, str]] | None:
     return out
 
 
-def _convert(raw: str, typ: str):
+def _convert(raw: str, typ: str) -> object:
     if typ == "string":
         return raw
     try:
@@ -66,7 +66,7 @@ def parse_tool_calls(text: str, types: dict[str, dict[str, str]] | None) -> tupl
 
 
 class StreamingToolParser:
-    def __init__(self, types: dict[str, dict[str, str]] | None):
+    def __init__(self, types: dict[str, dict[str, str]] | None) -> None:
         self.types = types
         self.buf = ""
         self.in_tools = False

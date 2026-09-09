@@ -3,13 +3,13 @@
 
 import json
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException
 
+from ..engine import Request, SamplingParams
 from . import tool_parser
-from .engine import Request, SamplingParams
 from .protocol import Common
 from .state import Alias, serving
 
@@ -62,7 +62,7 @@ def _cut(text: str, at: list[str]) -> tuple[str, bool]:
     return (text[:best], True) if best >= 0 else (text, False)
 
 
-def usage(prompt: list[int], r: "Request | None") -> dict:
+def usage(prompt: list[int], r: Request | None) -> dict:
     n = len(r.out) if r is not None else 0
     return {"prompt_tokens": len(prompt), "completion_tokens": n,
             "total_tokens": len(prompt) + n}
@@ -80,7 +80,7 @@ def thinking_open(ids: list[int]) -> bool:
 
 
 class ReasoningSplitter:
-    def __init__(self, in_reasoning: bool):
+    def __init__(self, in_reasoning: bool) -> None:
         self.in_reasoning = in_reasoning
         self.pending = ""
         self.strip = False
@@ -142,6 +142,7 @@ async def _run(prompt: list[int], req: Common,
     stop_ids = eng.engine.stop_token_ids
     out: list[int] = []
     sent = ""
+    seen = False
     async for t in eng.stream(r):
         if t in stop_ids:
             continue
@@ -152,11 +153,14 @@ async def _run(prompt: list[int], req: Common,
         cut, hit = _cut(text, at)
         if len(cut) > len(sent):
             yield cut[len(sent):], r, hit
+            seen = True
             sent = cut
         if hit:
             r.finish_reason = "stop"
             eng.abort(r)
-            return
+            break
+    if not seen:
+        yield "", r, False
 
 
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
@@ -166,7 +170,7 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
     idx = 0
     r: Request | None = None
 
-    def emit_split(vis: str, calls):
+    def emit_split(vis: str, calls: Sequence[tool_parser.ToolCall]) -> Iterator[object]:
         nonlocal idx
         if vis:
             yield ContentDelta(vis)
@@ -175,7 +179,7 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                                json.dumps(c.arguments, ensure_ascii=False))
             idx += 1
 
-    def emit_content(ct: str):
+    def emit_content(ct: str) -> Iterator[object]:
         if not ct:
             return
         yield from emit_split(*(tp.push(ct) if tp else (ct, ())))
@@ -213,8 +217,8 @@ async def collect(prompt: list[int], req: Common, *, reasoning: bool, types: dic
             calls.append(ev)
         elif isinstance(ev, Finish):
             r, fr = ev.request, ev.finish_reason
-    if r is None:
-        raise HTTPException(500, "the engine produced no tokens")
+    if r is None or fr == "error":
+        raise HTTPException(500, "the engine failed this request; see the server log")
     return rc_text, ct_text, calls, r, fr
 
 

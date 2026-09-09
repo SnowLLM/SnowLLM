@@ -7,20 +7,24 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
+from ..models import multimodal
 from . import generation as gen
-from . import multimodal
 from . import tool_parser
 from .generation import ContentDelta, Finish, ReasoningDelta, ToolCallDone
 from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
 
+if TYPE_CHECKING:
+    from PIL import Image
+
 
 @contextlib.asynccontextmanager
-async def _lifespan(_app: FastAPI):
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     serving().engine.start()
     yield
     with contextlib.suppress(Exception):
@@ -62,7 +66,7 @@ async def models() -> dict:
 
 
 def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:
-    def one(c):
+    def one(c: ToolCallDone) -> dict:
         d = {"id": c.call_id, "type": "function",
              "function": {"name": c.name, "arguments": c.arguments}}
         return {"index": c.index, **d} if streaming else d
@@ -70,7 +74,8 @@ def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:
 
 
 async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = False,
-                 types: dict | None = None, mm: dict | None = None):
+                 types: dict | None = None,
+                 mm: dict | None = None) -> StreamingResponse | dict:
     kind = "chat.completion" if chat else "text_completion"
     rid = f"{'chatcmpl' if chat else 'cmpl'}-{uuid.uuid4().hex}"
     created = int(time.time())
@@ -130,7 +135,7 @@ async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = F
             "usage": gen.usage(prompt, r)}
 
 
-def _load_image(url: str):
+def _load_image(url: str) -> "Image.Image":
     import base64
     import io
 
@@ -165,8 +170,8 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
     return out, images
 
 
-@app.post("/v1/chat/completions")
-async def chat_completions(req: ChatRequest):
+@app.post("/v1/chat/completions", response_model=None)
+async def chat_completions(req: ChatRequest) -> StreamingResponse | dict:
     st = serving()
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
     msgs, images = _split_images([m.model_dump(exclude_none=True) for m in req.messages])
@@ -188,8 +193,8 @@ async def chat_completions(req: ChatRequest):
                         types=tool_parser.tool_types(tools), mm=mm)
 
 
-@app.post("/v1/completions")
-async def completions(req: CompletionRequest):
+@app.post("/v1/completions", response_model=None)
+async def completions(req: CompletionRequest) -> StreamingResponse | dict:
     if isinstance(req.prompt, list):
         if len(req.prompt) != 1:
             raise HTTPException(400, "a batched `prompt` list is not supported; send one string")
@@ -202,7 +207,7 @@ app.include_router(responses.router)
 
 
 def main() -> None:
-    from .cli import main as _main
+    from ..cli import main as _main
     _main()
 
 

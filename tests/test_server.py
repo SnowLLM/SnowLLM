@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The OpenAI-compatible server, driven by the REAL openai SDK.
-
-The point of the SDK rather than hand-rolled JSON: if a response shape is wrong, the client's own
-models reject it before any assertion here runs. A curl test written against this server would only
-mirror one reading of the schema.
-
-It talks to the ASGI app in-process (no port, no subprocess), so this is the server's own code path
-minus the socket.
-"""
-
 import asyncio
 import glob
 import os
@@ -25,14 +15,15 @@ CKPT = _harness.checkpoint()
 
 from openai import AsyncOpenAI  # noqa: E402
 
-from snowllm import cli, server  # noqa: E402
-from snowllm.state import install, serving  # noqa: E402
+from snowllm import cli  # noqa: E402
+from snowllm.serve import api as server  # noqa: E402
+from snowllm.serve.state import install, serving  # noqa: E402
 
 TRACES = pathlib.Path(os.environ.get("TMPDIR", "/tmp")) / "snowllm_test_traces"
 check = _harness.Checks(34)
 
 
-async def main():
+async def main() -> int:
     install(cli.build(str(CKPT), max_num_seqs=4, max_model_len=2048, num_kv_blocks=None,
                       default_max_tokens=32, seed=0, profile_dir=str(TRACES)))
     serving().engine.start()
@@ -76,9 +67,6 @@ async def main():
     check("finish_reason == stop", r.choices[0].finish_reason == "stop",
           r.choices[0].finish_reason)
 
-    # Four requests decode in ONE batch, each with its own temperature/top_k/top_p. If the kernels
-    # had applied one row's parameters to the whole batch, the two greedy rows could not still agree
-    # while sitting beside a T=1.5 row.
     print("\n=== per-request sampling, in one batch ===")
     outs = await asyncio.gather(*[
         c.completions.create(model=name, prompt="The capital of France is", max_tokens=16, **kw)
@@ -92,10 +80,7 @@ async def main():
     check("the two greedy rows agree", texts[0] == texts[3])
     check("greedy says Paris", "paris" in texts[0].lower())
 
-    # Thinking is ON by default for this model (no enable_thinking=False kwarg). The server must
-    # split the <think>...</think> reasoning out of the answer into `reasoning_content`, leaving
-    # `content` the answer alone, with neither tag leaking into either field.
-    def _reasoning(obj):  # the SDK keeps non-standard fields in model_extra
+    def _reasoning(obj: object) -> str | None:
         return getattr(obj, "reasoning_content", None) or (obj.model_extra or {}).get(
             "reasoning_content")
 
@@ -120,7 +105,7 @@ async def main():
         piece = _reasoning(d)
         if piece:
             rc_text += piece
-            if ct_text:  # a reasoning delta after content already started == wrong ordering
+            if ct_text:
                 ordered = False
         if d.content:
             ct_text += d.content

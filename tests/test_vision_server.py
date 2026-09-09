@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""An image over HTTP: an OpenAI `image_url` data: URI through /v1/chat/completions.
-
-What this adds over test_vision_e2e is the wire format -- the part list, the base64 decode, and the
-multimodal kwargs surviving the trip from the handler down to Engine.add. The generation itself is
-the same path that test already covers, so one colour is enough here.
-
-Also checks the two refusals that are policy rather than capability: an http(s) URL is not fetched
-unless the operator asked for it, and a text-only request is untouched by any of this.
-"""
-
 import base64
 import io
 import sys
@@ -26,13 +16,14 @@ CKPT = _harness.checkpoint()
 import uvicorn  # noqa: E402
 from openai import OpenAI  # noqa: E402
 
-from snowllm import cli, server  # noqa: E402
-from snowllm.state import install, serving  # noqa: E402
+from snowllm import cli  # noqa: E402
+from snowllm.serve import api as server  # noqa: E402
+from snowllm.serve.state import install, serving  # noqa: E402
 
 PORT = 8123
 
 
-def data_uri(rgb, h=224, w=224) -> str:
+def data_uri(rgb: tuple[int, int, int], h: int = 224, w: int = 224) -> str:
     buf = io.BytesIO()
     Image.fromarray(np.full((h, w, 3), rgb, dtype=np.uint8)).save(buf, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
@@ -54,9 +45,7 @@ def main() -> int:
     client = OpenAI(base_url=f"http://127.0.0.1:{PORT}/v1", api_key="none")
     ok = True
 
-    def ask(content, **kw):
-        # Thinking off: with it on the model opens a <think> block and every token of a short
-        # answer lands in reasoning_content, leaving content empty (generation.ReasoningSplitter).
+    def ask(content: object, **kw: object) -> str:
         return client.chat.completions.create(
             model="m", messages=[{"role": "user", "content": content}],
             temperature=0.0, max_tokens=8,

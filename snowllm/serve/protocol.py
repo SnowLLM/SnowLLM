@@ -25,22 +25,35 @@ class Common(BaseModel):
 
 class ChatMessage(BaseModel):
     role: str
-    content: "str | list[dict] | None" = ""
+    content: str | list[dict] | None = ""
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
+
+
+THINK_FIELDS = ("enable_thinking", "thinking", "reasoning_effort", "preserve_thinking")
 
 
 class ChatRequest(Common):
     messages: list[ChatMessage]
     chat_template_kwargs: dict = Field(default_factory=dict)
     enable_thinking: bool | None = None
+    thinking: object = None
+    reasoning_effort: object = None
+    preserve_thinking: object = None
     tools: list[dict] | None = None
     tool_choice: str | dict = "auto"
 
     def template_kwargs(self) -> dict:
         kw = dict(self.chat_template_kwargs)
-        if self.enable_thinking is not None:
-            kw.setdefault("enable_thinking", self.enable_thinking)
+        for f in THINK_FIELDS:
+            v = getattr(self, f, None)
+            if isinstance(v, dict):
+                v = v.get("type") == "enabled"
+            if v is not None:
+                kw.setdefault(f, v)
+        if str(kw.get("reasoning_effort", "")).lower() == "none" \
+                and "enable_thinking" not in kw and "thinking" not in kw:
+            kw["enable_thinking"] = kw["thinking"] = False
         return kw
 
 

@@ -1,29 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""tool_parser.py, checked against the checkpoint's OWN chat template.
-
-The reference is not hand-written: the template (chat_template.jinja) is what the model was trained
-to emit, so rendering a known tool_calls message through it and parsing the result back is a genuine
-round-trip. A parser tested against typed-out expectations would only mirror one reading of the
-format. Pure CPU; no GPU.
-"""
-
 import sys
 
 import _harness
 
 CKPT = _harness.checkpoint()
 
-from snowllm.tool_parser import parse_tool_calls, StreamingToolParser, tool_types  # noqa: E402
+from snowllm.serve.tool_parser import parse_tool_calls, StreamingToolParser, tool_types  # noqa: E402
 
 tok = _harness.tokenizer(CKPT)
 check = _harness.Checks(40)
 
 
-def render(tool_calls, content="Sure, let me do that."):
-    """The generated portion (from the first <tool_call>) of an assistant turn carrying tool_calls,
-    exactly as the template would have the model emit it."""
+def render(tool_calls: list[dict], content: str = "Sure, let me do that.") -> str:
     msgs = [{"role": "user", "content": "go"},
             {"role": "assistant", "content": content,
              "tool_calls": [{"type": "function", "function": tc} for tc in tool_calls]}]
@@ -37,7 +27,6 @@ SCHEMA = tool_types([{"type": "function", "function": {"name": "f", "parameters"
     {"type": "function", "function": {"name": "g", "parameters": {"properties": {
         "x": {"type": "number"}}}}}])
 
-# string / int / nested-object / a numeric-looking STRING / a multiline STRING
 ARGS = {"s": "Beijing", "n": 3, "o": {"unit": "C", "hi": [1, 2]}, "big": "007",
         "text": "line one\nline two"}
 gen = render([{"name": "f", "arguments": ARGS}])
@@ -53,7 +42,7 @@ check("numeric-looking string stayed a string", calls and calls[0].arguments["bi
 print("=== streaming matches whole-string ===")
 sp = StreamingToolParser(SCHEMA)
 vis, scalls = "", []
-for ch in gen:  # char-by-char is the worst case for the hold-back logic
+for ch in gen:
     v, cs = sp.push(ch)
     vis += v
     scalls += cs
