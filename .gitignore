@@ -6,8 +6,11 @@ __pycache__/
 /dist/
 /build/
 
-# Benchmark output. The harness is tracked; a run's numbers are not -- they belong to one box on
-# one day, and BENCHMARK.md is where the ones worth keeping get written down with their conditions.
+# Benchmark output. A sweep lands in `benchmarks/runs/<date>/`, which is ignored: running a
+# benchmark cannot change what the site publishes. `benchmarks/runs/*.json` -- the same directory,
+# no date -- is TRACKED and is the only thing the page's data is built from, one file per arm.
+# Moving a run up out of its date is the act of saying it counts, and it is done by hand.
+/benchmarks/runs/*/
 /benchmarks/results/*
 !/benchmarks/results/.gitkeep
 
@@ -15,6 +18,13 @@ __pycache__/
 # not -- nothing here reads them, they are uploaded by hand in a settings page and that is the whole
 # of their life. web/og.png is the exception and stays tracked, because the site serves it.
 /brand/
+
+# What the site is assembled from, not what it serves. The deploy copies install.sh into web/ and
+# builds recipe.json out of recipes/ and benchmarks.json out of benchmarks/runs/; committing any of
+# them would leave two copies to disagree.
+/web/install.sh
+/web/recipe.json
+/web/benchmarks.json
 
 # Editor / tooling caches
 /.cache/

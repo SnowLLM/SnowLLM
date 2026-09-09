@@ -5,19 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "snowllm"
 dynamic = ["version"]
-description = "Hand-written HIP kernels for Qwen3.6-35B-A3B on AMD gfx1151 (Strix Halo)"
+description = "Hand-written HIP kernels for LLM inference on AMD Ryzen AI Max (Strix Halo)"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "ColorsWind", email = "14761584+ColorsWind@users.noreply.github.com" }]
 keywords = ["hip", "rocm", "amd", "llm", "inference"]
-dependencies = ["snowllm-kernels", "fastapi", "uvicorn", "pydantic>=2", "transformers", "pillow"]
+dependencies = ["snowllm-kernels==0.3.0", "fastapi", "uvicorn", "pydantic>=2", "transformers", "pillow"]
 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: GPU",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
