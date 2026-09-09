@@ -2,9 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the HuggingFace transformers project
 
-# Adapted from the cu_seqlens / position-id / pos-embed index math in
-# transformers/vision_utils.py
-
 from __future__ import annotations
 
 import math
@@ -12,7 +9,7 @@ from dataclasses import dataclass
 
 import torch
 
-from . import ops
+from .. import ops
 from .geometry import GEMM_N_QUANTUM
 
 
@@ -73,7 +70,7 @@ class VisionGeometry:
         return math.isqrt(self.num_pos)
 
 
-def _align(n: int, a: int = ops.PREFILL_ROW_QUANTUM) -> int:
+def _align(n: int, a: int) -> int:
     return ((n + a - 1) // a) * a
 
 
@@ -98,8 +95,8 @@ def _position_ids(grid_thw: torch.Tensor, merge: int) -> torch.Tensor:
     return torch.cat(parts, dim=0)
 
 
-def _rope_cos_sin(grid_thw: torch.Tensor, device, g: "VisionGeometry"
-                  ) -> tuple[torch.Tensor, torch.Tensor]:
+def _rope_cos_sin(grid_thw: torch.Tensor, device: torch.device | str,
+                  g: VisionGeometry) -> tuple[torch.Tensor, torch.Tensor]:
     dim = g.head_dim // 2
     inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
     pos = _position_ids(grid_thw, g.spatial_merge).to(torch.float32)
@@ -172,16 +169,19 @@ def _shuffle(w: torch.Tensor, N: int, K: int) -> torch.Tensor:
 
 
 class VisionModel:
-    def __init__(self, patch_w, patch_b, pos_embed, blocks, merger, geo: VisionGeometry):
+    def __init__(self, patch_w: torch.Tensor, patch_b: torch.Tensor, pos_embed: torch.Tensor,
+                 blocks: list["_Block"], merger: dict[str, torch.Tensor],
+                 geo: VisionGeometry) -> None:
         self.geo = geo
         self.patch_w = patch_w
         self.patch_b = patch_b
         self.pos_embed = pos_embed
         self.blocks = blocks
         self.merger = merger
-        self._cache: dict = {}
+        self._cache: dict[str, torch.Tensor] = {}
 
-    def _buf(self, name: str, rows: int, cols: int, dtype=torch.bfloat16) -> torch.Tensor:
+    def _buf(self, name: str, rows: int, cols: int,
+             dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
         n = rows * cols
         b = self._cache.get(name)
         if b is None or b.numel() < n or b.dtype != dtype:
@@ -204,7 +204,7 @@ class VisionModel:
         INTERMEDIATE, INTERMEDIATE_PAD = geo.intermediate, geo.intermediate_pad
         MERGE_IN, OUT_HIDDEN = geo.merge_in, geo.out_hidden
 
-        def g(name):
+        def g(name: str) -> torch.Tensor:
             return sd[prefix + name].to(torch.bfloat16).cuda()
 
         patch_w = _shuffle(g("patch_embed.proj.weight").reshape(HIDDEN, PATCH_IN), HIDDEN, PATCH_IN)
@@ -244,17 +244,13 @@ class VisionModel:
         }
         return cls(patch_w, patch_b, pos_embed, blocks, merger, geo)
 
-    def _gemm(self, a, w_shuffled, bias, N, K, out, act=0, residual=None):
-        mpad, m = out.shape[0], a.shape[0]
-        if m != mpad:
-            ain = self._buf("apad", mpad, K)
-            ain[m:].zero_()
-            ain[:m] = a
-        else:
-            ain = a
-        scratch = self._byte_buf("agemm", ops.vision_gemm_scratch_bytes(mpad, K))
-        ops.vision_gemm_bias_act(ain, w_shuffled, scratch, out, bias, residual, mpad, N, K, act)
-        return out[:m]
+    def _gemm(self, a: torch.Tensor, w_shuffled: torch.Tensor, bias: torch.Tensor | None, N: int,
+              K: int, out: torch.Tensor, act: int = 0,
+              residual: torch.Tensor | None = None) -> torch.Tensor:
+        m = a.shape[0]
+        scratch = self._byte_buf("agemm", ops.vision_gemm_scratch_bytes(m, K))
+        ops.vision_gemm_bias_act(a, w_shuffled, scratch, out, bias, residual, m, N, K, act)
+        return out
 
     @torch.no_grad()
     def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
@@ -263,29 +259,20 @@ class VisionModel:
         INTERMEDIATE_PAD, MERGE_IN, MERGE_UNIT = g.intermediate_pad, g.merge_in, g.merge_unit
         x = pixel_values.to(torch.bfloat16).cuda()
         M = x.shape[0]
-        mpad = _align(M)
 
-        xin = self._buf("xin", mpad, PATCH_IN)
-        if mpad != M:
-            xin[M:].zero_()
-        xin[:M] = x
-        hidden = self._buf("hidden", mpad, HIDDEN)
-        self._gemm(xin, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
+        hidden = self._buf("hidden", M, HIDDEN)
+        self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
         pos = _bilinear_pos_embed(grid_thw, self.pos_embed, g.grid_side, g.spatial_merge)
-        hidden[:M] = (hidden[:M].float() + pos.float()).to(torch.bfloat16)
-        if mpad != M:
-            hidden[M:].zero_()
+        hidden[:] = (hidden.float() + pos.float()).to(torch.bfloat16)
 
         cos, sin = _rope_cos_sin(grid_thw, "cuda", g)
         segs = _seg_lengths(grid_thw)
-        o = self._buf("o", mpad, HIDDEN)
-        if mpad != M:
-            o[M:].zero_()
+        o = self._buf("o", M, HIDDEN)
 
         for blk in self.blocks:
-            ln = self._buf("ln", mpad, HIDDEN)
+            ln = self._buf("ln", M, HIDDEN)
             ops.vision_layernorm(hidden, blk.norm1_w, blk.norm1_b, ln, LN_EPS)
-            qkv = self._buf("qkv", mpad, 3 * HIDDEN)
+            qkv = self._buf("qkv", M, 3 * HIDDEN)
             self._gemm(ln, blk.qkv_w, blk.qkv_b, 3 * HIDDEN, HIDDEN, qkv, act=0)
             ops.vision_rope_qk(qkv[:M], cos, sin, HIDDEN, g.num_heads, g.head_dim)
             start = 0
@@ -298,18 +285,16 @@ class VisionModel:
                 start += S
             self._gemm(o, blk.proj_w, blk.proj_b, HIDDEN, HIDDEN, hidden, act=0, residual=hidden)
             ops.vision_layernorm(hidden, blk.norm2_w, blk.norm2_b, ln, LN_EPS)
-            h1 = self._buf("h1", mpad, INTERMEDIATE_PAD)
+            h1 = self._buf("h1", M, INTERMEDIATE_PAD)
             self._gemm(ln, blk.fc1_w, blk.fc1_b, INTERMEDIATE_PAD, HIDDEN, h1, act=1)
             self._gemm(h1, blk.fc2_w, blk.fc2_b, HIDDEN, INTERMEDIATE_PAD, hidden, act=0,
                        residual=hidden)
 
         mg = self.merger
         mnorm = self._buf("mnorm", M, HIDDEN)
-        ops.vision_layernorm(hidden[:M], mg["norm_w"], mg["norm_b"], mnorm, LN_EPS)
+        ops.vision_layernorm(hidden, mg["norm_w"], mg["norm_b"], mnorm, LN_EPS)
         merged_in = mnorm.reshape(M // MERGE_UNIT, MERGE_IN)
-        mpad2 = _align(M // MERGE_UNIT)
-        h = self._buf("mh", mpad2, MERGE_IN)
+        h = self._buf("mh", M // MERGE_UNIT, MERGE_IN)
         self._gemm(merged_in, mg["fc1_w"], mg["fc1_b"], MERGE_IN, MERGE_IN, h, act=2)
-        out = self._buf("mout", mpad2, OUT_HIDDEN)
-        return self._gemm(h[:M // MERGE_UNIT], mg["fc2_w"], mg["fc2_b"], OUT_HIDDEN, MERGE_IN,
-                          out, act=0)
+        out = self._buf("mout", M // MERGE_UNIT, OUT_HIDDEN)
+        return self._gemm(h, mg["fc2_w"], mg["fc2_b"], OUT_HIDDEN, MERGE_IN, out, act=0)

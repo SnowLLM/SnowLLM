@@ -1,26 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""Speculative decoding with the MTP draft module, end to end against the real checkpoint.
-
-THE check is that greedy MTP decode is TOKEN-FOR-TOKEN what greedy decode without it produces.
-Speculative decoding is exact, not an approximation: a draft is accepted only where the model
-itself would have produced that token, so any divergence is a bug, not a tradeoff. That makes the
-no-MTP engine an independent reference for every piece the drafts touch -- the verify step's
-bottom-right-aligned mask, the GDN state snapshots and their num_accepted resume, the rejected
-rows' negative KV slots, the draft layer's own KV.
-
-It also reports the acceptance rate, which is what decides whether any of this pays.
-"""
-
 import sys
 
-from snowllm import loader
+from snowllm.checkpoint import loader
 from snowllm.engine import Engine, SamplingParams
 
 import _harness
 
-CKPT = _harness.checkpoint(_harness.FP8)
+CKPT = _harness.checkpoint(sys.argv[1] if len(sys.argv) > 1 else _harness.FP8)
 
 PROMPTS = [
     "The capital of France is",
@@ -30,7 +18,7 @@ PROMPTS = [
 NEW = 24
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     model = loader.load(CKPT)
     if model.mtp is None:
@@ -41,7 +29,7 @@ def main():
     greedy = SamplingParams(temperature=0.0, max_new_tokens=NEW)
     ok = True
 
-    def run(num_spec):
+    def run(num_spec: int) -> list[list[int]]:
         eng = Engine(model, num_kv_blocks=1024, max_num_seqs=2, max_model_len=1024,
                      stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=num_spec,
                      preempt=False)
@@ -67,12 +55,10 @@ def main():
         print(f"  {'PASS' if same else 'FAIL'}  {p!r}"
               + ("" if same else f"  diverges at token {n}: {a[n:n + 3]} vs {b[n:n + 3]}"))
 
-    # Acceptance rate: with one draft per step, a step emits 1 or 2 tokens, so this is what the
-    # whole exercise buys before the extra draft pass is charged against it.
     eng = Engine(model, num_kv_blocks=1024, max_num_seqs=1, max_model_len=1024,
                  stop_token_ids=eos, seed=0, enforce_eager=True, num_spec=1, preempt=False)
     r = eng.add(tok.encode(PROMPTS[1]), SamplingParams(temperature=0.0, max_new_tokens=NEW))
-    eng.step()  # prefill: emits a token of its own, and is not a verify step
+    eng.step()
     n0, steps = len(r.out), 0
     while not r.done:
         eng.step()

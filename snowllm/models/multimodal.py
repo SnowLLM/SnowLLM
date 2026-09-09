@@ -2,9 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the HuggingFace transformers project
 
-# Adapted from Qwen3_5MoeModel.get_rope_index / get_vision_position_ids in
-# transformers/models/qwen3_5_moe/modeling_qwen3_5_moe.py
-
 import itertools
 
 import torch
@@ -36,7 +33,8 @@ def image_rows(input_ids: list[int], image_token_id: int) -> list[int]:
     return [i for i, t in enumerate(input_ids) if t == image_token_id]
 
 
-def prepare(model, processor, messages: list[dict], images: list, **template_kwargs) -> dict:
+def prepare(model: object, processor: object, messages: list[dict], images: list,
+            **template_kwargs: object) -> dict:
     text = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False,
                                          **template_kwargs)
     enc = processor(text=[text], images=images or None, return_tensors="pt")

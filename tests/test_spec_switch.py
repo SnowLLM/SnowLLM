@@ -1,27 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""A request must keep reading its OWN linear-attn state as the batch changes its draft DEPTH
-mid-generation.
-
-Engine._decode_or_verify picks the depth from the batch size, so a long-lived request decodes at
-several depths, each naming a different number of state slots. A step SHALLOWER than the one before
-is the hazard: `state_indices[b*T + num_accepted - 1]` would index past the group it names, into
-another request's recurrent state.
-
-The check is the INVARIANT, not the output: every step must read a slot the previous step wrote,
-and specifically the one holding the last accepted token's state. Comparing generated tokens cannot
-serve -- decode is batch-composition dependent at the ulp level (more than one op picks its
-implementation by batch size), so two runs with different batches diverge at the first near-tie
-whether or not the slots are right.
-"""
-
 import sys
 
-from snowllm import loader
+import torch
+
+from snowllm.checkpoint import loader
 from snowllm import engine as engine_mod
 from snowllm.engine import Engine, SamplingParams
-from snowllm.model import MAX_NUM_SEQS, Runner
+from snowllm.engine.forward_context import Batch
+from snowllm.engine.runner import MAX_NUM_SEQS, Runner
 
 import _harness
 
@@ -32,7 +20,7 @@ FILLER = "Name a colour."
 NUM_SPEC = 2
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     model = loader.load(CKPT)
     if model.mtp is None:
@@ -41,10 +29,10 @@ def main():
 
     max_seqs = MAX_NUM_SEQS
     spec_max = engine_mod.SPEC_MAX_STEP_ROWS // (NUM_SPEC + 1)
-    steps = []          # one (T, [state slots], num_accepted) per decode forward
+    steps = []
     orig = Runner.forward
 
-    def hooked(self, b):
+    def hooked(self: Runner, b: Batch) -> torch.Tensor:
         if not b.is_prefill:
             steps.append((b.tokens_per_req, b.state_indices.tolist(),
                           None if b.num_accepted is None else b.num_accepted.tolist()))
@@ -54,8 +42,6 @@ def main():
     eng = Engine(model, num_kv_blocks=4096, max_num_seqs=max_seqs, max_model_len=1024, seed=0,
                  enforce_eager=True, num_spec=NUM_SPEC, preempt=False)
     probe = eng.add(tok.encode(PROBE), SamplingParams(temperature=0.0, max_new_tokens=64))
-    # Alone first, so the probe records a deep step's num_accepted; the fillers then widen the
-    # batch UNDER it and force a shallower one. Admitting everything at once only ever deepens.
     for _ in range(8):
         eng.step()
     for _ in range(spec_max + 2):
@@ -64,8 +50,6 @@ def main():
         eng.step()
     Runner.forward = orig
 
-    # The probe is request 0 of every decode batch it is in (running order, and it outlives the
-    # fillers), so its rows are the first T of each step.
     modes, written, ok, first_bad = [], None, True, None
     for i, (T, sidx, nacc) in enumerate(steps):
         rows = sidx[:T]
