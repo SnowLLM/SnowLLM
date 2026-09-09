@@ -1,11 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
+"""Preemption must not lose or corrupt a request, and the check that it did not is a token
+comparison against a run that had room for all of them at once. That run also decodes each request
+in a DIFFERENT BATCH, which is a weaker guarantee than it looks: reduction order moves with the
+batch, and a greedy walk only holds while its own top-2 margin does.
+
+MEASURED on Qwen3.6-35B-A3B with no preemption anywhere, B=1 against B=4: prompts 0 and 1 agree
+over all 120 tokens, and "The chemical symbol for gold is" turns at token 102 on a 0.229 margin
+against a 6.459 median -- it walks into a <think> that enumerates elements, where the next one is a
+coin toss. So a determined continuation may diverge exactly where the walk alone was a tie, and the
+margin is measured there rather than assumed.
+"""
 import sys
 
 import torch
 
-from snowllm import loader, ops
-from snowllm.engine import Engine, SamplingParams
+from snowllm.checkpoint import loader
+from snowllm import ops
+from snowllm.engine import Engine, Request, SamplingParams
 
 import _harness
 
@@ -20,29 +32,44 @@ OPEN = ["Once upon a time, in a village"]
 PROMPTS = DETERMINED + OPEN
 NEW = 120
 CTX = 192
+TIE = 0.5
 
 
-def engine(model, eos, blocks, seqs, preempt=True):
+def engine(model: object, eos: tuple[int, ...], blocks: int, seqs: int,
+           preempt: bool = True) -> Engine:
     return Engine(model, num_kv_blocks=blocks, max_num_seqs=seqs, max_model_len=CTX,
                   stop_token_ids=eos, seed=0, num_spec=0, enforce_eager=True, preempt=preempt)
 
 
-def run(eng, prompts):
+def margins(model: object, eos: tuple[int, ...], blocks: int, prompt: list[int]) -> list[float]:
+    eng = engine(model, eos, blocks, 1)
+    r = eng.add(list(prompt), SamplingParams(temperature=0.0, max_new_tokens=NEW))
+    row = []
+    while not r.done:
+        eng.step()
+        top = torch.topk(eng.runner.logits[0].float(), 2).values
+        row.append(float(top[0] - top[1]))
+    del eng
+    torch.cuda.empty_cache()
+    return row
+
+
+def run(eng: Engine, prompts: list[list[int]]) -> list[Request]:
     greedy = SamplingParams(temperature=0.0, max_new_tokens=NEW)
     reqs = [eng.add(p, greedy) for p in prompts]
     eng.run()
     return reqs
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     eos = _harness.stop_tokens(CKPT)
     ids = [tok.encode(p) for p in PROMPTS]
     model = loader.load(CKPT)
     c = _harness.Checks(50)
 
-    roomy = len(ids) * ops.kv_blocks_for(max(len(p) for p in ids) + NEW)
-    tight = ops.kv_blocks_for(CTX)
+    roomy = len(ids) * ops.kv_blocks_for(max(len(p) for p in ids) + NEW, ops.KV_BLOCK_SIZES[0])
+    tight = ops.kv_blocks_for(CTX, ops.KV_BLOCK_SIZES[0])
     print(f"  {roomy} blocks holds all {len(ids)} at once; {tight} is the floor -- one sequence at "
           f"max_model_len={CTX}")
 
@@ -57,7 +84,7 @@ def main():
     preempted_at: dict[int, int] = {}
     preempt = small._preempt
 
-    def spy():
+    def spy() -> Request | None:
         r = preempt()
         if r is not None:
             preempted_at.setdefault(id(r), len(r.out))
@@ -85,7 +112,14 @@ def main():
           f"first {at} of {len(g)}")
 
     for i in range(len(DETERMINED)):
-        if not c(f"[{i}] a determined continuation is unchanged", want[i] == got[i]):
+        if want[i] == got[i]:
+            c(f"[{i}] a determined continuation is unchanged", True)
+            continue
+        at = next(j for j, (a, b) in enumerate(zip(want[i], got[i])) if a != b)
+        row = margins(model, eos, tight, ids[i])
+        gap = row[at] if at < len(row) else float("inf")
+        if not c(f"[{i}] a determined continuation is unchanged, or turns on a tie", gap < TIE,
+                 f"diverges at token {at} on a {gap:.3f} margin"):
             print(f"      want {tok.decode(want[i])!r}")
             print(f"      got  {tok.decode(got[i])!r}")
 

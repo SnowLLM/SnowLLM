@@ -3,13 +3,13 @@
 
 import torch
 
-from . import ops
+from .. import ops
+from ..trace import span
 from .request import Request
-from .trace import span
 
 
 class Sampler:
-    def __init__(self, stop_token_ids: frozenset[int], seed: int | None = None):
+    def __init__(self, stop_token_ids: frozenset[int], seed: int | None = None) -> None:
         self.stop_token_ids = stop_token_ids
         self.rng = torch.Generator(device="cuda")
         if seed is not None:

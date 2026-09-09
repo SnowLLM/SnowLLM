@@ -8,12 +8,13 @@ import traceback
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 
-from .engine import Engine, Request, SamplingParams
+from .. import term
+from . import Engine, EngineStats, Request, SamplingParams
 
 
 class AsyncEngine:
     def __init__(self, engine: Engine, profile_dir: str | None = None,
-                 stats_interval: float = 0.0):
+                 stats_interval: float = 0.0) -> None:
         self.engine = engine
         self.stats_interval = stats_interval
         self._last_stats = (0.0, None)
@@ -70,11 +71,11 @@ class AsyncEngine:
                 pass
         self._worker.shutdown(wait=True)
 
-    def stats(self):
+    def stats(self) -> EngineStats:
         return self.engine.stats()
 
     def submit(self, prompt: list[int], params: SamplingParams, rope_factor: float = 1.0,
-               **mm) -> Request:
+               **mm: object) -> Request:
         r = self.engine.add(prompt, params, rope_factor=rope_factor, **mm)
         self._live.append(r)
         self._queues[id(r)] = asyncio.Queue()
@@ -133,19 +134,36 @@ class AsyncEngine:
         if was is None:
             return
         dp_t = cur["prefill_tokens"] - was["prefill_tokens"]
-        dp_s = cur["prefill_seconds"] - was["prefill_seconds"]
         dd_t = cur["decode_tokens"] - was["decode_tokens"]
-        dd_s = cur["decode_seconds"] - was["decode_seconds"]
         dd_r = cur["decode_rows"] - was["decode_rows"]
         st = self.engine.stats()
         kv = 1.0 - st.free_kv_blocks / max(self.engine.blocks.total, 1)
-        print(f"[snowllm {time.strftime('%H:%M:%S')}] "
+        span = now - was_at
+        exact = cur["decode_seconds"] > was["decode_seconds"]
+        rate = "step" if exact else "wall"
+        dp_s = cur["prefill_seconds"] - was["prefill_seconds"] if exact else span
+        dd_s = cur["decode_seconds"] - was["decode_seconds"] if exact else span
+        print(f"{term.stamp(time.strftime('%H:%M:%S'))} "
               f"prefill {dp_t / dp_s if dp_s else 0.0:7.1f} tok/s | "
-              f"decode {dd_t / dd_s if dd_s else 0.0:7.1f} tok/s | "
+              f"decode {dd_t / dd_s if dd_s else 0.0:7.1f} tok/s ({rate}) | "
               f"AL {dd_t / dd_r if dd_r else 0.0:.3f} | "
               f"running {st.running:3d} waiting {st.waiting:4d} | KV {kv * 100:4.1f}% "
               f"preempted {st.preemptions} | cache {st.cache_hits}/"
               f"{st.cache_hits + st.cache_misses} saving {st.prefill_tokens_saved} tok", flush=True)
+        self._accept_line()
+
+    def _accept_line(self) -> None:
+        spec = getattr(self.engine, "spec", None)
+        hist = list(getattr(spec, "accept_hist", None) or ())
+        rows = sum(hist)
+        if rows < 1 or len(hist) < 2:
+            return
+        rate = " ".join(f"{sum(hist[j + 1:]) / rows:.3f}" for j in range(len(hist) - 1))
+        drafted = rows * (len(hist) - 1)
+        kept = sum(i * n for i, n in enumerate(hist))
+        print(f"{term.stamp(time.strftime('%H:%M:%S'))}   accepted {kept}/{drafted} drafts "
+              f"({kept / drafted * 100:.1f}%) over {rows} verify rows | per position {rate}",
+              flush=True)
 
     def _fail_all(self) -> None:
         for r in self._live:

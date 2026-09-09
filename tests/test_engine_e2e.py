@@ -1,25 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The whole engine end to end: real checkpoint, real tokenizer, greedy decode.
-
-The reference is not a fixture and not another snowllm call -- it is what the model is known to
-say. A wrong residual order, a swapped gamma, a mis-strided v slice, a clobbered state slot: none
-of them crash, and all of them produce fluent-shaped garbage instead of "Paris". That is the check.
-
-It also prints the memory the engine actually occupies, which is the number the KV budget needs.
-"""
-
 import sys
 
 import torch
 
-from snowllm import loader
+from snowllm.checkpoint import loader
 from snowllm.engine import Engine, SamplingParams
 
 import _harness
 
-CKPT = _harness.checkpoint()
+CKPT = _harness.checkpoint(sys.argv[1] if len(sys.argv) > 1 else _harness.BF16)
 
 PROMPTS = [
     ("The capital of France is", "paris"),
@@ -29,14 +20,14 @@ PROMPTS = [
 GIB = 1 << 30
 
 
-def mem(tag):
+def mem(tag: str) -> None:
     free, total = torch.cuda.mem_get_info()
     print(f"  {tag:<22} torch alloc {torch.cuda.memory_allocated() / GIB:6.2f} GiB   "
           f"reserved {torch.cuda.memory_reserved() / GIB:6.2f} GiB   "
           f"device used {(total - free) / GIB:6.2f} / {total / GIB:.2f} GiB")
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     print("=== load ===")
     mem("before")
@@ -64,19 +55,14 @@ def main():
         print(f"  {prompt!r}")
         print(f"    -> {text!r}   {'PASS' if hit else f'FAIL (expected {want!r})'}")
 
-    # A request owns its linear-attn state slot from admission to retirement, and nothing above can
-    # see that go wrong: every request there finishes on the same step, so a slot handed out twice,
-    # or a prefill writing into somebody else's slot, would have no survivor to corrupt. So: decode
-    # a counter alone, then decode it again with a request that retires UNDER it. Its slot must be
-    # untouched by either the neighbour's prefill or its retirement -- token for token.
     print("\n=== state slots (a request retires under a running one) ===")
     counter, _ = PROMPTS[2]
     alone = eng.add(tok.encode(counter), SamplingParams(temperature=0.0, max_new_tokens=12))
     eng.run()
 
-    eng.add(tok.encode(PROMPTS[0][0]),  # retires first, freeing its slot
+    eng.add(tok.encode(PROMPTS[0][0]),
             SamplingParams(temperature=0.0, max_new_tokens=2))
-    together = eng.add(tok.encode(counter),  # prefills into a DIFFERENT slot
+    together = eng.add(tok.encode(counter),
                        SamplingParams(temperature=0.0, max_new_tokens=12))
     eng.run()
 

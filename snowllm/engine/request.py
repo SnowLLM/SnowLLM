@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from . import ops
+from .. import ops
 
 
 @dataclass
@@ -40,6 +40,9 @@ class Request:
     out: list[int] = field(default_factory=list)
 
     blocks: list[int] = field(default_factory=list)
+
+
+    draft_blocks: list[int] = field(default_factory=list)
     slot: int = -1
     state_head: int = -1
 
@@ -48,17 +51,17 @@ class Request:
     done: bool = False
     finish_reason: str | None = None
 
-    out_counts: "torch.Tensor | None" = None
-    prompt_seen: "torch.Tensor | None" = None
+    out_counts: torch.Tensor | None = None
+    prompt_seen: torch.Tensor | None = None
 
     drafts: list[int] = field(default_factory=list)
     n_accepted: int = 1
 
     rope_factor: float = 1.0
 
-    mrope: "torch.Tensor | None" = None
+    mrope: torch.Tensor | None = None
     pos_delta: int = 0
-    embeds: "torch.Tensor | None" = None
+    embeds: torch.Tensor | None = None
     embed_rows: list[int] = field(default_factory=list)
 
     @property

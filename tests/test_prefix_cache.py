@@ -5,9 +5,10 @@ import sys
 
 import torch
 
-from snowllm import loader, ops
+from snowllm.checkpoint import loader
+from snowllm import ops
 from snowllm.engine import Engine, SamplingParams
-from snowllm.prefix_cache import CKPT_EVERY
+from snowllm.engine.prefix_cache import CKPT_EVERY
 
 import _harness
 
@@ -20,19 +21,19 @@ NEW = 24
 GIB = 1 << 30
 
 
-def build(model, eos, gib):
+def build(model: object, eos: tuple[int, ...], ratio: float) -> Engine:
     return Engine(model, num_kv_blocks=8192, max_num_seqs=2, max_model_len=16384,
                   stop_token_ids=eos, seed=0, num_spec=0, enforce_eager=True, preempt=False,
-                  prefill_chunk=8192, prefix_cache_gib=gib)
+                  prefill_chunk=8192, prefix_memory_ratio=ratio)
 
 
-def ask(eng, ids):
+def ask(eng: Engine, ids: list[int]) -> list[int]:
     r = eng.add(ids, SamplingParams(temperature=0.0, max_new_tokens=NEW))
     eng.run()
     return r.out
 
 
-def main():
+def main() -> int:
     tok = _harness.tokenizer(CKPT)
     eos = _harness.stop_tokens(CKPT)
     c = _harness.Checks(52)
@@ -53,7 +54,7 @@ def main():
     del cold
     torch.cuda.empty_cache()
 
-    eng = build(model, eos, 1.0)
+    eng = build(model, eos, 0.02)
     got = [ask(eng, prompts[0])]
     s1 = eng.stats()
     c("the first request cannot hit", s1.cache_hits == 0 and s1.cached_prefixes > 0,
@@ -68,9 +69,9 @@ def main():
     c("the hit skips a checkpoint's worth of prefill", saved >= CKPT_EVERY,
       f"{saved} of {len(sys_ids)} shared tokens skipped")
     c("the skipped KV is shared, not copied",
-      s2.cached_blocks <= ops.kv_blocks_for(len(prompts[0])),
+      s2.cached_blocks <= ops.kv_blocks_for(len(prompts[0]), ops.KV_BLOCK_SIZES[0]),
       f"cache holds {s2.cached_blocks} blocks, one prompt is "
-      f"{ops.kv_blocks_for(len(prompts[0]))}")
+      f"{ops.kv_blocks_for(len(prompts[0]), ops.KV_BLOCK_SIZES[0])}")
 
     for q, w, g in zip(ASK, want, got):
         if not c(f"identical through the cache: {q[:30]!r}", w == g):

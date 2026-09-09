@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""Capture a decode step into a CUDA graph and replay it as the context grows.
-
-The test must be able to FAIL: it replays against a KV cache that keeps growing under a graph whose
-launch dims were baked at capture. Every replay is checked against the same ops run eagerly, so a
-stale launch or a stale buffer address shows up as a wrong answer, not just as a crash.
-"""
-
 import sys
 
 import torch
 
+import _harness  # noqa: F401
 from snowllm import ops
 from snowllm._capi import build_geometry
 
@@ -19,27 +13,24 @@ CFG = build_geometry()
 BS = CFG.block_size
 
 
-def decode_step(st, seq_lens):
-    """One full-attention decode step over st's static buffers, on the current stream."""
+def decode_step(st: dict, seq_lens: torch.Tensor) -> None:
     ops.qkv_proj(st["hidden"], st["w_qkv"], st["qkv_scratch"], st["proj"],
                  ops.Path.DECODE)
     ops.qk_norm(st["proj"], st["q_gamma"], st["k_gamma"], st["q"], st["k"], 1e-6)
     ops.reshape_and_cache(st["k"], st["proj"], st["k_cache"], st["v_cache"], st["slots"],
-                          CFG.kv_dim_, CFG.qkv_proj_n)
-    # Inside the capture, as model.py does it: the plan is rebuilt from seq_lens on every replay,
-    # so a graph captured at one context length replays correctly at another.
-    ops.paged_attn_decode_plan(seq_lens, st["plan"], st["num_slots"])
+                          CFG.kv_dim_, CFG.qkv_proj_n, ops.KV_BLOCK_SIZES[0])
+    ops.paged_attn_decode_plan(seq_lens, st["plan"], st["num_slots"], ops.KV_BLOCK_SIZES[0])
     ops.paged_attn_decode(st["q"], seq_lens, st["k_cache"], st["v_cache"], st["attn"],
                           st["block_tables"], st["plan"], st["attn_ws"], seq_lens.numel(),
-                          st["num_slots"], st["scale"])
+                          st["num_slots"], st["scale"], ops.KV_BLOCK_SIZES[0])
     ops.attn_out_scale_oproj(st["attn"], st["proj"], st["w_o"], st["o_scratch"], st["out"],
                              decode=True)
 
 
-def build(B, max_blocks):
+def build(B: int, max_blocks: int) -> dict:
     torch.manual_seed(7)
     Hq, Hk, D = CFG.num_heads, CFG.num_kv_heads, CFG.head_size
-    CFG.kv_dim_ = Hk * D  # the k rows qk_norm writes are dense; v is read in place from proj
+    CFG.kv_dim_ = Hk * D
 
     w_qkv_raw = torch.randn(CFG.qkv_proj_n, CFG.hidden, dtype=torch.bfloat16, device="cuda") * 0.02
     w_o_raw = torch.randn(CFG.hidden, Hq * D, dtype=torch.bfloat16, device="cuda") * 0.02
@@ -61,7 +52,6 @@ def build(B, max_blocks):
         "attn": torch.empty(B, Hq, D, dtype=torch.bfloat16, device="cuda"),
         "out": torch.empty(B, CFG.hidden, dtype=torch.bfloat16, device="cuda"),
         "k_cache": torch.zeros(num_blocks, BS, Hk, D, dtype=torch.bfloat16, device="cuda"),
-        # key innermost
         "v_cache": torch.zeros(num_blocks, Hk, D, BS, dtype=torch.bfloat16, device="cuda"),
         "block_tables": torch.arange(num_blocks, dtype=torch.int32, device="cuda").view(B, max_blocks),
         "slots": torch.zeros(B, dtype=torch.int32, device="cuda"),
@@ -73,15 +63,13 @@ def build(B, max_blocks):
     return st
 
 
-def main():
+def main() -> int:
     B, max_blocks = 4, 64
     st = build(B, max_blocks)
     seq_lens = torch.zeros(B, dtype=torch.int32, device="cuda")
     print(f"B={B}  num_slots={st['num_slots']} (constant; the plan inside the graph re-splits "
           f"them across requests every replay)")
 
-    # Warm up on a side stream: HIP loads each kernel's code object lazily on its first launch, and
-    # a first launch inside a capture fails.
     side = torch.cuda.Stream()
     side.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(side):
@@ -102,7 +90,6 @@ def main():
 
     ok = True
     for step in range(1, 130):
-        # Everything the step reads must land in the SAME buffers the capture recorded.
         st["hidden"].normal_()
         seq_lens.fill_(step)
         pos = step - 1
@@ -116,7 +103,6 @@ def main():
         got = st["out"].clone()
         got_kc = st["k_cache"].clone()
 
-        # Eager reference: same ops, same inputs, restored cache -- only the launch path differs.
         st["hidden"].copy_(hidden_in)
         st["k_cache"].copy_(kc)
         st["v_cache"].copy_(vc)

@@ -1,19 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-"""The three penalties against a from-scratch reference, and the invariant a verify step needs.
-
-Two things are checked, and the second is the one worth having:
-
-  1. The arithmetic matches vLLM's -- repetition (multiplicative, over prompt AND output) applied to
-     the raw logit first, then frequency (linear in the count), then presence (flat).
-  2. Row t of a verify step is charged as if the t drafts before it had been emitted. That is what
-     makes `_accept` keep a prefix that plain decoding would also have produced (spec_decode's
-     docstring). A penalty charged against `out` alone passes every arithmetic check above and
-     still breaks this one, which is why it is a separate test and not an assertion on row 0.
-
-Needs no checkpoint: the sampler reads logits and Requests, not a model.
-"""
 import sys
 
 import torch
@@ -21,29 +8,29 @@ import torch
 import _harness
 
 from snowllm._capi import build_geometry
-from snowllm.request import Request, SamplingParams  # noqa: E402
-from snowllm.sampler import Sampler  # noqa: E402
+from snowllm.engine.request import Request, SamplingParams  # noqa: E402
+from snowllm.engine.sampler import Sampler  # noqa: E402
 
 CFG = build_geometry()
 V = CFG.vocab_size
 check = _harness.Checks(52)
 
 
-def reference(logits, prompt, emitted, pres, freq, rep):
-    """vLLM's _apply_penalties, written the slow obvious way over python lists."""
+def reference(logits: torch.Tensor, prompt: list[int], emitted: list[int], pres: float,
+              freq: float, rep: float) -> torch.Tensor:
     out = logits.clone()
     counts = {}
     for t in emitted:
         counts[t] = counts.get(t, 0) + 1
-    for t in set(prompt) | set(emitted):          # repetition: prompt as well as output
+    for t in set(prompt) | set(emitted):
         out[t] = out[t] / rep if out[t] > 0 else out[t] * rep
     for t, c in counts.items():
-        out[t] -= freq * c                        # frequency: linear in the count
-        out[t] -= pres                            # presence: flat, however often it appeared
+        out[t] -= freq * c
+        out[t] -= pres
     return out
 
 
-def make(prompt, emitted, **kw):
+def make(prompt: list[int], emitted: list[int], **kw: object) -> Request:
     r = Request(prompt=list(prompt), params=SamplingParams(temperature=1.0, **kw))
     r.out = list(emitted)
     return r
@@ -86,7 +73,7 @@ for k in (2, 3):
     r = make(PROMPT, EMITTED, presence_penalty=1.5, frequency_penalty=0.7,
              repetition_penalty=1.3)
     r.drafts = list(DRAFTS[:k])
-    rows = [r] * k                                  # what verify_step passes: the same request, k x
+    rows = [r] * k
     got = base.unsqueeze(0).repeat(k, 1).contiguous()
     sampler._penalize(got, rows)
     worst = 0.0
@@ -95,8 +82,6 @@ for k in (2, 3):
         worst = max(worst, (got[t] - want).abs().max().item())
     check(f"T={k}, every row against its own prefix", worst < 1e-4, f"max |delta| {worst:.3e}")
 
-# 404 is drafted twice, so at t=2 its count is 2 (two frequency charges) but it is present once
-# (one presence charge). Charging presence per occurrence is the easy bug; this row catches it.
 r = make(PROMPT, EMITTED, presence_penalty=1.5, frequency_penalty=0.7)
 r.drafts = [404, 404]
 got = base.unsqueeze(0).repeat(3, 1).contiguous()
@@ -107,7 +92,7 @@ check("a token drafted twice is charged presence once", err < 1e-4, f"max |delta
 
 print("\nappend() keeps the histogram in step with out")
 r = make(PROMPT, [], presence_penalty=1.5)
-sampler._penalize(base.clone().unsqueeze(0), [r])     # builds the histogram
+sampler._penalize(base.clone().unsqueeze(0), [r])
 for t in [5, 5, 6]:
     sampler.append(r, t)
 got = base.clone().unsqueeze(0)
@@ -117,10 +102,8 @@ err = (got[0] - want).abs().max().item()
 check("incremental counts match a rebuild", err < 1e-4, f"max |delta| {err:.3e}")
 
 print("\nthe wire reaches the sampler")
-# generation.params() is the ONE place a request becomes SamplingParams, so a field added to
-# protocol.Common and forgotten here is silently a default -- which no arithmetic test above sees.
-from snowllm.generation import params as wire_params  # noqa: E402
-from snowllm.protocol import Common  # noqa: E402
+from snowllm.serve.generation import params as wire_params  # noqa: E402
+from snowllm.serve.protocol import Common  # noqa: E402
 
 p = wire_params(Common(presence_penalty=1.5, frequency_penalty=-0.4, repetition_penalty=1.2), 16)
 check("presence_penalty carried", p.presence_penalty == 1.5)
