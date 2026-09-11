@@ -11,13 +11,19 @@ import torch
 from .. import ops
 from .._capi import SnowLLMError
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Qwen4ExpGeometry
-from .block_manager import BlockAllocator, StateSlots, block_tables, slot_mapping
+from .block_manager import (
+    BlockAllocator,
+    StateSlots,
+    Staging,
+    TableMirror,
+    block_tables,
+    slot_mapping,
+)
 from .forward_context import (
     Batch,
     i32,
     i64,
     plain_decode_shapes,
-    positions,
 )
 from .prefix_cache import CKPT_EVERY, Entry, PrefixCache, thin
 from .request import Request, SamplingParams
@@ -331,6 +337,8 @@ class Engine:
         self.slots = StateSlots(max_num_seqs, self.runner.slots_per_request,
                                 self.runner.dummy_slot)
         self.sampler = Sampler(frozenset(stop_token_ids), seed)
+        self.tables = TableMirror(self.runner.max_num_seqs, self.runner.max_blocks_per_seq)
+        self.stage = Staging()
         self.dflash = None
         if dflash_path and _dspark(self.dflash_geo):
             self.dflash = self._build_dspark(dflash_path, dflash_block, max_model_len,
@@ -338,8 +346,8 @@ class Engine:
         elif dflash_path:
             self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len)
         self.spec = self.dflash or (
-            SpecDecoder(self.runner, self.sampler, self.slots, num_spec=self.num_spec,
-                        window=mtp_window, sinks=mtp_sinks)
+            SpecDecoder(self.runner, self.sampler, self.slots, self.tables, self.stage,
+                        num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks)
             if self.num_spec else None)
 
         self.waiting: deque[Request] = deque()
@@ -434,7 +442,8 @@ class Engine:
         torch.cuda.empty_cache()
         need = self.dflash_blocks
         draft.pools(need, self.runner.block_size, 1)
-        return DSparkDecoder(self.runner, self.sampler, self.slots, draft, BlockAllocator(need, self.runner.block_size),
+        return DSparkDecoder(self.runner, self.sampler, self.slots, draft,
+                             BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              max_blocks_per_seq=ops.kv_blocks_for(max_model_len + block,
                                                                  self.runner.block_size),
                              block=block, p_min=p_min)
@@ -459,7 +468,8 @@ class Engine:
         draft = dflash_draft.load(src, g, pools, self.runner.arena, self.runner.block_size)
         src.close()
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
-                             BlockAllocator(need, self.runner.block_size), block=block,
+                             BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
+                             block=block,
                              max_blocks_per_seq=per_seq)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,
@@ -682,9 +692,12 @@ class Engine:
         rows: list[tuple[int, int]] = []
         cu, last_row, off = [0], [], 0
         erows, eparts = [], []
+        hid: list[int] = []
         for i, (r, lo, hi) in enumerate(spans):
             base, li = off, hi - lo
-            ids[base:base + li] = torch.tensor(r.prefill_src[lo:hi], dtype=torch.int64)
+            src = r.prefill_src[lo:hi]
+            ids[base:base + li] = torch.tensor(src, dtype=torch.int64)
+            hid += src
             pos[:, base:base + li] = r.prefill_positions(lo, hi)
             rows += [(i, p) for p in range(lo, hi)]
             ks = [k for k, p in enumerate(r.embed_rows) if lo <= p < hi]
@@ -716,6 +729,7 @@ class Engine:
             embed_rows=i64(erows) if erows else None,
             prev_ids=([list(r.prefill_src[max(0, lo - k):lo]) for r, lo, _ in spans]
                       if k else None),
+            host_ids=hid,
         )
 
     def _reserve_draft(self, r: Request, rows: int) -> bool:
@@ -809,17 +823,20 @@ class Engine:
     def _decode(self) -> int:
         batch = self._decodable_batch(1)
         p = [r.num_cached for r in batch]
-        k = self.runner.prev_context
-        bt = block_tables(batch)
+        k, bs = self.runner.prev_context, self.runner.block_size
+        ids = [r.last for r in batch]
+        d_ids, pos, slots, seq, sidx = self.stage(
+            (ids, [q + r.pos_delta for q, r in zip(p, batch)] * 3),
+            ([r.blocks[q // bs] * bs + q % bs for q, r in zip(p, batch)], [q + 1 for q in p],
+             [self.slots.name(r, 1)[0] for r in batch]))
         b = Batch(
-            input_ids=i64([r.tokens[-1] for r in batch]),
-            positions=positions([q + r.pos_delta for q, r in zip(p, batch)]),
-            slot_mapping=slot_mapping(bt, list(enumerate(p)), self.runner.block_size),
-            block_tables=bt,
-            seq_lens=i32([q + 1 for q in p]),
+            input_ids=d_ids, positions=pos.view(3, -1), slot_mapping=slots,
+            block_tables=self.tables([r.blocks for r in batch]),
+            seq_lens=seq,
             is_prefill=False, num_tokens=len(batch),
-            state_indices=i32([self.slots.name(r, 1)[0] for r in batch]),
-            prev_ids=[r.tokens[-1 - k:-1] for r in batch] if k else None,
+            state_indices=sidx,
+            prev_ids=[r.tail(k + 1)[:-1] for r in batch] if k else None,
+            host_ids=ids,
         )
         self.sampler.emit(self.runner.forward(b), batch)
         if self.dflash:

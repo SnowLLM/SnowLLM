@@ -84,6 +84,16 @@ class Request:
     def tokens(self) -> list[int]:
         return self.prompt + self.out
 
+    @property
+    def last(self) -> int:
+        return self.out[-1] if self.out else self.prompt[-1]
+
+    def tail(self, n: int) -> list[int]:
+        k = len(self.out)
+        if n <= k:
+            return self.out[k - n:]
+        return self.prompt[max(0, len(self.prompt) - (n - k)):] + self.out
+
     def prefill_positions(self, lo: int, hi: int) -> torch.Tensor:
         if self.mrope is None:
             return torch.arange(lo, hi, dtype=torch.int64).view(1, -1).expand(3, -1)
