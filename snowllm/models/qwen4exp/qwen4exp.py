@@ -20,6 +20,10 @@ class Qwen4ExpModel(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.embed_tokens = embed_tokens
         self.head_fold = head_fold
+        for i, layer in enumerate(layers):
+            nxt = layers[i + 1] if i + 1 < len(layers) else None
+            layer.next_norm = (head_fold.mix.gamma if nxt is None else
+                               nxt.ple.norm_query if nxt.ple is not None else nxt.attn_hc.gamma)
         self.inv_freq = inv_freq
         self.geo = geo
         self.eps = geo.eps
@@ -39,10 +43,11 @@ class Qwen4ExpModel(nn.Module):
             layer(ctx, streams)
 
         if b.last_row is not None:
+            ctx.take_xn()
             picked = ctx.arena.new(b.last_row.numel(), self.geo.hc_count, self.geo.hidden)
             torch.index_select(streams, 0, b.last_row, out=picked)
             streams = picked
-        out = self.head_fold(ctx, streams)
+        out = self.head_fold(ctx, streams, ctx.take_xn())
         ctx.close()
         return out
 

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import math
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -137,6 +138,15 @@ class ForwardContext:
         self.sin.mul_(self.mscale)
 
 
+class QsaStep(NamedTuple):
+    resume: torch.Tensor
+    snaps: torch.Tensor
+    pos: torch.Tensor
+    comp: torch.Tensor
+    weights: torch.Tensor
+    cells: torch.Tensor
+
+
 @dataclass
 class Qwen4ExpContext(ForwardContext):
     geo: object = None
@@ -148,6 +158,33 @@ class Qwen4ExpContext(ForwardContext):
     qsa_seq_of_row: torch.Tensor | None = None
     qsa_cu_seqlens: torch.Tensor | None = None
     qsa_lens: list | None = None
+    qsa: QsaStep | None = None
+    hc_xn: torch.Tensor | None = None
+    xn_live: bool = False
+
+    def open(self) -> None:
+        super().open()
+        a, b, g, M = self.arena, self.batch, self.geo, self.M
+        self.xn_live = False
+        self.hc_xn = None if b.is_prefill else a.new(M, g.hc_count, g.hidden)
+        B = b.batch_size
+        slots = b.state_indices.view(B, -1)
+        cells = a.new(M, dtype=torch.int64)
+        if not b.is_prefill:
+            T = b.tokens_per_req
+            torch.add(b.seq_lens.view(-1, 1).to(torch.int64) - T,
+                      torch.arange(T, device="cuda", dtype=torch.int64), out=cells.view(-1, T))
+        comp = a.new(B, dtype=torch.int32)
+        torch.div(b.seq_lens, g.index_ratio, rounding_mode="floor", out=comp)
+        weights = a.new(M, g.index_n_heads, dtype=torch.float32)
+        weights.fill_(1.0 / math.sqrt(float(g.index_head_dim)))
+        self.qsa = QsaStep(a.copy(slots[:, 0]),
+                           a.copy(slots[:, :min(slots.shape[1], M // B)]).view(-1),
+                           a.copy(b.positions[:, :M]), comp, weights, cells)
+
+    def take_xn(self) -> torch.Tensor | None:
+        live, self.xn_live = self.xn_live, False
+        return self.hc_xn if live else None
 
     def streams(self, a: ops.Arena, M: int) -> tuple[torch.Tensor, torch.Tensor]:
         g = self.geo

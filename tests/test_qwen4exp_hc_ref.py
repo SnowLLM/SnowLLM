@@ -78,6 +78,19 @@ def main() -> int:
     ck("the block scatters back at 2*sigmoid(inject / hc) over an untouched residual, within one "
        "bf16 ulp of the largest element", ok, msg)
 
+    gamma = _bf16(torch.randn(n_hc * E) * 0.2 + 1.0)
+    block = _bf16(ref.get2d("linear_attn_out-0"))
+    for inj in (inject, inject.to(torch.bfloat16)):
+        plain, chain = torch.empty_like(out), torch.empty_like(out)
+        ops.qwen4exp_hc_combine(_bf16(x), block, inj, plain)
+        ops.qwen4exp_hc_norm(plain, gamma, chain, 1e-6)
+        fused, xn = torch.empty_like(out), torch.empty_like(out)
+        ops.qwen4exp_hc_combine_norm(_bf16(x), block, inj, fused, gamma, xn, 1e-6)
+        torch.cuda.synchronize()
+        ck(f"at a {inj.dtype} injection, the combine that norms for the next site is the combine "
+           "then the norm, bit for bit", torch.equal(fused, plain) and torch.equal(xn, chain),
+           f"{int((fused != plain).sum())} streams, {int((xn != chain).sum())} normed differ")
+
     return ck.done()
 
 

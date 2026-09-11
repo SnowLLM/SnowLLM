@@ -84,7 +84,7 @@ def qwen4exp_hc_mix_ws_bytes(T: int, n_hc: int, E: int, lr: int) -> int:
 
 def qwen4exp_hc_mix(x: torch.Tensor, gamma: torch.Tensor, down_shuffled: torch.Tensor,
                     up_shuffled: torch.Tensor, lo: torch.Tensor, mixed: torch.Tensor, lr: int,
-                    eps: float, ws: torch.Tensor) -> None:
+                    eps: float, ws: torch.Tensor, xn: torch.Tensor | None = None) -> None:
     T, n_hc, E = x.shape
     down_n = lo.shape[1]
     _chk(x, "x", torch.bfloat16, T, n_hc, E)
@@ -93,15 +93,15 @@ def qwen4exp_hc_mix(x: torch.Tensor, gamma: torch.Tensor, down_shuffled: torch.T
     _chk(mixed, "mixed", torch.bfloat16, T, E)
     _chk(ws, "ws", torch.uint8, qwen4exp_hc_mix_ws_bytes(T, n_hc, E, lr))
     check(lib.snowllm_qwen4exp_hc_mix(_p(x), _p(gamma), _p(down_shuffled), _p(up_shuffled), _p(lo),
-                                      _p(mixed), T, n_hc, E, down_n, lr, eps, _p(ws), _stream()),
-          "qwen4exp_hc_mix")
+                                      _p(mixed), T, n_hc, E, down_n, lr, eps, _p(ws), _p(xn),
+                                      _stream()), "qwen4exp_hc_mix")
 
 
 def qwen4exp_hc_mix_kquant(fmt: int, x: torch.Tensor, gamma: torch.Tensor,
                            down_quant: torch.Tensor, down_meta: torch.Tensor,
                            up_quant: torch.Tensor, up_meta: torch.Tensor, lo: torch.Tensor,
                            mixed: torch.Tensor, lr: int, eps: float,
-                           ws: torch.Tensor) -> None:
+                           ws: torch.Tensor, xn: torch.Tensor | None = None) -> None:
     T, n_hc, E = x.shape
     down_n = lo.shape[1]
     _chk(x, "x", torch.bfloat16, T, n_hc, E)
@@ -112,7 +112,7 @@ def qwen4exp_hc_mix_kquant(fmt: int, x: torch.Tensor, gamma: torch.Tensor,
     check(lib.snowllm_qwen4exp_hc_mix_kquant(int(fmt), _p(x), _p(gamma), _p(down_quant),
                                              _p(down_meta), _p(up_quant), _p(up_meta), _p(lo),
                                              _p(mixed), T, n_hc, E, down_n, lr, eps, _p(ws),
-                                             _stream()), "qwen4exp_hc_mix_kquant")
+                                             _p(xn), _stream()), "qwen4exp_hc_mix_kquant")
 
 
 def qwen4exp_hc_fold(xn: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> None:
@@ -138,6 +138,22 @@ def qwen4exp_hc_combine(residual: torch.Tensor, block: torch.Tensor, inject: tor
           "qwen4exp_hc_combine")
 
 
+def qwen4exp_hc_combine_norm(residual: torch.Tensor, block: torch.Tensor, inject: torch.Tensor,
+                             out: torch.Tensor, gamma: torch.Tensor, xn: torch.Tensor,
+                             eps: float) -> None:
+    T, n_hc, E = residual.shape
+    bf16 = inject.dtype is torch.bfloat16
+    _chk(residual, "residual", torch.bfloat16, T, n_hc, E)
+    _chk(block, "block", torch.bfloat16, T, E)
+    _chk_rows(inject, "inject", torch.bfloat16 if bf16 else torch.float32)
+    _chk(out, "out", torch.bfloat16, T, n_hc, E)
+    _chk(gamma, "gamma", torch.bfloat16, n_hc * E)
+    _chk(xn, "xn", torch.bfloat16, T, n_hc, E)
+    check(lib.snowllm_qwen4exp_hc_combine_norm(_p(residual), _p(block), _p(inject), _p(out),
+                                               _p(gamma), _p(xn), T, n_hc, E, inject.stride(0),
+                                               bf16, eps, _stream()), "qwen4exp_hc_combine_norm")
+
+
 class HcMixWeights:
     def __init__(self, gamma: torch.Tensor, down_a: torch.Tensor,
                  down_meta: torch.Tensor | None, up_a: torch.Tensor,
@@ -161,12 +177,13 @@ def qwen4exp_hc_linear_ws_bytes(M: int, lr: int) -> int:
 def qwen4exp_hc_qkv_proj_kquant(streams: torch.Tensor, hc: HcMixWeights, lo: torch.Tensor,
                                 w: object, ws: torch.Tensor, proj: torch.Tensor, path: Path,
                                 index_w: torch.Tensor | None = None,
-                                index_out: torch.Tensor | None = None) -> None:
+                                index_out: torch.Tensor | None = None,
+                                xn: torch.Tensor | None = None) -> None:
     M, n_hc, E = streams.shape
     _chk(streams, "streams", torch.bfloat16, M, n_hc, E)
     _chk(lo, "lo", torch.bfloat16, M, hc.down_n)
     _chk(proj, "proj", torch.bfloat16, M, proj.shape[1])
-    check(lib.snowllm_qwen4exp_hc_qkv_proj_kquant(_p(streams), *hc.args, _p(lo), w.fmt,
+    check(lib.snowllm_qwen4exp_hc_qkv_proj_kquant(_p(streams), *hc.args, _p(lo), _p(xn), w.fmt,
                                                   _p(w.quant), _p(w.meta), _p(index_w),
                                                   _p(index_out), _p(ws), _p(proj), M, int(path),
                                                   _stream()), "qwen4exp_hc_qkv_proj_kquant")
@@ -179,14 +196,15 @@ def qwen4exp_hc_linear_attn(streams: torch.Tensor, hc: HcMixWeights, lo: torch.T
                             recurrent_state: torch.Tensor, ws: torch.Tensor,
                             out: torch.Tensor, B: int, path: Path,
                             num_accepted: torch.Tensor | None = None,
-                            ckpt: tuple | None = None, retain: tuple | None = None) -> None:
+                            ckpt: tuple | None = None, retain: tuple | None = None,
+                            xn: torch.Tensor | None = None) -> None:
     M, n_hc, E = streams.shape
     _chk(streams, "streams", torch.bfloat16, M, n_hc, E)
     _chk(lo, "lo", torch.bfloat16, M, hc.down_n)
     _chk(out, "out", torch.bfloat16, M, E)
     at, slots, n, ck_conv, ck_rec = ckpt or (None, None, 0, None, None)
     rq, rc, rb = retain or (None, None, None)
-    check(lib.snowllm_qwen4exp_hc_linear_attn(_p(streams), *hc.args, _p(lo), *w.args,
+    check(lib.snowllm_qwen4exp_hc_linear_attn(_p(streams), *hc.args, _p(lo), _p(xn), *w.args,
                                               _p(cu_seqlens), _p(has_state), _p(state_indices),
                                               _p(num_accepted), _p(conv_state),
                                               _p(recurrent_state), _p(at), _p(slots), n,

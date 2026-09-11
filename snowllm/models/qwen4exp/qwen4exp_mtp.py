@@ -17,6 +17,7 @@ class Qwen4ExpMTP(nn.Module):
         self.eh_embed, self.eh_hidden = eh_embed, eh_hidden
         self.enorm, self.hnorm = enorm, hnorm
         self.head_fold = head_fold
+        layer.next_norm = head_fold.mix.gamma
 
     @property
     def layer(self) -> Qwen4ExpDecoderLayer:
@@ -42,8 +43,9 @@ class Qwen4ExpMTP(nn.Module):
 
         folded = streams
         if b.last_row is not None:
+            ctx.take_xn()
             folded = a.new(b.last_row.numel(), n_hc, E)
             torch.index_select(streams, 0, b.last_row, out=folded)
-        out = self.head_fold(ctx, folded)
+        out = self.head_fold(ctx, folded, ctx.take_xn())
         ctx.close()
         return streams, out
