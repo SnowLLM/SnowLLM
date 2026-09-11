@@ -588,6 +588,7 @@ class Runner(GraphRunner):
 
         self.d_ids = torch.zeros(self.decode_rows, dtype=torch.int64, device="cuda")
         self.d_pos: dict[int, torch.Tensor] = {}
+        self.d_cu: dict[tuple[int, int], torch.Tensor] = {}
         self.d_slot = torch.full((self.decode_rows,), -1, dtype=torch.int32, device="cuda")
         self.d_seq = torch.ones(B, dtype=torch.int32, device="cuda")
         self.d_bt = torch.zeros(B, max_blocks_per_seq, dtype=torch.int32, device="cuda")
@@ -817,14 +818,16 @@ class Runner(GraphRunner):
                 seq_lens=self.d_seq[:B], state_indices=self.d_sidx[:B],
                 is_prefill=False, num_tokens=B,
             )
+        if (B, T) not in self.d_cu:
+            self.d_cu[(B, T)] = torch.tensor([i * T for i in range(B + 1)], dtype=torch.int32,
+                                             device="cuda")
         return Batch(
             input_ids=self.d_ids[:M], positions=self.d_pos[M], slot_mapping=self.d_slot[:M],
             block_tables=self.d_bt[:B], seq_lens=self.d_seq[:B],
             state_indices=self.d_sidx[:B if self.roll_forward else M],
             roll_forward=self.roll_forward,
             is_prefill=False, num_tokens=M, num_accepted=self.d_nacc[:B],
-            cu_seqlens=torch.tensor([i * T for i in range(B + 1)], dtype=torch.int32,
-                                    device="cuda"),
+            cu_seqlens=self.d_cu[(B, T)],
             total_q_blocks=ops.prefill_q_plan([T] * B)[0],
             chunk_decode=chunk,
         )
