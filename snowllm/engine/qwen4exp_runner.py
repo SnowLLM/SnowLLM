@@ -233,7 +233,7 @@ class Qwen4ExpRunner(Runner):
         if not self.ple_mods:
             return
         with span("ple gather"):
-            ids = b.input_ids.tolist()
+            ids = b.host_ids if b.host_ids is not None else b.input_ids.tolist()
             cu = (b.cu_seqlens.tolist() if b.is_prefill and b.cu_seqlens is not None
                   else list(range(len(ids) + 1)))
             for i in range(b.state_indices.numel()):

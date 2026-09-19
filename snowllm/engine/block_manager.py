@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import array
+import itertools
 
 import torch
 
@@ -9,6 +10,7 @@ from .. import ops
 from .request import Request
 
 assert array.array("i").itemsize == 4
+assert array.array("q").itemsize == 8
 
 
 def i32_row(x: list[int]) -> torch.Tensor:
@@ -33,6 +35,63 @@ def slot_mapping(bt: torch.Tensor, rows: list[tuple[int, int]], block_size: int)
 
 def block_tables(batch: list[Request]) -> torch.Tensor:
     return pad_table([r.blocks for r in batch])
+
+
+class TableMirror:
+    def __init__(self, rows: int, width: int) -> None:
+        self.host = torch.zeros(rows, width, dtype=torch.int32).pin_memory()
+        self.dev = torch.zeros(rows, width, dtype=torch.int32, device="cuda")
+        self.done = torch.cuda.Event()
+        self.forget()
+
+    def forget(self) -> None:
+        self.owner: list[list[int] | None] = [None] * self.dev.shape[0]
+        self.n = [0] * self.dev.shape[0]
+
+    def __call__(self, lists: list[list[int]]) -> torch.Tensor:
+        synced = False
+        for i, x in enumerate(lists):
+            lo = self.n[i] if self.owner[i] is x else 0
+            if len(x) > lo:
+                if not synced:
+                    self.done.synchronize()
+                    synced = True
+                self.host[i, lo:len(x)] = i32_row(x[lo:])
+                self.dev[i, lo:len(x)].copy_(self.host[i, lo:len(x)], non_blocking=True)
+            self.owner[i], self.n[i] = x, len(x)
+        if synced:
+            self.done.record()
+        return self.dev[:len(lists)]
+
+
+class Staging:
+    def __init__(self) -> None:
+        self.cap = 0
+        self.done = torch.cuda.Event()
+
+    def __call__(self, i64s: tuple[list[int], ...],
+                 i32s: tuple[list[int], ...]) -> list[torch.Tensor]:
+        n = max(sum(map(len, i64s)), sum(map(len, i32s)))
+        self.done.synchronize()
+        if n > self.cap:
+            self.cap = max(n, 2 * self.cap)
+            self.h64 = torch.zeros(self.cap, dtype=torch.int64).pin_memory()
+            self.h32 = torch.zeros(self.cap, dtype=torch.int32).pin_memory()
+            self.d64 = torch.zeros(self.cap, dtype=torch.int64, device="cuda")
+            self.d32 = torch.zeros(self.cap, dtype=torch.int32, device="cuda")
+        out = []
+        for h, d, parts, code in ((self.h64, self.d64, i64s, "q"),
+                                  (self.h32, self.d32, i32s, "i")):
+            flat = array.array(code, itertools.chain.from_iterable(parts))
+            if flat:
+                h[:len(flat)] = torch.frombuffer(flat, dtype=h.dtype)
+                d[:len(flat)].copy_(h[:len(flat)], non_blocking=True)
+            at = 0
+            for x in parts:
+                out.append(d[at:at + len(x)])
+                at += len(x)
+        self.done.record()
+        return out
 
 
 class BlockAllocator:

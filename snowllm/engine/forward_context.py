@@ -65,6 +65,7 @@ class Batch:
     roll_forward: bool = False
     seq_of_row: torch.Tensor | None = None
     prev_ids: list[list[int]] | None = None
+    host_ids: list[int] | None = None
     plans: dict | None = None
     inplace: bool = False
     split: bool = False
