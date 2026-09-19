@@ -149,7 +149,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 56
+ABI_VERSION = 57
 
 
 def _check_abi() -> None:
@@ -369,15 +369,18 @@ _SIGS = [
     ("snowllm_qwen4exp_hc_norm", c_int, [P, P, P, c_int64, c_int64, c_int64, c_float, S]),
     ("snowllm_qwen4exp_hc_mix_ws_bytes", c_int64, [c_int64, c_int64, c_int64, c_int64]),
     ("snowllm_qwen4exp_hc_mix", c_int,
-     [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_float, P, S]),
+     [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_float, P, P, S]),
     ("snowllm_qwen4exp_hc_mix_kquant", c_int,
-     [c_int, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_float, P, S]),
+     [c_int, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_float, P, P,
+      S]),
     ("snowllm_qwen4exp_hc_lowrank_act", c_int,
      [P, P, c_int64, c_int64, c_int64, c_int, c_int64, S]),
     ("snowllm_qwen4exp_hc_fold", c_int,
      [P, P, P, c_int64, c_int64, c_int64, c_int64, c_int, S]),
     ("snowllm_qwen4exp_hc_combine", c_int,
      [P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int, S]),
+    ("snowllm_qwen4exp_hc_combine_norm", c_int,
+     [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int, c_float, S]),
     ("snowllm_qwen4exp_ple_gate", c_int, [P, P, P, P, P, c_int64, c_int64, c_int64, S]),
     ("snowllm_qwen4exp_ple_conv", c_int,
      [P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, S]),
@@ -386,12 +389,11 @@ _SIGS = [
     ("snowllm_qwen4exp_indexer_pool_norm", c_int,
      [P, P, P, c_int64, c_int64, c_int64, c_float, S]),
     ("snowllm_qwen4exp_indexer_rope", c_int, [P, P, P, c_int64, c_int64, S]),
-    ("snowllm_qwen4exp_qsa_pool_blocks", c_int,
-     [P, P, P, P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_int,
-      c_float, S]),
-    ("snowllm_qwen4exp_qsa_scatter", c_int, [P, P, P, c_int64, c_int64, S]),
-    ("snowllm_qwen4exp_qsa_carry", c_int,
-     [P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, S]),
+    ("snowllm_qwen4exp_qsa_produce", c_int,
+     [P, c_int64, P, P, P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64,
+      c_int64, c_float, S]),
+    ("snowllm_qwen4exp_indexer_q", c_int,
+     [P, c_int64, P, P, P, P, c_int64, c_int64, c_int64, c_float, S]),
     ("snowllm_qwen4exp_qsa_attn_prefill", c_int,
      [P, P, P, P, P, P, P, c_int64, c_int64, c_float, P, P, c_int64, P, P, c_int64, c_int64, P,
       c_int64, c_int64, S]),
@@ -448,10 +450,12 @@ _SIGS = [
      [P,
       P, P, P, P, P, c_int, c_int64, c_int64, c_float,
       P,
+      P,
       c_int, P, P, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_qwen4exp_hc_linear_attn", c_int,
      [P,
       P, P, P, P, P, c_int, c_int64, c_int64, c_float,
+      P,
       P,
       P, P, P, P, P, P,
       P, P, P, P,

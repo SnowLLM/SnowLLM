@@ -70,7 +70,8 @@ def main() -> int:
     cell = torch.arange(S, device="cuda")
     slot_map = (table[0, cell // PAGE].to(torch.int64) * PAGE + cell % PAGE).to(torch.int32)
 
-    raw = _bf16(torch.randn(S, D) * 0.5)
+    wide = _bf16(torch.randn(S, 2 * D) * 0.5)
+    raw = wide[:, D:]
     gamma = _bf16(torch.randn(D) * 0.2 + 1.0)
     inv = (1.0 / (10000.0 ** (torch.arange(0, 64, 2, dtype=torch.float64) / 64))).float().cuda()
 
@@ -88,32 +89,45 @@ def main() -> int:
         seq = torch.tensor([done + rows], dtype=torch.int32, device="cuda")
         pos = torch.arange(done, done + rows, device="cuda").repeat(3, 1).contiguous()
         per = (rows + RATIO - 1) // RATIO + 1
-        pooled = torch.zeros(per, D, dtype=torch.bfloat16, device="cuda")
-        blk_pos = torch.zeros(3, per, dtype=torch.int64, device="cuda")
-        dest = torch.zeros(per, dtype=torch.int32, device="cuda")
-        ops.qwen4exp_qsa_pool_blocks(raw[done:done + rows].contiguous(), carry, carry_pos, slots,
-                                     cu, seq, pos, slot_map[done:done + rows].contiguous(), gamma,
-                                     pooled, blk_pos, dest, RATIO, n_pool, EPS)
-        cos = torch.empty(per, 64, dtype=torch.float32, device="cuda")
-        sin = torch.empty_like(cos)
-        ops.rope_cos_sin(blk_pos, inv, cos, sin, mrope=True)
-        ops.qwen4exp_indexer_rope(pooled, cos, sin)
-        pool.index_copy_(0, dest.to(torch.int64), pooled)
-        old = carry.index_select(0, slots.to(torch.int64))
-        old_pos = carry_pos.index_select(0, slots.to(torch.int64))
-        ops.qwen4exp_qsa_carry(raw[done:done + rows].contiguous(), old, old_pos, carry, carry_pos,
-                               slots, cu, seq, pos, RATIO)
+        ops.qwen4exp_qsa_produce(raw[done:done + rows], carry, carry_pos, slots, slots, cu, seq,
+                                 pos, slot_map[done:done + rows].contiguous(), gamma, inv, pool,
+                                 per, RATIO, EPS)
         done += rows
     torch.cuda.synchronize()
 
     n_blocks = done // RATIO
-    want = _ref_pool(raw, gamma, inv, n_blocks)
+    want = _ref_pool(raw.contiguous(), gamma, inv, n_blocks)
     got = torch.stack([pool[int(table[0, b * RATIO // PAGE]) * (PAGE // RATIO)
                             + (b % (PAGE // RATIO))] for b in range(n_blocks)])
     err = (got.float() - want.float()).abs().max().item()
     ck("a chunked, paged producer pools what a single-shot one does",
        err <= 8 * BF16_ULP * float(want.float().abs().max()),
        f"{n_blocks} blocks over {done} tokens, max_abs {err:.3e}")
+
+    exact = torch.empty(n_blocks, D, dtype=torch.bfloat16, device="cuda")
+    ops.qwen4exp_indexer_pool_norm(raw[:n_blocks * RATIO].contiguous(), gamma, exact, RATIO, EPS)
+    bpos = (torch.arange(n_blocks, device="cuda") * RATIO).repeat(3, 1).contiguous()
+    bcos = torch.empty(n_blocks, 64, dtype=torch.float32, device="cuda")
+    bsin = torch.empty_like(bcos)
+    ops.rope_cos_sin(bpos, inv, bcos, bsin, mrope=True)
+    ops.qwen4exp_indexer_rope(exact, bcos, bsin)
+    ck("and it is the single-shot pool under the table's rope, bit for bit",
+       torch.equal(got, exact), f"{int((got != exact).sum())} of {got.numel()} differ")
+
+    qh, qt = HEADS, 6
+    qk = _bf16(torch.randn(qt, qh * D + D) * 0.7)
+    qg = _bf16(torch.randn(D) * 0.2 + 1.0)
+    qpos = torch.randint(0, 5000, (3, qt), device="cuda", dtype=torch.int64)
+    qcos = torch.empty(qt, 64, dtype=torch.float32, device="cuda")
+    qsin = torch.empty_like(qcos)
+    ops.rope_cos_sin(qpos, inv, qcos, qsin, mrope=True)
+    fused = torch.empty(qt, qh, D, dtype=torch.bfloat16, device="cuda")
+    ops.qwen4exp_indexer_q(qk, qg, qcos, qsin, fused, EPS)
+    chain = qk[:, :qh * D].contiguous().view(qt, qh, D)
+    ops.dsv4_rmsnorm(chain, qg, chain, EPS)
+    ops.qwen4exp_indexer_rope(chain, qcos, qsin)
+    ck("the indexer query in one launch is the norm then the rope, bit for bit",
+       torch.equal(fused, chain), f"{qt} tokens x {qh} heads, {int((fused != chain).sum())} differ")
 
     n_comp = n_blocks
     comp_lens = torch.tensor([n_comp], dtype=torch.int32, device="cuda")

@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from ... import ops
-from ...engine.forward_context import ForwardContext
+from ...engine.forward_context import ForwardContext, Qwen4ExpContext
 from ...trace import span
 from ..geometry import Qwen4ExpGeometry, _align
 from ..qwen3_5.layers import DecoderLayerBase, FullAttention, FusedMoE, GatedDeltaNet
@@ -55,8 +55,8 @@ class HyperMix(nn.Module):
                                   up.meta if kq else None, down.fmt if kq else 0, down.n,
                                   geo.hc_lowrank, geo.eps)
 
-    def forward(self, ctx: ForwardContext,
-                streams: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+    def forward(self, ctx: ForwardContext, streams: torch.Tensor,
+                xn: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
         a, M, E, n_hc, lr = ctx.arena, streams.shape[0], self.hidden, self.n_hc, self.lowrank
         mixed, lo = a.new(M, E), a.new(M, self.down.n)
         with a.frame():
@@ -64,17 +64,21 @@ class HyperMix(nn.Module):
             if isinstance(self.down, KQuantDense):
                 ops.qwen4exp_hc_mix_kquant(self.down.fmt, streams, self.gamma, self.down.quant,
                                            self.down.meta, self.up.quant, self.up.meta, lo, mixed,
-                                           lr, ctx.eps, ws)
+                                           lr, ctx.eps, ws, xn)
             else:
                 ops.qwen4exp_hc_mix(streams, self.gamma, self.down.w, self.up.w, lo, mixed, lr,
-                                    ctx.eps, ws)
+                                    ctx.eps, ws, xn)
         return mixed, lo[:, lr:lr + n_hc] if self.has_inject else None
 
 
 class HcCombine(nn.Module):
-    def forward(self, streams: torch.Tensor, block: torch.Tensor,
-                inject: torch.Tensor) -> None:
-        ops.qwen4exp_hc_combine(streams, block, inject, streams)
+    def forward(self, ctx: Qwen4ExpContext, streams: torch.Tensor, block: torch.Tensor,
+                inject: torch.Tensor, gamma: torch.Tensor | None = None) -> None:
+        if gamma is None or ctx.hc_xn is None:
+            ops.qwen4exp_hc_combine(streams, block, inject, streams)
+            return
+        ops.qwen4exp_hc_combine_norm(streams, block, inject, streams, gamma, ctx.hc_xn, ctx.eps)
+        ctx.xn_live = True
 
 
 class HcHead(nn.Module):
@@ -82,8 +86,9 @@ class HcHead(nn.Module):
         super().__init__()
         self.mix = mix
 
-    def forward(self, ctx: ForwardContext, streams: torch.Tensor) -> torch.Tensor:
-        mixed, _ = self.mix(ctx, streams)
+    def forward(self, ctx: ForwardContext, streams: torch.Tensor,
+                xn: torch.Tensor | None = None) -> torch.Tensor:
+        mixed, _ = self.mix(ctx, streams, xn)
         return mixed
 
 
@@ -114,7 +119,11 @@ class Ple(nn.Module):
             key = a.new(M, n_hc, E)
             ops.qwen4exp_hc_norm(key_raw.view(M, n_hc, E), self.norm_key, key, ctx.eps)
             query = a.new(M, n_hc, E)
-            ops.qwen4exp_hc_norm(streams, self.norm_query, query, ctx.eps)
+            ready = ctx.take_xn()
+            if ready is None:
+                ops.qwen4exp_hc_norm(streams, self.norm_query, query, ctx.eps)
+            else:
+                query = ready
             gated = a.new(M, n_hc, E)
             ops.qwen4exp_ple_gate(key, query, value_raw[:, :E].contiguous(), gated)
             normed = a.new(M, n_hc, E)
@@ -156,39 +165,14 @@ class QsaIndexer(nn.Module):
         self.carry_pos: torch.Tensor | None = None
 
     def forward(self, ctx: ForwardContext, qk: torch.Tensor, M: int) -> torch.Tensor:
-        a, b = ctx.arena, ctx.batch
-        q = a.copy(qk[:, :self.heads * self.dim]).view(M, self.heads, self.dim)
-        ops.dsv4_rmsnorm(q, self.q_gamma, q, ctx.eps)
-        ops.qwen4exp_indexer_rope(q, ctx.cos[:M], ctx.sin[:M])
-        k_raw = a.copy(qk[:, self.heads * self.dim:])
-
-        B = b.batch_size
-        slots = b.state_indices.view(B, -1)
-        snaps = slots[:, :min(slots.shape[1], M // B)]
-        resume = a.copy(slots[:, 0])
+        a, b, qs = ctx.arena, ctx.batch, ctx.qsa
+        q = a.new(M, self.heads, self.dim)
+        ops.qwen4exp_indexer_q(qk, self.q_gamma, ctx.cos[:M], ctx.sin[:M], q, ctx.eps)
         cu = b.cu_seqlens if b.is_prefill else ctx.qsa_cu_seqlens
-        pos = a.copy(b.positions[:, :M])
-        per = (M // B + self.ratio - 1) // self.ratio + 1
-        with a.frame():
-            pooled = a.new(B * per, self.dim)
-            blk_pos = a.new(3, B * per, dtype=torch.int64)
-            dest = a.new(B * per, dtype=torch.int32)
-            cos = a.new(B * per, ctx.cos.shape[1], dtype=torch.float32)
-            sin = a.new(B * per, ctx.sin.shape[1], dtype=torch.float32)
-            ops.qwen4exp_qsa_pool_blocks(k_raw, self.carry, self.carry_pos, resume, cu, b.seq_lens,
-                                         pos, b.slot_mapping, self.k_gamma, pooled, blk_pos, dest,
-                                         self.ratio, self.pool.shape[0] - 1, ctx.eps)
-            ops.rope_cos_sin(blk_pos, ctx.inv_freq, cos, sin, mrope=True)
-            ops.qwen4exp_indexer_rope(pooled, cos, sin)
-            ops.qwen4exp_qsa_scatter(pooled, dest, self.pool)
-            old = a.new(B, self.ratio - 1, self.dim)
-            old_pos = a.new(B, self.ratio - 1, 3, dtype=torch.int64)
-            resume64 = resume.to(torch.int64)
-            torch.index_select(self.carry, 0, resume64, out=old)
-            torch.index_select(self.carry_pos, 0, resume64, out=old_pos)
-            ops.qwen4exp_qsa_carry(k_raw, old, old_pos, self.carry, self.carry_pos,
-                                   a.copy(snaps).view(-1), cu, b.seq_lens, pos,
-                                   self.ratio)
+        per = (M // b.batch_size + self.ratio - 1) // self.ratio + 1
+        ops.qwen4exp_qsa_produce(qk[:, self.heads * self.dim:], self.carry, self.carry_pos,
+                                 qs.resume, qs.snaps, cu, b.seq_lens, qs.pos, b.slot_mapping,
+                                 self.k_gamma, ctx.inv_freq, self.pool, per, self.ratio, ctx.eps)
         return q
 
     def sel_stride(self) -> int:
@@ -237,7 +221,8 @@ class Qwen4ExpFullAttention(FullAttention):
         with a.frame():
             ws = a.flat(ops.qwen4exp_hc_qkv_ws_bytes(ctx.M, self.hc.lowrank), torch.uint8)
             ops.qwen4exp_hc_qkv_proj_kquant(x, self.hc.w, self._lo, self.qkv_proj.w, ws, proj_buf,
-                                            ctx.path, self.qkv_proj.index, index_out)
+                                            ctx.path, self.qkv_proj.index, index_out,
+                                            ctx.take_xn())
 
     def _index(self, ctx: ForwardContext, index_out: torch.Tensor) -> None:
         with span("qsa_index"):
@@ -269,10 +254,7 @@ class Qwen4ExpFullAttention(FullAttention):
             sel = a.new(group, ix.sel_stride(), dtype=torch.int32)
             cnt = a.new(group, dtype=torch.int32)
             scores = a.new(sel_group, ix.scores_stride(n_comp), dtype=torch.float32)
-            weights = a.new(sel_group, ix.heads, dtype=torch.float32)
-            weights.fill_(ix.scale)
-            comp = a.new(b.batch_size, dtype=torch.int32)
-            torch.div(b.seq_lens, ix.ratio, rounding_mode="floor", out=comp)
+            weights, comp = ctx.qsa.weights, ctx.qsa.comp
             cells = a.new(group, dtype=torch.int64)
             axis = a.new(tiles, axis_stride, dtype=torch.int32)
             axis_len = a.new(tiles, dtype=torch.int32)
@@ -308,20 +290,14 @@ class Qwen4ExpFullAttention(FullAttention):
             return
         b, a, ix = ctx.batch, ctx.arena, self.indexer
         rows = q.shape[0]
-        T = b.tokens_per_req
         n_comp = int(ctx.qsa_max_blocks)
+        qs = ctx.qsa
+        cells = qs.cells
         with a.frame():
-            cells = a.new(rows, dtype=torch.int64)
-            torch.add(b.seq_lens.view(-1, 1).to(torch.int64) - T,
-                      torch.arange(T, device=q.device, dtype=torch.int64), out=cells.view(-1, T))
             sel = a.new(rows, ix.sel_stride(), dtype=torch.int32)
             cnt = a.new(rows, dtype=torch.int32)
             scores = a.new(rows, ix.scores_stride(n_comp), dtype=torch.float32)
-            weights = a.new(rows, ix.heads, dtype=torch.float32)
-            weights.fill_(ix.scale)
-            comp = a.new(b.batch_size, dtype=torch.int32)
-            torch.div(b.seq_lens, ix.ratio, rounding_mode="floor", out=comp)
-            ix.select(ctx, self._q_index, cells, n_comp, sel, cnt, scores, weights, comp,
+            ix.select(ctx, self._q_index, cells, n_comp, sel, cnt, scores, qs.weights, qs.comp,
                       ctx.qsa_seq_of_row)
             ck, cv = self.compact
             lens = a.new(rows, dtype=torch.int32)
@@ -354,7 +330,8 @@ class Qwen4ExpLinearAttention(GatedDeltaNet):
             ops.qwen4exp_hc_linear_attn(streams, self.hc.w, lo, self.w, b.cu_seqlens, b.has_state,
                                         b.state_indices, conv, rec, ws, out, b.batch_size,
                                         ctx.path, b.num_accepted, ckpt,
-                                        self.retain if b.roll_forward else None)
+                                        self.retain if b.roll_forward else None,
+                                        ctx.take_xn())
 
 
 class Qwen4ExpDecoderLayer(DecoderLayerBase):
@@ -363,6 +340,7 @@ class Qwen4ExpDecoderLayer(DecoderLayerBase):
         super().__init__(attn, mlp, is_full, layer_idx)
         self.attn_hc, self.mlp_hc, self.ple = attn_hc, mlp_hc, ple
         self.combine = HcCombine()
+        self.next_norm: torch.Tensor | None = None
         attn.hc = attn_hc
 
     def forward(self, ctx: ForwardContext, streams: torch.Tensor) -> None:
@@ -375,8 +353,9 @@ class Qwen4ExpDecoderLayer(DecoderLayerBase):
         with span(self._attn_span), a.frame():
             lo = a.new(M, hc.down.n)
             self.attn(ctx, streams, blk, lo)
-            self.combine(streams, blk, lo[:, hc.lowrank:hc.lowrank + hc.n_hc])
+            self.combine(ctx, streams, blk, lo[:, hc.lowrank:hc.lowrank + hc.n_hc],
+                         self.mlp_hc.gamma)
         with span(self._mlp_span), a.frame():
-            mixed, inject = self.mlp_hc(ctx, streams)
+            mixed, inject = self.mlp_hc(ctx, streams, ctx.take_xn())
             self.mlp(ctx, mixed, blk)
-            self.combine(streams, blk, inject)
+            self.combine(ctx, streams, blk, inject, self.next_norm)

@@ -207,6 +207,7 @@ from .hyper import (
     dsv4_hc_split_sinkhorn,
     dsv4_hc_weighted_sum,
     qwen4exp_hc_combine,
+    qwen4exp_hc_combine_norm,
     qwen4exp_hc_fold,
     qwen4exp_hc_linear_attn,
     qwen4exp_hc_linear_ws_bytes,
@@ -220,11 +221,10 @@ from .hyper import (
 )
 from .ple import (
     qwen4exp_indexer_pool_norm,
+    qwen4exp_indexer_q,
     qwen4exp_indexer_rope,
-    qwen4exp_qsa_carry,
     qwen4exp_qsa_gather,
-    qwen4exp_qsa_pool_blocks,
-    qwen4exp_qsa_scatter,
+    qwen4exp_qsa_produce,
     qwen4exp_qsa_attn_prefill,
     qwen4exp_qsa_q_tile,
     qwen4exp_qsa_tile_axis,

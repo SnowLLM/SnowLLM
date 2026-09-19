@@ -4,7 +4,7 @@
 import torch
 
 from .._capi import check, lib
-from ._common import _chk, _chk_dense, _p, _stream
+from ._common import _chk, _chk_dense, _chk_rows, _p, _stream
 
 
 def qwen4exp_ple_gate(key: torch.Tensor, query: torch.Tensor, value: torch.Tensor,
@@ -100,64 +100,43 @@ def qwen4exp_qsa_gather(k_cache: torch.Tensor, v_cache: torch.Tensor,
         max_blocks, ratio, topk, block_size, _stream()), "qwen4exp_qsa_gather")
 
 
-def qwen4exp_qsa_pool_blocks(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: torch.Tensor,
-                             carry_slots: torch.Tensor, cu_seqlens: torch.Tensor,
-                             seq_lens: torch.Tensor, positions: torch.Tensor,
-                             slot_mapping: torch.Tensor, gamma: torch.Tensor,
-                             pooled: torch.Tensor, blk_pos: torch.Tensor, dest: torch.Tensor,
-                             ratio: int, trash: int, eps: float) -> None:
+def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: torch.Tensor,
+                         resume_slots: torch.Tensor, snap_slots: torch.Tensor,
+                         cu_seqlens: torch.Tensor, seq_lens: torch.Tensor, positions: torch.Tensor,
+                         slot_mapping: torch.Tensor, gamma: torch.Tensor, inv_freq: torch.Tensor,
+                         pool: torch.Tensor, blocks_per_seq: int, ratio: int, eps: float) -> None:
     M, D = k_raw.shape
-    B = carry_slots.numel()
-    rows = pooled.shape[0]
-    _chk(k_raw, "k_raw", torch.bfloat16, M, D)
+    B = resume_slots.numel()
+    n_snap = snap_slots.numel() // B
+    _chk_rows(k_raw, "k_raw", torch.bfloat16)
     _chk(carry, "carry", torch.bfloat16, carry.shape[0], ratio - 1, D)
     _chk(carry_pos, "carry_pos", torch.int64, carry.shape[0], ratio - 1, 3)
-    _chk(carry_slots, "carry_slots", torch.int32, B)
+    _chk(resume_slots, "resume_slots", torch.int32, B)
+    _chk(snap_slots, "snap_slots", torch.int32, B * n_snap)
     _chk(cu_seqlens, "cu_seqlens", torch.int32, B + 1)
     _chk(seq_lens, "seq_lens", torch.int32, B)
     _chk(positions, "positions", torch.int64, 3, M)
     _chk_dense(positions, "positions")
     _chk(slot_mapping, "slot_mapping", torch.int32, M)
     _chk(gamma, "gamma", torch.bfloat16, D)
-    _chk(pooled, "pooled", torch.bfloat16, rows, D)
-    _chk(blk_pos, "blk_pos", torch.int64, 3, rows)
-    _chk(dest, "dest", torch.int32, rows)
-    check(lib.snowllm_qwen4exp_qsa_pool_blocks(
-        _p(k_raw), _p(carry), _p(carry_pos), _p(carry_slots), _p(cu_seqlens), _p(seq_lens),
-        _p(positions), _p(slot_mapping), _p(gamma), _p(pooled), _p(blk_pos), _p(dest), B, M,
-        rows // B, D, ratio, trash, eps, _stream()), "qwen4exp_qsa_pool_blocks")
-
-
-def qwen4exp_qsa_carry(k_raw: torch.Tensor, old: torch.Tensor, old_pos: torch.Tensor,
-                       carry: torch.Tensor, carry_pos: torch.Tensor, snap_slots: torch.Tensor,
-                       cu_seqlens: torch.Tensor, seq_lens: torch.Tensor, positions: torch.Tensor,
-                       ratio: int) -> None:
-    M, D = k_raw.shape
-    B = seq_lens.numel()
-    n_snap = snap_slots.numel() // B
-    _chk(k_raw, "k_raw", torch.bfloat16, M, D)
-    _chk(old, "old", torch.bfloat16, B, ratio - 1, D)
-    _chk(old_pos, "old_pos", torch.int64, B, ratio - 1, 3)
-    _chk(carry, "carry", torch.bfloat16, carry.shape[0], ratio - 1, D)
-    _chk(carry_pos, "carry_pos", torch.int64, carry.shape[0], ratio - 1, 3)
-    _chk(snap_slots, "snap_slots", torch.int32, B * n_snap)
-    _chk(cu_seqlens, "cu_seqlens", torch.int32, B + 1)
-    _chk(seq_lens, "seq_lens", torch.int32, B)
-    _chk(positions, "positions", torch.int64, 3, M)
-    _chk_dense(positions, "positions")
-    check(lib.snowllm_qwen4exp_qsa_carry(_p(k_raw), _p(old), _p(old_pos), _p(carry),
-                                         _p(carry_pos), _p(snap_slots), _p(cu_seqlens),
-                                         _p(seq_lens), _p(positions), B, n_snap, M, D, ratio,
-                                         _stream()), "qwen4exp_qsa_carry")
-
-
-def qwen4exp_qsa_scatter(src: torch.Tensor, dest: torch.Tensor, pool: torch.Tensor) -> None:
-    rows, D = src.shape
-    _chk(src, "src", torch.bfloat16, rows, D)
-    _chk(dest, "dest", torch.int32, rows)
+    _chk(inv_freq, "inv_freq", torch.float32)
     _chk(pool, "pool", torch.bfloat16, pool.shape[0], D)
-    check(lib.snowllm_qwen4exp_qsa_scatter(_p(src), _p(dest), _p(pool), rows, D, _stream()),
-          "qwen4exp_qsa_scatter")
+    check(lib.snowllm_qwen4exp_qsa_produce(
+        _p(k_raw), k_raw.stride(0), _p(carry), _p(carry_pos), _p(resume_slots), _p(snap_slots),
+        _p(cu_seqlens), _p(seq_lens), _p(positions), _p(slot_mapping), _p(gamma), _p(inv_freq),
+        _p(pool), B, n_snap, M, blocks_per_seq, D, ratio, eps, _stream()), "qwen4exp_qsa_produce")
+
+
+def qwen4exp_indexer_q(qk: torch.Tensor, gamma: torch.Tensor, cos: torch.Tensor,
+                       sin: torch.Tensor, q: torch.Tensor, eps: float) -> None:
+    M, heads, D = q.shape
+    _chk_rows(qk, "qk", torch.bfloat16)
+    _chk(gamma, "gamma", torch.bfloat16, D)
+    _chk(cos, "cos", torch.float32, M, cos.shape[1])
+    _chk(sin, "sin", torch.float32, M, sin.shape[1])
+    _chk(q, "q", torch.bfloat16, M, heads, D)
+    check(lib.snowllm_qwen4exp_indexer_q(_p(qk), qk.stride(0), _p(gamma), _p(cos), _p(sin), _p(q),
+                                         M, heads, D, eps, _stream()), "qwen4exp_indexer_q")
 
 
 def qwen4exp_qsa_tile_axis(sel: torch.Tensor, cnt: torch.Tensor, cells: torch.Tensor,
