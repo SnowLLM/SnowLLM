@@ -74,7 +74,8 @@ def main() -> int:
           f"max_model_len={CTX}")
 
     big = engine(model, eos, roomy, len(ids))
-    want = [r.out for r in run(big, ids)]
+    want_reqs = run(big, ids)
+    want = [r.out for r in want_reqs]
     c("a pool with room for all preempts nothing", big.stats().preemptions == 0,
       f"{big.stats().preemptions} preemptions")
     del big
@@ -99,9 +100,15 @@ def main() -> int:
       f"{n} preemptions over {len(preempted_at)} of {len(ids)} requests")
     c("every request reached an end", all(r.done for r in reqs),
       f"reasons {[r.finish_reason for r in reqs]}")
-    c("no request came back short of the roomy run",
-      all(len(g) == len(w) for g, w in zip(got, want)),
-      f"lengths {[len(g) for g in got]} vs {[len(w) for w in want]}")
+    def turned(i: int) -> bool:
+        return i < len(DETERMINED) and got[i][:len(want[i])] != want[i][:len(got[i])]
+
+    c("no request came back short of the roomy run, unless its walk turned and then stopped",
+      all((len(g) == len(w) and r.finish_reason == wr.finish_reason)
+          or (turned(i) and r.finish_reason == "stop")
+          for i, (r, wr, g, w) in enumerate(zip(reqs, want_reqs, got, want))),
+      f"lengths {[len(g) for g in got]} vs {[len(w) for w in want]}, reasons "
+      f"{[r.finish_reason for r in reqs]} vs {[r.finish_reason for r in want_reqs]}")
 
     for i, (r, w, g) in enumerate(zip(reqs, want, got)):
         at = preempted_at.get(id(r))
