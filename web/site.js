@@ -360,6 +360,9 @@ function mountSeriesPicker(container, series, opts) {
   syncGroups();
   retitle();
   drop.appendChild(list);
+  document.addEventListener("click", function (e) {
+    if (drop.open && !drop.contains(e.target)) drop.open = false;
+  });
   bar.appendChild(tool("Series", drop));
 
   var phaseOpts = el("div", { class: "opts" });
