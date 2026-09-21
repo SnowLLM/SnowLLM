@@ -7,33 +7,33 @@
   "conc": 1,
   "reps": 4,
   "warm": 1,
-  "ttft_s": 1.004617615020834,
+  "ttft_s": 0.9401119129033759,
   "ttft_s_reps": [
-   1.004617615020834,
-   0.6439245829824358,
-   0.6446672049933113,
-   0.6480369280325249
+   0.9401119129033759,
+   0.634381168987602,
+   0.6438809480750933,
+   0.6421607059892267
   ],
-  "decode_tok_s": 34.57743020858035,
+  "decode_tok_s": 39.12537519304935,
   "decode_tok_s_user": null,
-  "prefill_tok_s": 1078.0221089170734,
-  "edge_before_c": 40,
-  "edge_after_c": 60,
+  "prefill_tok_s": 1151.9905078697902,
+  "edge_before_c": 42,
+  "edge_after_c": 62,
   "accept_unit": "AL",
-  "accept_mean": 2.2482412983152504,
-  "accept_stdev": 0.06847940128066643,
+  "accept_mean": 2.2081604157778383,
+  "accept_stdev": 0.032739193457616673,
   "accept_reps": [
-   2.1794871794871793,
-   2.3394495412844036,
-   2.256637168141593,
-   2.217391304347826
+   2.236842105263158,
+   2.217391304347826,
+   2.217391304347826,
+   2.1610169491525424
   ],
-  "step_s": 0.06474372952211839,
+  "step_s": 0.056334452723361794,
   "step_s_reps": [
-   0.06475500077801223,
-   0.06473245826622455,
-   0.06485612985814007,
-   0.06453342841705308
+   0.056321273447553576,
+   0.057004159876130375,
+   0.056347631999170006,
+   0.05619764163541623
   ],
   "loop_period_reps": [
    0,
@@ -42,10 +42,10 @@
    0
   ],
   "text_tails": [
-   " beautiful eighteen-year-old daughter ask for work at a Columbus hotel; their honest need moves the clerk and housekeeper to offer scrubbing work. The text then",
-   ". This is likely from another novel? Grace, Palmer, Christine, hospital, store. Could be \"The House of Mirth\"? No. Maybe \"The Jungle\"? No. It might be from \"The",
-   "itute mother and beautiful shy daughter seek menial work at a Columbus hotel; their honest need moves clerk and housekeeper to offer scrubbing. Later, K. visits",
-   "ks for work. She is helpless, fleshy, frank, innocent, distressed. Daughter timidity from mother, gravity from father. Poverty drives them. Clerk affected, asks"
+   "eed maybe include themes: poverty, dignity, loss of illusions, domesticity. Need maybe note abrupt transition. User asks summarise passage above. We can produce",
+   " Columbus, Ohio, in the fall of 1880, seeking work. Their honest need and helpless dignity move the clerk and housekeeper, who offer the mother cleaning work.\n\n",
+   "hter seeking work, then K. visiting Tillie at a roadhouse/bar. Need summarize in concise manner.\n\nNeed maybe note that passage is fragmented: first scene in 188",
+   "ers: Anthony Patch, Gloria, Richard Cline, Bea, etc. Max Wilson? Sidney? Joe? Schwitter's? Could be from \"The Beautiful and Damned\"? Let's recall: Max Wilson is"
   ]
  },
  {
@@ -56,33 +56,33 @@
   "conc": 1,
   "reps": 4,
   "warm": 1,
-  "ttft_s": 5.826791617961135,
+  "ttft_s": 4.9444996629608795,
   "ttft_s_reps": [
-   5.826791617961135,
-   0.7100474800099619,
-   0.7199783439864404,
-   0.7185655130306259
+   4.9444996629608795,
+   0.6716602680971846,
+   0.6628407590324059,
+   0.6808438290609047
   ],
-  "decode_tok_s": 33.88517465125626,
+  "decode_tok_s": 39.09409065049807,
   "decode_tok_s_user": null,
-  "prefill_tok_s": 1416.0451481680282,
-  "edge_before_c": 60,
-  "edge_after_c": 65,
+  "prefill_tok_s": 1668.722937086644,
+  "edge_before_c": 62,
+  "edge_after_c": 67,
   "accept_unit": "AL",
-  "accept_mean": 2.2472631081927537,
-  "accept_stdev": 0.04122960370140585,
+  "accept_mean": 2.238629558610928,
+  "accept_stdev": 0.07263696628354269,
   "accept_reps": [
-   2.1982758620689653,
-   2.236842105263158,
    2.256637168141593,
-   2.2972972972972974
+   2.142857142857143,
+   2.236842105263158,
+   2.3181818181818183
   ],
-  "step_s": 0.06630446980582771,
+  "step_s": 0.057491388798997387,
   "step_s_reps": [
-   0.06637638142274226,
-   0.06629692485071963,
-   0.06631201476093579,
-   0.06601027481054451
+   0.057486961867693254,
+   0.057495815730301526,
+   0.057453013561347396,
+   0.057598828308453615
   ],
   "loop_period_reps": [
    0,
@@ -91,10 +91,10 @@
    0
   ],
   "text_tails": [
-   "lete and seems from another story. We can summarize as: In 1880 Columbus, Mrs Gerhardt and daughter Jennie seek work; get hotel scrubbing; meet Senator Brander;",
-   "flat, she got store job. Need summarize that too. Could say the passage consists of two parts: first part (Sister Carrie opening) and second fragment. But maybe",
-   "aracter, then abrupt second fragment about K. visiting Tillie at a bar/barn. Need mention themes: poverty, dignity, beauty, temptation, social class. Need maybe",
-   "rander notices Jennie, offers laundry, her poetic sensitive nature, Brander's character. Second fragment: men in garage gossip about Max Wilson taking Sidney to"
+   "description, Senator Brander notices Jennie, mother asks for laundry, he gives it and is charmed, Jennie fascinated by wealth. Then lyrical portrait of Jennie's",
+   "s them to Senator Brander for washing. He gives them laundry, questions family, attracted to Jennie. Jennie admires luxury and fame.\n\nChapter II: Describes Jenn",
+   "ng. Could structure: Part 1: Gerhardt family poverty, hotel work, meeting Brander. Part 2: Jennie's poetic nature. Part 3: Brander's character and fragment. But",
+   " Joe drives off. Need maybe mention incomplete second fragment. Need final in English. Ensure no copyrighted long excerpts? Summarize. Could structure: Overall,"
   ]
  },
  {
@@ -105,33 +105,33 @@
   "conc": 1,
   "reps": 4,
   "warm": 1,
-  "ttft_s": 26.660631831968203,
+  "ttft_s": 19.27175556193106,
   "ttft_s_reps": [
-   26.660631831968203,
-   2.6049236260005273,
-   0.9442021709983237,
-   0.9599564319942147
+   19.27175556193106,
+   1.5888808940071613,
+   0.7067093389341608,
+   0.7172835980309173
   ],
-  "decode_tok_s": 31.482456168007005,
+  "decode_tok_s": 36.132252551765944,
   "decode_tok_s_user": null,
-  "prefill_tok_s": 1231.2161319687943,
-  "edge_before_c": 65,
-  "edge_after_c": 70,
+  "prefill_tok_s": 1703.269839351931,
+  "edge_before_c": 67,
+  "edge_after_c": 69,
   "accept_unit": "AL",
-  "accept_mean": 2.203220252222067,
-  "accept_stdev": 0.024101049294780828,
+  "accept_mean": 2.117861217051552,
+  "accept_stdev": 0.06964950426437583,
   "accept_reps": [
-   2.1982758620689653,
-   2.1982758620689653,
-   2.236842105263158,
-   2.1794871794871793
+   2.056451612903226,
+   2.0901639344262297,
+   2.1074380165289255,
+   2.217391304347826
   ],
-  "step_s": 0.06989475634967496,
+  "step_s": 0.0578673845769722,
   "step_s_reps": [
-   0.06976267594818009,
-   0.06988828576768041,
-   0.06992436199154901,
-   0.06990122693166949
+   0.057793649105024686,
+   0.05783892833612493,
+   0.05833441645488112,
+   0.05789584081781947
   ],
   "loop_period_reps": [
    0,
@@ -140,10 +140,10 @@
    0
   ],
   "text_tails": [
-   "ailed summary. Need maybe structure: setting, characters, plot, themes. Need include key events: Gerhardt family poverty, Jennie meets Senator Brander, develops",
-   " visits home, develops affection, offers help. Chapter V: Brander gives father job, gifts, Jennie and Brander grow closer, watch pawned, he proposes/marriage/se",
-   "e in English. Need maybe not too long but detailed. Need include key plot: poor Gerhardt family in Columbus 1880, mother and daughter Jennie seek work at hotel,",
-   " Bass jailed, Jennie seeks Brander, he helps and relationship deepens; then abrupt second fragment about Joe angry at garage talk about Max Wilson taking Sidney"
+   "ialogue with Sidney, K, Katie, Palmer Howe. Need summarize that too? The user says passage above, includes all. Need maybe mention the final fragment appears to",
+   "ate; he promises marriage but delays. Then final fragment: another woman Grace, ill, confronts Palmer who married Christine, declares she has store job and will",
+   "vents, ending fragment. Need maybe identify as Theodore Dreiser's Sister Carrie? But user didn't ask. Could mention it resembles early chapters of Sister Carrie",
+   "ith Carlotta? Need summarize that fragment too. Need be careful: The passage is long, maybe they expect summary of first part only? But includes second fragment"
   ]
  },
  {
@@ -154,33 +154,33 @@
   "conc": 1,
   "reps": 4,
   "warm": 1,
-  "ttft_s": 189.4756863329676,
+  "ttft_s": 78.39232858200558,
   "ttft_s_reps": [
-   189.4756863329676,
-   5.613929721002933,
-   1.8764962909626774,
-   1.9023433290421963
+   78.39232858200558,
+   1.8157113819615915,
+   0.8899248709203675,
+   0.8862379540223628
   ],
-  "decode_tok_s": 26.78593655765423,
+  "decode_tok_s": 35.57447548206484,
   "decode_tok_s_user": null,
-  "prefill_tok_s": 692.0571316446766,
-  "edge_before_c": 70,
+  "prefill_tok_s": 1672.7146950715728,
+  "edge_before_c": 69,
   "edge_after_c": 74,
   "accept_unit": "AL",
-  "accept_mean": 2.302611661986662,
-  "accept_stdev": 0.019833318553944997,
+  "accept_mean": 2.1711442505511243,
+  "accept_stdev": 0.12980095431164004,
   "accept_reps": [
-   2.2767857142857144,
-   2.2972972972972974,
-   2.3181818181818183,
-   2.3181818181818183
+   2.142857142857143,
+   2.361111111111111,
+   2.1074380165289255,
+   2.073170731707317
   ],
-  "step_s": 0.08588856951455101,
+  "step_s": 0.059737418981707015,
   "step_s_reps": [
-   0.0857569214016881,
-   0.08629122533340443,
-   0.08602021762741391,
-   0.08568021035435695
+   0.05968989484098215,
+   0.05956765298119367,
+   0.05978696842192987,
+   0.05978494312243188
   ],
   "loop_period_reps": [
    0,
@@ -189,10 +189,10 @@
    0
   ],
   "text_tails": [
-   "ter Carrie has 38? Let's recall: Sister Carrie chapters: I Carrie meets Brander, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII, XIII, XIV, XV, XVI, XVII, XVIII,",
-   "his. The user wants a summary. The dominant content is the Sister Carrie excerpt. The Grace/Palmer bit is a tiny, truncated, unrelated snippet. I think the best",
-   "hould keep it reasonably concise but thorough given the enormous source text. Maybe a few paragraphs plus a brief note on the stray fragment.\n\nLet me recall the",
-   "xcerpt (Sister Carrie) plus a brief unrelated fragment. But maybe they want summary of whole. Need be careful not too long? Desired oververbosity 9, so detailed"
+   "e sucked calmly at his dead pipe.\" It seems maybe accidental appended? It might be from another story. User asks summarize passage above, so include both? Could",
+   ": The main text is Jennie Gerhardt by Theodore Dreiser, chapters I-XLVII? It ends with Lester and Jennie traveling, Letty Gerald. Then there is a fragment about",
+   " Need maybe structure: overview, key plot points, themes. Need maybe mention ending incomplete. Need be careful: The passage includes a long excerpt from Sister",
+   "d excerpts. Need summarize main events, themes.\n\nLet's parse the long text. It is Sister Carrie by Theodore Dreiser? Actually Jennie Gerhardt. Chapters I-XLVII?"
   ]
  },
  {
@@ -203,33 +203,33 @@
   "conc": 1,
   "reps": 4,
   "warm": 1,
-  "ttft_s": 463.6465234339703,
+  "ttft_s": 138.8814527139766,
   "ttft_s_reps": [
-   463.6465234339703,
-   6.441248748044018,
-   2.759888119006064,
-   2.757530323055107
+   138.8814527139766,
+   1.8065282510360703,
+   1.0445736949332058,
+   1.050611126003787
   ],
-  "decode_tok_s": 24.248527979645424,
+  "decode_tok_s": 35.61154102762059,
   "decode_tok_s_user": null,
-  "prefill_tok_s": 486.0146439383178,
-  "edge_before_c": 59,
+  "prefill_tok_s": 1622.5276708768367,
+  "edge_before_c": 60,
   "edge_after_c": 75,
   "accept_unit": "AL",
-  "accept_mean": 2.3853778636617617,
-  "accept_stdev": 0.15250137000013522,
+  "accept_mean": 2.1911721504112807,
+  "accept_stdev": 0.08308128111440666,
   "accept_reps": [
-   2.1610169491525424,
-   2.4285714285714284,
-   2.5,
-   2.451923076923077
+   2.125,
+   2.2972972972972974,
+   2.125,
+   2.217391304347826
   ],
-  "step_s": 0.10075037057147107,
+  "step_s": 0.06092014520342262,
   "step_s_reps": [
-   0.10101616816985878,
-   0.10047585082828023,
-   0.10070788662369165,
-   0.10079285451925048
+   0.06093904649217924,
+   0.060901243914666,
+   0.06083415813336615,
+   0.06109854298259092
   ],
   "loop_period_reps": [
    0,
@@ -238,10 +238,10 @@
    0
   ],
   "text_tails": [
-   "summary should acknowledge the three parts and summarize each.\n\nLet me think about what's actually here:\n\nPart 1: Sister Carrie by Theodore Dreiser \u2014 Chapters I",
-   "ork entirely - a brief scene about a man named Palmer visiting a woman named Grace who has gotten a job at a store, mentioning a wife and a girl named Christine",
-   "racter named K. visiting someone named Tillie at a boarding house.\n\nI need to provide a comprehensive summary of all this material. Let me organize it clearly.\n",
-   "acing cars or a similar setting.\n\nLet me provide a comprehensive summary of all three portions.\nThis passage is a concatenation of three distinct literary works"
+   "d abruptly fragment about K. and Sidney? The user says \"Summarise the passage above.\" Need summarize all? Could be they pasted multiple texts accidentally. Need",
+   "nnie is left pregnant with his child, **Vesta**, and is cast out by her stern, religious father, **Gerhardt**. She moves to Cleveland with her family, where she",
+   "ie? Let's inspect: It begins with Mrs. Gerhardt and Jennie in Columbus, Senator Brander, Lester Kane. That's Sister Carrie by Theodore Dreiser, but character is",
+   "Need maybe avoid too much copyrighted text? User provided text, summarizing is allowed. Need not quote extensively. Need produce final answer with summary. Need"
   ]
  }
 ]
