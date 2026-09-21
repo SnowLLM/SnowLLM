@@ -210,8 +210,10 @@ def main() -> int:
                                           16)[dst // PAGE, :, :, dst % PAGE]):
                 ok, why = False, f"row {t} cell {c}: K differs"
                 break
-            if not torch.equal(v_pool[src // PAGE, :, :, src % PAGE],
-                               out_v[dst // PAGE, :, :, dst % PAGE]):
+            vw = v_pool.view(-1, KV_HEADS, PAGE // 4, HEAD_SIZE, 4)
+            if not torch.equal(vw[src // PAGE, :, src % PAGE // 4, :, src % 4],
+                               out_v.view(-1, KV_HEADS, PAGE // 4, HEAD_SIZE,
+                                          4)[dst // PAGE, :, dst % PAGE // 4, :, dst % 4]):
                 ok, why = False, f"row {t} cell {c}: V differs"
                 break
         if not ok:
@@ -240,12 +242,14 @@ def main() -> int:
     ok, why = True, ""
     for t in range(tiles):
         lo, hi = t * TILE, min((t + 1) * TILE, T)
-        want = set()
+        who = {}
         for r in range(lo, hi):
             pos = int(rows_pos[r])
-            want |= {int(b) for b in sel[r, :int(sel_cnt[r])]}
-            want |= set(range((pos + 1) // RATIO, pos // RATIO + 1))
-        blocks = sorted(want)
+            picks = {int(b) for b in sel[r, :int(sel_cnt[r])]}
+            picks |= set(range((pos + 1) // RATIO, pos // RATIO + 1))
+            for b in picks:
+                who[b] = who.get(b, 0) | 1 << ((r - lo) // (TILE // 4))
+        blocks = sorted(who, key=lambda b: (-who[b], b))
         got = axis[t, :int(axis_len[t])].tolist()
         if got != [b * RATIO + i for b in blocks for i in range(RATIO)]:
             ok, why = False, f"tile {t}: {len(got)} cells against {RATIO * len(blocks)}"

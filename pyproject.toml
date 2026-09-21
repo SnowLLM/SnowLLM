@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "ColorsWind", email = "14761584+ColorsWind@users.noreply.github.com" }]
 keywords = ["hip", "rocm", "amd", "llm", "inference"]
-dependencies = ["snowllm-kernels==0.3.0", "fastapi", "uvicorn", "pydantic>=2", "transformers", "pillow"]
+dependencies = ["snowllm-kernels==0.3.1", "fastapi", "uvicorn", "pydantic>=2", "transformers", "pillow"]
 
 classifiers = [
     "Development Status :: 3 - Alpha",
