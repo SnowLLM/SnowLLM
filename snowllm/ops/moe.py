@@ -162,9 +162,10 @@ def fused_moe_kquant_split(hidden: torch.Tensor, router_w: torch.Tensor,
                                              _stream()), "fused_moe_kquant_split")
 
 
-IQ2_XXS, IQ3_XXS, MXFP4, IQ2_S = 0, 1, 2, 3
+IQ2_XXS, IQ3_XXS, MXFP4, IQ2_S, IQ3_S = 0, 1, 2, 3, 4
 
-LOWBIT_FORMATS = {"IQ2_XXS": IQ2_XXS, "IQ3_XXS": IQ3_XXS, "MXFP4": MXFP4, "IQ2_S": IQ2_S}
+LOWBIT_FORMATS = {"IQ2_XXS": IQ2_XXS, "IQ3_XXS": IQ3_XXS, "MXFP4": MXFP4, "IQ2_S": IQ2_S,
+                  "IQ3_S": IQ3_S}
 
 KQUANT_FORMATS = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8,
                   "IQ4_NL": 20, "IQ4_XS": 23}

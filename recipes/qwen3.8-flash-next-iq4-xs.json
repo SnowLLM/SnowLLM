@@ -1,0 +1,32 @@
+{
+  "id": "qwen3.8-flash-next-iq4-xs",
+  "model": "Qwen3.8-Flash-Next",
+  "precision": "UD-IQ4_XS",
+  "dir": "Qwen3.8-Flash-Next-UD-IQ4_XS",
+  "bytes": 97376695424,
+  "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+  "revision": "main",
+  "include": [
+    "UD-IQ4_XS/*.gguf",
+    "mmproj-BF16.gguf",
+    "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf"
+  ],
+  "spec": "MTP k=2",
+  "summary": "The same 177B with its routed gate/up at IQ3_S instead of IQ3_XXS: 4.1 GiB less KV pool than UD-Q3_K_XL and a 1-2% longer decode step. The 26.82 GiB n-gram table stays on disk and is read per batch.",
+  "note": "THE SAME CHECKPOINT AS qwen3.8-flash-next-q3-k-xl BUT FOR 94 TENSORS: ffn_gate_exps and ffn_up_exps on the 47 layers that are not layer 2 go from IQ3_XXS to IQ3_S. Everything else -- down at IQ4_NL and Q8_0, layer 2's IQ4_XS gate/up, the dense stack, the 26.82 GiB per_layer_token_embd, the MTP head -- is the same format tensor for tensor, compared from the headers. The name says IQ4_XS; the experts are still three-bit.\nWHERE THE EXTRA BYTES GO. IQ3_S is 3.4375 bpw in the file against IQ3_XXS's 3.0625, 3.44 GiB more on disk. On the device it is 3.5625: a group's nine-bit indices, explicit signs and scale do not fit the two per-group planes the i-quant layout has, so the index high bits and the scale ride in a third per-group u16 behind d.\nMEASURED(2026-09-22) against UD-Q3_K_XL in the same build, back to back by benchmarks/perf_sweep.sh at depth-2 MTP, one user, 256 out, both runs starting at 45 degC. The decode step is 1.1-1.8% longer (57.15/58.30/58.91/60.68 ms against 56.50/57.65/58.26/59.59 at 1K/8K/32K/128K), and prefill is the same within 1% (1093/1585/1638/1620 against 1089/1599/1633/1610 tok/s). Decode tok/s lands at 39.0/37.9/37.7/39.1 because the acceptance length moves with the text (2.22/2.21/2.23/2.40 here against 2.21/2.24/2.22/2.25). At gpu_memory_utilization 0.9 and ctx 262144 the KV pool holds 426192 tokens, 10.6 GiB, against Q3_K_XL's 593008.\nWHAT IS UNMEASURED: output quality against UD-Q3_K_XL beyond six short prompts, five of which came back word for word the same.",
+  "defaults": {
+    "num_spec": 2
+  },
+  "serve_as": "Qwen3.8-Flash-Next",
+  "sources": [
+    {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ]
+    }
+  ],
+  "priority": 40,
+  "requires": "0.3.2"
+}

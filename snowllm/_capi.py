@@ -149,7 +149,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 57
+ABI_VERSION = 58
 
 
 def _check_abi() -> None:
