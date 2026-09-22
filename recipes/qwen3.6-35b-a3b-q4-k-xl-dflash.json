@@ -35,5 +35,5 @@
   "requires": "0.3.0",
   "summary": "The same GGUF with z-lab's DFlash drafter beside it, which proposes a whole block every step instead of one token.",
   "note": "IT SERVES. Loaded through the engine and decoded greedily 2026-09-05: the same first twelve tokens, byte for byte, as qwen3.6-35b-a3b-fp8 gives on the same prompt, with decode graphs captured. The drafter is dflash/dflash-BF16.gguf beside the weights, and it captures its own T=8 draft graph on this file; the drafted run gives the same tokens as the undrafted one.",
-  "serve_as": "Qwen3.6-35B-A3B-UD-Q4_K_XL"
+  "serve_as": "Qwen3.6-35B-A3B"
 }
