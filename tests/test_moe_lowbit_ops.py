@@ -11,8 +11,8 @@ from snowllm.checkpoint.gguf.dequant import dequantize
 import _harness
 
 H, I, E, NE = 2048, 512, 256, 257
-GGUF_B = {"IQ2_XXS": 66, "IQ3_XXS": 98, "IQ2_S": 82, "MXFP4": 17}
-BLOCK = {"IQ2_XXS": 256, "IQ3_XXS": 256, "IQ2_S": 256, "MXFP4": 32}
+GGUF_B = {"IQ2_XXS": 66, "IQ3_XXS": 98, "IQ2_S": 82, "IQ3_S": 110, "MXFP4": 17}
+BLOCK = {"IQ2_XXS": 256, "IQ3_XXS": 256, "IQ2_S": 256, "IQ3_S": 256, "MXFP4": 32}
 
 
 def gen_blocks(name: str, rows: int, k: int, ne: int, g: torch.Generator) -> torch.Tensor:
@@ -49,7 +49,8 @@ def main() -> int:
     router = (torch.randn(NE, H, generator=g, device="cuda", dtype=torch.bfloat16) * 0.05)
     router_w = ops.moe_shuffle_router(router)
 
-    for gu_fmt, dn_fmt in (("IQ2_XXS", "IQ3_XXS"), ("IQ2_XXS", "MXFP4"), ("IQ2_S", "IQ3_XXS")):
+    for gu_fmt, dn_fmt in (("IQ2_XXS", "IQ3_XXS"), ("IQ2_XXS", "MXFP4"), ("IQ2_S", "IQ3_XXS"),
+                           ("IQ3_S", "IQ3_S")):
         gu_raw, gu_deq = build(gu_fmt, 2 * I, H, E, g)
         dn_raw, dn_deq = build(dn_fmt, H, I, E, g)
         sh_gu = torch.randn(1, 2 * I, H, generator=g, device="cuda", dtype=torch.bfloat16) * 0.02
