@@ -17,7 +17,7 @@
   "defaults": {
     "num_spec": 2
   },
-  "serve_as": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
+  "serve_as": "Qwen3.8-Flash-Next",
   "sources": [
     {
       "repo": "Qwen/Qwen3.8-Flash-Next",

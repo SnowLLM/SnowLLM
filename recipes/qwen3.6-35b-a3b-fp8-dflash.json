@@ -28,5 +28,5 @@
   },
   "priority": 100,
   "summary": "The same FP8 weights with z-lab's DFlash drafter beside them, which proposes a whole block every step instead of one token.",
-  "serve_as": "Qwen3.6-35B-A3B-FP8"
+  "serve_as": "Qwen3.6-35B-A3B"
 }

@@ -15,5 +15,6 @@
   "spec": "MTP k=2",
   "priority": 80,
   "summary": "The dense sibling at FP8. Every parameter fires on every token, so it answers better and decodes far slower. Vision and the MTP head included.",
-  "note": "8.0 tok/s at batch 1, 14.7 with --num-spec 2, against the A3B's 60 -- 27B of weights read per token instead of 3B. Speculation is MTP only here; DFlash is the A3B's. qwen3.6-27b-q4-k-s is the same model a third lighter and a third faster."
+  "note": "8.0 tok/s at batch 1, 14.7 with --num-spec 2, against the A3B's 60 -- 27B of weights read per token instead of 3B. Speculation is MTP only here; DFlash is the A3B's. qwen3.6-27b-q4-k-s is the same model a third lighter and a third faster.",
+  "serve_as": "Qwen3.6-27B"
 }
