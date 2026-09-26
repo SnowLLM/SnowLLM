@@ -37,6 +37,7 @@ class ServerState:
     default_max_tokens: int | None
     allow_image_urls: bool
     limit_mm_per_prompt: int
+    sampling: Mapping[str, float | int]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "aliases", MappingProxyType(dict(self.aliases)))

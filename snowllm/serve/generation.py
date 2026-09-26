@@ -38,11 +38,17 @@ def max_new(req: Common, prompt_len: int) -> int:
     return min(st.default_max_tokens, room) if st.default_max_tokens else room
 
 
+def _sampling(req: Common, name: str) -> float | int:
+    d = serving().sampling
+    return d[name] if name in d and name not in req.model_fields_set else getattr(req, name)
+
+
 def params(req: Common, want: int) -> SamplingParams:
+    top_p = _sampling(req, "top_p")
     return SamplingParams(
-        temperature=req.temperature,
-        top_p=req.top_p if 0.0 < req.top_p <= 1.0 else 1.0,
-        top_k=req.top_k,
+        temperature=_sampling(req, "temperature"),
+        top_p=top_p if 0.0 < top_p <= 1.0 else 1.0,
+        top_k=_sampling(req, "top_k"),
         max_new_tokens=want,
         stop_token_ids=(),
         presence_penalty=req.presence_penalty,
