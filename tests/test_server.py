@@ -113,6 +113,19 @@ async def main() -> int:
     check("stream content has the answer", "96" in ct_text, repr(ct_text[:40]))
     check("reasoning streamed before content", ordered)
 
+    print("\n=== tool-call history with string arguments ===")
+    call = {"id": "call_1", "type": "function",
+            "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}}
+    body = {"model": name, "max_tokens": 4, **nothink, "messages": [
+        {"role": "user", "content": "Weather in Paris?"},
+        {"role": "assistant", "content": "", "tool_calls": [call]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "sunny"}]}
+    r = await http.post("/v1/chat/completions", json=body)
+    check("string arguments render", r.status_code == 200, r.text[:60])
+    call["function"]["arguments"] = "{\"city\": "
+    r = await http.post("/v1/chat/completions", json=body)
+    check("malformed arguments are a 400", r.status_code == 400, r.text[:60])
+
     print("\n=== profiling ===")
     r = await http.post("/start_profile")
     check("POST /start_profile", r.status_code == 200, r.text[:40])

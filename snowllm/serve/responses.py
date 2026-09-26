@@ -103,7 +103,8 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
             a.setdefault("tool_calls", []).append(
                 {"id": item.get("call_id"), "type": "function",
                  "function": {"name": item.get("name"),
-                              "arguments": _loads_args(item.get("arguments"))}})
+                              "arguments": gen.loads_args(item.get("arguments"),
+                                                           item.get("call_id"))}})
         elif typ == "function_call_output":
             flush()
             msgs.append({"role": "tool", "content": _text_of(item.get("output")),
@@ -112,15 +113,6 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
             assistant()["reasoning_content"] = _reasoning_text(item)
     flush()
     return msgs
-
-
-def _loads_args(arguments: str | dict | None) -> dict:
-    if isinstance(arguments, str):
-        try:
-            return json.loads(arguments)
-        except (json.JSONDecodeError, ValueError):
-            return {}
-    return arguments or {}
 
 
 def _usage(prompt_len: int, r: Request) -> dict:
