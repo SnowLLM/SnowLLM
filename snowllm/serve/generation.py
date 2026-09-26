@@ -222,6 +222,21 @@ async def collect(prompt: list[int], req: Common, *, reasoning: bool, types: dic
     return rc_text, ct_text, calls, r, fr
 
 
+def loads_args(arguments: str | dict | None, call_id: str | None) -> dict:
+    if not arguments:
+        return {}
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError as e:
+            raise HTTPException(400, f"tool call {call_id!r}: arguments is not valid JSON "
+                                     f"({e})") from None
+    if not isinstance(arguments, dict):
+        raise HTTPException(400, f"tool call {call_id!r}: arguments must be a JSON object, "
+                                 f"got {type(arguments).__name__}")
+    return arguments
+
+
 def chat_prompt(messages: list[dict], kwargs: dict, tools: list[dict] | None = None) -> list[int]:
     enc = serving().tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, tokenize=True, return_dict=True, tools=tools, **kwargs)

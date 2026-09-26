@@ -152,6 +152,15 @@ def _load_image(url: str) -> "Image.Image":
         return Image.open(io.BytesIO(f.read())).convert("RGB")
 
 
+def _parse_tool_args(messages: list[dict]) -> list[dict]:
+    for m in messages:
+        for c in m.get("tool_calls") or ():
+            f = c.get("function")
+            if isinstance(f, dict) and "arguments" in f:
+                f["arguments"] = gen.loads_args(f["arguments"], c.get("id"))
+    return messages
+
+
 def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
     out, images = [], []
     for m in messages:
@@ -174,7 +183,8 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 async def chat_completions(req: ChatRequest) -> StreamingResponse | dict:
     st = serving()
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
-    msgs, images = _split_images([m.model_dump(exclude_none=True) for m in req.messages])
+    msgs, images = _split_images(_parse_tool_args(
+        [m.model_dump(exclude_none=True) for m in req.messages]))
     template_kwargs = req.template_kwargs()
     mm = None
     if images:
