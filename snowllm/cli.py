@@ -132,6 +132,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         proc = loader.load_processor(root, tok)
         _log("vision tower loaded; /v1/chat/completions accepts image_url parts")
 
+    sampling = loader.sampling_defaults(root)
+    _log(f"sampling defaults from the checkpoint: {sampling or 'none'}")
     state = ServerState(
         engine=AsyncEngine(engine, profile_dir, stats_interval=stats_interval),
         tokenizer=tok, model=model, processor=proc,
@@ -139,7 +141,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         think_open_id=_single("<think>"), think_close_id=_single("</think>"),
         created=int(time.time()),
         default_max_tokens=default_max_tokens, allow_image_urls=allow_image_urls,
-        limit_mm_per_prompt=limit_mm_per_prompt)
+        limit_mm_per_prompt=limit_mm_per_prompt, sampling=sampling)
 
     page = engine.runner.block_size
     tokens = blocks * page

@@ -150,6 +150,21 @@ def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[
     return tok, tuple(eos) if isinstance(eos, list) else (eos,)
 
 
+def sampling_defaults(root: pathlib.Path) -> dict[str, float | int]:
+    if is_gguf(root):
+        from .gguf import GGUF
+        from .gguf.source import find_gguf
+        g = GGUF(find_gguf(root))
+        raw = {n: g.get(f"general.sampling.{k}") for n, k in
+               (("temperature", "temp"), ("top_p", "top_p"), ("top_k", "top_k"))}
+    else:
+        path = root / "generation_config.json"
+        cfg = json.loads(path.read_text()) if path.exists() else {}
+        raw = {n: cfg.get(n) for n in ("temperature", "top_p", "top_k")}
+    return {k: int(v) if k == "top_k" else round(float(v), 6) for k, v in raw.items()
+            if v is not None}
+
+
 PROCESSOR_CONFIGS = ("preprocessor_config.json", "video_preprocessor_config.json")
 PROCESSOR_SOURCE = "Qwen/Qwen3.6-35B-A3B"
 
