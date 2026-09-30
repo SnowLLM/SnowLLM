@@ -25,11 +25,13 @@ def _log(msg: str) -> None:
     print(f"{term.stamp(time.strftime('%H:%M:%S'))} {msg}", flush=True)
 
 
-def _draft_bytes(dflash: str | None) -> int:
-    if not dflash:
+def _draft_bytes(dflash: str | None, geo: object) -> int:
+    from .engine import _dspark
+    if not dflash or not _dspark(geo):
         return 0
     from .checkpoint.gguf.source import find_dspark_gguf
-    side = find_dspark_gguf(pathlib.Path(dflash).expanduser())
+    p = pathlib.Path(dflash).expanduser()
+    side = find_dspark_gguf(p) if p.is_dir() else p
     return side.stat().st_size if side else 0
 
 
@@ -83,7 +85,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                 reserve=draft_res, taps=draft_taps, draft_geo=draft_geo,
                                 prefix_ratio=prefix_memory_ratio, kv_int8=kv_int8,
                                 num_spec=draft_spec if dflash else num_spec,
-                                host_taken=_draft_bytes(dflash)))
+                                host_taken=_draft_bytes(dflash, draft_geo)))
     dt = time.time() - t0
     gib = read_bytes() / (1 << 30)
     _log(f"loaded in {dt:.1f}s"
