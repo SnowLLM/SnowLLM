@@ -178,7 +178,7 @@ async def responses(req: ResponsesRequest, raw: HTTPRequest) -> StreamingRespons
     expose = gen.check_tool_choice(req.tool_choice)
     chat_tools = _to_chat_tools(req.tools) if expose else None
     messages = _input_to_messages(req.input, req.instructions)
-    prompt = gen.chat_prompt(messages, req.chat_template_kwargs, chat_tools)
+    prompt = gen.chat_prompt(messages, req.template_kwargs(), chat_tools)
     reasoning = gen.thinking_open(prompt)
     types = tool_parser.tool_types(chat_tools)
 
