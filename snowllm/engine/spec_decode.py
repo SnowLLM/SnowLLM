@@ -41,7 +41,7 @@ class SpecDecoder:
         self.d_pd = torch.zeros(S, dtype=torch.int64, device="cuda")
         self.d_ar = torch.arange(max(S, num_spec + 1), dtype=torch.int64, device="cuda")
 
-    chunk_decode = False
+    chunk_decode = True
 
     def verify_rows(self, n: int) -> int:
         k = max(0, min(self.num_spec, SPEC_MAX_STEP_ROWS // n - 1))
@@ -84,6 +84,7 @@ class SpecDecoder:
             state_indices=d_sidx,
             num_accepted=ones,
             cu_seqlens=cu, total_q_blocks=ops.prefill_q_plan([T] * B)[0],
+            chunk_decode=True,
             prev_ids=self._ngram_context(batch, T),
             host_ids=ids,
         )
@@ -156,6 +157,7 @@ class SpecDecoder:
             block_tables=bt, seq_lens=seq_lens, is_prefill=False, num_tokens=B * T,
             state_indices=self.slots.dummy_indices(B * T),
             cu_seqlens=cu, total_q_blocks=total_q_blocks,
+            chunk_decode=True,
         )
         logits, hid = self.runner.mtp_draft(self.runner.last_hidden, ids_next, mb)
         rows = self.d_ar[:B] * T + nacc - 1
