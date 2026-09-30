@@ -187,6 +187,7 @@ async def responses(req: ResponsesRequest) -> StreamingResponse | dict:
     rid, created, model = new_id("resp"), int(time.time()), serving().model_name
 
     if req.stream:
+        gen.max_new(common, len(prompt))
         return StreamingResponse(
             _sse(prompt, common, req, reasoning, types, rid, created, model),
             media_type="text/event-stream")

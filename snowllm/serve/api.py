@@ -82,6 +82,7 @@ async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = F
     model = req.model or serving().model_name
 
     if req.stream:
+        gen.max_new(req, len(prompt))
         want_usage = req.stream_options is not None and req.stream_options.include_usage
 
         async def sse() -> AsyncIterator[str]:
