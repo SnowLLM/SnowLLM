@@ -151,8 +151,8 @@ class SpecDecoder:
         row_pos = torch.where(real, self.d_c[:B].view(B, 1) + t_ax, 0).reshape(-1)
         mb = Batch(
             input_ids=ids_next, positions=pos,
-            slot_mapping=ops.resolve_slots(bt, row_seq.to(torch.int32), row_pos.to(torch.int32),
-                                           self.runner.block_size),
+            slot_mapping=ops.resolve_slots(self._bt, row_seq.to(torch.int32),
+                                           row_pos.to(torch.int32), self.runner.block_size),
             block_tables=bt, seq_lens=seq_lens, is_prefill=False, num_tokens=B * T,
             state_indices=self.slots.dummy_indices(B * T),
             cu_seqlens=cu, total_q_blocks=total_q_blocks,
@@ -173,8 +173,8 @@ class SpecDecoder:
             cb = Batch(
                 input_ids=ids,
                 positions=(p + self.d_pd[:B]).expand(3, B).contiguous(),
-                slot_mapping=ops.resolve_slots(bt, self.d_ar[:B].to(torch.int32), p.to(torch.int32),
-                                               self.runner.block_size),
+                slot_mapping=ops.resolve_slots(self._bt, self.d_ar[:B].to(torch.int32),
+                                               p.to(torch.int32), self.runner.block_size),
                 block_tables=bt, seq_lens=seq_lens, is_prefill=False, num_tokens=B,
                 state_indices=self.slots.dummy_indices(B),
             )
@@ -197,8 +197,8 @@ class SpecDecoder:
             cb = Batch(
                 input_ids=ids,
                 positions=positions([p[i] + batch[i].pos_delta for i in range(B)]),
-                slot_mapping=slot_mapping(bt, [(i, p[i]) for i in range(B)],
-                                          self.runner.block_size),
+                slot_mapping=slot_mapping(self.tables([r.blocks for r in batch]),
+                                          [(i, p[i]) for i in range(B)], self.runner.block_size),
                 block_tables=bt, seq_lens=seq_lens,
                 is_prefill=False, num_tokens=B, state_indices=self.slots.dummy_indices(B),
             )
