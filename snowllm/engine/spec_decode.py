@@ -322,7 +322,7 @@ class DFlashDecoder:
         if roll:
             self.runner.linear_advance(i32(sidx), i32(keep), B, T)
 
-        self.propose(batch, acc)
+        self.propose(batch, keep)
 
     accept_hist: list = []
     _accept = SpecDecoder._accept
