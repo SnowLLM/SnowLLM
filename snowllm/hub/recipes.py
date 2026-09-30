@@ -300,10 +300,12 @@ def manifest(recipe: Recipe, dest: pathlib.Path) -> dict | None:
 def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> None:
     (dest / MANIFEST).write_text(json.dumps({
         "id": recipe.id,
+        "serve_as": recipe.serve_as,
         "model": recipe.model,
         "precision": recipe.precision,
         "repo": recipe.repo,
         "revision": recipe.revision,
+        "defaults": recipe.defaults,
         "fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "bytes": sum(b.size for b in blobs),
         "files": [{"path": str(b.dest.relative_to(dest)), "size": b.size, "sha256": b.sha256}
