@@ -391,8 +391,10 @@ def main() -> None:
             return model + v[len("@model"):] if isinstance(v, str) and v.startswith("@model") \
                 else v
 
+        unset = object()
+        given = p.parse_args(namespace=argparse.Namespace(**dict.fromkeys(recipes.SETTABLE, unset)))
         used = {k: _at(v) for k, v in recipe.defaults.items()
-                if k in recipes.SETTABLE and getattr(a, k, None) == p.get_default(k)}
+                if k in recipes.SETTABLE and getattr(given, k) is unset}
         for k, v in used.items():
             setattr(a, k, v)
         if used:
