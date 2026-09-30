@@ -577,7 +577,7 @@ class Engine:
 
     def _admit(self, r: Request, use_cache: bool = True) -> bool:
         hit = (self.cache.lookup(r.prefill_src, r.prefill_len)
-               if self.cache is not None and use_cache else None)
+               if self.cache is not None and use_cache and r.embeds is None else None)
         ring, pools = self.cache.pages.covered(hit) if hit is not None else (0, 0)
         blocks = self._alloc_blocks(
             ops.kv_blocks_for(r.prefill_len, self.runner.block_size)
@@ -743,7 +743,7 @@ class Engine:
         hi = min(lo + self.prefill_chunk, r.prefill_len)
         marks, idx = [], []
         backed = self.dflash is None or self._reserve_draft(r, hi - lo)
-        if self.cache is not None and backed:
+        if self.cache is not None and backed and r.embeds is None:
             marks = self.cache.store.marks(lo, hi)
             idx = self.cache.reserve(len(marks))
             marks = thin(marks, len(idx))
