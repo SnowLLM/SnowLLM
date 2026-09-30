@@ -28,6 +28,7 @@ class ChatMessage(BaseModel):
     content: str | list[dict] | None = ""
     tool_calls: list[dict] | None = None
     tool_call_id: str | None = None
+    reasoning_content: str | None = None
 
 
 THINK_FIELDS = ("enable_thinking", "thinking", "reasoning_effort", "preserve_thinking")
