@@ -35,6 +35,7 @@ THINK_FIELDS = ("enable_thinking", "thinking", "reasoning_effort", "preserve_thi
 
 class ChatRequest(Common):
     messages: list[ChatMessage]
+    max_completion_tokens: int | None = None
     chat_template_kwargs: dict = Field(default_factory=dict)
     enable_thinking: bool | None = None
     thinking: object = None

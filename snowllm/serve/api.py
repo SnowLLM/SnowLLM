@@ -183,6 +183,8 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse | dict:
     st = serving()
+    if req.max_completion_tokens is not None:
+        req.max_tokens = req.max_completion_tokens
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
     msgs, images = _split_images(_parse_tool_args(
         [m.model_dump(exclude_none=True) for m in req.messages]))
