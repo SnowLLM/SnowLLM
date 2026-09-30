@@ -801,7 +801,8 @@ class Runner(GraphRunner):
     def _capture_shape(self, shape: DecodeShape) -> bool:
         B, T = shape.B, shape.T
         M = B * T
-        self.d_pos[M] = torch.zeros(3, M, dtype=torch.int64, device="cuda")
+        if M not in self.d_pos:
+            self.d_pos[M] = torch.zeros(3, M, dtype=torch.int64, device="cuda")
         if T > 1:
             self.d_seq[:B] = T
         b = self._pad_batch(B, T, shape.chunk if T > 1 else False)
