@@ -774,7 +774,8 @@ class Engine:
             logits, hid = self.spec.propose_after_prefill(r, b, lo, hi, M, r.out[-1])
             r.drafts = ops.argmax(logits).tolist()
             r.n_accepted = 1
-            if self.num_spec > 1 and self.blocks.grow(r, self.num_spec):
+            if (self.num_spec > 1 and r.num_cached + self.num_spec <= self.max_model_len
+                    and self.blocks.grow(r, self.num_spec)):
                 self.spec.propose_rest([r], hid, self.num_spec)
         self._retire_finished()
 
@@ -811,6 +812,9 @@ class Engine:
 
     def _decode_or_verify(self, n: int) -> tuple[int, int]:
         T = self.spec.verify_rows(n) if self.spec else 0
+        if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
+                     for r in self.running if r.prefilled):
+            T = 0
         if T:
             batch = self._decodable_batch(self.spec.rows_needed(T))
             self.spec.verify_step(batch, T)
