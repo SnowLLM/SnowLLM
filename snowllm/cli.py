@@ -301,6 +301,7 @@ def parser() -> argparse.ArgumentParser:
                         "int8_per_token_head. It is worth most on a checkpoint whose KV is wide: "
                         "many full-attention layers, or many kv heads.")
     g.add_argument("--max-num-batched-tokens", default="auto", metavar="N",
+                   type=lambda x: x if x == "auto" else _size(x),
                    help="tokens per launch, or 'auto' to take the widest candidate whose "
                         "activations -- WALKED, not estimated -- still leave the pools their room. "
                         "A share of the allowance is what this used to be, and a share is not a "
