@@ -26,6 +26,8 @@ class AsyncEngine:
         self._live: list[Request] = []
         self._queues: dict[int, asyncio.Queue] = {}
         self._sent: dict[int, int] = {}
+        self._inbox: list[Request] = []
+        self._aborts: list[tuple[Request, str]] = []
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -76,7 +78,8 @@ class AsyncEngine:
 
     def submit(self, prompt: list[int], params: SamplingParams, rope_factor: float = 1.0,
                **mm: object) -> Request:
-        r = self.engine.add(prompt, params, rope_factor=rope_factor, **mm)
+        r = self.engine.add(prompt, params, rope_factor=rope_factor, queue=False, **mm)
+        self._inbox.append(r)
         self._live.append(r)
         self._queues[id(r)] = asyncio.Queue()
         self._sent[id(r)] = 0
@@ -97,16 +100,26 @@ class AsyncEngine:
             self._queues.pop(id(r), None)
 
     def abort(self, r: Request, reason: str = "abort") -> None:
-        r.done = True
-        r.finish_reason = r.finish_reason or reason
-        if r in self.engine.waiting:
-            self.engine.waiting.remove(r)
-            self._queues[id(r)].put_nowait(None)
-            self._close(r)
+        self._aborts.append((r, reason))
+        self._wake.set()
+
+    def _apply(self) -> None:
+        self.engine.waiting.extend(self._inbox)
+        self._inbox.clear()
+        for r, reason in self._aborts:
+            r.done = True
+            r.finish_reason = r.finish_reason or reason
+            if r in self.engine.waiting:
+                self.engine.waiting.remove(r)
+                if id(r) in self._queues:
+                    self._queues[id(r)].put_nowait(None)
+                self._close(r)
+        self._aborts.clear()
 
     async def _run(self) -> None:
         loop = asyncio.get_running_loop()
         while True:
+            self._apply()
             if not self.engine.waiting and not self.engine.running:
                 await self._wake.wait()
                 self._wake.clear()
