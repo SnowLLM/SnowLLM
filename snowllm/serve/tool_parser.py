@@ -19,8 +19,8 @@ class ToolCall:
     arguments: dict
 
 
-def holdback(buf: str, marker: str) -> tuple[str, str]:
-    keep = next((k for k in range(len(marker) - 1, 0, -1) if buf.endswith(marker[:k])), 0)
+def holdback(buf: str, *markers: str) -> tuple[str, str]:
+    keep = max((k for m in markers for k in range(1, len(m)) if buf.endswith(m[:k])), default=0)
     return (buf[:-keep], buf[-keep:]) if keep else (buf, "")
 
 

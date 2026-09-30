@@ -147,7 +147,7 @@ async def _run(prompt: list[int], req: Common,
                    rope_factor=resolve_alias(req.model)[1].factor, **(mm or {}))
     stop_ids = eng.engine.stop_token_ids
     out: list[int] = []
-    sent = ""
+    sent = cut = ""
     seen = False
     async for t in eng.stream(r):
         if t in stop_ids:
@@ -157,16 +157,17 @@ async def _run(prompt: list[int], req: Common,
         if text.endswith("�"):
             continue
         cut, hit = _cut(text, at)
-        if len(cut) > len(sent):
-            yield cut[len(sent):], r, hit
+        vis = cut if hit else tool_parser.holdback(cut, *at)[0]
+        if len(vis) > len(sent):
+            yield vis[len(sent):], r, hit
             seen = True
-            sent = cut
+            sent = vis
         if hit:
             r.finish_reason = "stop"
             eng.abort(r)
             break
-    if not seen:
-        yield "", r, False
+    if len(cut) > len(sent) or not seen:
+        yield cut[len(sent):], r, False
 
 
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
