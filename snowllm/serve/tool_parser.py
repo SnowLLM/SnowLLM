@@ -24,6 +24,13 @@ def holdback(buf: str, *markers: str) -> tuple[str, str]:
     return (buf[:-keep], buf[-keep:]) if keep else (buf, "")
 
 
+def _json_type(p: dict) -> str:
+    alts = p.get("anyOf") or p.get("oneOf")
+    t = [a.get("type", "") for a in alts if isinstance(a, dict)] if alts else p.get("type", "")
+    t = [x for x in t if x != "null"] if isinstance(t, list) else [t]
+    return t[0] if len(t) == 1 else ""
+
+
 def tool_types(tools: list[dict] | None) -> dict[str, dict[str, str]] | None:
     if not tools:
         return None
@@ -34,7 +41,7 @@ def tool_types(tools: list[dict] | None) -> dict[str, dict[str, str]] | None:
         if not name:
             continue
         props = (fn.get("parameters") or {}).get("properties") or {}
-        out[name] = {k: v.get("type", "") for k, v in props.items() if isinstance(v, dict)}
+        out[name] = {k: _json_type(v) for k, v in props.items() if isinstance(v, dict)}
     return out
 
 
