@@ -210,7 +210,10 @@ async def completions(req: CompletionRequest, raw: Request) -> StreamingResponse
         if len(req.prompt) != 1:
             raise HTTPException(400, "a batched `prompt` list is not supported; send one string")
         req.prompt = req.prompt[0]
-    return await _serve(raw, serving().tokenizer.encode(req.prompt), req, chat=False)
+    prompt = serving().tokenizer.encode(req.prompt)
+    if not prompt:
+        raise HTTPException(400, "`prompt` is empty")
+    return await _serve(raw, prompt, req, chat=False)
 
 
 from . import responses
