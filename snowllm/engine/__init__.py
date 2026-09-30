@@ -475,7 +475,7 @@ class Engine:
     def add(self, prompt: list[int], params: SamplingParams | None = None,
             rope_factor: float = 1.0, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
-            embed_rows: list[int] | None = None) -> Request:
+            embed_rows: list[int] | None = None, queue: bool = True) -> Request:
         p = params or SamplingParams()
         cap = min(self.max_model_len, int(rope_factor * self._rope_orig_max))
         if len(prompt) + p.max_new_tokens > cap:
@@ -483,7 +483,8 @@ class Engine:
                                f"(factor {rope_factor}, max_model_len {self.max_model_len})")
         r = Request(prompt=list(prompt), params=p, rope_factor=rope_factor, mrope=mrope,
                     pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []))
-        self.waiting.append(r)
+        if queue:
+            self.waiting.append(r)
         return r
 
     def step(self) -> str:
