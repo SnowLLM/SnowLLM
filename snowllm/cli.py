@@ -18,7 +18,7 @@ def _size(x: str) -> int:
     m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([kKmM]?)\s*", x)
     if not m:
         raise argparse.ArgumentTypeError(f"{x!r} is not a size (try 4096, 32k, 1M)")
-    return int(float(m.group(1)) * {"": 1, "k": 1000, "K": 1000, "m": 10**6, "M": 10**6}[m.group(2)])
+    return int(float(m.group(1)) * {"": 1, "k": 1024, "K": 1024, "m": 2**20, "M": 2**20}[m.group(2)])
 
 
 def _log(msg: str) -> None:
