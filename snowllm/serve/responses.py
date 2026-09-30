@@ -181,7 +181,8 @@ async def responses(req: ResponsesRequest) -> StreamingResponse | dict:
     reasoning = gen.thinking_open(prompt)
     types = tool_parser.tool_types(chat_tools)
 
-    common = Common(**{k: getattr(req, k) for k in Common.model_fields if k != "max_tokens"},
+    common = Common(**{k: getattr(req, k) for k in Common.model_fields
+                       if k != "max_tokens" and k in req.model_fields_set},
                       max_tokens=req.max_output_tokens)
     rid, created, model = new_id("resp"), int(time.time()), serving().model_name
 
