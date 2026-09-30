@@ -591,12 +591,21 @@ class Engine:
             self.slots.give_back(r)
             self.blocks.release(blocks)
             return self._admit(r, use_cache=False) if hit is not None else False
-        if self.cache is not None and use_cache:
-            self.cache.took(hit)
         r.blocks = self.cache.pages.own(self.blocks, hit.blocks, blocks, r) \
             if hit is not None else blocks
         if hit is not None:
             r.num_prefilled = len(hit.tokens)
+        if self.dflash is not None and not self._reserve_draft(
+                r, r.prefill_len - r.num_prefilled, hit):
+            self.blocks.release(r.blocks)
+            self.dflash.release(r)
+            self.runner.release(r.slot)
+            self.slots.give_back(r)
+            r.blocks, r.num_prefilled = [], 0
+            return False
+        if self.cache is not None and use_cache:
+            self.cache.took(hit)
+        if hit is not None:
             self.cache.store.residue.load(hit.ckpt, self.slots.name(r, 1)[0], r.blocks,
                                          self.cache.pages.target(hit.blocks))
         if self._active_factor != r.rope_factor:
@@ -734,9 +743,9 @@ class Engine:
             host_ids=hid,
         )
 
-    def _reserve_draft(self, r: Request, rows: int) -> bool:
+    def _reserve_draft(self, r: Request, rows: int, keep: Entry | None = None) -> bool:
         while not self.dflash.grow(r, rows):
-            if self.cache is None or not self.cache.evict():
+            if self.cache is None or not self.cache.evict(keep):
                 return False
         return True
 
