@@ -189,6 +189,7 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse | dict:
     st = serving()
+    gen.check_unsupported(req)
     if req.max_completion_tokens is not None:
         req.max_tokens = req.max_completion_tokens
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
@@ -214,6 +215,7 @@ async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse 
 
 @app.post("/v1/completions", response_model=None)
 async def completions(req: CompletionRequest, raw: Request) -> StreamingResponse | dict:
+    gen.check_unsupported(req)
     if isinstance(req.prompt, list):
         if len(req.prompt) != 1:
             raise HTTPException(400, "a batched `prompt` list is not supported; send one string")

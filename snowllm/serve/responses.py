@@ -20,6 +20,7 @@ router = APIRouter()
 
 
 def _validate(req: ResponsesRequest) -> None:
+    gen.check_unsupported(req)
     if req.previous_response_id is not None:
         raise HTTPException(400, "previous_response_id is unsupported: this server is stateless. "
                                  "Resend the full conversation in `input`.")

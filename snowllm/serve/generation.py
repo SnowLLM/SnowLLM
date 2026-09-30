@@ -278,6 +278,13 @@ def chat_prompt(messages: list[dict], kwargs: dict, tools: list[dict] | None = N
     return [int(i) for i in ids]
 
 
+def check_unsupported(req: Common) -> None:
+    if req.seed is not None and params(req, 0).temperature > 0.0:
+        raise HTTPException(400, "seed is unsupported when sampling: every request draws from "
+                                 "one shared random stream, so a seed cannot make one "
+                                 "reproducible. Use temperature=0 for a repeatable answer.")
+
+
 def check_tool_choice(tool_choice: str | dict) -> bool:
     if tool_choice in ("auto", "none") or tool_choice is None:
         return tool_choice != "none"
