@@ -344,7 +344,7 @@ def pull(recipe: Recipe, dest: pathlib.Path, jobs: int = DEFAULT_JOBS, verify: b
         return dest
     if total > have:
         log(f"{term.stamp()} {recipe.id}: {human(total - have)} to fetch from {recipe.source()}")
-    fetch(blobs, jobs=jobs, verify=verify, headers=headers(blobs[0].url))
+    fetch(blobs, jobs=jobs, verify=verify, headers=headers)
     write_manifest(recipe, dest, blobs)
     log(f"{term.stamp()} {recipe.id} is in {dest}")
     return dest

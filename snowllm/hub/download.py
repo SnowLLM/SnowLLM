@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TextIO
@@ -348,9 +349,9 @@ def forget(blob: Blob, chunk: int = CHUNK_BYTES) -> None:
 
 
 def fetch(blobs: list[Blob], jobs: int = DEFAULT_JOBS, verify: bool = True,
-          headers: dict[str, str] | None = None, chunk: int = CHUNK_BYTES) -> int:
+          headers: Callable[[str], dict[str, str]] | None = None,
+          chunk: int = CHUNK_BYTES) -> int:
     ask = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
-    ask.update(headers or {})
     jobs = max(1, jobs)
 
     want = [b for b in blobs if not present(b)]
@@ -375,10 +376,12 @@ def fetch(blobs: list[Blob], jobs: int = DEFAULT_JOBS, verify: bool = True,
     try:
         for p in parts:
             p.open()
-        sources = {id(p): Source(p.blob.url, ask) for p in parts}
+        sources = {id(p): Source(p.blob.url, {**ask, **(headers(p.blob.url) if headers else {})})
+                   for p in parts}
         progress.start()
         with ThreadPoolExecutor(jobs, thread_name_prefix="snowllm-fetch") as pool:
-            futures = [pool.submit(_chunk, p, sources[id(p)], ask, i, progress, stop)
+            futures = [pool.submit(_chunk, p, sources[id(p)], sources[id(p)].headers, i,
+                                   progress, stop)
                        for p, i in work]
             try:
                 for f in futures:
