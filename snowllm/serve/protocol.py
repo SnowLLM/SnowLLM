@@ -84,3 +84,9 @@ class ResponsesRequest(Common):
     previous_response_id: str | None = None
     background: bool | None = None
     metadata: dict | None = Field(default=None)
+
+    @property
+    def reasoning_effort(self) -> object:
+        return (self.reasoning or {}).get("effort")
+
+    template_kwargs = ChatRequest.template_kwargs
