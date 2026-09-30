@@ -163,7 +163,6 @@ class Cache:
 
     def load_ckpt(self, slot: int, meta: dict, raw_blocks: list, buf: torch.Tensor,
                   n_tokens: int, held: dict) -> None:
-        self.reset(slot)
         rw = self.raw_window_blocks()
         first = n_tokens // self.block_size - rw
         ring = [raw_blocks[i] for i in range(first, n_tokens // self.block_size)]
@@ -184,7 +183,7 @@ class Cache:
                     t.shape[0], rows, t.shape[2])
                 at += n * 4
         for r in self.ratios:
-            self.held[r][slot] = self.blocks[r].retain(held[r])
+            self.held[r][slot] = self.blocks[r].retain(held[r]) + self.held[r][slot]
             self.n_comp[r][slot] = meta["n_comp"][r]
             self.carry_at[r][slot] = meta["carry_at"][r]
             self.carry_bank[r][slot] = meta["carry_bank"][r]
@@ -247,7 +246,8 @@ class Cache:
               spec: bool = False, is_prefill: bool = True) -> Batch:
         for slot, first in zip(slots, firsts):
             if first == 0:
-                self.reset(slot)
+                for r in self.ratios:
+                    self.n_comp[r][slot] = self.carry_at[r][slot] = self.carry_bank[r][slot] = 0
         seq_of_row = torch.repeat_interleave(
             torch.arange(len(lens), dtype=torch.int32, device="cuda"),
             torch.tensor(lens, dtype=torch.int64, device="cuda"), output_size=sum(lens))
