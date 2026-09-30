@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class StreamOptions(BaseModel):
@@ -21,6 +21,13 @@ class Common(BaseModel):
     stream: bool = False
     stream_options: StreamOptions | None = None
     seed: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _null_is_unset(cls, data: object) -> object:
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if v is not None}
+        return data
 
 
 class ChatMessage(BaseModel):
