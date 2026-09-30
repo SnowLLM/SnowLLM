@@ -6,6 +6,7 @@ import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException
+from fastapi import Request as HTTPRequest
 from fastapi.responses import StreamingResponse
 
 from . import generation as gen
@@ -172,7 +173,7 @@ def _output_items(reasoning_text: str, content_text: str, calls: list) -> list[d
 
 
 @router.post("/v1/responses", response_model=None)
-async def responses(req: ResponsesRequest) -> StreamingResponse | dict:
+async def responses(req: ResponsesRequest, raw: HTTPRequest) -> StreamingResponse | dict:
     _validate(req)
     expose = gen.check_tool_choice(req.tool_choice)
     chat_tools = _to_chat_tools(req.tools) if expose else None
@@ -192,8 +193,8 @@ async def responses(req: ResponsesRequest) -> StreamingResponse | dict:
             _sse(prompt, common, req, reasoning, types, rid, created, model),
             media_type="text/event-stream")
 
-    rc_text, ct_text, calls, r, fr = await gen.collect(prompt, common, reasoning=reasoning,
-                                                      types=types)
+    rc_text, ct_text, calls, r, fr = await gen.unless_disconnected(raw, gen.collect(
+        prompt, common, reasoning=reasoning, types=types))
     status, incomplete = _status(fr)
     return _response_obj(rid, created, model, req, _output_items(rc_text, ct_text, calls),
                          _usage(len(prompt), r), status, incomplete)

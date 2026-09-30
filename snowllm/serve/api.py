@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ..models import multimodal
@@ -73,7 +73,7 @@ def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:
     return [one(c) for c in calls]
 
 
-async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = False,
+async def _serve(raw: Request, prompt: list[int], req: Common, chat: bool, reasoning: bool = False,
                  types: dict | None = None,
                  mm: dict | None = None) -> StreamingResponse | dict:
     kind = "chat.completion" if chat else "text_completion"
@@ -120,8 +120,8 @@ async def _serve(prompt: list[int], req: Common, chat: bool, reasoning: bool = F
 
         return StreamingResponse(sse(), media_type="text/event-stream")
 
-    rc_text, ct_text, calls, r, fr = await gen.collect(prompt, req, reasoning=reasoning,
-                                                       types=types, mm=mm)
+    rc_text, ct_text, calls, r, fr = await gen.unless_disconnected(raw, gen.collect(
+        prompt, req, reasoning=reasoning, types=types, mm=mm))
     choice = {"index": 0, "finish_reason": fr}
     if chat:
         msg = {"role": "assistant", "content": ct_text or (None if calls else "")}
@@ -181,7 +181,7 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 
 
 @app.post("/v1/chat/completions", response_model=None)
-async def chat_completions(req: ChatRequest) -> StreamingResponse | dict:
+async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse | dict:
     st = serving()
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
     msgs, images = _split_images(_parse_tool_args(
@@ -200,17 +200,17 @@ async def chat_completions(req: ChatRequest) -> StreamingResponse | dict:
         prompt = mm.pop("prompt")
     else:
         prompt = gen.chat_prompt(msgs, template_kwargs, tools)
-    return await _serve(prompt, req, chat=True, reasoning=gen.thinking_open(prompt),
+    return await _serve(raw, prompt, req, chat=True, reasoning=gen.thinking_open(prompt),
                         types=tool_parser.tool_types(tools), mm=mm)
 
 
 @app.post("/v1/completions", response_model=None)
-async def completions(req: CompletionRequest) -> StreamingResponse | dict:
+async def completions(req: CompletionRequest, raw: Request) -> StreamingResponse | dict:
     if isinstance(req.prompt, list):
         if len(req.prompt) != 1:
             raise HTTPException(400, "a batched `prompt` list is not supported; send one string")
         req.prompt = req.prompt[0]
-    return await _serve(serving().tokenizer.encode(req.prompt), req, chat=False)
+    return await _serve(raw, serving().tokenizer.encode(req.prompt), req, chat=False)
 
 
 from . import responses

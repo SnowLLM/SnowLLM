@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from dataclasses import dataclass
+from typing import TypeVar
 
 from fastapi import HTTPException
+from fastapi import Request as HTTPRequest
 
 from ..engine import Request, SamplingParams
 from . import tool_parser
@@ -227,6 +230,26 @@ async def collect(prompt: list[int], req: Common, *, reasoning: bool, types: dic
     if r is None or fr == "error":
         raise HTTPException(500, "the engine failed this request; see the server log")
     return rc_text, ct_text, calls, r, fr
+
+
+T = TypeVar("T")
+
+
+async def _disconnect(raw: HTTPRequest) -> None:
+    while (await raw.receive())["type"] != "http.disconnect":
+        pass
+
+
+async def unless_disconnected(raw: HTTPRequest, work: Awaitable[T]) -> T:
+    task, watch = asyncio.ensure_future(work), asyncio.ensure_future(_disconnect(raw))
+    try:
+        done, _ = await asyncio.wait((task, watch), return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        watch.cancel()
+        task.cancel()
+    if task not in done:
+        raise HTTPException(499, "client disconnected")
+    return task.result()
 
 
 def loads_args(arguments: str | dict | None, call_id: str | None) -> dict:
