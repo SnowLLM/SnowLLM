@@ -42,7 +42,7 @@ class Qwen4ExpRunner(Runner):
         self.ple_mods: list[Ple] = []
         self.ple_table = model.ple_table
         self._qsa_of_row: dict[tuple[int, int], torch.Tensor] = {}
-        self._qsa_launch: dict[tuple[int, int], tuple] = {}
+        self._qsa_launch: dict[int, tuple] = {}
         self.qsa_tile = 0
         super().__init__(model, *a, **kw)
         rows = max(self.max_prefill_tokens, self.decode_rows)
@@ -168,14 +168,13 @@ class Qwen4ExpRunner(Runner):
             base = seq[r] - (hi - lo)
             for at in range(lo, hi, group):
                 n = min(group, hi - at)
-                hit = self._qsa_launch.get((n, base + (at - lo) + n))
+                hit = self._qsa_launch.get(n)
                 if hit is None:
                     total, qmap = ops.prefill_q_plan([n])
-                    hit = self._qsa_launch[(n, base + (at - lo) + n)] = (
-                        torch.tensor([0, n], dtype=torch.int32, device="cuda"),
-                        torch.tensor([base + (at - lo) + n], dtype=torch.int32, device="cuda"),
-                        total, qmap)
-                jobs.append((at, n, r, base + (at - lo), *hit))
+                    hit = self._qsa_launch[n] = (
+                        torch.tensor([0, n], dtype=torch.int32, device="cuda"), total, qmap)
+                end = torch.tensor([base + (at - lo) + n], dtype=torch.int32, device="cuda")
+                jobs.append((at, n, r, base + (at - lo), hit[0], end, *hit[1:]))
         return jobs
 
     def _qsa_shape(self, b: Batch) -> tuple[torch.Tensor, torch.Tensor] | tuple[None, None]:
