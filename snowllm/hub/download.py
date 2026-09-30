@@ -198,6 +198,13 @@ class _Part:
             return False, set()
         return True, {i for i in state.get("have", []) if 0 <= i < self.count}
 
+    def reserved(self) -> int:
+        try:
+            st = self.path.stat()
+        except OSError:
+            return 0
+        return min(st.st_blocks * 512 if hasattr(st, "st_blocks") else st.st_size, self.blob.size)
+
     def held(self, have: set[int] | None = None) -> int:
         have = self.usable()[1] if have is None else have
         return sum(self.span(i)[1] - self.span(i)[0] for i in have)
@@ -355,8 +362,9 @@ def fetch(blobs: list[Blob], jobs: int = DEFAULT_JOBS, verify: bool = True,
     already = sum(p.resume() for p in parts)
 
     free = shutil.disk_usage(_nearest(want[0].dest.parent)).free
-    if free < total - already:
-        raise DownloadError(f"{human(total - already)} left to fetch, {human(free)} free on "
+    need = total - sum(p.reserved() for p in parts)
+    if free < need:
+        raise DownloadError(f"{human(need)} more disk space needed, {human(free)} free on "
                             f"{want[0].dest.parent}")
 
     progress = Progress(total)
