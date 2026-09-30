@@ -21,7 +21,7 @@ SPEC_MAX_STEP_ROWS = 256
 
 
 def context_len(r: Request) -> int:
-    return max(r.num_cached, r.num_prefilled)
+    return max(r.num_cached, r.num_prefilled) if r.prefilled else r.num_prefilled
 
 
 class SpecDecoder:
