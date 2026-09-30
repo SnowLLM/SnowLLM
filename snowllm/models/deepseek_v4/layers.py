@@ -200,6 +200,8 @@ class Compressor(nn.Module):
                 self.pool(ctx, carry.kv, carry.score, plan.cur_row, plan.prev_row, ctx.eps,
                           plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size,
                           kv[:plan.n_rows], score[:plan.n_rows], plan.src_row)
+            if ops.tracing() is not None:
+                return
             if plan.keep_carry is not None:
                 dst, src = plan.keep_carry
                 carry.kv[dst] = carry.kv[src]
