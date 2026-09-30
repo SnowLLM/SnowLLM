@@ -21,6 +21,8 @@ class Common(BaseModel):
     stream: bool = False
     stream_options: StreamOptions | None = None
     seed: int | None = None
+    n: int | None = None
+    logprobs: bool | int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -51,6 +53,7 @@ class ChatRequest(Common):
     preserve_thinking: object = None
     tools: list[dict] | None = None
     tool_choice: str | dict = "auto"
+    response_format: dict | None = None
 
     def template_kwargs(self) -> dict:
         kw = dict(self.chat_template_kwargs)

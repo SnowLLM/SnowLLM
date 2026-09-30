@@ -283,6 +283,10 @@ def check_unsupported(req: Common) -> None:
         raise HTTPException(400, "seed is unsupported when sampling: every request draws from "
                                  "one shared random stream, so a seed cannot make one "
                                  "reproducible. Use temperature=0 for a repeatable answer.")
+    if req.n not in (None, 1):
+        raise HTTPException(400, f"n={req.n} is unsupported: send one request per choice")
+    if req.logprobs is not None and req.logprobs is not False:
+        raise HTTPException(400, "logprobs are unsupported")
 
 
 def check_tool_choice(tool_choice: str | dict) -> bool:

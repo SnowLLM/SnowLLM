@@ -190,6 +190,10 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse | dict:
     st = serving()
     gen.check_unsupported(req)
+    fmt = (req.response_format or {}).get("type")
+    if fmt in ("json_schema", "json_object"):
+        raise HTTPException(400, f"response_format={fmt!r} is unsupported: no grammar-constrained "
+                                 "decoding. Ask for JSON in the prompt instead.")
     if req.max_completion_tokens is not None:
         req.max_tokens = req.max_completion_tokens
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
