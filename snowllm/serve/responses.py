@@ -54,6 +54,8 @@ def _text_of(content: str | list | None) -> str:
         return content
     parts = []
     for p in content:
+        if not isinstance(p, str) and p.get("type") in ("input_image", "input_file"):
+            raise HTTPException(400, f"{p['type']} is unsupported: /v1/responses takes text only")
         parts.append(p if isinstance(p, str) else p.get("text", ""))
     return "".join(parts)
 
