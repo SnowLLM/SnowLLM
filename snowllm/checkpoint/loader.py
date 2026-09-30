@@ -145,8 +145,9 @@ def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[
         tok = PreTrainedTokenizerFast.from_pretrained(str(root))
     else:
         tok = AutoTokenizer.from_pretrained(str(root))
-    eos = json.loads((root / "generation_config.json").read_text()).get(
-        "eos_token_id", tok.eos_token_id)
+    path = root / "generation_config.json"
+    cfg = json.loads(path.read_text()) if path.exists() else {}
+    eos = cfg.get("eos_token_id", tok.eos_token_id)
     return tok, tuple(eos) if isinstance(eos, list) else (eos,)
 
 
