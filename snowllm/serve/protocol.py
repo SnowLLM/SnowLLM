@@ -10,9 +10,9 @@ class StreamOptions(BaseModel):
 
 class Common(BaseModel):
     model: str | None = None
-    max_tokens: int | None = None
+    max_tokens: int | None = Field(None, ge=1)
     temperature: float = 1.0
-    top_p: float = 1.0
+    top_p: float = Field(1.0, ge=0.0, le=1.0)
     top_k: int = 0
     presence_penalty: float = Field(0.0, ge=-2.0, le=2.0)
     frequency_penalty: float = Field(0.0, ge=-2.0, le=2.0)
@@ -43,7 +43,7 @@ THINK_FIELDS = ("enable_thinking", "thinking", "reasoning_effort", "preserve_thi
 
 class ChatRequest(Common):
     messages: list[ChatMessage]
-    max_completion_tokens: int | None = None
+    max_completion_tokens: int | None = Field(None, ge=1)
     chat_template_kwargs: dict = Field(default_factory=dict)
     enable_thinking: bool | None = None
     thinking: object = None
@@ -73,7 +73,7 @@ class CompletionRequest(Common):
 class ResponsesRequest(Common):
     input: str | list[dict]
     instructions: str | None = None
-    max_output_tokens: int | None = None
+    max_output_tokens: int | None = Field(None, ge=1)
     tools: list[dict] | None = None
     tool_choice: str | dict = "auto"
     parallel_tool_calls: bool = True

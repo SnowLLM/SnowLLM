@@ -49,7 +49,7 @@ def _sampling(req: Common, name: str) -> float | int:
 def params(req: Common, want: int) -> SamplingParams:
     top_p = _sampling(req, "top_p")
     return SamplingParams(
-        temperature=_sampling(req, "temperature"),
+        temperature=_sampling(req, "temperature") if top_p else 0.0,
         top_p=top_p if 0.0 < top_p <= 1.0 else 1.0,
         top_k=_sampling(req, "top_k"),
         max_new_tokens=want,
