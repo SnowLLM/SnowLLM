@@ -10,7 +10,8 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from jinja2 import TemplateError
 
 from ..models import multimodal
 from . import generation as gen
@@ -32,6 +33,11 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="SnowLLM", lifespan=_lifespan)
+
+
+@app.exception_handler(TemplateError)
+async def _template_error(_raw: Request, e: TemplateError) -> JSONResponse:
+    return JSONResponse({"detail": f"the chat template rejected these messages: {e}"}, 400)
 
 
 @app.get("/health")
