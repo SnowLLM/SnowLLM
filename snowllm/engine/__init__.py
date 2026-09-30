@@ -371,6 +371,7 @@ class Engine:
         num_kv_blocks = self.runner.finish_pools(each * n_shapes)
         self.dflash_blocks = self.runner.draft_blocks
         if self.dflash is not None:
+            self.dflash_blocks = max(self.dflash_blocks, self.dflash.max_blocks_per_seq)
             self._retake_draft(self.dflash_blocks)
         need = min(self.max_blocks, self.ring_blocks) if self.ring_blocks else self.max_blocks
         if num_kv_blocks < need:
