@@ -33,6 +33,12 @@ class Qwen4ExpRunner(Runner):
 
     def __init__(self, model: "Qwen4ExpForConditionalGeneration", *a: object,
                  **kw: object) -> None:
+        if kw.get("kv_int8") and model.geo.index_topk:
+            raise ops.SnowLLMError(
+                "kv_int8 would switch off this checkpoint's sparse attention: the QSA kernels "
+                "read bf16 KV only, so every full-attention layer would attend over the whole "
+                "context instead of the indexer's selection, and the output would change. Serve "
+                "it with --kv-cache-dtype bf16.")
         self.ple_mods: list[Ple] = []
         self.ple_table = model.ple_table
         self._qsa_of_row: dict[tuple[int, int], torch.Tensor] = {}
