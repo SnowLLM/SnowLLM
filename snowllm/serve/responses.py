@@ -287,6 +287,8 @@ async def _sse(prompt: list[int], common: Common, req: ResponsesRequest, reasoni
                 out_index += 1
             elif isinstance(e, Finish):
                 r, fr = e.request, e.finish_reason
+        if fr == "error":
+            raise RuntimeError("the engine failed this request; see the server log")
     except Exception as exc:
         for line in close_item():
             yield line
