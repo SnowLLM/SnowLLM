@@ -11,7 +11,7 @@ import time
 
 from . import term
 
-SUBCOMMANDS = ("pull", "recipes")
+SUBCOMMANDS = ("pull", "recipes", "pi")
 
 
 def _size(x: str) -> int:
@@ -361,6 +361,9 @@ def parser() -> argparse.ArgumentParser:
 def main() -> None:
     argv = sys.argv[1:]
     if argv and argv[0] in SUBCOMMANDS:
+        if argv[0] == "pi":
+            from .hub import pi
+            raise SystemExit(pi.main(argv[0], argv[1:]))
         from .hub import recipes
         raise SystemExit(recipes.main(argv[0], argv[1:]))
 
