@@ -110,6 +110,14 @@ hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
 A GGUF works too — `snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash` gets the UD-Q4_K_XL quant with
 its DFlash drafter beside it: a smaller download, and llama.cpp serves the same file.
 
+## Integrations
+
+`snowllm pi` points [Pi](https://pi.dev) at a local server by writing every model to
+`~/.pi/agent/models.json`.
+
+```sh
+snowllm pi --port 8000
+```
 
 ## Run
 
