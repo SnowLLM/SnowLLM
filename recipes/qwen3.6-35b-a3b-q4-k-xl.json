@@ -20,7 +20,7 @@
     }
   ],
   "spec": "none",
-  "priority": 98,
+  "priority": 58,
   "requires": "0.3.0",
   "summary": "The same 35B MoE as a GGUF, quantized per layer against an importance matrix. Vision included; no MTP head in this file.",
   "note": "IT SERVES. Loaded through the engine and decoded greedily 2026-09-05: the same first twelve tokens, byte for byte, as qwen3.6-35b-a3b-fp8 gives on the same prompt, with decode graphs captured.",
