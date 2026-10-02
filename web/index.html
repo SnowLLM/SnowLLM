@@ -1206,7 +1206,7 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
     scriptBtn.disabled = windows;
     if (windows && choice.how === "script") choice.how = "pip";
 
-    document.querySelectorAll(".opts").forEach(function (group) {
+    document.querySelectorAll(".opts[data-axis]").forEach(function (group) {
       var axis = group.dataset.axis;
       group.querySelectorAll(".opt").forEach(function (b) {
         b.setAttribute("aria-pressed", choice[axis] === b.dataset.value ? "true" : "false");
@@ -1222,7 +1222,7 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
     }
   }
 
-  document.querySelectorAll(".opts .opt").forEach(function (button) {
+  document.querySelectorAll(".opts[data-axis] .opt").forEach(function (button) {
     button.addEventListener("click", function () {
       if (button.disabled) return;
       choice[button.parentNode.dataset.axis] = button.dataset.value;
