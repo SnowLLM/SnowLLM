@@ -6,15 +6,19 @@ import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from fastapi import HTTPException
 from fastapi import Request as HTTPRequest
 
 from ..engine import Request, SamplingParams
+from ..models import multimodal
 from . import tool_parser
 from .protocol import Common
 from .state import Alias, serving
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 
 def new_id(prefix: str) -> str:
@@ -73,8 +77,10 @@ def _cut(text: str, at: list[str]) -> tuple[str, bool]:
 
 def usage(prompt: list[int], r: Request | None) -> dict:
     n = len(r.out) if r is not None else 0
+    cached = r.cached_tokens if r is not None else 0
     return {"prompt_tokens": len(prompt), "completion_tokens": n,
-            "total_tokens": len(prompt) + n}
+            "total_tokens": len(prompt) + n,
+            "prompt_tokens_details": {"cached_tokens": cached}}
 
 
 THINK_CLOSE = "</think>"
@@ -276,6 +282,58 @@ def chat_prompt(messages: list[dict], kwargs: dict, tools: list[dict] | None = N
     if ids and isinstance(ids[0], list):
         ids = ids[0]
     return [int(i) for i in ids]
+
+
+def _load_image(url: str) -> "Image.Image":
+    import base64
+    import io
+
+    from PIL import Image
+
+    if url.startswith("data:"):
+        _, _, payload = url.partition(",")
+        return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+    if not serving().allow_image_urls:
+        raise HTTPException(400, "fetching image URLs is disabled; send a data: URI, or start the "
+                                 "server with --allow-image-urls")
+    import urllib.request
+    with urllib.request.urlopen(url, timeout=10) as f:
+        return Image.open(io.BytesIO(f.read())).convert("RGB")
+
+
+def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
+    out, images = [], []
+    for m in messages:
+        content = m.get("content")
+        if not isinstance(content, list):
+            out.append(m)
+            continue
+        parts = []
+        for part in content:
+            if part.get("type") == "image_url":
+                images.append(_load_image(part["image_url"]["url"]))
+                parts.append({"type": "image"})
+            else:
+                parts.append(part)
+        out.append({**m, "content": parts})
+    return out, images
+
+
+def prompt_with_images(messages: list[dict], kwargs: dict,
+                       tools: list[dict] | None = None) -> tuple[list[int], dict | None]:
+    """Build the prompt and, when the messages carry an image, its vision tensors."""
+    msgs, images = _split_images(messages)
+    if not images:
+        return chat_prompt(msgs, kwargs, tools), None
+    st = serving()
+    if len(images) > st.limit_mm_per_prompt:
+        raise HTTPException(400, f"{len(images)} images in one request exceeds "
+                                 f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
+    if st.processor is None:
+        raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
+                                 "images")
+    mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
+    return mm.pop("prompt"), mm
 
 
 def check_unsupported(req: Common) -> None:

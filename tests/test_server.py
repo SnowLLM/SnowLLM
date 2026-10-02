@@ -126,6 +126,14 @@ async def main() -> int:
     r = await http.post("/v1/chat/completions", json=body)
     check("malformed arguments are a 400", r.status_code == 400, r.text[:60])
 
+    print("\n=== prefix cache reporting ===")
+    para = "The quick brown fox jumps over the lazy dog. " * 60
+    await c.completions.create(model=name, prompt=para, temperature=0.0, max_tokens=4)
+    again = await c.completions.create(model=name, prompt=para, temperature=0.0, max_tokens=4)
+    cached = again.usage.prompt_tokens_details.cached_tokens
+    check("a repeated prompt reports cached tokens", cached > 0,
+          f"prompt={again.usage.prompt_tokens} cached={cached}")
+
     print("\n=== profiling ===")
     r = await http.post("/start_profile")
     check("POST /start_profile", r.status_code == 200, r.text[:40])

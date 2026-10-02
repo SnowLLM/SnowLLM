@@ -12,6 +12,15 @@ from . import recipes
 
 MODELS_JSON = "~/.pi/agent/models.json"
 
+# Fold Pi's level names onto what each template reads: Qwen3.8 xhigh/medium/low, DeepSeek max.
+QWEN38_LEVELS = {"minimal": "low", "low": "low", "medium": "medium",
+                 "high": "xhigh", "xhigh": "xhigh", "max": "xhigh"}
+DEEPSEEK_LEVELS = {"max": "max"}
+
+
+def _has_vision(recipe: recipes.Recipe) -> bool:
+    return any("mmproj" in name for source in recipe.sources for name in source.include)
+
 
 def main(cmd: str, argv: list[str]) -> int:
     p = argparse.ArgumentParser(
@@ -24,6 +33,9 @@ def main(cmd: str, argv: list[str]) -> int:
                         f"or $SNOWLLM_RECIPES_URL). A path works too.")
     p.add_argument("--refresh", action="store_true",
                    help="refetch the catalogue instead of reusing the cached copy")
+    p.add_argument("--api", choices=("openai-completions", "openai-responses"),
+                   default="openai-responses",
+                   help="Pi wire API for the endpoint (default: openai-responses)")
     a = p.parse_args(argv)
 
     try:
@@ -38,16 +50,24 @@ def main(cmd: str, argv: list[str]) -> int:
         if not model_id or model_id in seen:
             continue
         seen.add(model_id)
-        # Pi cannot infer that a custom OpenAI-compatible endpoint is a reasoning model, so
-        # mark it. reasoning alone is not enough: compat carries the endpoint's thinking
-        # on/off switch (Qwen reads enable_thinking, DeepSeek reads thinking), and Pi sends
-        # the system prompt as the OpenAI developer role for any reasoning model unless
-        # supportsDeveloperRole is false. The Qwen chat template only accepts
-        # system/user/assistant/tool, so it must stay "system".
-        models.append({"id": model_id, "reasoning": True,
-                       "compat": {"thinkingFormat":
-                                  "deepseek" if model_id.startswith("DeepSeek") else "qwen",
-                                  "supportsDeveloperRole": False}})
+        model = {"id": model_id, "reasoning": True,
+                 "contextWindow": int(r.defaults.get("max_model_len",
+                                                      recipes.DEFAULT_CONTEXT)),
+                 # Pi would send the system prompt as the developer role, which Qwen rejects.
+                 "compat": {"supportsDeveloperRole": False}}
+        if model_id.startswith("Qwen3.8"):
+            model["thinkingLevelMap"] = QWEN38_LEVELS
+        elif model_id.startswith("DeepSeek"):
+            model["thinkingLevelMap"] = DEEPSEEK_LEVELS
+        if _has_vision(r):
+            model["input"] = ["text", "image"]
+        if a.api == "openai-completions":
+            # Mark the model a reasoning one: compat carries its thinking switch and effort.
+            model["compat"]["thinkingFormat"] = (
+                "deepseek" if model_id.startswith("DeepSeek") else "qwen")
+            if "thinkingLevelMap" in model:
+                model["compat"]["supportsReasoningEffort"] = True
+        models.append(model)
     if not models:
         print(f"{term.stamp()} the catalogue names no model to serve", file=sys.stderr)
         return 1
@@ -69,7 +89,7 @@ def main(cmd: str, argv: list[str]) -> int:
     if not isinstance(providers, dict):
         providers = data["providers"] = {}
     providers["snowllm"] = {"baseUrl": f"http://localhost:{a.port}/v1",
-                            "api": "openai-completions",
+                            "api": a.api,
                             "apiKey": "snowllm",
                             "models": models}
     models_json.write_text(json.dumps(data, indent=2) + "\n")

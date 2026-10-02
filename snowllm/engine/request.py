@@ -47,6 +47,7 @@ class Request:
     state_head: int = -1
 
     num_prefilled: int = 0
+    cached_tokens: int = 0
     replay: int = 0
     done: bool = False
     finish_reason: str | None = None

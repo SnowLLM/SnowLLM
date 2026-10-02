@@ -48,17 +48,28 @@ def _to_chat_tools(tools: list[dict] | None) -> list[dict]:
     return out
 
 
-def _text_of(content: str | list | None) -> str:
+def _content_of(content: str | list | None) -> str | list:
+    """Responses content to a string when all text, else chat parts so images survive."""
     if content is None:
         return ""
     if isinstance(content, str):
         return content
     parts = []
     for p in content:
-        if not isinstance(p, str) and p.get("type") in ("input_image", "input_file"):
-            raise HTTPException(400, f"{p['type']} is unsupported: /v1/responses takes text only")
-        parts.append(p if isinstance(p, str) else p.get("text", ""))
-    return "".join(parts)
+        if isinstance(p, str):
+            parts.append({"type": "text", "text": p})
+        elif p.get("type") == "input_image":
+            url = p.get("image_url")
+            if not url:
+                raise HTTPException(400, "input_image needs an image_url: file_id is unsupported")
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+        elif p.get("type") == "input_file":
+            raise HTTPException(400, "input_file is unsupported: send the file's text or an image")
+        else:
+            parts.append({"type": "text", "text": p.get("text", "")})
+    if all(part.get("type") == "text" for part in parts):
+        return "".join(part["text"] for part in parts)
+    return parts
 
 
 def _reasoning_text(item: dict) -> str:
@@ -96,7 +107,7 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
         typ = item.get("type", "message")
         if typ == "message":
             role = item.get("role", "user")
-            content = _text_of(item.get("content"))
+            content = _content_of(item.get("content"))
             if role == "assistant":
                 assistant()["content"] = content
             else:
@@ -111,7 +122,7 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
                                                            item.get("call_id"))}})
         elif typ == "function_call_output":
             flush()
-            msgs.append({"role": "tool", "content": _text_of(item.get("output")),
+            msgs.append({"role": "tool", "content": _content_of(item.get("output")),
                          "tool_call_id": item.get("call_id")})
         elif typ == "reasoning":
             assistant()["reasoning_content"] = _reasoning_text(item)
@@ -121,7 +132,8 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
 
 def _usage(prompt_len: int, r: Request) -> dict:
     out = len(r.out)
-    return {"input_tokens": prompt_len, "input_tokens_details": {"cached_tokens": 0},
+    return {"input_tokens": prompt_len,
+            "input_tokens_details": {"cached_tokens": r.cached_tokens},
             "output_tokens": out, "output_tokens_details": {"reasoning_tokens": 0},
             "total_tokens": prompt_len + out}
 
@@ -181,7 +193,7 @@ async def responses(req: ResponsesRequest, raw: HTTPRequest) -> StreamingRespons
     expose = gen.check_tool_choice(req.tool_choice)
     chat_tools = _to_chat_tools(req.tools) if expose else None
     messages = _input_to_messages(req.input, req.instructions)
-    prompt = gen.chat_prompt(messages, req.template_kwargs(), chat_tools)
+    prompt, mm = gen.prompt_with_images(messages, req.template_kwargs(), chat_tools)
     reasoning = gen.thinking_open(prompt)
     types = tool_parser.tool_types(chat_tools)
 
@@ -193,11 +205,11 @@ async def responses(req: ResponsesRequest, raw: HTTPRequest) -> StreamingRespons
     if req.stream:
         gen.max_new(common, len(prompt))
         return StreamingResponse(
-            _sse(prompt, common, req, reasoning, types, rid, created, model),
+            _sse(prompt, common, req, reasoning, types, rid, created, model, mm),
             media_type="text/event-stream")
 
     rc_text, ct_text, calls, r, fr = await gen.unless_disconnected(raw, gen.collect(
-        prompt, common, reasoning=reasoning, types=types))
+        prompt, common, reasoning=reasoning, types=types, mm=mm))
     status, incomplete = _status(fr)
     return _response_obj(rid, created, model, req, _output_items(rc_text, ct_text, calls),
                          _usage(len(prompt), r), status, incomplete)
@@ -205,7 +217,7 @@ async def responses(req: ResponsesRequest, raw: HTTPRequest) -> StreamingRespons
 
 async def _sse(prompt: list[int], common: Common, req: ResponsesRequest, reasoning: bool,
                types: dict | None, rid: str, created: int,
-               model: str) -> AsyncIterator[str]:
+               model: str, mm: dict | None) -> AsyncIterator[str]:
     seq = 0
 
     def emit(type_: str, **kw: object) -> str:
@@ -260,7 +272,7 @@ async def _sse(prompt: list[int], common: Common, req: ResponsesRequest, reasoni
 
     r, fr = None, "stop"
     try:
-        async for e in gen.generate(prompt, common, reasoning=reasoning, types=types):
+        async for e in gen.generate(prompt, common, reasoning=reasoning, types=types, mm=mm):
             if isinstance(e, ReasoningDelta):
                 if cur != "reasoning":
                     for line in close_item() + open_item("reasoning"):
