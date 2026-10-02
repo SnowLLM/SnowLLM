@@ -28,5 +28,6 @@
     "max_model_len": 655360,
     "gpu_memory_utilization": 0.98
   },
-  "serve_as": "DeepSeek-V4-Flash-0731"
+  "serve_as": "DeepSeek-V4-Flash-0731",
+  "priority": 80
 }

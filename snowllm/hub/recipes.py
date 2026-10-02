@@ -33,6 +33,9 @@ SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens
             "prefix_memory_ratio", "mtp_window", "mtp_sinks")
 TIMEOUT = 30.0
 SUPPORTED = "supported"
+RECOMMENDED = (("simple tasks", ("qwen3.6-35b-a3b-fp8-dflash",
+                                  "qwen3.6-35b-a3b-q4-k-xl-dflash")),
+               ("complex tasks", ("qwen3.8-flash-next-iq4-xs",)))
 
 
 def endpoint() -> str:
@@ -96,6 +99,7 @@ class Recipe:
         self.requires = str(raw.get("requires", ""))
         self.note = raw.get("note", "")
         self.bytes = int(raw.get("bytes", 0))
+        self.priority = int(raw.get("priority", 0))
         self.files = raw.get("files") or []
         self.defaults = dict(raw.get("defaults") or {})
         for k in self.defaults:
@@ -435,9 +439,9 @@ def _rows(recipes: list[Recipe], root: pathlib.Path) -> list[tuple[str, ...]]:
     return rows
 
 
-def _paint_row(row: tuple[str, ...], out: TextIO) -> tuple[str, ...]:
+def _paint_row(row: tuple[str, ...], recommended: set[str], out: TextIO) -> tuple[str, ...]:
     rid, precision, size, ctx, slots, spec, state, disk, where = row
-    return (term.paint(rid, term.BOLD, stream=out), precision,
+    return (term.paint(rid, term.BOLD, stream=out) if rid in recommended else rid, precision,
             term.paint(size, term.DIM, stream=out), ctx, slots,
             term.paint(spec, term.DIM, stream=out) if spec == "none" else spec,
             term.paint(state, term.GREEN if state == SUPPORTED else term.YELLOW, stream=out),
@@ -447,18 +451,29 @@ def _paint_row(row: tuple[str, ...], out: TextIO) -> tuple[str, ...]:
 
 def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout) -> None:
     print(term.paint(f"Models root: {root}", term.DIM, stream=stream), file=stream)
-    rows = _rows(recipes, root)
+    book = sorted(recipes, key=lambda r: (-r.priority, r.id))
+    by_id = {r.id: r for r in book}
+    picks = []
+    for use, ids in RECOMMENDED:
+        got = [by_id[i] for i in ids if i in by_id]
+        if got:
+            picks.append((use, got))
+    if picks:
+        print(term.paint("Recommended:", term.BOLD, stream=stream), file=stream)
+        for use, got in picks:
+            names = " or ".join(term.paint(r.id, term.BOLD, stream=stream) for r in got)
+            print(f"  {names} for {use}", file=stream)
+        print(file=stream)
+    recommended = {r.id for _, got in picks for r in got}
+    rows = _rows(book, root)
     width = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     head, *rest = rows
     print("  ".join(term.paint(c.ljust(w), term.BOLD, stream=stream)
                     for c, w in zip(head, width)).rstrip(), file=stream)
     for row in rest:
-        print("  ".join(term.pad(c, w) for c, w in zip(_paint_row(row, stream), width)).rstrip(),
-              file=stream)
+        print("  ".join(term.pad(c, w) for c, w in zip(_paint_row(row, recommended, stream),
+                                                       width)).rstrip(), file=stream)
     print(file=stream)
-    for r in recipes:
-        if r.summary:
-            print(f"{term.paint(r.id, term.BOLD, stream=stream)}: {r.summary}", file=stream)
 
 
 def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:

@@ -30,7 +30,7 @@
   "defaults": {
     "dflash": "@model/dflash2"
   },
-  "priority": 93,
+  "priority": 70,
   "requires": "0.3.0",
   "serve_as": "Qwen3.8-27B",
   "summary": "The same GGUF with z-lab's DFlash 2 drafter beside it, which accepts far better than this checkpoint's own MTP head.",

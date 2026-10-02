@@ -27,6 +27,6 @@
       ]
     }
   ],
-  "priority": 40,
+  "priority": 90,
   "requires": "0.3.0"
 }

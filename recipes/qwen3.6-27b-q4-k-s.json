@@ -19,7 +19,7 @@
     }
   ],
   "spec": "MTP k=2",
-  "priority": 90,
+  "priority": 60,
   "requires": "0.3.0",
   "summary": "The same dense model as a GGUF at one width throughout -- smaller and faster than the per-layer quant, and it answers a little worse. Vision and the MTP head included.",
   "note": "18.05 GiB resident against the FP8's 29, and the decode is bandwidth-bound, so it follows: 11.8 tok/s at batch 1, 27.3 with --num-spec 2. Every weight is one width, where qwen3.8-27b-q4-k-xl varies them by layer against an importance matrix -- so this one is smaller and faster, and that one answers better.",
