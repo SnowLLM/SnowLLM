@@ -20,7 +20,7 @@ from typing import TextIO
 from .. import term
 from .._capi import SnowLLMError
 from .._version import __version__
-from .download import DEFAULT_JOBS, USER_AGENT, Blob, fetch, forget, held, human
+from .download import DEFAULT_JOBS, PART_SUFFIX, USER_AGENT, Blob, fetch, forget, held, human
 
 CATALOGUE_URL = "https://snowllm.dev/recipe.json"
 CATALOGUE_TTL = 3600.0
@@ -371,8 +371,10 @@ def _wanted(rel: str, s: Source) -> bool:
 def _on_disk_files(dest: pathlib.Path) -> list[pathlib.Path]:
     if not dest.is_dir():
         return []
+    part = (PART_SUFFIX, PART_SUFFIX + ".json")
     return [p for p in dest.rglob("*")
-            if p.is_file() and str(p.relative_to(dest)) != MANIFEST]
+            if p.is_file() and str(p.relative_to(dest)) != MANIFEST
+            and not p.name.endswith(part)]
 
 
 def unfetched(recipe: Recipe, dest: pathlib.Path) -> list[Source]:
