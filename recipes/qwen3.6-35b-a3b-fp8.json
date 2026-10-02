@@ -15,7 +15,7 @@
   "defaults": {
     "num_spec": 0
   },
-  "priority": 100,
+  "priority": 60,
   "summary": "The 35B MoE at FP8, decoding one token a step. The reference arm on the benchmark page.",
   "serve_as": "Qwen3.6-35B-A3B"
 }
