@@ -1011,10 +1011,11 @@
   <section class="band" id="pi">
     <div class="rail"><b>Integrate with Pi</b></div>
     <div>
-      <pre class="block">snowllm pi</pre>
+      <pre class="block">snowllm pi --port 8000</pre>
       <p class="note">One command points <a href="https://pi.dev">Pi</a> at the server already
         running here: it writes every recipe into <code>~/.pi/agent/models.json</code>, ready to
-        pick from Pi's model list.</p>
+        pick from Pi's model list. <code>--host</code> names a server elsewhere on the network,
+        <code>localhost</code> by default.</p>
     </div>
   </section>
 

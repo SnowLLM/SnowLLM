@@ -26,6 +26,8 @@ def main(cmd: str, argv: list[str]) -> int:
     p = argparse.ArgumentParser(
         prog=f"snowllm {cmd}",
         description="Point Pi at a local SnowLLM server by writing its models file.")
+    p.add_argument("--host", default="localhost",
+                   help="host the server runs on (default: localhost)")
     p.add_argument("--port", type=int, default=8000,
                    help="port the server listens on (default: 8000)")
     p.add_argument("--catalogue", metavar="URL", default=None,
@@ -88,7 +90,7 @@ def main(cmd: str, argv: list[str]) -> int:
     providers = data.get("providers")
     if not isinstance(providers, dict):
         providers = data["providers"] = {}
-    providers["snowllm"] = {"baseUrl": f"http://localhost:{a.port}/v1",
+    providers["snowllm"] = {"baseUrl": f"http://{a.host}:{a.port}/v1",
                             "api": a.api,
                             "apiKey": "snowllm",
                             "models": models}

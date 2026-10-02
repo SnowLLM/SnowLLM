@@ -81,6 +81,11 @@ def main() -> int:
         check("system prompt stays system",
               all(m["compat"]["supportsDeveloperRole"] is False for m in prov["models"]))
 
+        rc, data = run(tmp, cat, "--host", "10.0.0.5", "--port", "9000")
+        check("baseUrl follows the host and port",
+              data["providers"]["snowllm"]["baseUrl"] == "http://10.0.0.5:9000/v1",
+              data["providers"]["snowllm"]["baseUrl"])
+
         rc, data = run(tmp, cat, "--api", "openai-completions")
         prov = data["providers"]["snowllm"]
         by = {m["id"]: m for m in prov["models"]}
