@@ -201,3 +201,4 @@ class AsyncEngine:
         if r in self._live:
             self._live.remove(r)
         self._sent.pop(id(r), None)
+        self._queues.pop(id(r), None)
