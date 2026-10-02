@@ -19,7 +19,7 @@
     }
   ],
   "spec": "MTP k=2",
-  "priority": 92,
+  "priority": 70,
   "requires": "0.3.0",
   "summary": "The dense line's newest generation as a GGUF, quantized per layer against an importance matrix. Vision and the MTP head included.",
   "note": "Replaces qwen3.6-27b-q4-k-xl -- same qwen3_5 architecture family, retrained (config.json model_type is still qwen3_5). MTP only, same as the 3.6 dense line. Its MTP head accepts much less than 3.6's did -- 2.284 against 2.570 over the same six prompts, and llama.cpp measures the same two numbers on the same files, so it is the checkpoint's head and not this engine. z-lab publishes a separate drafter for it: see qwen3.8-27b-q4-k-xl-dflash2, which is the same GGUF with a 1.9B block-diffusion drafter beside it and, measured 2026-08-26 at ISL 1082 / OSL 256 on the same client and at the same temperature, 19.18 -> 22.53 tok/s of decode. Its UD quant needed four GGUF formats (IQ4_XS, IQ4_NL, IQ3_S, IQ2_XS) this engine could not read yet; served and verified 2026-08-26, see tests/test_gguf_iquant.py.",

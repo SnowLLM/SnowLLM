@@ -372,6 +372,11 @@ def main() -> int:
               not mod.problems, "; ".join(mod.problems))
         check("the builder and the client agree on what a recipe may set",
               tuple(mod.SETTABLE) == tuple(recipes.SETTABLE))
+        shipped = {r["id"] for r in book}
+        check("every recipe the listing recommends is one this repository ships",
+              all(i in shipped for _, group in recipes.RECOMMENDED for i in group),
+              ", ".join(i for _, group in recipes.RECOMMENDED for i in group
+                         if i not in shipped))
         from snowllm import cli
         want = {a.dest: a.default for a in cli.parser()._actions}
         check("the listing's context and slots are the ones serving actually starts with",
