@@ -46,8 +46,13 @@ def max_new(req: Common, prompt_len: int) -> int:
 
 
 def _sampling(req: Common, name: str) -> float | int:
-    d = serving().sampling
-    return d[name] if name in d and name not in req.model_fields_set else getattr(req, name)
+    if name in req.model_fields_set:
+        return getattr(req, name)
+    try:
+        d = serving().sampling
+    except RuntimeError:
+        return getattr(req, name)
+    return d.get(name, getattr(req, name))
 
 
 def params(req: Common, want: int) -> SamplingParams:
