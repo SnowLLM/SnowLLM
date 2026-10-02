@@ -241,7 +241,7 @@ class Qwen4ExpRunner(Runner):
             ids = b.host_ids if b.host_ids is not None else b.input_ids.tolist()
             cu = (b.cu_seqlens.tolist() if b.is_prefill and b.cu_seqlens is not None
                   else list(range(len(ids) + 1)))
-            for i in range(b.state_indices.numel()):
+            for i in range(len(cu) - 1):
                 lo, hi = cu[i], cu[i + 1]
                 if hi <= lo:
                     continue
