@@ -327,13 +327,16 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 def prompt_with_images(messages: list[dict], kwargs: dict,
                        tools: list[dict] | None = None) -> tuple[list[int], dict | None]:
     """Build the prompt and, when the messages carry an image, its vision tensors."""
+    n = sum(1 for m in messages if isinstance(m.get("content"), list)
+            for part in m["content"]
+            if isinstance(part, dict) and part.get("type") == "image_url")
+    st = serving()
+    if n > st.limit_mm_per_prompt:
+        raise HTTPException(400, f"{n} images in one request exceeds "
+                                 f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
     msgs, images = _split_images(messages)
     if not images:
         return chat_prompt(msgs, kwargs, tools), None
-    st = serving()
-    if len(images) > st.limit_mm_per_prompt:
-        raise HTTPException(400, f"{len(images)} images in one request exceeds "
-                                 f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
     if st.processor is None:
         raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
                                  "images")
