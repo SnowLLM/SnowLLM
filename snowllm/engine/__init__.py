@@ -602,7 +602,7 @@ class Engine:
             self.dflash.release(r)
             self.runner.release(r.slot)
             self.slots.give_back(r)
-            r.blocks, r.num_prefilled = [], 0
+            r.blocks, r.num_prefilled, r.cached_tokens = [], 0, 0
             return False
         if self.cache is not None and use_cache:
             self.cache.took(hit)
