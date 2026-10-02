@@ -580,6 +580,7 @@ class Engine:
     def _admit(self, r: Request, use_cache: bool = True) -> bool:
         hit = (self.cache.lookup(r.prefill_src, r.prefill_len)
                if self.cache is not None and use_cache and r.embeds is None else None)
+        r.cached_tokens = len(hit.tokens) if hit is not None else 0
         ring, pools = self.cache.pages.covered(hit) if hit is not None else (0, 0)
         blocks = self._alloc_blocks(
             ops.kv_blocks_for(r.prefill_len, self.runner.block_size)

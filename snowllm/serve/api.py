@@ -7,21 +7,16 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import asdict
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from jinja2 import TemplateError
 
-from ..models import multimodal
 from . import generation as gen
 from . import tool_parser
 from .generation import ContentDelta, Finish, ReasoningDelta, ToolCallDone
 from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
-
-if TYPE_CHECKING:
-    from PIL import Image
 
 
 @contextlib.asynccontextmanager
@@ -142,23 +137,6 @@ async def _serve(raw: Request, prompt: list[int], req: Common, chat: bool, reaso
             "usage": gen.usage(prompt, r)}
 
 
-def _load_image(url: str) -> "Image.Image":
-    import base64
-    import io
-
-    from PIL import Image
-
-    if url.startswith("data:"):
-        _, _, payload = url.partition(",")
-        return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
-    if not serving().allow_image_urls:
-        raise HTTPException(400, "fetching image URLs is disabled; send a data: URI, or start the "
-                                 "server with --allow-image-urls")
-    import urllib.request
-    with urllib.request.urlopen(url, timeout=10) as f:
-        return Image.open(io.BytesIO(f.read())).convert("RGB")
-
-
 def _parse_tool_args(messages: list[dict]) -> list[dict]:
     for m in messages:
         for c in m.get("tool_calls") or ():
@@ -168,27 +146,8 @@ def _parse_tool_args(messages: list[dict]) -> list[dict]:
     return messages
 
 
-def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
-    out, images = [], []
-    for m in messages:
-        content = m.get("content")
-        if not isinstance(content, list):
-            out.append(m)
-            continue
-        parts = []
-        for part in content:
-            if part.get("type") == "image_url":
-                images.append(_load_image(part["image_url"]["url"]))
-                parts.append({"type": "image"})
-            else:
-                parts.append(part)
-        out.append({**m, "content": parts})
-    return out, images
-
-
 @app.post("/v1/chat/completions", response_model=None)
 async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse | dict:
-    st = serving()
     gen.check_unsupported(req)
     fmt = (req.response_format or {}).get("type")
     if fmt in ("json_schema", "json_object"):
@@ -197,22 +156,8 @@ async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse 
     if req.max_completion_tokens is not None:
         req.max_tokens = req.max_completion_tokens
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
-    msgs, images = _split_images(_parse_tool_args(
-        [m.model_dump(exclude_none=True) for m in req.messages]))
-    template_kwargs = req.template_kwargs()
-    mm = None
-    if images:
-        if len(images) > st.limit_mm_per_prompt:
-            raise HTTPException(400, f"{len(images)} images in one request exceeds "
-                                     f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
-        if st.processor is None:
-            raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
-                                     "images")
-        mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools,
-                                **template_kwargs)
-        prompt = mm.pop("prompt")
-    else:
-        prompt = gen.chat_prompt(msgs, template_kwargs, tools)
+    msgs = _parse_tool_args([m.model_dump(exclude_none=True) for m in req.messages])
+    prompt, mm = gen.prompt_with_images(msgs, req.template_kwargs(), tools)
     return await _serve(raw, prompt, req, chat=True, reasoning=gen.thinking_open(prompt),
                         types=tool_parser.tool_types(tools), mm=mm)
 

@@ -63,9 +63,12 @@ class ChatRequest(Common):
                 v = v.get("type") == "enabled"
             if v is not None:
                 kw.setdefault(f, v)
-        if str(kw.get("reasoning_effort", "")).lower() == "none" \
-                and "enable_thinking" not in kw and "thinking" not in kw:
-            kw["enable_thinking"] = kw["thinking"] = False
+        # enable_thinking and thinking name one switch; an effort sets it too ("none" off).
+        switch = kw.get("enable_thinking", kw.get("thinking"))
+        if switch is None and "reasoning_effort" in kw:
+            switch = str(kw["reasoning_effort"]).lower() != "none"
+        if switch is not None:
+            kw["enable_thinking"] = kw["thinking"] = switch
         return kw
 
 

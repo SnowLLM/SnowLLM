@@ -56,7 +56,17 @@ def main() -> int:
         got = ask([{"type": "image_url", "image_url": {"url": data_uri(rgb)}},
                    {"type": "text", "text": "What color is this image? One word."}])
         ok &= want in got
-        print(f"  image_url {want:<5} -> {got!r:<24} {'PASS' if want in got else 'FAIL'}")
+        print(f"  chat image_url {want:<5} -> {got!r:<20} {'PASS' if want in got else 'FAIL'}")
+
+    resp = client.responses.create(
+        model="m",
+        input=[{"role": "user", "content": [
+            {"type": "input_image", "image_url": data_uri((220, 30, 30))},
+            {"type": "input_text", "text": "What color is this image? One word."}]}],
+        max_output_tokens=8, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    got = resp.output_text.strip().lower()
+    ok &= "red" in got
+    print(f"  responses image  -> {got!r:<24} {'PASS' if 'red' in got else 'FAIL'}")
 
     text = ask("The capital of France is")
     ok &= "paris" in text
