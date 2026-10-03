@@ -1,0 +1,7 @@
+There is an nginx access log at benchmarks/demo/access.log. Work through these steps in order, calling only one tool per turn and waiting for its result before continuing:
+
+1. Use the read tool to read benchmarks/demo/access.log in full.
+2. From the log, the client address that made by far the most requests is the attack source. Use the bash tool to count its requests exactly, substituting that address:
+   grep -c '<address>' benchmarks/demo/access.log
+   You must run this command; do not count by hand.
+3. Write a concise incident triage, under 120 words: name the attack source and its exact request count, then list the attack behaviours you saw in the log (paths requested, status codes, and user agent) as short bullets.
