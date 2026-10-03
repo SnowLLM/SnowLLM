@@ -268,7 +268,7 @@ def main() -> int:
     line_h = int(fs(19) * 1.32)
 
     margin, gap, header_h = 20, 20, fs(96)
-    pane_w, pane_h = fs(840), fs(600)
+    pane_w, pane_h = fs(930), fs(860)
     W = margin * 2 + pane_w * 2 + gap
     H = header_h + pane_h + fs(104) + margin
     W -= W % 2
@@ -298,7 +298,7 @@ def main() -> int:
 
     def draw_pane(d, x, s, t, color, label):
         fin = not s.running(t)
-        d.rectangle([x, header_h, x + pane_w, header_h + pane_h],
+        d.rounded_rectangle([x, header_h, x + pane_w, header_h + pane_h], radius=fs(12),
                     fill=PANE_BG, outline=DONE if fin else BORDER, width=3 if fin else 2)
         d.text((x + 14, header_h + 8), label, font=f_bold, fill=color)
         st, stc = phase(t, s)
@@ -353,7 +353,7 @@ def main() -> int:
             tw = f_bold.getlength(txt)
             bx0 = x + (pane_w - tw) / 2 - 14
             by0 = header_h + pane_h - fs(46)
-            d.rectangle([bx0, by0, bx0 + tw + 28, by0 + fs(34)], fill=(9, 32, 16),
+            d.rounded_rectangle([bx0, by0, bx0 + tw + 28, by0 + fs(34)], radius=fs(8), fill=(9, 32, 16),
                         outline=DONE, width=2)
             d.text((bx0 + 14, by0 + fs(4)), txt, font=f_bold, fill=DONE)
 
@@ -361,7 +361,7 @@ def main() -> int:
         d.text(((W - font.getlength(text)) / 2, y), text, font=font, fill=fill)
 
     def draw_intro(d):
-        d.rectangle([margin, margin, W - margin, H - margin], fill=CARD_BG, outline=BORDER, width=2)
+        d.rounded_rectangle([margin, margin, W - margin, H - margin], radius=fs(18), fill=CARD_BG, outline=BORDER, width=2)
         center(d, int(H * 0.26), "One model, one GPU, two engines.", f_big, TITLE)
         center(d, int(H * 0.37), a.title, f_mid, PROMPT_C)
         center(d, int(H * 0.47), a.subtitle, f_text, TEXT)
@@ -395,7 +395,7 @@ def main() -> int:
         total_l, total_r = L.exit_t or 0, R.exit_t or 0
         box_w, box_h = int(W * 0.62), int(H * 0.44)
         bx, by = (W - box_w) // 2, int(H * 0.30)
-        d.rectangle([bx, by, bx + box_w, by + box_h], fill=CARD_BG, outline=ACCENT, width=2)
+        d.rounded_rectangle([bx, by, bx + box_w, by + box_h], radius=fs(18), fill=CARD_BG, outline=ACCENT, width=2)
         d.text((bx + 30, by + 24), "Result", font=f_mid, fill=ACCENT)
         y = by + 76
         for label, tot, pre, col in ((L.meta.get("label", "left"), total_l, L.prefill(), LEFT_C),
@@ -423,7 +423,7 @@ def main() -> int:
                 msg = (f"{win.meta.get('label')} finished in {win.exit_t:.1f}s"
                        f"  \u2014  {lose.meta.get('label')} still running")
                 bw = f_bold.getlength(msg) + 40
-                d.rectangle([(W - bw) / 2, fs(40), (W + bw) / 2, fs(40) + fs(34)],
+                d.rounded_rectangle([(W - bw) / 2, fs(40), (W + bw) / 2, fs(40) + fs(34)], radius=fs(8),
                             fill=(9, 32, 16), outline=DONE, width=2)
                 d.text(((W - f_bold.getlength(msg)) / 2, fs(46)), msg, font=f_bold, fill=DONE)
             if not done:
