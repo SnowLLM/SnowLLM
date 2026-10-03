@@ -9,6 +9,14 @@ SnowLLM is fast with:
 - Tuned for low-concurrency inference
 - Speculative decoding
 
+## Demo
+
+https://github.com/user-attachments/assets/2e32d7e1-5ddd-4b23-a965-0bcb944b40d7
+
+SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395 running Qwen3.6-35B-A3B UD-Q4_K_XL with a 2.4x speedup!
+
+<sub>Both ran on the same hardware with the same GGUF, one engine at a time.</sub>
+
 ## Performance
 
 Measured on one [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html).
