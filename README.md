@@ -11,7 +11,7 @@ SnowLLM is fast with:
 
 ## Demo
 
-https://github.com/user-attachments/assets/2e32d7e1-5ddd-4b23-a965-0bcb944b40d7
+https://github.com/user-attachments/assets/fa191709-bca4-4caa-a5ed-9a0ef290a76b
 
 SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev](https://pi.dev) on nginx log triage task, running Qwen3.6 35B A3B with a **2.4x** speedup!
 
