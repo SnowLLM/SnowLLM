@@ -1,0 +1,34 @@
+{
+  "providers": {
+    "llama": {
+      "baseUrl": "http://127.0.0.1:8001/v1",
+      "api": "openai-completions",
+      "apiKey": "x",
+      "models": [
+        {
+          "id": "Qwen3.6-35B-A3B",
+          "name": "Qwen3.6-35B-A3B (llama.cpp)",
+          "contextWindow": 32768,
+          "maxTokens": 1024,
+          "reasoning": false,
+          "samplingParams": { "temperature": 0, "top_p": 1 }
+        }
+      ]
+    },
+    "snowllm": {
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "api": "openai-responses",
+      "apiKey": "snowllm",
+      "models": [
+        {
+          "id": "Qwen3.6-35B-A3B",
+          "name": "Qwen3.6-35B-A3B (SnowLLM)",
+          "contextWindow": 32768,
+          "maxTokens": 1024,
+          "reasoning": false,
+          "samplingParams": { "temperature": 0, "top_p": 1 }
+        }
+      ]
+    }
+  }
+}
