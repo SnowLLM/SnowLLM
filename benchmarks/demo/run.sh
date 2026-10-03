@@ -41,7 +41,7 @@ if [ "${NO_RECORD:-0}" != 1 ]; then
     SERVER_PID=$!
     wait_health http://127.0.0.1:8001
     warmup 8001 completions
-    capture llama "llama.cpp" "$OUT/left.json"
+    capture llama "llama.cpp" "$OUT/llama-cpp.json"
     kill "$SERVER_PID"; wait "$SERVER_PID" 2>/dev/null || true; SERVER_PID=""
     sleep 45
 
@@ -50,11 +50,11 @@ if [ "${NO_RECORD:-0}" != 1 ]; then
     SERVER_PID=$!
     wait_health http://127.0.0.1:8000
     warmup 8000 responses
-    capture snowllm "SnowLLM" "$OUT/right.json"
+    capture snowllm "SnowLLM" "$OUT/snowllm.json"
     kill "$SERVER_PID"; wait "$SERVER_PID" 2>/dev/null || true; SERVER_PID=""
 fi
 
-python3 "$DEMO/render.py" --left "$OUT/left.json" --right "$OUT/right.json" \
-    --out "$OUT/full.mp4" --gif "$OUT/full.gif" \
+python3 "$DEMO/render.py" --left "$OUT/llama-cpp.json" --right "$OUT/snowllm.json" \
+    --out "$OUT/snowllm-vs-llama-cpp.mp4" --gif "$OUT/snowllm-vs-llama-cpp.gif" \
     --title "Incident triage of an nginx access log" \
     --subtitle "Qwen3.6-35B-A3B UD-Q4_K_XL  ·  gfx1151 Strix Halo  ·  one GPU, backends run one at a time"
