@@ -201,6 +201,8 @@
 
   #pi { padding-top: 4.5rem; padding-bottom: 1rem; }
 
+  #benchmarks p { max-width: none; }
+
   .rail {
     font-family: var(--mono);
     font-size: var(--fs-rail);
@@ -244,6 +246,13 @@
     color: var(--muted);
     max-width: var(--measure);
   }
+
+  .rail.solo { margin: 2.75rem 0 1.4rem; }
+  .clip { margin: 0; }
+  .clip video { width: 100%; display: block; aspect-ratio: 1740 / 820; border: 1px solid var(--line); background: #0d1117; }
+  .clip figcaption { font-size: var(--fs-note); color: var(--muted); margin-top: 0.75rem; }
+  .clip figcaption .claim { display: block; color: var(--ink); }
+  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--mono); font-size: var(--fs-label); line-height: 1.55; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
 
   .glyph { width: 1.6em; height: 1.6em; flex: none; }
 
@@ -293,7 +302,7 @@
     grid-template-columns: minmax(0, auto) minmax(0, 1fr);
     align-items: end;
     gap: clamp(1.5rem, 4cqw, 3rem);
-    margin: 2.75rem 0 0;
+    margin: 0 0 1.75rem;
     container-type: inline-size;
   }
 
@@ -955,9 +964,33 @@
     <p class="note" id="install-note"></p>
   </div>
 
-  <div class="readout">
+  <div class="rail solo"><b>Demo</b></div>
+  <figure class="clip">
+    <video src="https://github.com/user-attachments/assets/2e32d7e1-5ddd-4b23-a965-0bcb944b40d7"
+           controls autoplay loop muted playsinline preload="metadata"></video>
+    <figcaption><span class="claim">SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through
+      <a href="https://pi.dev">pi.dev</a> on nginx log triage task, running
+      Qwen3.6 35B A3B with a <strong>2.4&times;</strong> speedup.</span>
+      <span class="fine"><a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B
+      UD-Q4_K_XL</a> GGUF for both, on the same hardware, one engine at a time.</span></figcaption>
+  </figure>
+
+  <section class="band" id="pi">
+    <div class="rail"><b>Integrate with Pi</b></div>
     <div>
-      <!-- headline:begin -->
+      <pre class="block">snowllm pi --port 8000</pre>
+      <p class="note">One command points <a href="https://pi.dev">Pi</a> at the server already
+        running here: it writes every recipe into <code>~/.pi/agent/models.json</code>, ready to
+        pick from Pi's model list. <code>--host</code> names a server elsewhere on the network,
+        <code>localhost</code> by default.</p>
+    </div>
+  </section>
+
+  <section class="band" id="benchmarks">
+    <div class="rail"><b>Benchmarks</b></div>
+    <div class="readout">
+      <div>
+        <!-- headline:begin -->
       <span class="figure">62.4<sup>tok/s</sup></span>
       <div class="caliper">
         <dl>
@@ -970,10 +1003,10 @@
         </dl>
       </div>
       <!-- headline:end -->
-    </div>
+      </div>
 
-    <figure class="decay">
-      <!-- decay:begin -->
+      <figure class="decay">
+        <!-- decay:begin -->
       <svg viewBox="0 0 420 150" role="img" aria-label="Output throughput falls from 67.4 tokens per second at a 1K-token input context to 39.4 at 220K tokens.">
         <g stroke="var(--hair)" stroke-width="1">
           <line x1="0" y1="10" x2="420" y2="10" />
@@ -1004,23 +1037,9 @@
         </g>
       </svg>
       <!-- decay:end -->
-      <figcaption>Output tok/s by input context, one user &mdash; five measured points, evenly spaced</figcaption>
-    </figure>
-  </div>
-
-  <section class="band" id="pi">
-    <div class="rail"><b>Integrate with Pi</b></div>
-    <div>
-      <pre class="block">snowllm pi --port 8000</pre>
-      <p class="note">One command points <a href="https://pi.dev">Pi</a> at the server already
-        running here: it writes every recipe into <code>~/.pi/agent/models.json</code>, ready to
-        pick from Pi's model list. <code>--host</code> names a server elsewhere on the network,
-        <code>localhost</code> by default.</p>
+        <figcaption>Output tok/s by input context, one user &mdash; five measured points, evenly spaced</figcaption>
+      </figure>
     </div>
-  </section>
-
-  <section class="band" id="benchmarks">
-    <div class="rail"><b>Benchmarks</b></div>
     <div>
       <p>One client, one server per arm, the same OpenAI request at the same five context
         lengths. Prompts are real text (Project Gutenberg via PG-19) sized exactly by tokenizer,
