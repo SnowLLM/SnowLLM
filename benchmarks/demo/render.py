@@ -147,8 +147,7 @@ class Transcript:
         self.answer_end = None
         self.prefill_end = None
         delta_times = []
-        for line in open(path):
-            e = json.loads(line)
+        for e in json.load(open(path)):
             t = e.get("t")
             if e["type"] == "meta":
                 self.meta = e
