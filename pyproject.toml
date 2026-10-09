@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["openai", "httpx", "safetensors", "transformers", "numpy", "pillow"]
+test = ["openai", "anthropic", "httpx", "safetensors", "transformers", "numpy", "pillow"]
 
 [project.scripts]
 snowllm = "snowllm.cli:main"

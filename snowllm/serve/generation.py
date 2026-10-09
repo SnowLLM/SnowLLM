@@ -177,6 +177,7 @@ async def _run(prompt: list[int], req: Common,
             seen = True
             sent = vis
         if hit:
+            r.stop_sequence = next(s for s in at if s and text.find(s) == len(cut))
             r.finish_reason = "stop"
             eng.abort(r)
             break
