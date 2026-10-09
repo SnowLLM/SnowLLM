@@ -96,6 +96,8 @@ snowllm pi --host 192.168.1.10 --port 8000    # one elsewhere on the network
 `--host` is where Pi should reach the server, `localhost` by default; `--port` is the same 8000
 the server listens on.
 
+OpenAI Chat Completions/Responses and Anthropic Messages APIs support streaming, tool calls, and images on supported models; use `http://127.0.0.1:8000/v1` for OpenAI or `http://127.0.0.1:8000` for Anthropic.
+
 ## Get a model
 
 A recipe is one model at one precision. `snowllm pull` fetches it:

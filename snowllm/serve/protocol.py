@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from pydantic import BaseModel, Field, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StreamOptions(BaseModel):
@@ -96,3 +98,30 @@ class ResponsesRequest(Common):
         return (self.reasoning or {}).get("effort")
 
     template_kwargs = ChatRequest.template_kwargs
+
+
+class AnthropicMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str | list[dict]
+
+
+class MessagesRequest(Common):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    max_tokens: int = Field(ge=1)
+    temperature: float = Field(default=1.0, ge=0.0, le=1.0)
+    top_k: int = Field(default=0, ge=0)
+    messages: list[AnthropicMessage] = Field(min_length=1)
+    system: str | list[dict] | None = None
+    stop_sequences: list[str] = Field(default_factory=list)
+    tools: list[dict] | None = None
+    tool_choice: dict | None = None
+    thinking: dict | None = None
+    metadata: dict | None = None
+    cache_control: dict | None = None
+    output_config: dict | None = None
+
+
+class CountTokensRequest(MessagesRequest):
+    max_tokens: int = Field(default=1, ge=1)
