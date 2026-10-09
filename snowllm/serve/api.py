@@ -175,8 +175,9 @@ async def completions(req: CompletionRequest, raw: Request) -> StreamingResponse
     return await _serve(raw, prompt, req, chat=False)
 
 
-from . import responses
+from . import messages, responses
 app.include_router(responses.router)
+app.include_router(messages.router)
 
 
 def main() -> None:

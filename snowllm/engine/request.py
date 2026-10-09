@@ -51,6 +51,7 @@ class Request:
     replay: int = 0
     done: bool = False
     finish_reason: str | None = None
+    stop_sequence: str | None = None
 
     out_counts: torch.Tensor | None = None
     prompt_seen: torch.Tensor | None = None
