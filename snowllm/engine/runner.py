@@ -13,6 +13,7 @@ import torch
 
 from .. import ops, term
 from .._capi import SnowLLMError
+from .._platform import gpu_mem_info
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..models.qwen3_5.layers import FullAttention, GatedDeltaNet
 from ..trace import span
@@ -114,12 +115,12 @@ class GraphBudget:
     @staticmethod
     def _in_use() -> int:
         torch.cuda.empty_cache()
-        free, total = torch.cuda.mem_get_info()
+        free, total = gpu_mem_info()
         return total - free
 
     def room(self, gpu_util: float, have: int) -> bool:
         self._used = self._in_use()
-        total = torch.cuda.mem_get_info()[1]
+        total = gpu_mem_info()[1]
         if not self.measured or self._used + self.measured <= int(total * gpu_util):
             return True
         if not self.full:
@@ -213,7 +214,7 @@ class GraphRunner:
         return self.budget.room(self.gpu_util, len(self.graphs))
 
     def _allowance(self, util: float | None = None) -> int:
-        free, total = torch.cuda.mem_get_info()
+        free, total = gpu_mem_info()
         return (int(total * (self.gpu_util if util is None else util)) - (total - free)
                 - self.reserve_bytes)
 
@@ -409,7 +410,7 @@ class Runner(GraphRunner):
         need = self.max_blocks_per_seq
         if blocks >= need:
             return blocks
-        free, total = torch.cuda.mem_get_info()
+        free, total = gpu_mem_info()
         held = (f" and {self.reserve_bytes / (1 << 30):.1f} GiB reserved for the draft model's "
                 f"weights" if self.reserve_bytes else "")
         want = ((total - free) + off_top + need * per_block
