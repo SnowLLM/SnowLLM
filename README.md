@@ -9,6 +9,12 @@ SnowLLM is fast with:
 - Tuned for low-concurrency inference
 - Speculative decoding
 
+## News
+
+- **2026-08-04** — SnowLLM is now open source and available on PyPI! A local LLM inference framework hand-tuned for AMD Ryzen AI Max APUs.
+- **2026-09-09** — **v0.3.0** adds GGUF support, DeepSeek-V4-Flash and Qwen3.8 models, DFlash speculative decoding, and recipe-based model downloads.
+- **2026-10-03** — New demo: **2.4× faster than llama.cpp** on an nginx log triage task through Pi, using the same Qwen3.6-35B-A3B GGUF on a single Ryzen AI Max+ 395.
+
 ## Demo
 
 https://github.com/user-attachments/assets/fa191709-bca4-4caa-a5ed-9a0ef290a76b
