@@ -218,12 +218,21 @@ class _Part:
 
     def open(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o644)
         if os.fstat(self.fd).st_size != self.blob.size:
             try:
                 os.posix_fallocate(self.fd, 0, self.blob.size)
             except (AttributeError, OSError):
                 os.ftruncate(self.fd, self.blob.size)
+
+    def write(self, buf: bytes, offset: int) -> int:
+        pwrite = getattr(os, "pwrite", None)
+        if pwrite is not None:
+            return pwrite(self.fd, buf, offset)
+        # lseek changes the shared descriptor's position, unlike pwrite.
+        with self.lock:
+            os.lseek(self.fd, offset, os.SEEK_SET)
+            return os.write(self.fd, buf)
 
     def took(self, i: int) -> bool:
         with self.lock:
@@ -296,7 +305,10 @@ def _chunk(part: _Part, source: Source, headers: dict[str, str], i: int,
                         break
                     n = 0
                     while n < len(buf):
-                        n += os.pwrite(part.fd, buf[n:], at + n)
+                        wrote = part.write(buf[n:], at + n)
+                        if wrote <= 0:
+                            raise OSError("download file write made no progress")
+                        n += wrote
                     at += n
                     progress.add(n)
             if at == end:

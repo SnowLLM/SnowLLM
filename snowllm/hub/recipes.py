@@ -312,7 +312,7 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "defaults": recipe.defaults,
         "fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "bytes": sum(b.size for b in blobs),
-        "files": [{"path": str(b.dest.relative_to(dest)), "size": b.size, "sha256": b.sha256}
+        "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
                   for b in blobs],
     }, indent=2) + "\n")
 
@@ -380,13 +380,13 @@ def _on_disk_files(dest: pathlib.Path) -> list[pathlib.Path]:
 def unfetched(recipe: Recipe, dest: pathlib.Path) -> list[Source]:
     if not dest.is_dir():
         return list(recipe.sources)
-    here = [str(p.relative_to(dest)) for p in _on_disk_files(dest)]
+    here = [p.relative_to(dest).as_posix() for p in _on_disk_files(dest)]
     return [s for s in recipe.sources if not any(_wanted(p, s) for p in here)]
 
 
 def fetched_bytes(recipe: Recipe, dest: pathlib.Path) -> int:
     return sum(p.stat().st_size for p in _on_disk_files(dest)
-               if any(_wanted(str(p.relative_to(dest)), s) for s in recipe.sources))
+               if any(_wanted(p.relative_to(dest).as_posix(), s) for s in recipe.sources))
 
 
 def shortfall(recipe: Recipe, dest: pathlib.Path) -> int:
