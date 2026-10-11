@@ -479,9 +479,6 @@ def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout)
 
 
 def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
-    if not sys.stdin.isatty():
-        show(recipes, root)
-        raise SnowLLMError("name a recipe: `snowllm pull RECIPE`")
     for i, r in enumerate(recipes, 1):
         here = "  (already downloaded)" if installed(r, root) else ""
         size = human(r.bytes) if r.bytes else "?"
@@ -498,17 +495,6 @@ def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
     if answer.isdigit() and 1 <= int(answer) <= len(recipes):
         return recipes[int(answer) - 1]
     return find(answer, recipes)
-
-
-def _confirm(question: str, assume: bool, headless: bool) -> bool:
-    if assume:
-        return True
-    if not sys.stdin.isatty():
-        return headless
-    try:
-        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
-    except EOFError:
-        return headless
 
 
 def _parser(cmd: str) -> argparse.ArgumentParser:
@@ -543,7 +529,8 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
                         "partial or missing, so a directory that predates a recipe's newer "
                         "files shows exactly what is short.")
     p.add_argument("--force", action="store_true", help="refetch files that are already present")
-    p.add_argument("--yes", "-y", action="store_true", help="do not ask anything")
+    p.add_argument("--yes", "-y", action="store_true",
+                   help="accepted for compatibility; pull does not ask for confirmation")
     return p
 
 
@@ -567,8 +554,6 @@ def main(cmd: str, argv: list[str]) -> int:
         if not recipe.servable and not a.dry_run:
             print(f"{term.stamp()} {why(recipe)}\n{term.stamp()} the weights download either way.",
                   file=sys.stderr)
-            if not _confirm("Download anyway?", a.yes, True):
-                return 1
         pull(recipe, dest, jobs=a.jobs, verify=not a.no_verify, force=a.force,
              dry_run=a.dry_run)
         if recipe.servable and not a.dry_run:
@@ -607,7 +592,5 @@ def locate(name: str) -> tuple[pathlib.Path, "Recipe | None"]:
     dest = recipe.path(root)
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
-    size = f" ({human(recipe.bytes)})" if recipe.bytes else ""
-    if not _confirm(f"{recipe.id} is not in {dest}. Download it now{size}?", False, False):
-        raise SnowLLMError(f"nothing to serve. `snowllm pull {recipe.id}` fetches it.")
-    return pull(recipe, dest), recipe
+    raise SnowLLMError(f"{recipe.id} is not in {dest}. "
+                       f"Run `snowllm pull {recipe.id}` to download it.")
