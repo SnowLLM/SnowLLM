@@ -13,7 +13,7 @@ import torch
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info
+from .._platform import WINDOWS, gpu_mem_info, prepare_gpu_commit
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..models.qwen3_5.layers import FullAttention, GatedDeltaNet
 from ..trace import span
@@ -623,6 +623,32 @@ class Runner(GraphRunner):
             if self.kv_int8:
                 attn.kv_scale = self.kv_scale[idx] = self._alloc_kv_scale(self.num_kv_blocks)
 
+    def _fit_kv_commit(self, blocks: int, graph_bytes: int) -> int:
+        if not WINDOWS or not torch.version.hip:
+            return blocks
+        per_block = (kv_block_bytes(self._pools, self.block_size, self.kv_int8)
+                     + self.draft_block_bytes + self.index_block_bytes)
+        requested = blocks
+        minimum = self.max_blocks_per_seq
+        # Retry only CPU commit preflight, before allocating any of the final GPU pools.
+        for attempt in range(8):
+            try:
+                prepare_gpu_commit(blocks * per_block + graph_bytes)
+            except MemoryError as e:
+                if blocks <= minimum or attempt == 7:
+                    raise MemoryError(
+                        "Windows commit preflight cannot fit the KV pool; lower "
+                        "--max-model-len or --max-num-seqs, or increase the pagefile.") from e
+                blocks = minimum if attempt == 6 else max(minimum, blocks * 3 // 4)
+                continue
+            if blocks != requested:
+                old = self.gpu_util
+                self.gpu_util = max(0.0, old - (requested - blocks) * per_block / gpu_mem_info()[1])
+                print(f"{term.stamp()} Windows commit preflight reduced GPU memory budget "
+                      f"{old:.3f} -> {self.gpu_util:.3f}; KV pool: {blocks} blocks "
+                      f"({blocks * self.block_size} tokens)", flush=True)
+            return blocks
+
     def finish_pools(self, graph_bytes: int = 0) -> int:
         self.slabs.release()
         for idx, attn in self._pooled:
@@ -635,7 +661,8 @@ class Runner(GraphRunner):
                                            self._allowance())) // each
             self._alloc_ckpt(self.prefix_slots)
         if self._want_blocks is None:
-            self.num_kv_blocks = self._autosize_kv_blocks(self._pools, graph_bytes)
+            self.num_kv_blocks = self._fit_kv_commit(
+                self._autosize_kv_blocks(self._pools, graph_bytes), graph_bytes)
         self.kv_bytes = self.num_kv_blocks * kv_block_bytes(self._pools, self.block_size,
                                                            self.kv_int8)
         self.draft_blocks = self.num_kv_blocks if self.draft_geo is not None else 0
