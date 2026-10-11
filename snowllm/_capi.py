@@ -10,6 +10,12 @@ from ctypes import POINTER, c_char_p, c_float, c_int, c_int64, c_void_p
 
 from ._platform import HIP_RUNTIME_GLOBS, hip_runtimes
 
+if sys.platform == "win32":
+    # PAL can race SDMA copies with preceding kernels, including PyTorch kernels.
+    # https://github.com/ROCm/rocm-systems/issues/12571
+    # https://github.com/ROCm/rocm-systems/pull/12952
+    os.environ.setdefault("PAL_DISABLE_SDMA", "1")
+
 _PROFILER_ENV = ("SNOWLLM_TRACE", "HSA_TOOLS_LIB", "ROCP_TOOL_LIBRARIES",
                  "ROCPROFILER_REGISTER_LIBRARY", "ROCPROF_KERNEL_TRACE")
 if not (any(a == "--profile-dir" or a.startswith("--profile-dir=") for a in sys.argv)
