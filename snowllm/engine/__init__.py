@@ -10,6 +10,7 @@ import torch
 
 from .. import ops
 from .._capi import SnowLLMError
+from .._platform import gpu_mem_info
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Qwen4ExpGeometry
 from .block_manager import (
     BlockAllocator,
@@ -275,7 +276,7 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     ctx = min(int(kv.get("ctx") or 0), geo_context(cfg))
     if ctx <= 0:
         return 0
-    free, total = torch.cuda.mem_get_info()
+    free, total = gpu_mem_info()
     room = (int(total * float(kv.get("util") or DEFAULT_GPU_UTIL)) - (total - free)
             - int(kv.get("reserve") or 0))
     r = _runner_for(model)(
