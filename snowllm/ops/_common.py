@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator, Sequence
 
 from .. import _capi
 from .._capi import SnowLLMError, check, lib
+from .._platform import prepare_gpu_commit
 
 try:
     import torch
@@ -244,6 +245,8 @@ def zero_bytes(n: int) -> torch.Tensor:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
         return _pinned(torch.zeros, n)
+    if torch.version.hip:
+        prepare_gpu_commit(n)
     return torch.zeros(int(n), dtype=torch.uint8, device="cuda")
 
 
@@ -252,6 +255,8 @@ def empty_bytes(n: int) -> torch.Tensor:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
         return _pinned(torch.empty, n)
+    if torch.version.hip:
+        prepare_gpu_commit(n)
     return torch.empty(int(n), dtype=torch.uint8, device="cuda")
 
 

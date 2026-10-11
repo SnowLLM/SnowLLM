@@ -9,7 +9,7 @@ import sys
 import uuid
 
 __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_runtimes",
-           "prefetch", "gpu_mem_info"]
+           "prefetch", "gpu_mem_info", "prepare_gpu_commit"]
 
 WINDOWS = sys.platform == "win32"
 
@@ -35,9 +35,20 @@ class _MemoryRangeEntry(ctypes.Structure):
     _fields_ = [("VirtualAddress", ctypes.c_void_p), ("NumberOfBytes", ctypes.c_size_t)]
 
 
+class _PerformanceInfo(ctypes.Structure):
+    _fields_ = [("cb", ctypes.c_ulong)] + [(n, ctypes.c_size_t) for n in (
+        "CommitTotal", "CommitLimit", "CommitPeak", "PhysicalTotal", "PhysicalAvailable",
+        "SystemCache", "KernelTotal", "KernelPaged", "KernelNonpaged", "PageSize",
+    )] + [(n, ctypes.c_ulong) for n in ("HandleCount", "ProcessCount", "ThreadCount")]
+
+
 def _kernel32():
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(_MemoryStatusEx)]
+    k32.K32GetPerformanceInfo.argtypes = [ctypes.POINTER(_PerformanceInfo), ctypes.c_ulong]
+    k32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong, ctypes.c_ulong]
+    k32.VirtualAlloc.restype = ctypes.c_void_p
+    k32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong]
     k32.K32EnumProcessModules.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong,
                                           ctypes.POINTER(ctypes.c_ulong)]
     k32.K32GetModuleFileNameExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p,
@@ -76,6 +87,28 @@ def host_total() -> int:
 
 def host_available() -> int:
     return int(_status_ex().ullAvailPhys) if WINDOWS else _meminfo("MemAvailable:")
+
+
+def prepare_gpu_commit(nbytes: int) -> None:
+    if not WINDOWS or nbytes <= 0:
+        return
+    info = _PerformanceInfo()
+    info.cb = ctypes.sizeof(info)
+    if not K32.K32GetPerformanceInfo(ctypes.byref(info), info.cb):
+        raise ctypes.WinError(ctypes.get_last_error())
+    # Windows HIP can return success after VidMm runs out of system commit.
+    # Encourage pagefile growth before GPU allocation, retaining some headroom.
+    # This is a heuristic: releasing the charge cannot reserve it for hipMalloc.
+    # https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors
+    needed = int(nbytes) + (256 << 20)
+    if (info.CommitLimit - info.CommitTotal) * info.PageSize >= needed:
+        return
+    guard = K32.VirtualAlloc(None, needed, 0x3000, 0x04)  # RESERVE | COMMIT, READWRITE
+    if not guard:
+        raise MemoryError(f"Windows commit preflight failed for {nbytes} GPU bytes: "
+                          f"{ctypes.WinError(ctypes.get_last_error())}")
+    if not K32.VirtualFree(guard, 0, 0x8000):  # RELEASE; no physical pages were touched
+        raise ctypes.WinError(ctypes.get_last_error())
 
 
 def _win_modules() -> list[str]:
