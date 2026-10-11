@@ -116,6 +116,8 @@ class Progress:
         self.interval = interval
         self.window = window
         self.tty = hasattr(stream, "isatty") and stream.isatty()
+        if not self.tty:
+            self.interval = max(interval, 5.0)
         self._lock = threading.Lock()
         self._marks: collections.deque = collections.deque()
         self._stop = threading.Event()
@@ -134,6 +136,7 @@ class Progress:
     def start(self) -> None:
         if self._thread is not None:
             return
+        self._marks.append((time.monotonic(), self.done))
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -156,7 +159,8 @@ class Progress:
         return (done - b0) / (now - t0) if now > t0 else 0.0
 
     def _run(self) -> None:
-        while not self._stop.wait(self.interval):
+        while True:
+            stopped = self._stop.wait(self.interval)
             now = time.monotonic()
             with self._lock:
                 done, total, suffix = self.done, self.total, self._suffix
@@ -169,7 +173,11 @@ class Progress:
                 if self.tty:
                     self.stream.write("\r" + line.ljust(self._width))
                     self._width = max(len(line), 0)
-                    self.stream.flush()
+                else:
+                    self.stream.write(line + "\n")
+                self.stream.flush()
+            if stopped:
+                return
 
 
 class _Part:
