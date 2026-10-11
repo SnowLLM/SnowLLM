@@ -9,6 +9,7 @@ import torch
 
 from .. import ops
 from .._capi import SnowLLMError
+from .._platform import gpu_mem_info
 from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
 from ..models.geometry import COFF, DeepSeekV4Geometry
 from ..trace import span
@@ -315,7 +316,7 @@ class Dsv4Runner(GraphRunner):
 
     def _capacity(self, util: float, slots: int, chunk: int) -> tuple[int, int]:
         fixed = kv_fixed(self.geo, 0, slots, chunk, self.block_size)
-        free, total = torch.cuda.mem_get_info()
+        free, total = gpu_mem_info()
         self._decided_used = total - free
         return self._afford(self._per_token(), fixed, util), fixed
 
@@ -323,7 +324,7 @@ class Dsv4Runner(GraphRunner):
         return _comp_token_bytes(self.geo) + self.draft_token_bytes
 
     def _too_small(self, slots: int, fixed: int) -> str:
-        _, total = torch.cuda.mem_get_info()
+        _, total = gpu_mem_info()
         used = self._decided_used
         per_token = self._per_token()
         one_seq = self.ctx_cap * per_token

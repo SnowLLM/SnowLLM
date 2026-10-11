@@ -2,12 +2,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import ctypes
+import functools
 import os
 import pathlib
 import sys
+import uuid
 
 __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_runtimes",
-           "prefetch"]
+           "prefetch", "gpu_mem_info"]
 
 WINDOWS = sys.platform == "win32"
 
@@ -101,6 +103,92 @@ def hip_runtimes() -> set[str]:
         return set()
     return {os.path.realpath(line.rsplit(" ", 1)[-1].strip())
             for line in lines if "libamdhip64.so" in line}
+
+
+class _AdapterDesc(ctypes.Structure):
+    _fields_ = [("name", ctypes.c_wchar * 128)] + [
+        (n, ctypes.c_uint32) for n in ("vendor", "device", "subsystem", "revision")
+    ] + [(n, ctypes.c_size_t) for n in ("dedicated", "system", "shared")] + [
+        ("luid", ctypes.c_uint32 * 2), ("flags", ctypes.c_uint32)]
+
+
+class _Luid(ctypes.Structure):
+    _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_int32)]
+
+
+def _guid(value):
+    return (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID(value).bytes_le)
+
+
+def _com(ptr, slot, result, *args):
+    table = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+    return ctypes.WINFUNCTYPE(result, ctypes.c_void_p, *args)(table[slot])
+
+
+def _check(hr):
+    if hr:
+        raise RuntimeError(f"GPU memory query failed: {hr:#x}")
+
+
+@functools.cache
+def _dedicated_vram(device: int) -> int:
+    runtimes = hip_runtimes()
+    if len(runtimes) != 1:
+        raise RuntimeError("GPU memory query requires one loaded HIP runtime")
+    hip = ctypes.CDLL(runtimes.pop())
+    hip.hipGetDevicePropertiesR0600.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    # R0600 ABI begins with name[256], uuid[16], luid[8]; buffer holds the full struct.
+    props = ctypes.create_string_buffer(4096)
+    _check(hip.hipGetDevicePropertiesR0600(props, device))
+    luid = _Luid.from_buffer_copy(props.raw[272:280])
+    if not (luid.low or luid.high):
+        raise RuntimeError("HIP returned no adapter LUID")
+    dxgi = ctypes.WinDLL("dxgi")
+    dxgi.CreateDXGIFactory1.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    factory = ctypes.c_void_p()
+    _check(dxgi.CreateDXGIFactory1(_guid("1bc6ea02-ef36-464f-bf0c-21ca39e5168a"),
+                                  ctypes.byref(factory)))
+    try:
+        adapter = ctypes.c_void_p()
+        # IDXGIFactory4::EnumAdapterByLuid: identity comes from the visible HIP device.
+        _check(_com(factory, 26, ctypes.c_long, _Luid, ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.c_void_p))(
+            factory, luid, _guid("29038f61-3839-4626-91fd-086879011a05"), ctypes.byref(adapter)))
+        try:
+            desc = _AdapterDesc()
+            _check(_com(adapter, 10, ctypes.c_long, ctypes.POINTER(_AdapterDesc))(
+                adapter, ctypes.byref(desc)))
+            if bytes(desc.luid) != bytes(luid) or not desc.dedicated:
+                raise RuntimeError("DXGI adapter has no matching dedicated memory")
+            # DedicatedVideoMemory is adapter-wide; reject ambiguous linked nodes.
+            d3d = ctypes.WinDLL("d3d12")
+            d3d.D3D12CreateDevice.argtypes = [ctypes.c_void_p, ctypes.c_int,
+                ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+            native = ctypes.c_void_p()
+            _check(d3d.D3D12CreateDevice(adapter, 0xb000,
+                _guid("189819f1-1db6-4b57-be54-1821339b85f7"), ctypes.byref(native)))
+            try:
+                if _com(native, 7, ctypes.c_uint32)(native) != 1:
+                    raise RuntimeError("GPU memory query does not support linked GPU nodes")
+            finally:
+                _com(native, 2, ctypes.c_ulong)(native)
+            return desc.dedicated
+        finally:
+            _com(adapter, 2, ctypes.c_ulong)(adapter)
+    finally:
+        _com(factory, 2, ctypes.c_ulong)(factory)
+
+
+def gpu_mem_info() -> tuple[int, int]:
+    import torch
+    cap = (_dedicated_vram(torch.cuda.current_device())
+           if WINDOWS and torch.version.hip else None)
+    free, total = torch.cuda.mem_get_info()
+    if cap is not None:
+        used = total - free
+        total = min(total, cap)
+        free = max(0, total - used)
+    return free, total
 
 
 def prefetch(fd: int, file_offset: int, address: int, offsets, nbytes: int) -> None:
