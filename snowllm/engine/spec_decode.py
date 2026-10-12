@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ..defaults import SPEC_MAX_STEP_ROWS
+
 from .. import ops
 from .._capi import SnowLLMError
 from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror, slot_mapping
@@ -15,9 +17,6 @@ if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
     from .runner import GraphRunner, Runner
     from .sampler import Sampler
-
-
-SPEC_MAX_STEP_ROWS = 256
 
 
 def context_len(r: Request) -> int:

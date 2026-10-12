@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ..defaults import CKPT_EVERY, DEFAULT_PREFIX_MEMORY_RATIO
+
 from .forward_context import Batch
 from .forward_context import i32 as _i32
 
@@ -19,10 +21,6 @@ if TYPE_CHECKING:
 
 Held = dict[int, list[int]]
 Pair = tuple[object, list[int]]
-
-
-CKPT_EVERY = 512
-DEFAULT_PREFIX_MEMORY_RATIO = 0.08
 
 
 def checkpoints(lo: int, hi: int) -> list[int]:

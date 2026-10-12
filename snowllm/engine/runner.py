@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, NoReturn
 
 import torch
 
+from ..defaults import DEFAULT_GPU_UTIL, MAX_NUM_SEQS, DEFAULT_MAX_NUM_SEQS
+
 from .. import ops, term
 from .._capi import SnowLLMError
 from .._platform import WINDOWS, gpu_mem_info, prepare_gpu_commit
@@ -40,10 +42,6 @@ PREFILL_CHUNK_CANDIDATES = (32768, 16384, 8192)
 
 KV_AUTOSIZE_RESERVE = 512 << 20
 
-DEFAULT_GPU_UTIL = 0.9
-
-MAX_NUM_SEQS = 256
-DEFAULT_MAX_NUM_SEQS = 16
 
 def kv_block_bytes(pools: int, block_size: int, kv_int8: bool = False) -> int:
     n = sum(ops.kv_pool_bytes(1, kv_int8, block_size))
