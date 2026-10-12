@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from jinja2 import TemplateError
 
 from . import generation as gen
@@ -17,6 +17,7 @@ from . import tool_parser
 from .generation import ContentDelta, Finish, ReasoningDelta, ToolCallDone
 from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
+from ..metrics import gpu_sensors, prometheus
 
 
 @contextlib.asynccontextmanager
@@ -37,7 +38,16 @@ async def _template_error(_raw: Request, e: TemplateError) -> JSONResponse:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", **asdict(serving().engine.stats())}
+    return {"status": "ok", "runtime_config": getattr(serving().engine.engine, "runtime_config", None),
+            **asdict(serving().engine.stats())}
+
+
+@app.get("/metrics")
+async def metrics(format: str = "prometheus"):
+    snapshot = {"engine": asdict(serving().engine.stats()), "gpus": gpu_sensors()}
+    if format == "json":
+        return snapshot
+    return Response(prometheus(snapshot), media_type="text/plain; version=0.0.4")
 
 
 @app.post("/start_profile")

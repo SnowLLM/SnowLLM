@@ -153,7 +153,7 @@ class AsyncEngine:
         kv = 1.0 - st.free_kv_blocks / max(self.engine.blocks.total, 1)
         span = now - was_at
         exact = cur["decode_seconds"] > was["decode_seconds"]
-        rate = "step" if exact else "wall"
+        rate = "step" if self.engine.exact_stats else "wall"
         dp_s = cur["prefill_seconds"] - was["prefill_seconds"] if exact else span
         dd_s = cur["decode_seconds"] - was["decode_seconds"] if exact else span
         print(f"{term.stamp(time.strftime('%H:%M:%S'))} "
