@@ -17,6 +17,7 @@ from . import tool_parser
 from .generation import ContentDelta, Finish, ReasoningDelta, ToolCallDone
 from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
+from .thinking import thinking_capabilities
 from ..metrics import gpu_sensors, prometheus
 
 
@@ -71,9 +72,10 @@ async def stop_profile() -> dict:
 @app.get("/v1/models")
 async def models() -> dict:
     st = serving()
+    thinking = thinking_capabilities(st.tokenizer)
     return {"object": "list",
             "data": [{"id": name, "object": "model", "owned_by": "snowllm",
-                      "created": st.created} for name in sorted(st.aliases)]}
+                      "created": st.created, "thinking": thinking} for name in sorted(st.aliases)]}
 
 
 def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:
