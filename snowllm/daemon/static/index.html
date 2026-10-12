@@ -17,16 +17,16 @@
       <a href="#chat" data-page="chat"><span class="nav-icon">▤</span><span data-i18n="Chat">Chat</span></a>
       <a href="#settings" data-page="settings"><span class="nav-icon">⚙</span><span data-i18n="Settings">Settings</span></a>
     </nav>
-    <div class="connection"><span id="connection-dot" class="dot"></span><div><strong id="connection-title"><span data-i18n="Connecting…">Connecting…</span></strong><span id="connection-detail"><span data-i18n="Local daemon">Local daemon</span></span></div></div>
+    <div class="connection"><span id="connection-dot" class="dot"></span><div><strong id="connection-title"><span data-i18n="Connecting…">Connecting…</span></strong><span id="connection-detail"><span data-i18n="Local Web UI">Local Web UI</span></span></div></div>
   </aside>
   <main>
     <header class="topbar"><span class="breadcrumb">SnowLLM <span>/</span> <strong id="page-name"><span data-i18n="Overview">Overview</span></strong></span><button id="copy-api" class="api-button" title="Copy API base URL" data-i18n-title="Copy API base URL"><span class="dot teal"></span><span id="api-address"><span data-i18n="Local API">Local API</span></span><span aria-hidden="true">⧉</span></button></header>
-    <div id="connection-banner" class="banner error" role="status" hidden><span data-i18n="Cannot reach the daemon. Reconnecting…">Cannot reach the daemon. Reconnecting…</span></div>
+    <div id="connection-banner" class="banner error" role="status" hidden><span data-i18n="Cannot reach the local service. Reconnecting…">Cannot reach the local service. Reconnecting…</span></div>
     <div id="model-error" class="banner error" role="status" hidden></div>
     <section id="page-workspace" class="page">
       <div class="page-heading"><div><h1><span data-i18n="Overview">Overview</span></h1></div><button id="refresh-state" class="button secondary"><span data-i18n="↻ Refresh">↻ Refresh</span></button></div>
       <div class="stats-grid">
-        <div class="stat-card"><span><span data-i18n="Engine status">Engine status</span></span><strong id="engine-state"><span data-i18n="Connecting">Connecting</span></strong><small id="engine-detail"><span data-i18n="Waiting for daemon">Waiting for daemon</span></small></div>
+        <div class="stat-card"><span><span data-i18n="Engine status">Engine status</span></span><strong id="engine-state"><span data-i18n="Connecting">Connecting</span></strong><small id="engine-detail"><span data-i18n="Waiting for the local service">Waiting for the local service</span></small></div>
         <div class="stat-card"><span><span data-i18n="Current model">Current model</span></span><strong id="current-model" class="model-value"><span data-i18n="None loaded">None loaded</span></strong></div>
         <div class="stat-card"><span><span data-i18n="Active requests">Active requests</span></span><strong id="active-count">—</strong></div>
       </div>

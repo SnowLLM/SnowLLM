@@ -183,6 +183,11 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     return state
 
 
+class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                     argparse.RawDescriptionHelpFormatter):
+    pass
+
+
 def parser() -> argparse.ArgumentParser:
     from .defaults import (SPEC_MAX_STEP_ROWS, DEFAULT_DSPARK_P_MIN, DEFAULT_GPU_UTIL,
                            DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, CKPT_EVERY,
@@ -190,10 +195,19 @@ def parser() -> argparse.ArgumentParser:
 
     p = argparse.ArgumentParser(
         prog="snowllm",
-        usage="snowllm PATH|RECIPE [options]\n       snowllm pull [RECIPE]\n       "
-              "snowllm recipes",
-        description="An OpenAI-compatible server for Qwen3.6 on one gfx1151.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        usage="snowllm webui [options]\n       snowllm PATH|RECIPE [options]\n       "
+              "snowllm COMMAND [options]",
+        description="Run models locally. Start with: snowllm webui\n\n"
+                    "Commands:\n"
+                    "  webui             Open model management and chat in your browser\n"
+                    "  pull [RECIPE]     Download a model\n"
+                    "  recipes           List available models\n"
+                    "  pi                Start the coding agent\n"
+                    "  load MODEL        Load a model in the running service\n"
+                    "  unload            Unload the current model\n"
+                    "  status            Show service status",
+        epilog="Use snowllm COMMAND --help for that command's options.",
+        formatter_class=_HelpFormatter)
 
     g = p.add_argument_group("serving")
     g.add_argument("model", nargs="?", metavar="PATH", default=argparse.SUPPRESS,
@@ -365,7 +379,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     argv = sys.argv[1:]
-    if argv and argv[0] in ("daemon", "load", "unload", "status"):
+    if argv and argv[0] in ("webui", "load", "unload", "status"):
         from .daemon.cli import main as daemon_main
         raise SystemExit(daemon_main(argv))
     if argv and argv[0] in SUBCOMMANDS:
@@ -385,8 +399,8 @@ def main() -> None:
         p.error("the checkpoint directory was given twice")
     model = positional or a.model_flag
     if not model:
-        p.error("a checkpoint directory or a recipe is required: `snowllm PATH`, or "
-                "`snowllm recipes` to see what there is")
+        p.error("use `snowllm webui` to open the browser interface, or "
+                "`snowllm PATH|RECIPE` to serve a model directly")
 
     from .hub import recipes
     from ._capi import SnowLLMError
