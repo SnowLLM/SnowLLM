@@ -265,7 +265,7 @@ class TerminalTests(unittest.TestCase):
             browser.chmod(0o755)
             env["BROWSER"] = str(browser)
             with (Path(tmp) / "daemon.log").open("wb") as output:
-                proc = subprocess.Popen([*command, "daemon", "--port", inference_port, "--admin-port", port,
+                proc = subprocess.Popen([*command, "webui", "--port", inference_port, "--admin-port", port,
                                          "--config", str(config)],
                                         stdout=output, stderr=output, env=env)
             def cli(*args):
@@ -302,13 +302,13 @@ class TerminalTests(unittest.TestCase):
                     time.sleep(.01)
                 self.assertEqual(marker.read_text(), "200", "browser opens only after the UI is ready")
                 directory = str(Path(tmp) / "model storage")
-                result = json.loads(cli("daemon", "config", "--port", port, "--models-dir", directory))
+                result = json.loads(cli("webui", "config", "--port", port, "--models-dir", directory))
                 self.assertEqual(result["models_dir"], directory)
                 self.assertEqual(json.loads(config.read_text())["models_dir"], directory)
-                self.assertIn("already running", cli("daemon", "--port", inference_port, "--admin-port", port, "--no-browser"))
+                self.assertIn("already running", cli("webui", "--port", inference_port, "--admin-port", port, "--no-browser"))
                 cli("unload", "--port", port)
                 self.assertEqual(json.loads(cli("status", "--port", port))["state"], "idle")
-                self.assertEqual(cli("daemon", "logs", "--port", port).strip(), "")
+                self.assertEqual(cli("webui", "logs", "--port", port).strip(), "")
             finally:
                 proc.send_signal(signal.SIGINT if os.name != "nt" else signal.SIGTERM)
                 try:

@@ -1,23 +1,26 @@
-# Daemon and Web UI
+# Web UI
 
 [Back to README](../README.md)
 
-Run a persistent local management service without loading a model:
+Open the browser interface to download models, chat, and change settings.
+The local service stays running in your terminal without loading a model:
 
 ```sh
-snowllm daemon                                  # foreground, opens the local Web UI
-snowllm daemon --no-browser                     # terminal/headless use
+snowllm webui                                  # foreground, opens the local Web UI
+snowllm webui --no-browser                     # terminal/headless use
 ```
+
+Running `snowllm` with no arguments shows the available entry points.
 
 From another terminal:
 
 ```sh
-snowllm daemon config --models-dir ~/models      # save the download/model root
-snowllm daemon pull qwen3.6-35b-a3b-fp8           # download in the background
-snowllm daemon logs --download                   # last 64 KiB of download output
+snowllm webui config --models-dir ~/models      # save the download/model root
+snowllm webui pull qwen3.6-35b-a3b-fp8           # download in the background
+snowllm webui logs --download                   # last 64 KiB of download output
 snowllm status                                  # model and download status
 snowllm load qwen3.6-35b-a3b-fp8 --max-model-len 32k
-snowllm daemon logs                             # last 64 KiB of inference output
+snowllm webui logs                             # last 64 KiB of inference output
 snowllm unload
 ```
 
@@ -124,7 +127,7 @@ are resolved against the configuration file's directory. UTF-8 paths, including 
 directory names and files with a UTF-8 BOM, are supported.
 
 The same configuration is used by `snowllm pull`, `snowllm recipes`, and recipe-based
-direct serving. Use daemon `--config` or `SNOWLLM_CONFIG` to choose another file;
+direct serving. Use `snowllm webui --config` or `SNOWLLM_CONFIG` to choose another file;
 the daemon passes its chosen file and effective directory to its child processes.
 Model directory precedence is explicit `--models-dir`, then `SNOWLLM_MODELS`, then
 saved configuration, then `~/models`.
@@ -135,21 +138,21 @@ The daemon passes effective recipe/library settings to downloads and model worke
 Partial updates are supported, for example:
 
 ```sh
-snowllm daemon config --recipes-url https://example.com/recipes.json
-snowllm daemon config --library-path /path/to/build/lib/libsnowllm.so
-snowllm daemon config --library-path "" # restore bundled kernels for the next load
+snowllm webui config --recipes-url https://example.com/recipes.json
+snowllm webui config --library-path /path/to/build/lib/libsnowllm.so
+snowllm webui config --library-path "" # restore bundled kernels for the next load
 ```
 
-The first two override changes saved through `daemon config` until the daemon is
+The first two override changes saved through `webui config` until the daemon is
 restarted without those overrides.
 
 Choose the inference and management addresses independently:
 
 ```sh
-snowllm daemon --host 127.0.0.1 --port 9000 --admin-host 127.0.0.1 --admin-port 9001
+snowllm webui --host 127.0.0.1 --port 9000 --admin-host 127.0.0.1 --admin-port 9001
 snowllm status --admin-port 9001
 snowllm load --admin-port 9001 RECIPE --max-model-len 32k
-snowllm daemon logs --admin-port 9001
+snowllm webui logs --admin-port 9001
 ```
 
 For LAN inference, use `--host 0.0.0.0`; management remains on loopback.

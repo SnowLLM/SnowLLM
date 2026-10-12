@@ -106,6 +106,33 @@ the server listens on.
 
 OpenAI Chat Completions/Responses and Anthropic Messages APIs support streaming, tool calls, and images on supported models; use `http://127.0.0.1:8000/v1` for OpenAI or `http://127.0.0.1:8000` for Anthropic.
 
+## Web UI
+
+Start the Web UI to download models, load or switch checkpoints, chat, and monitor
+inference through a local Web UI:
+
+```sh
+snowllm webui                 # opens the Web UI at http://127.0.0.1:8001
+snowllm webui --no-browser    # terminal / headless use
+```
+
+The inference API stays at `http://127.0.0.1:8000` across model switches.
+You can also manage models from another terminal:
+
+```sh
+snowllm load qwen3.6-35b-a3b-fp8 --max-model-len 32k
+snowllm status
+snowllm unload
+```
+
+Configure model storage and the recipe catalogue in the Web UI's Settings.
+Settings are saved to `~/.config/snowllm/config.json` on Linux
+(or `$XDG_CONFIG_HOME/snowllm/config.json`) and `%APPDATA%\SnowLLM\config.json`
+on Windows. The same configuration applies to `snowllm pull` and direct serving.
+
+See [the Web UI guide](docs/webui.md) for configuration overrides, CLI commands,
+monitoring, and Web UI details.
+
 ## Get a model
 
 A recipe is one model at one precision. `snowllm pull` fetches it:
@@ -165,33 +192,6 @@ Common flags (`snowllm --help` lists every option):
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
 
-
-## Daemon and Web UI
-
-Start the daemon to download models, load or switch checkpoints, chat, and monitor
-inference through a local Web UI:
-
-```sh
-snowllm daemon                 # opens the Web UI at http://127.0.0.1:8001
-snowllm daemon --no-browser    # terminal / headless use
-```
-
-The inference API stays at `http://127.0.0.1:8000` across model switches.
-You can also manage models from another terminal:
-
-```sh
-snowllm load qwen3.6-35b-a3b-fp8 --max-model-len 32k
-snowllm status
-snowllm unload
-```
-
-Configure model storage and the recipe catalogue in the Web UI's Settings.
-Settings are saved to `~/.config/snowllm/config.json` on Linux
-(or `$XDG_CONFIG_HOME/snowllm/config.json`) and `%APPDATA%\SnowLLM\config.json`
-on Windows. The same configuration applies to `snowllm pull` and direct serving.
-
-See [the daemon guide](docs/daemon.md) for configuration overrides, CLI commands,
-monitoring, and Web UI details.
 
 ## Roadmap
 
