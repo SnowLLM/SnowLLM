@@ -50,9 +50,19 @@ for m in ${SNOWLLM_MOUNT:-}; do MOUNTS+=(-v "$m"); done
 
 [[ -c /dev/kfd ]] || { echo "docker-test.sh: no /dev/kfd -- this box has no ROCm GPU" >&2; exit 2; }
 GPU=(--device /dev/kfd --device /dev/dri)
-for node in /dev/kfd /dev/dri/*; do
-    [[ -c "$node" ]] && GPU+=(--group-add "$(stat -c %g "$node")")
-done
+
+ROOTLESS=0
+if docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q 'name=rootless'; then
+    ROOTLESS=1
+fi
+USER_ARGS=(--user "$(id -u):$(id -g)")
+if [ "$ROOTLESS" = 1 ]; then
+    USER_ARGS=()
+else
+    for node in /dev/kfd /dev/dri/*; do
+        [[ -c "$node" ]] && GPU+=(--group-add "$(stat -c %g "$node")")
+    done
+fi
 
 read -r -d '' SMOKE <<'PY' || true
 import sys
@@ -102,7 +112,7 @@ echo "== $IMAGE"
 printf '   %s\n' "${NAMES[@]}"
 exec docker run --rm --network=host \
     --security-opt seccomp=unconfined \
-    --user "$(id -u):$(id -g)" \
+    "${USER_ARGS[@]}" \
     "${GPU[@]}" \
     -v "$MOUNT:/wheels:ro" \
     "${MOUNTS[@]}" \
