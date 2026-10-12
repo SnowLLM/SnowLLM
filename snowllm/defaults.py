@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+"""CPU-only defaults shared by command parsing and the inference engine."""
+
+DEFAULT_GPU_UTIL = 0.9
+MAX_NUM_SEQS = 256
+DEFAULT_MAX_NUM_SEQS = 16
+SPEC_MAX_STEP_ROWS = 256
+DEFAULT_DSPARK_P_MIN = 0.0
+CKPT_EVERY = 512
+DEFAULT_PREFIX_MEMORY_RATIO = 0.08

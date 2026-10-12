@@ -184,11 +184,9 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
 
 
 def parser() -> argparse.ArgumentParser:
-    from .engine import SPEC_MAX_STEP_ROWS
-    from .engine.dspark_decode import DEFAULT_DSPARK_P_MIN
-    from .engine.runner import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
-    from .engine.prefix_cache import CKPT_EVERY, DEFAULT_PREFIX_MEMORY_RATIO
-    from . import ops
+    from .defaults import (SPEC_MAX_STEP_ROWS, DEFAULT_DSPARK_P_MIN, DEFAULT_GPU_UTIL,
+                           DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, CKPT_EVERY,
+                           DEFAULT_PREFIX_MEMORY_RATIO)
 
     p = argparse.ArgumentParser(
         prog="snowllm",
@@ -262,7 +260,7 @@ def parser() -> argparse.ArgumentParser:
                         f"has filled whole blocks. A hit lands at the last mark at or before the "
                         f"shared prefix, so a prefix shorter than one spacing is never cached.")
     g.add_argument("--num-kv-blocks", type=_size, default=None, metavar="N",
-                   help=f"pin the KV pool at N blocks of {ops.KV_BLOCK_SIZES[0]} tokens instead of "
+                   help="pin the KV pool at N blocks instead of "
                         f"sizing it from --gpu-memory-utilization. It must still hold one "
                         f"max-model-len sequence; below that the engine refuses to start.")
 
@@ -377,12 +375,10 @@ def main() -> None:
         from .hub import recipes
         raise SystemExit(recipes.main(argv[0], argv[1:]))
 
-    import uvicorn
-
-    from .serve.api import app
-    from .serve.state import install
-
     p = parser()
+    if not argv:
+        p.print_help()
+        return
     a = p.parse_args()
     positional = getattr(a, "model", None)
     if positional and a.model_flag:
@@ -417,6 +413,10 @@ def main() -> None:
             print(f"{term.stamp()} {recipe.id} sets " +
                   ", ".join(f"--{k.replace('_', '-')} {v}" for k, v in sorted(used.items())),
                   flush=True)
+
+    import uvicorn
+    from .serve.api import app
+    from .serve.state import install
 
     install(build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
           default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
