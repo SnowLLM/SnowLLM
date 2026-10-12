@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ..defaults import DEFAULT_DSPARK_P_MIN
+
 from .. import ops
 from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
 from .forward_context import Batch, DecodeShape, i32, i64, positions
@@ -16,8 +18,6 @@ if TYPE_CHECKING:
     from .dsv4_runner import Dsv4Runner
     from .runner import GraphRunner
     from .sampler import Sampler
-
-DEFAULT_DSPARK_P_MIN = 0.0
 
 
 class DSparkDecoder:
