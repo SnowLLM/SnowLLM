@@ -10,6 +10,7 @@ README = (ROOT / "README.md").read_text()
 PYPROJECT = (ROOT / "pyproject.toml").read_text()
 PAGE = (ROOT / "web" / "index.html").read_text()
 RECIPES = (ROOT / "snowllm" / "hub" / "recipes.py").read_text()
+CONFIG = (ROOT / "snowllm" / "config.py").read_text()
 BUILDER = (ROOT / "scripts" / "build-recipes.py").read_text()
 VERSION = re.search(r'__version__ = "([^"]+)"',
                     (ROOT / "snowllm" / "_version.py").read_text()).group(1)
@@ -124,8 +125,10 @@ def check_catalogue() -> None:
         problems.append(f"build-recipes.py writes schema {ours.group(1)}, "
                         f"snowllm/hub/recipes.py reads schema {theirs.group(1)}")
 
-    url = need(r'^CATALOGUE_URL = "https://([^/]+)/([^"]+)"$', RECIPES,
-               "CATALOGUE_URL in snowllm/hub/recipes.py")
+    need(r'^CATALOGUE_URL = DEFAULT_RECIPES_URL$', RECIPES,
+         "CATALOGUE_URL alias in snowllm/hub/recipes.py")
+    url = need(r'^DEFAULT_RECIPES_URL = "https://([^/]+)/([^"]+)"$', CONFIG,
+               "DEFAULT_RECIPES_URL in snowllm/config.py")
     out = need(r'^OUT = ROOT / "web" / "([^"]+)"$', BUILDER, "OUT in scripts/build-recipes.py")
     if url:
         domain = (ROOT / "web" / "CNAME").read_text().strip()
@@ -159,7 +162,8 @@ def check_flags() -> None:
         problems.append("no flag table found in web/index.html")
         return
     hay = "".join((ROOT / f).read_text(errors="replace")
-                  for f in ("snowllm/cli.py", "snowllm/hub/recipes.py", "install.sh"))
+                  for f in ("snowllm/cli.py", "snowllm/daemon/cli.py",
+                            "snowllm/config.py", "snowllm/hub/recipes.py", "install.sh"))
     for cell in named:
         for token in cell.split():
             if token.startswith("--") and f'"{token}"' not in hay:
