@@ -492,15 +492,13 @@ class Engine:
     def step(self) -> str:
         if self.acct is None:
             return self._step()[0]
-        t0 = time.perf_counter() if self.exact_stats else 0.0
+        t0 = time.perf_counter()
         kind, tokens, rows = self._step()
         if kind == "idle":
             return kind
         if self.exact_stats:
             torch.cuda.synchronize()
-            self.acct.add(kind, tokens, time.perf_counter() - t0, rows)
-        else:
-            self.acct.add(kind, tokens, 0.0, rows)
+        self.acct.add(kind, tokens, time.perf_counter() - t0, rows)
         return kind
 
     def _step(self) -> tuple[str, int, int]:
@@ -513,7 +511,11 @@ class Engine:
             group = self._batchable_prefill_group()
             if group:
                 self._prefill_turn = False
+                started = time.perf_counter()
                 self._prefill_batch(group)
+                elapsed = time.perf_counter() - started
+                for r in group:
+                    r.timing.add("prefill", len(r.prompt), elapsed)
                 return "prefill", sum(len(r.prompt) for r in group), 0
             if len(self.running) < self.max_num_seqs:
                 cand = self._next_admissible()
@@ -535,11 +537,19 @@ class Engine:
                                     or self._prefill_turn):
             self._prefill_turn = False
             before = pending.num_prefilled
+            started = time.perf_counter()
             self._prefill_chunk(pending)
+            pending.timing.add("prefill", pending.num_prefilled - before,
+                               time.perf_counter() - started)
             return "prefill", pending.num_prefilled - before, 0
         if decodable:
             self._prefill_turn = True
+            before = [(r, len(r.out)) for r in decodable]
+            started = time.perf_counter()
             emitted, rows = self._decode_or_verify(len(decodable))
+            elapsed = time.perf_counter() - started
+            for r, count in before:
+                r.timing.add("decode", len(r.out) - count, elapsed)
             return "decode", emitted, rows
         return "idle", 0, 0
 

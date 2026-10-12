@@ -80,8 +80,8 @@ def main() -> int:
     print()
     check("counters are on by default", eng.acct is not None and eng.acct.decode_tokens > 0,
           f"{eng.acct and eng.acct.decode_tokens} decode tokens")
-    check("but the seconds are not, so no step paid for a synchronize",
-          eng.acct.prefill_seconds == 0.0 and eng.acct.decode_seconds == 0.0)
+    check("wall-clock seconds are collected without exact_stats",
+          not eng.exact_stats and eng.acct.prefill_seconds > 0.0 and eng.acct.decode_seconds > 0.0)
     check("stats() still carries them", eng.stats().accounting.get("decode_tokens") ==
           eng.acct.decode_tokens)
 
