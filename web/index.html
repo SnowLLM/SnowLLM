@@ -913,6 +913,7 @@
       <a href="#pi">Integrate</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#run">Run</a>
+      <a href="#webui">Web UI</a>
       <a href="#recipes">Recipes</a>
       <a href="#flags">Flags</a>
       <span class="side-rule"></span>
@@ -1070,9 +1071,52 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
       <p class="note">A GGUF works too &mdash; <code>snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash</code>
         gets the UD-Q4_K_XL quant with its DFlash drafter beside it: a smaller download, and
         llama.cpp serves the same file.</p>
-      <p class="note">Serves an OpenAI-compatible API. <code>snowllm --help</code> lists every flag.</p>
+      <p class="note">Serves OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages APIs.
+        <code>snowllm --help</code> lists every flag.</p>
       <p class="note">If huggingface.co is slow from where you are, the pull honours the
         <code>HF_ENDPOINT</code> environment variable &mdash; point it at a mirror you trust.</p>
+    </div>
+  </section>
+
+  <section class="band" id="webui">
+    <div class="rail"><b>Web UI</b></div>
+    <div>
+      <pre class="block">snowllm daemon                  # opens the local Web UI
+snowllm daemon --no-browser     # terminal / headless use
+snowllm load qwen3.6-35b-a3b-fp8
+snowllm status
+snowllm unload</pre>
+      <p>The Web UI runs at <code>http://127.0.0.1:8001</code>. The daemon keeps
+        the inference API at <code>http://127.0.0.1:8000</code> across model switches.
+        Load a recipe or a local checkpoint with inference overrides.</p>
+      <ul class="terse">
+        <li>Browse and download models. Locally available recipes appear in bold in the
+          loading dropdown; model cards also mark local availability.</li>
+        <li>Remember load settings per model, inspect the worker&rsquo;s effective configuration,
+          cancel loading, and retry after a failure.</li>
+        <li>See download progress, speed, remaining time and file verification status.
+          Stopped downloads retain partial files for resuming.</li>
+        <li>Chat with thinking controls detected from the loaded model&rsquo;s chat template.
+          Copy answers or code, regenerate a reply, switch saved conversations, and export them.</li>
+        <li>Monitor prefill and decode throughput, request queues and cache statistics,
+          plus GPU utilization, power, temperature and memory when sensors are available.
+          The inference API also exposes <code>/metrics</code>.</li>
+        <li>Configure model storage and the recipe catalogue, inspect model disk usage,
+          and delete unused models or partial downloads with confirmation.</li>
+      </ul>
+      <p class="note">English and Simplified Chinese (<code>zh_CN</code>) follow the browser
+        language by default. Settings &rarr; Language lets you choose manually.
+        Language preferences, load presets, conversations and chat parameters stay in
+        browser storage. No Node, CDN or separate frontend service is required.</p>
+      <p class="note">Server settings use a JSON file: <code>~/.config/snowllm/config.json</code>
+        on Linux (or <code>$XDG_CONFIG_HOME/snowllm/config.json</code>), and
+        <code>%APPDATA%\SnowLLM\config.json</code> on Windows. Settings provides single
+        editors for model storage and the recipe catalogue, plus a custom kernel library
+        under Developer settings. Environment and command-line overrides remain effective.</p>
+      <p class="note">The directory picker browses the SnowLLM host. Model deletion excludes
+        symlinks and files used by the loaded model or its DFlash drafter; stop downloads
+        before deleting files. The management listener stays on loopback. Use
+        <code>--admin-port</code> to change its port and <code>--port</code> for inference.</p>
     </div>
   </section>
 
@@ -1145,7 +1189,7 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
           <tbody>
             <tr>
               <td class="flag">SNOWLLM_MODELS</td>
-              <td class="desc">Where checkpoints land and are looked for, <code>~/models</code> by default.</td>
+              <td class="desc">Overrides the JSON <code>models_dir</code> setting. Checkpoints default to <code>~/models</code>.</td>
             </tr>
             <tr>
               <td class="flag">HF_ENDPOINT</td>
@@ -1157,7 +1201,15 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
             </tr>
             <tr>
               <td class="flag">SNOWLLM_RECIPES_URL</td>
-              <td class="desc">Catalogue to resolve recipe ids against. A local path works, which is how you serve a recipe that is not published yet.</td>
+              <td class="desc">Overrides the JSON <code>recipes_url</code> setting. Accepts a catalogue URL or local JSON file.</td>
+            </tr>
+            <tr>
+              <td class="flag">SNOWLLM_CONFIG</td>
+              <td class="desc">Selects the server settings JSON file. Daemon <code>--config</code> takes precedence.</td>
+            </tr>
+            <tr>
+              <td class="flag">SNOWLLM_LIB</td>
+              <td class="desc">Overrides the JSON <code>library_path</code> setting with a custom kernel library, for development. Otherwise SnowLLM uses bundled kernels.</td>
             </tr>
             <tr>
               <td class="flag">SNOWLLM_HOME</td>
