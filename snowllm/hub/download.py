@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TextIO
 
-from .._capi import SnowLLMError
+from ..errors import SnowLLMError
 from .._version import __version__
 
 CHUNK_BYTES = 32 << 20
@@ -110,13 +110,14 @@ class Source:
 class Progress:
     def __init__(self, total: int, stream: TextIO = sys.stderr, interval: float = 0.2,
                  window: float = 5.0) -> None:
+        self.progress_file = os.environ.get("SNOWLLM_DOWNLOAD_PROGRESS")
         self.total = total
         self.done = 0
         self.stream = stream
         self.interval = interval
         self.window = window
         self.tty = hasattr(stream, "isatty") and stream.isatty()
-        if not self.tty:
+        if not self.tty and not self.progress_file:
             self.interval = max(interval, 5.0)
         self._lock = threading.Lock()
         self._marks: collections.deque = collections.deque()
@@ -159,16 +160,32 @@ class Progress:
         return (done - b0) / (now - t0) if now > t0 else 0.0
 
     def _run(self) -> None:
+        last_suffix = ""
+        last_log = 0.0
         while True:
             stopped = self._stop.wait(self.interval)
             now = time.monotonic()
             with self._lock:
                 done, total, suffix = self.done, self.total, self._suffix
-            rate = self._rate(now, done)
+            if suffix != last_suffix:
+                self._marks.clear()
+                last_suffix = suffix
+            rate = max(0.0, self._rate(now, done))
             left = (total - done) / rate if rate > 0 else float("inf")
             pct = 100.0 * done / total if total else 100.0
+            if self.progress_file:
+                path = pathlib.Path(self.progress_file)
+                tmp = path.with_suffix('.tmp')
+                tmp.write_text(json.dumps(dict(done_bytes=done, total_bytes=total,
+                                               bytes_per_second=rate,
+                                               eta_seconds=left if rate > 0 else None,
+                                               phase='checking' if suffix else 'downloading')))
+                tmp.replace(path)
             line = (f"  {pct:5.1f}%  {human(done)} / {human(total)}  "
                     f"{human(rate)}/s  eta {duration(left)}{suffix}")
+            if self.progress_file and not self.tty and not stopped and now - last_log < 5:
+                continue
+            last_log = now
             with self._lock:
                 if self.tty:
                     self.stream.write("\r" + line.ljust(self._width))

@@ -113,6 +113,13 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                     account=stats_interval > 0, exact_stats=exact_stats,
                     gpu_memory_utilization=gpu_memory_utilization,
                     prefix_memory_ratio=prefix_memory_ratio)
+    engine.runtime_config = dict(model_path=str(root.resolve()), max_model_len=engine.max_model_len,
+                                 max_num_seqs=engine.max_num_seqs, kv_cache_dtype="int8" if engine.runner.kv_int8 else "bf16",
+                                 gpu_memory_utilization=gpu_memory_utilization,
+                                 num_spec=0 if engine.dflash else engine.num_spec,
+                                 dflash_path=str(pathlib.Path(dflash).resolve()) if dflash else None,
+                                 dflash_block=engine.dflash_block if engine.dflash else None,
+                                 enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
     _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
          f"(engine init + capture {time.time() - t1:.1f}s total)")
@@ -360,6 +367,9 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     argv = sys.argv[1:]
+    if argv and argv[0] in ("daemon", "load", "unload", "status"):
+        from .daemon.cli import main as daemon_main
+        raise SystemExit(daemon_main(argv))
     if argv and argv[0] in SUBCOMMANDS:
         if argv[0] == "pi":
             from .hub import pi
