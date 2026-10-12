@@ -85,7 +85,8 @@ def usage(prompt: list[int], r: Request | None) -> dict:
     cached = r.cached_tokens if r is not None else 0
     return {"prompt_tokens": len(prompt), "completion_tokens": n,
             "total_tokens": len(prompt) + n,
-            "prompt_tokens_details": {"cached_tokens": cached}}
+            "prompt_tokens_details": {"cached_tokens": cached},
+            "timings": r.timing.snapshot() if r is not None else {}}
 
 
 THINK_CLOSE = "</think>"

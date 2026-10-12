@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import torch
 
 from .. import ops
+from ..metrics import RequestTiming
 
 
 @dataclass
@@ -38,6 +39,7 @@ class Request:
     prompt: list[int]
     params: SamplingParams
     out: list[int] = field(default_factory=list)
+    timing: RequestTiming = field(default_factory=RequestTiming)
 
     blocks: list[int] = field(default_factory=list)
 
