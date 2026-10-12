@@ -25,11 +25,12 @@ main()
                               capture_output=True, text=True, timeout=15)
 
     def test_discovery_without_gpu(self):
-        for args in ((), ('--help',)):
+        for args in ((), ('--help',), ('webui', '--help')):
             with self.subTest(args=args):
                 result = self.run_cli(*args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stderr, '')
+                self.assertIn('webui', result.stdout)
                 if args != ('webui', '--help'):
                     self.assertIn('--gpu-memory-utilization', result.stdout)
                     self.assertIn('--dflash', result.stdout)
@@ -45,3 +46,12 @@ main()
         result = self.run_cli('--unknown')
         self.assertEqual(result.returncode, 2)
         self.assertIn('unrecognized arguments', result.stderr)
+
+    def test_webui_arguments(self):
+        from snowllm.daemon.cli import parser
+        args = parser().parse_args(['webui', '--no-browser'])
+        self.assertIsNone(args.action)
+        self.assertTrue(args.no_browser)
+        args = parser().parse_args(['webui', 'logs', '--admin-port', '9001'])
+        self.assertEqual(args.action, 'logs')
+        self.assertEqual(args.admin_port, 9001)

@@ -13,7 +13,8 @@ from ..config import default_config_path
 def parser():
     p = argparse.ArgumentParser(prog="snowllm", description="Local model management and Web UI")
     commands = p.add_subparsers(dest="command", required=True)
-    daemon = commands.add_parser("daemon", help="run the foreground management service")
+    daemon = commands.add_parser("webui",
+                                 help="open the browser interface for models, chat, and settings")
     daemon.add_argument("--host", default="127.0.0.1", help="inference listener address")
     daemon.add_argument("--port", type=int, default=8000, help="inference listener port")
     daemon.add_argument("--admin-host", choices=("127.0.0.1", "localhost", "::1"), default="127.0.0.1",
@@ -62,7 +63,7 @@ def arguments(p, name):
 def main(argv):
     p = parser()
     a = p.parse_args(argv)
-    action = a.action if a.command == "daemon" else a.command
+    action = a.action if a.command == "webui" else a.command
     if not 1 <= a.admin_port <= 65535:
         p.error("admin port must be between 1 and 65535")
     from .server import local_url
@@ -79,7 +80,7 @@ def main(argv):
             try:
                 response = client.get(admin_url + "/daemon/status")
                 if response.is_success:
-                    print(f"SnowLLM daemon already running at {admin_url}")
+                    print(f"SnowLLM Web UI already running at {admin_url}")
                     print(json.dumps(response.json(), indent=2, ensure_ascii=False))
                     if not a.no_browser:
                         open_browser(admin_url)
@@ -91,7 +92,7 @@ def main(argv):
         try:
             manager = DaemonManager(a.config, a.load_timeout, a.models_dir)
         except (OSError, ValueError) as exc:
-            print(f"snowllm daemon: {exc}", file=sys.stderr)
+            print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
         print(f"SnowLLM Web UI / management: {admin_url}", flush=True)
         print(f"SnowLLM inference API: {local_url(a.host, a.port)}/v1", flush=True)
@@ -101,7 +102,7 @@ def main(argv):
                               admin_host=a.admin_host, admin_port=a.admin_port,
                               browser=None if a.no_browser else open_browser))
         except (OSError, RuntimeError) as exc:
-            print(f"snowllm daemon: {exc}", file=sys.stderr)
+            print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
         return 0
     method, endpoint, payload, params = "GET", action, None, None
@@ -131,7 +132,7 @@ def main(argv):
     except httpx.HTTPStatusError as exc:
         print(f"snowllm {action}: {exc.response.text}", file=sys.stderr)
     except (httpx.HTTPError, ValueError) as exc:
-        print(f"snowllm {action}: cannot reach daemon: {exc}", file=sys.stderr)
+        print(f"snowllm {action}: cannot reach the Web UI service; start `snowllm webui`: {exc}", file=sys.stderr)
     return 1
 
 
@@ -140,5 +141,5 @@ def open_browser(url):
         if webbrowser.open(url):
             return
     except Exception as exc:
-        print(f"snowllm daemon: browser could not be opened: {exc}", file=sys.stderr)
+        print(f"snowllm webui: browser could not be opened: {exc}", file=sys.stderr)
     print(f"Open the Web UI manually: {url}", flush=True)

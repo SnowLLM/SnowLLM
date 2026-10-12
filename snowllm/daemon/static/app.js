@@ -459,7 +459,7 @@ async function sendMessage(event) {
   }
 }
 async function copyApi(target = 'api-url') {
-  if (!status?.inference_url) { toast(t("Wait for the daemon connection before copying the API address.")); return; }
+  if (!status?.inference_url) { toast(t("Wait for the local service connection before copying the API address.")); return; }
   const value = $(target).value;
   try { await navigator.clipboard.writeText(value); toast(t("API address copied")); }
   catch { toast(t("API address: {0}", value)); }

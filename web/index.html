@@ -1072,7 +1072,7 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
         gets the UD-Q4_K_XL quant with its DFlash drafter beside it: a smaller download, and
         llama.cpp serves the same file.</p>
       <p class="note">Serves OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages APIs.
-        <code>snowllm --help</code> lists every flag.</p>
+        <code>snowllm --help</code> lists model options.</p>
       <p class="note">If huggingface.co is slow from where you are, the pull honours the
         <code>HF_ENDPOINT</code> environment variable &mdash; point it at a mirror you trust.</p>
     </div>
@@ -1081,8 +1081,8 @@ snowllm qwen3.6-35b-a3b-fp8</pre>
   <section class="band" id="webui">
     <div class="rail"><b>Web UI</b></div>
     <div>
-      <pre class="block">snowllm daemon                  # opens the local Web UI
-snowllm daemon --no-browser     # terminal / headless use
+      <pre class="block">snowllm webui                  # opens the local Web UI
+snowllm webui --no-browser     # terminal / headless use
 snowllm load qwen3.6-35b-a3b-fp8
 snowllm status
 snowllm unload</pre>
