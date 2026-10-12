@@ -118,8 +118,9 @@ snowllm pull qwen3.6-35b-a3b-fp8     # or just `snowllm pull`, and pick from the
 - Checks every file against the sha256 the repository publishes
 - A recipe that wants a newer snowllm downloads anyway and says which version it wants
 
-`SNOWLLM_MODELS` is where checkpoints live — `~/models` by default. `pull` writes there, and
-`snowllm <recipe>` looks there; `--dir` overrides it per command.
+Checkpoints live in `~/models` by default. Set `models_dir` in the JSON configuration
+or override it with `SNOWLLM_MODELS`. `snowllm <recipe>` looks there;
+`snowllm pull --dir PATH` selects a different download directory.
 
 | Env                    | What it does                                          |
 | ---------------------- | ----------------------------------------------------- |
@@ -163,6 +164,33 @@ Common flags (`snowllm --help` lists every option):
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
 
+
+## Daemon and Web UI
+
+Start the daemon to download models, load or switch checkpoints, chat, and monitor
+inference through a local Web UI:
+
+```sh
+snowllm daemon                 # opens the Web UI at http://127.0.0.1:8001
+snowllm daemon --no-browser    # terminal / headless use
+```
+
+The inference API stays at `http://127.0.0.1:8000` across model switches.
+You can also manage models from another terminal:
+
+```sh
+snowllm load qwen3.6-35b-a3b-fp8 --max-model-len 32k
+snowllm status
+snowllm unload
+```
+
+Configure model storage and the recipe catalogue in the Web UI's Settings.
+Settings are saved to `~/.config/snowllm/config.json` on Linux
+(or `$XDG_CONFIG_HOME/snowllm/config.json`) and `%APPDATA%\SnowLLM\config.json`
+on Windows. The same configuration applies to `snowllm pull` and direct serving.
+
+See [the daemon guide](docs/daemon.md) for configuration overrides, CLI commands,
+monitoring, and Web UI details.
 
 ## Roadmap
 
