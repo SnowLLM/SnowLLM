@@ -7,7 +7,7 @@ import pathlib
 import sys
 
 from .. import term
-from .._capi import SnowLLMError
+from ..errors import SnowLLMError
 from . import recipes
 
 MODELS_JSON = "~/.pi/agent/models.json"
