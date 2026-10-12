@@ -189,8 +189,8 @@ class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter,
 
 
 def parser() -> argparse.ArgumentParser:
-    from .defaults import (SPEC_MAX_STEP_ROWS, DEFAULT_DSPARK_P_MIN, DEFAULT_GPU_UTIL,
-                           DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, CKPT_EVERY,
+    from .defaults import (DEFAULT_DSPARK_P_MIN, DEFAULT_GPU_UTIL,
+                           DEFAULT_MAX_NUM_SEQS,
                            DEFAULT_PREFIX_MEMORY_RATIO)
 
     p = argparse.ArgumentParser(
@@ -211,168 +211,68 @@ def parser() -> argparse.ArgumentParser:
 
     g = p.add_argument_group("serving")
     g.add_argument("model", nargs="?", metavar="PATH", default=argparse.SUPPRESS,
-                   help="the checkpoint directory, or the name of a recipe `snowllm pull` has "
-                        "already fetched (`snowllm recipes` lists them)")
+                   help='Checkpoint directory or downloaded recipe.')
     g.add_argument("--model", dest="model_flag", metavar="PATH", help=argparse.SUPPRESS)
-    g.add_argument("--host", default="127.0.0.1")
-    g.add_argument("--port", type=int, default=8000)
+    g.add_argument("--host", default="127.0.0.1", help="API listener address.")
+    g.add_argument("--port", type=int, default=8000, help="API listener port.")
     g.add_argument("--served-model-name", action="append", metavar="NAME=FACTOR",
-                   help="expose the model under NAME with YaRN context factor FACTOR (default 1.0); "
-                        "repeatable, e.g. --served-model-name Qwen3.6[512K]=2.0. The first is the "
-                        "default when a request names no model.")
+                   help='API model name and context factor; repeatable.')
     g.add_argument("--default-max-tokens", type=int, default=None, metavar="N",
-                   help="cap on generated tokens when a request omits max_tokens; default: fill the "
-                        "remaining context (recommended for thinking -- a small cap truncates it)")
-    g.add_argument("--seed", type=int, default=None)
+                   help='Default reply limit; unset uses remaining context.')
+    g.add_argument("--seed", type=int, default=None, help="Random seed for sampling.")
 
-    g = p.add_argument_group("capacity", "What the engine reserves, and what it will accept. Both "
-                                         "are memory choices; no kernel imposes either.")
+    g = p.add_argument_group('capacity')
     g.add_argument("--max-num-seqs", type=int, default=DEFAULT_MAX_NUM_SEQS, metavar="N",
-                   help=f"concurrency ceiling, up to {MAX_NUM_SEQS}. Speculating does not lower it: "
-                        f"a step whose batch is too big to verify decodes plainly instead. Each "
-                        f"request pins (num-spec + 1) slots of linear-attn state for its whole "
-                        f"life; under --dflash it is one slot flat whatever the block, the state "
-                        f"being rolled forward rather than snapshotted per row. That pool is the "
-                        f"one thing here provisioned worst-case, so this is the knob that decides "
-                        f"whether the engine starts.")
+                   help='Maximum concurrent requests (up to 256).')
     g.add_argument("--max-model-len", type=_size, default=262144, metavar="N",
-                   help="context length. A per-request ceiling, not a reservation: the KV pool is "
-                        "shared, and a request that outgrows what is left is preempted and "
-                        "re-prefilled rather than pre-allocated for.")
+                   help='Maximum context length, e.g. 32k.')
     g.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_UTIL, metavar="F",
-                   help="fraction of the device the whole process may occupy. The KV pool is "
-                        "whatever is left under it once the weights, the state pool, the prefill "
-                        "workspace and the logits are down -- measured, not modelled. Raise it "
-                        "toward 1.0 if the GPU is yours alone; what it holds back is fragmentation "
-                        "headroom for the caching allocator.")
+                   help='Fraction of GPU memory available to the server.')
     g.add_argument("--device-map", type=str, default="", metavar="SPEC",
-                   help="which weight groups live in pinned HOST memory instead of the carve-out, "
-                        "trading a slower decode step for KV pool. On a unified-memory part both "
-                        "are the same DRAM; the cost is measured, and it goes with the BYTES "
-                        "moved, not with which layers move. `auto` frees what the KV pools AND "
-                        "the prefill chunk are short of at your --max-model-len, a layer at a "
-                        "time, cheapest group first, buying the widest chunk this host can pay "
-                        "for and falling back to a narrower one when it cannot; `all` fills the "
-                        "free system RAM, experts included; `off` is the default; or name groups, "
-                        "optionally with a layer count: dense,head or dense:12. "
-                        "GGUF DeepSeek-V4 only today.")
+                   help='Offload weights to host RAM: off, auto, all, or groups (DeepSeek-V4 GGUF).')
     g.add_argument("--prefix-memory-ratio", type=float, default=DEFAULT_PREFIX_MEMORY_RATIO,
                    metavar="R",
-                   help=f"the share of the memory budget that goes to remembering prefixes, 0 to "
-                        f"disable. What it decides is HOW MANY are remembered: a prefix's KV "
-                        f"pages stay in the pool and are shared rather than copied, and what has "
-                        f"a fixed cost is the state at its end -- the linear-attn state on a "
-                        f"hybrid model, the compressor carry on DeepSeek-V4 -- one of which is the "
-                        f"same size whatever the prefix length. Whether that share is really "
-                        f"taken OFF the KV pool depends on what is spare when it is asked for. A "
-                        f"SHARE rather than a byte figure because what a remembered prefix is "
-                        f"worth is relative to what the pools get, which moves with the device, "
-                        f"the checkpoint and --gpu-memory-utilization. The startup line prints "
-                        f"the count it works out to, and how often a checkpoint is taken -- every "
-                        f"{CKPT_EVERY} tokens on a linear-attention checkpoint, one prefill chunk "
-                        f"on DeepSeek-V4, where a mark has to land where every compression ratio "
-                        f"has filled whole blocks. A hit lands at the last mark at or before the "
-                        f"shared prefix, so a prefix shorter than one spacing is never cached.")
+                   help='Memory share for prompt caching; 0 disables caching.')
     g.add_argument("--num-kv-blocks", type=_size, default=None, metavar="N",
-                   help="pin the KV pool at N blocks instead of "
-                        f"sizing it from --gpu-memory-utilization. It must still hold one "
-                        f"max-model-len sequence; below that the engine refuses to start.")
+                   help='Set the KV cache block count manually.')
 
-    g = p.add_argument_group("throughput", "Every one of these is measured; what it measured at "
-                                           "depends on the checkpoint and the device, so try it.")
+    g = p.add_argument_group('throughput')
     g.add_argument("--num-spec", "--num-speculative-tokens", type=int, default=2,
                    metavar="K", dest="num_spec",
-                   help=f"MTP draft tokens per step (0 = off). Applied only while the batch is "
-                        f"<= {SPEC_MAX_STEP_ROWS} // (num-spec + 1); bigger batches draft shallower. "
-                        f"Ignored under --dflash, which proposes differently")
+                   help='MTP draft tokens per step; 0 disables MTP.')
     g.add_argument("--dflash", metavar="PATH", default=None,
-                   help="speculate with a block-diffusion draft instead of the MTP head, given "
-                        "the draft's directory. A Qwen DFlash draft is a directory of safetensors "
-                        "whose config.json says how wide it is; DeepSeek-V4's DSpark draft is the "
-                        "dspark-*.gguf that sits beside the model, so pointing this at the model "
-                        "directory finds it. Either way it is a whole second model with KV pools "
-                        "of its own, conditioned on the target's hidden states at the layers it "
-                        "names, and it proposes a whole block in ONE forward rather than a token "
-                        "at a time -- DSpark a token for every row of its block, DFlash one fewer. "
-                        "Output is unchanged either way: every proposed token is verified. The "
-                        "draft's KV pool is held back from the one above rather than taken on top "
-                        "of it, and every target forward carries the tapped hidden states per row. "
-                        "On Qwen it does NOT cost linear-attn state per block row: that is rolled "
-                        "forward, so a request pins one slot rather than --dflash-block of them.")
+                   help='Draft checkpoint for DFlash or DSpark; replaces MTP.')
     g.add_argument("--dflash-block", type=int, default=0, metavar="N",
-                   help=f"tokens per draft block. The step is up to N rows wide -- flat at N on a "
-                        f"DFlash draft, and as wide as --dflash-p-min leaves it on a DSpark one -- "
-                        f"so this trades work per step against tokens per step, and a batch too "
-                        f"step. 0 takes the draft's own width: a fixed one on a DFlash draft, "
-                        f"and on a DSpark draft the checkpoint's block_size, the width its Markov "
-                        f"head was trained at -- that one is a FLOOR, and wider is legal")
+                   help='Draft block size; 0 uses the checkpoint default.')
     g.add_argument("--dflash-p-min", type=float, default=DEFAULT_DSPARK_P_MIN, metavar="P",
-                   help="DSpark ONLY, and ignored by a draft with no confidence head: stop the "
-                        "draft block at the first position where the drafter's running "
-                        "confidence -- the chance the whole prefix up to it is accepted -- falls "
-                        "below P, so a step is only as wide as the drafter can justify. OFF by "
-                        "default because it measured that way here: a verify row costs a fraction "
-                        "of a base step, so a doubtful row is usually still worth verifying. On a "
-                        "machine where those two are closer, this is the knob")
+                   help='DSpark confidence threshold; 0 disables early stopping.')
     g.add_argument("--kv-cache-dtype", choices=("bf16", "auto", "int8"), default="bf16",
-                   help="bf16 (or vLLM's `auto`, the same thing here), or int8. int8 halves KV "
-                        "bytes and buys long-context decode at some prefill -- for "
-                        "decode/long-context-heavy workloads. Its layout is per (token, kv-head, "
-                        "d-group) for K and per (token, kv-head) for V, so it is not vLLM's "
-                        "int8_per_token_head. It is worth most on a checkpoint whose KV is wide: "
-                        "many full-attention layers, or many kv heads.")
+                   help='KV cache precision; auto uses bf16.')
     g.add_argument("--max-num-batched-tokens", default="auto", metavar="N",
                    type=lambda x: x if x == "auto" else _size(x),
-                   help="tokens per launch, or 'auto' to take the widest candidate whose "
-                        "activations -- WALKED, not estimated -- still leave the pools their room. "
-                        "A share of the allowance is what this used to be, and a share is not a "
-                        "measurement. A step is one prefill chunk or one decode, so this is the "
-                        "prefill chunk: it bounds every M-sized buffer, and changes no "
-                        "arithmetic.")
+                   help='Prefill chunk size, e.g. 8k; auto selects a size.')
     g.add_argument("--batch-prefill", action="store_true",
-                   help="pack several fresh short prompts into one prefill launch (--num-spec 0 "
-                        "only), which pays at high concurrency. NOT batch-invariant: a prompt's "
-                        "output can depend on who it batched with (bf16 tiling).")
+                   help='Batch fresh prompts; requires --num-spec 0, may change output.')
     g.add_argument("--mtp-window", type=int, default=0, metavar="W",
-                   help="cap the MTP draft layer's attention at --mtp-sinks leading tokens plus the "
-                        "most recent W (0 = off, full context). Cannot change output, only "
-                        "acceptance.")
+                   help='Recent tokens visible to MTP; 0 uses full context.')
     g.add_argument("--mtp-sinks", type=int, default=64, metavar="N",
-                   help="leading tokens the draft layer always sees, with --mtp-window")
+                   help='Leading tokens retained with --mtp-window.')
 
     g = p.add_argument_group("multimodal")
     g.add_argument("--limit-mm-per-prompt", type=int, default=4, metavar="N",
-                   help="images a single request may carry. Each one runs the vision tower and adds "
-                        "its tokens to the prompt, so an unbounded count is a way to make one "
-                        "request occupy the GPU.")
+                   help='Maximum images per request.')
     g.add_argument("--allow-image-urls", action="store_true",
-                   help="let an image_url part name an http(s) URL, which this server will then "
-                        "FETCH. Off by default: that is an egress from your network chosen by "
-                        "whoever sends the request. data: URIs always work.")
+                   help='Allow fetching HTTP(S) images; data URLs always work.')
 
     g = p.add_argument_group("diagnostics")
-    g.add_argument("--enforce-eager", action="store_true", help="skip CUDA-graph capture")
+    g.add_argument("--enforce-eager", action="store_true", help='Disable GPU graph execution.')
     g.add_argument("--profile-dir", default=os.environ.get("SNOWLLM_TORCH_PROFILER_DIR"),
                    metavar="DIR",
-                   help="enable POST /start_profile and /stop_profile, writing traces here. "
-                        "Unless this, SNOWLLM_TRACE or HSA_TOOLS_LIB is set, "
-                        "HSA_TOOLS_DISABLE_REGISTER=1 is set so ROCm's profiler does not "
-                        "intercept queue creation -- its interception leaves a signal the "
-                        "runtime cannot sleep on, and one core then spins for the process's "
-                        "whole life, idle or not. Anything that profiles or traces needs it "
-                        "back, and costs that core.")
+                   help='Directory for traces captured via profiling endpoints.')
     g.add_argument("--stats-interval", type=float, default=10.0, metavar="SECONDS",
-                   help="log throughput, acceptance and pool occupancy every SECONDS, and carry "
-                        "the cumulative counters on /health. 0 turns it off. The rates are token "
-                        "counts over the interval's wall clock, which costs nothing to collect -- "
-                        "so both read lower than their exclusive speed while the other phase is "
-                        "running, which is what a server produces rather than what a kernel can.")
+                   help='Seconds between throughput logs; 0 disables logs.')
     g.add_argument("--stats-exact", action="store_true",
-                   help="report prefill and decode at their EXCLUSIVE rates, by charging each step "
-                        "its own GPU time. Costs a torch.cuda.synchronize() PER STEP: without it "
-                        "the CPU returns first and a prefill chunk that emits no token never "
-                        "syncs, so its time lands on a later decode step. For kernel work, not "
-                        "for serving.")
+                   help='Synchronize each step for GPU timing; slows inference.')
 
     return p
 
