@@ -18,11 +18,14 @@ from collections.abc import Callable
 from typing import TextIO
 
 from .. import term
-from .._capi import SnowLLMError
+from ..config import models_directory, recipes_source
+from ..errors import SnowLLMError
 from .._version import __version__
 from .download import DEFAULT_JOBS, PART_SUFFIX, USER_AGENT, Blob, fetch, forget, held, human
 
-CATALOGUE_URL = "https://snowllm.dev/recipe.json"
+from ..config import DEFAULT_RECIPES_URL
+
+CATALOGUE_URL = DEFAULT_RECIPES_URL
 CATALOGUE_TTL = 3600.0
 DEFAULT_CONTEXT = 262144
 DEFAULT_SLOTS = 16
@@ -43,7 +46,10 @@ def endpoint() -> str:
 
 
 def models_root() -> pathlib.Path:
-    return pathlib.Path(os.environ.get("SNOWLLM_MODELS", "~/models")).expanduser()
+    try:
+        return models_directory()[0]
+    except (OSError, ValueError) as exc:
+        raise SnowLLMError(str(exc)) from exc
 
 
 def cache_dir() -> pathlib.Path:
@@ -181,7 +187,10 @@ def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
 
 
 def catalogue(url: str | None = None, refresh: bool = False) -> list[Recipe]:
-    url = url or os.environ.get("SNOWLLM_RECIPES_URL") or CATALOGUE_URL
+    try:
+        url = recipes_source(override=url)[0]
+    except (OSError, ValueError) as exc:
+        raise SnowLLMError(str(exc)) from exc
     remote = url.startswith(("http://", "https://"))
     cached = cached_at(url)
     fresh = False
@@ -504,12 +513,12 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
                      "recipes": "List the models SnowLLM knows how to run."}[cmd])
     p.add_argument("--catalogue", metavar="URL", default=None,
                    help=f"where the recipe list comes from (default: {CATALOGUE_URL}, "
-                        f"or $SNOWLLM_RECIPES_URL). A path works too.")
+                        f"overridden by $SNOWLLM_RECIPES_URL or JSON recipes_url). A path works too.")
     p.add_argument("--refresh", action="store_true",
                    help=f"refetch the catalogue instead of reusing the copy cached for "
                         f"{CATALOGUE_TTL / 60:.0f} minutes")
     p.add_argument("--models-dir", metavar="DIR", default=None,
-                   help=f"where checkpoints live (default: {models_root()}, or $SNOWLLM_MODELS)")
+                   help="where checkpoints live (otherwise $SNOWLLM_MODELS, JSON config, or ~/models)")
     if cmd == "recipes":
         p.add_argument("--json", action="store_true", help="print the catalogue as JSON")
         return p
@@ -536,8 +545,8 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
 
 def main(cmd: str, argv: list[str]) -> int:
     a = _parser(cmd).parse_args(argv)
-    root = pathlib.Path(a.models_dir).expanduser() if a.models_dir else models_root()
     try:
+        root = pathlib.Path(a.models_dir).expanduser() if a.models_dir else models_root()
         recipes = catalogue(a.catalogue, a.refresh)
         if not recipes:
             raise SnowLLMError("the catalogue is empty")

@@ -9,6 +9,7 @@ import sys
 from ctypes import POINTER, c_char_p, c_float, c_int, c_int64, c_void_p
 
 from ._platform import HIP_RUNTIME_GLOBS, hip_runtimes
+from .errors import SnowLLMError
 
 if sys.platform == "win32":
     # PAL can race SDMA copies with preceding kernels, including PyTorch kernels.
@@ -33,10 +34,6 @@ GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
 GEO_DEEPSEEK_V4_FLASH = 2
 GEO_QWEN38_FLASH_NEXT = 3
-
-
-class SnowLLMError(RuntimeError):
-    pass
 
 
 class BuildGeometry(ctypes.Structure):
@@ -111,8 +108,13 @@ def geometry_name(geo: int) -> str:
 
 
 def _find_lib() -> str:
-    if env := os.environ.get("SNOWLLM_LIB"):
-        return env
+    from .config import library_path
+    try:
+        configured, _ = library_path()
+    except (OSError, ValueError) as exc:
+        raise SnowLLMError(str(exc)) from exc
+    if configured:
+        return configured
     try:
         import snowllm_kernels
     except ModuleNotFoundError as e:
