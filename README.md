@@ -13,9 +13,9 @@ SnowLLM is fast with:
 
 - **2026-10-12** — **v0.3.9** adds a persistent daemon and local Web UI for model management and chat, shared JSON configuration, template-based thinking controls, and request/GPU metrics.
 - **2026-10-12** — **v0.3.8** fixes Windows weight-loading races, GPU memory budgeting and downloads, with quantized weight shuffle and file-read recovery fixes in SnowLLM-Kernels 0.3.4.
-- **2026-08-04** — SnowLLM is now open source and available on PyPI! A local LLM inference framework hand-tuned for AMD Ryzen AI Max APUs.
-- **2026-09-09** — **v0.3.0** adds GGUF support, DeepSeek-V4-Flash and Qwen3.8 models, DFlash speculative decoding, and recipe-based model downloads.
 - **2026-10-03** — New demo: **2.4× faster than llama.cpp** on an nginx log triage task through Pi, using the same Qwen3.6-35B-A3B GGUF on a single Ryzen AI Max+ 395.
+- **2026-09-09** — **v0.3.0** adds GGUF support, DeepSeek-V4-Flash and Qwen3.8 models, DFlash speculative decoding, and recipe-based model downloads.
+- **2026-08-04** — SnowLLM is now open source and available on PyPI! A local LLM inference framework hand-tuned for AMD Ryzen AI Max APUs.
 
 ## Demo
 
@@ -191,7 +191,6 @@ Common flags (`snowllm --help` lists every option):
 | `--device-map`             | Move weight groups into host RAM to leave the GPU more room, e.g. `experts:20`. `auto` moves only what the pools are short of at your `--max-model-len`, cheapest group first. Costs a slightly slower decode step. |
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
-
 
 ## Roadmap
 
