@@ -164,6 +164,18 @@ function logScale(lo, hi) {
   return { lo: Math.pow(10, l), top: Math.pow(10, h), ticks: ticks };
 }
 
+function contextScale(max) {
+  var step = Math.pow(2, Math.ceil(Math.log2(max / 5)));
+  var top = Math.ceil(max / step) * step;
+  var ticks = [];
+  for (var v = 0; v <= top; v += step) ticks.push(v);
+  return { top: top, ticks: ticks };
+}
+
+function contextLabel(tokens) {
+  return tokens >= 1024 ? tokens / 1024 + "K" : String(tokens);
+}
+
 var CHART_W = 720, CHART_H = 300, CHART_ML = 42, CHART_MR = 12, CHART_MT = 12, CHART_MB = 26;
 
 var METRIC_SPECS = [
@@ -549,6 +561,7 @@ function mountLineChart(container, lines, opts) {
     if (p.v != null) rungs[p.isl_target] = p.isl_short;
   }); });
   var xs = Object.keys(rungs).map(Number).sort(function (a, b) { return a - b; });
+  var xScale = contextScale(xs[xs.length - 1]);
 
   var values = [];
   drawable.forEach(function (l) { l.points.forEach(function (p) {
@@ -564,8 +577,7 @@ function mountLineChart(container, lines, opts) {
   var px0 = CHART_ML, px1 = CHART_W - CHART_MR, py0 = CHART_MT, py1 = CHART_H - CHART_MB;
 
   function X(isl) {
-    var i = xs.indexOf(isl);
-    return xs.length === 1 ? (px0 + px1) / 2 : px0 + (i / (xs.length - 1)) * (px1 - px0);
+    return px0 + isl / xScale.top * (px1 - px0);
   }
   function Y(v) {
     if (!useLog) return py1 - (v / scale.top) * (py1 - py0);
@@ -588,10 +600,11 @@ function mountLineChart(container, lines, opts) {
   svg.appendChild(svgEl("line", { x1: px0, x2: px1, y1: py1, y2: py1,
     style: "stroke:var(--line);stroke-width:1" }));
 
-  xs.forEach(function (isl) {
-    var label = svgEl("text", { x: X(isl), y: py1 + 18, "text-anchor": "middle",
+  xScale.ticks.forEach(function (isl) {
+    var label = svgEl("text", { x: X(isl), y: py1 + 18,
+      "text-anchor": isl === 0 ? "start" : isl === xScale.top ? "end" : "middle",
       style: "font:600 9px var(--mono);fill:var(--faint)" });
-    label.textContent = rungs[isl];
+    label.textContent = contextLabel(isl);
     svg.appendChild(label);
   });
 
@@ -637,9 +650,8 @@ function mountLineChart(container, lines, opts) {
       .filter(function (d) { return d.v != null; })
       .sort(function (a, b) { return b.v - a.v; });
 
-    var i = xs.indexOf(isl);
-    var anchor = i === 0 ? "start" : i === xs.length - 1 ? "end" : "middle";
-    var dx = i === 0 ? 7 : i === xs.length - 1 ? -7 : 0;
+    var anchor = X(isl) < px0 + 100 ? "start" : X(isl) > px1 - 100 ? "end" : "middle";
+    var dx = anchor === "start" ? 7 : anchor === "end" ? -7 : 0;
 
     var last = null;
     here.forEach(function (d) {
@@ -650,7 +662,7 @@ function mountLineChart(container, lines, opts) {
       var t = svgEl("text", { x: X(isl) + dx, y: y, "text-anchor": anchor,
         style: "font:600 10px var(--mono);fill:" + d.line.color
           + ";paint-order:stroke;stroke:var(--ground);stroke-width:3px;stroke-linejoin:round" });
-      t.textContent = d.line.format(d.v);
+      t.textContent = d.line.format(d.v) + " @ " + rungs[isl];
       labels.appendChild(t);
     });
   }
@@ -693,7 +705,8 @@ function mountLineChart(container, lines, opts) {
 
   var shared = [family, oneEngine, oneArm].filter(Boolean);
   var caption = el("p", { class: "axis-caption",
-    text: "Input context, tokens" + (shared.length ? " \u00b7 " + shared.join(" \u00b7 ") : "") });
+    text: "Input context, tokens (linear scale; K = 1024)"
+      + (shared.length ? " \u00b7 " + shared.join(" \u00b7 ") : "") });
 
   function clearHover() { showRung(xs[xs.length - 1], false); }
 

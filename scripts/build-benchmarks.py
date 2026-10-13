@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import math
 import re
 import pathlib
 import sys
@@ -239,18 +240,23 @@ def decay_html(rows: list[dict]) -> str:
     if len(got) < 2:
         raise SystemExit(f"{HEADLINE['decay_label']} has {len(got)} rung(s), need a ladder")
     top = max(r["decode_tok_s"] for r in got)
-    step = 404 / (len(got) - 1)
-    pts = [(round(8 + i * step), round(130 - r["decode_tok_s"] / top * 105))
-           for i, r in enumerate(got)]
+    max_context = got[-1]["isl_target"]
+    step = 2 ** math.ceil(math.log2(max_context / 5))
+    x_top = math.ceil(max_context / step) * step
+    def x_at(tokens):
+        return round(8 + tokens / x_top * 404, 2)
+    pts = [(x_at(r["isl_target"]), round(130 - r["decode_tok_s"] / top * 105))
+           for r in got]
     first, last = got[0]["decode_tok_s"], got[-1]["decode_tok_s"]
     label = (f"Output throughput falls from {first:.1f} tokens per second at a "
              f"{short_isl(got[0]['isl_target'])}-token input context to {last:.1f} at "
              f"{short_isl(got[-1]['isl_target'])} tokens.")
     poly = " ".join(f"{x},{y}" for x, y in pts)
     dots = "\n".join(f'          <circle cx="{x}" cy="{y}" r="3.5" />' for x, y in pts[:-1])
-    ticks = "\n".join(f'          <text x="{max(0, x - 28 if i == len(pts) - 1 else x)}" '
-                       f'y="148">{short_isl(r["isl_target"])}</text>'
-                       for i, (r, (x, _)) in enumerate(zip(got, pts)))
+    ticks = "\n".join(f'          <text x="{x_at(t)}" y="148" '
+                       f'text-anchor="{"start" if t == 0 else "end" if t == x_top else "middle"}">'
+                       f'{short_isl(t) if t else "0"}</text>'
+                       for t in range(0, x_top + 1, step))
     return (f'      <svg viewBox="0 0 420 150" role="img" aria-label="{label}">\n'
             f'        <g stroke="var(--hair)" stroke-width="1">\n'
             f'          <line x1="0" y1="10" x2="420" y2="10" />\n'
@@ -270,7 +276,8 @@ def decay_html(rows: list[dict]) -> str:
             f'        <g font-family="ui-monospace, monospace" font-size="11" font-weight="600" '
             f'fill="var(--muted)">\n'
             f'          <text x="8" y="16">{first:.1f}</text>\n'
-            f'          <text x="380" y="{pts[-1][1] - 7}">{last:.1f}</text>\n'
+            f'          <text x="{pts[-1][0]}" text-anchor="end" '
+            f'y="{pts[-1][1] - 7}">{last:.1f}</text>\n'
             f'        </g>\n'
             f'      </svg>\n')
 
