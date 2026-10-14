@@ -59,13 +59,3 @@ Dense attention reads more KV history as context grows, which can slow decode. S
 Shorten unnecessary history. Repeated prompts can benefit from prefix caching when supported and enabled.
 
 `--kv-cache-dtype int8` is **experimental and model-dependent**. On supported paths it reduces KV memory traffic, but prefill may become slower. **Qwen3.8 Flash Next with sparse attention and DeepSeek V4 reject this option.** Keep `bf16` for these models; DeepSeek V4 uses its own MLA cache representation.
-
-## Linux huge pages
-
-On Linux, `SNOWLLM_HOST_PAGES=thp` requests 2 MiB transparent huge pages for GPU-mapped host weight buffers of at least 2 MiB. It applies to these host allocations, including offloaded weights; it does not change device-memory allocations.
-
-```sh
-SNOWLLM_HOST_PAGES=thp snowllm MODEL
-```
-
-Set it before starting the model worker. Availability depends on Linux THP settings and contiguous memory; requesting THP does not guarantee full coverage or a speedup. Check `AnonHugePages` in `/proc/<pid>/smaps`. The default, `SNOWLLM_HOST_PAGES=default`, keeps the original allocation.
