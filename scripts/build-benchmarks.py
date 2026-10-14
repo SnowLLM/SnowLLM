@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import math
-import re
 import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RUNS = ROOT / "benchmarks" / "runs"
 OUT = ROOT / "web" / "benchmarks.json"
-PAGE = ROOT / "web" / "index.html"
 
 
 def merged_rows() -> list[dict]:
@@ -85,12 +82,7 @@ def short_isl(isl_target: int) -> str:
 
 
 def featured_labels() -> set:
-    out = set()
-    for cmp in COMPARISONS:
-        out.add(cmp["snow_label"])
-        if cmp.get("llama_label"):
-            out.add(cmp["llama_label"])
-    return out
+    return {"qwen3_8_flash_next_q3_k_xl_snowllm"}
 
 
 def point_of(r: dict, n_max: int | None) -> dict:
@@ -194,111 +186,6 @@ def build_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-HEADLINE = {
-    "label": "qwen3_6_35b_a3b_fp8_mtp_snowllm_hero",
-    "decay_label": "qwen3_6_35b_a3b_fp8_mtp_snowllm",
-    "model": "Qwen3.6-35B-A3B-FP8",
-    "machine": "Ryzen AI Max+ 395",
-    "spec": "MTP depth 2",
-    "isl": 8192,
-    "users": 4,
-    "aime": "91.7% avg@4, &plusmn;4.2 &mdash; Qwen reports 92.7 avg@8",
-}
-
-
-def between(text: str, name: str) -> tuple[int, int]:
-    a = text.index(f"<!-- {name}:begin -->") + len(f"<!-- {name}:begin -->\n")
-    return a, text.index(f"      <!-- {name}:end -->", a)
-
-
-def headline_html(rows: list[dict]) -> str:
-    by = {(r["label"], r["isl_target"]): r for r in rows}
-    one = by.get((HEADLINE["label"], HEADLINE["isl"]))
-    if not one:
-        raise SystemExit(f"no {HEADLINE['label']} row at ISL {HEADLINE['isl']} to headline")
-    many = by.get((f"{HEADLINE['label']}_c{HEADLINE['users']}", HEADLINE["isl"]))
-    al = one.get("accept_mean")
-    spec = HEADLINE["spec"] + (f", AL {al:.3f}" if al else "")
-    rows_html = [
-        ("Model", HEADLINE["model"]),
-        ("Machine", HEADLINE["machine"]),
-        ("Shape", f"{short_isl(one['isl_target'])} in / {short_isl(one['osl'])} out, one user"),
-        ("Spec", spec),
-    ]
-    if many:
-        rows_html.append((f"{HEADLINE['users']} users",
-                          f"{many['decode_tok_s']:.1f} tok/s total"))
-    rows_html.append(("AIME 2026", HEADLINE["aime"]))
-    dl = "\n".join(f"          <dt>{k}</dt><dd>{v}</dd>" for k, v in rows_html)
-    return (f'      <span class="figure">{one["decode_tok_s"]:.1f}<sup>tok/s</sup></span>\n'
-            f'      <div class="caliper">\n        <dl>\n{dl}\n        </dl>\n      </div>\n')
-
-
-def decay_html(rows: list[dict]) -> str:
-    got = sorted((r for r in rows if r["label"] == HEADLINE["decay_label"]),
-                 key=lambda r: r["isl_target"])
-    if len(got) < 2:
-        raise SystemExit(f"{HEADLINE['decay_label']} has {len(got)} rung(s), need a ladder")
-    top = max(r["decode_tok_s"] for r in got)
-    max_context = got[-1]["isl_target"]
-    step = 2 ** math.ceil(math.log2(max_context / 5))
-    x_top = math.ceil(max_context / step) * step
-    def x_at(tokens):
-        return round(8 + tokens / x_top * 404, 2)
-    pts = [(x_at(r["isl_target"]), round(130 - r["decode_tok_s"] / top * 105))
-           for r in got]
-    first, last = got[0]["decode_tok_s"], got[-1]["decode_tok_s"]
-    label = (f"Output throughput falls from {first:.1f} tokens per second at a "
-             f"{short_isl(got[0]['isl_target'])}-token input context to {last:.1f} at "
-             f"{short_isl(got[-1]['isl_target'])} tokens.")
-    poly = " ".join(f"{x},{y}" for x, y in pts)
-    dots = "\n".join(f'          <circle cx="{x}" cy="{y}" r="3.5" />' for x, y in pts[:-1])
-    ticks = "\n".join(f'          <text x="{x_at(t)}" y="148" '
-                       f'text-anchor="{"start" if t == 0 else "end" if t == x_top else "middle"}">'
-                       f'{short_isl(t) if t else "0"}</text>'
-                       for t in range(0, x_top + 1, step))
-    return (f'      <svg viewBox="0 0 420 150" role="img" aria-label="{label}">\n'
-            f'        <g stroke="var(--hair)" stroke-width="1">\n'
-            f'          <line x1="0" y1="10" x2="420" y2="10" />\n'
-            f'          <line x1="0" y1="50" x2="420" y2="50" />\n'
-            f'          <line x1="0" y1="90" x2="420" y2="90" />\n'
-            f'          <line x1="0" y1="130" x2="420" y2="130" />\n'
-            f'        </g>\n'
-            f'        <polyline points="{poly}"\n'
-            f'                  fill="none" stroke="var(--c2)" stroke-width="2"\n'
-            f'                  stroke-linejoin="round" stroke-linecap="round" />\n'
-            f'        <g fill="var(--ground)" stroke="var(--c2)" stroke-width="2">\n{dots}\n'
-            f'        </g>\n'
-            f'        <circle cx="{pts[-1][0]}" cy="{pts[-1][1]}" r="4.5" fill="var(--c3)" '
-            f'stroke="none" />\n'
-            f'        <g font-family="ui-monospace, monospace" font-size="11" '
-            f'fill="var(--faint)">\n{ticks}\n        </g>\n'
-            f'        <g font-family="ui-monospace, monospace" font-size="11" font-weight="600" '
-            f'fill="var(--muted)">\n'
-            f'          <text x="8" y="16">{first:.1f}</text>\n'
-            f'          <text x="{pts[-1][0]}" text-anchor="end" '
-            f'y="{pts[-1][1] - 7}">{last:.1f}</text>\n'
-            f'        </g>\n'
-            f'      </svg>\n')
-
-
-def render_page(rows: list[dict]) -> None:
-    text = PAGE.read_text()
-    for name, html in (("decay", decay_html(rows)), ("headline", headline_html(rows))):
-        a, b = between(text, name)
-        text = text[:a] + html + text[b:]
-    one = {(r["label"], r["isl_target"]): r for r in rows}[HEADLINE["label"], HEADLINE["isl"]]
-    figure = f"{one['decode_tok_s']:.1f}"
-    model = HEADLINE["model"]
-    text, n = re.subn(rf"\d+\.\d+( tok/s on {re.escape(model)})", rf"{figure}\1", text)
-    text, m = re.subn(rf"\d+\.\d+( tokens per second on {re.escape(model)})", rf"{figure}\1",
-                      text)
-    if not n or not m:
-        raise SystemExit(f"web/index.html has {n} meta description(s) and {m} image alt(s) naming "
-                         f"{model} -- the head no longer matches what this writes")
-    PAGE.write_text(text)
-
-
 def main() -> int:
     argparse.ArgumentParser().parse_args()
 
@@ -307,7 +194,6 @@ def main() -> int:
     series, skipped = build_series(merged)
 
     OUT.write_text(json.dumps({"schema": 2, "rows": rows, "series": series}, indent=1) + "\n")
-    render_page(merged)
     print(f"{len(merged)} row(s) from {RUNS.relative_to(ROOT)}/ -> "
           f"{len(rows)} comparison row(s) and {len(series)} series in {OUT.relative_to(ROOT)}")
     if skipped:
