@@ -11,6 +11,7 @@ SnowLLM is fast with:
 
 ## News
 
+- **Coming soon** — GLM-5.3-Flash support.
 - **2026-10-12** — **v0.3.9** adds a persistent daemon and local Web UI for model management and chat, shared JSON configuration, template-based thinking controls, and request/GPU metrics.
 - **2026-10-12** — **v0.3.8** fixes Windows weight-loading races, GPU memory budgeting and downloads, with quantized weight shuffle and file-read recovery fixes in SnowLLM-Kernels 0.3.4.
 - **2026-10-03** — New demo: **2.4× faster than llama.cpp** on an nginx log triage task through Pi, using the same Qwen3.6-35B-A3B GGUF on a single Ryzen AI Max+ 395.
@@ -49,7 +50,7 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.8-27b-q4-k-xl`        | [Qwen3.8-27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF)                       | UD-Q4_K_XL GGUF | 19.9 GiB | 19.2 with MTP, 22.5 with DFlash 2 |
 | `qwen3.6-35b-a3b-fp8`        | [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8)                   | FP8             | 34.9 GiB | 62.4 with MTP, at 8K           |
 | `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB | 8.0, 14.7 with `--num-spec 2`  |
-| `qwen3.6-27b-q4-k-s`         | Qwen3.6-27B                                                                          | Q4_K_S GGUF     | 17.9 GiB | 11.8, 27.3 with `--num-spec 2` |
+| `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB | 11.8, 27.3 with `--num-spec 2` |
 
 `qwen3.6-35b-a3b-q4-k-xl` is the 35B MoE as a GGUF, 24.2 GiB resident, for a machine that cannot
 hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash` or `-dflash2`
