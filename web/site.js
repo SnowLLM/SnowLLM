@@ -1,7 +1,7 @@
 "use strict";
 
-var HEAT_HUE = "#0e8fa6";
-var HEAT_INK = "#f3fbfc";
+var HEAT_HUE = "#3957c4";
+var HEAT_INK = "#f7f8ff";
 
 function heatStyle(value, lo, hi) {
   if (value == null || !isFinite(value) || hi <= lo) return {};
@@ -188,42 +188,37 @@ var METRIC_SPECS = [
     value: function (p) { return p.step_ms ? 1000 / p.step_ms : null; },
     num: function (v) { return v.toFixed(2); },
     format: function (v) { return v.toFixed(2) + " step/s"; },
-    note: "Verify steps per second, on the same axis as decode tok/s: the gap between one "
-      + "arm's two lines is its AL." },
+    note: "Verification steps per second." },
   { name: "ms/step", section: "Decode", unit: "ms", unitLabel: "ms",
     value: function (p) { return p.step_ms; },
     num: function (v) { return v.toFixed(1); },
     format: function (v) { return v.toFixed(1) + " ms"; },
-    note: "Milliseconds per verify step -- the clean context signal, rising with the KV bytes "
-      + "a step reads and nothing else." },
+    note: "Milliseconds per verification step." },
   { name: "AL", section: "Decode", unit: "tok/step", unitLabel: "tok/step",
     value: function (p) { return p.al; },
     num: function (v) { return v.toFixed(2); },
     format: function (v) { return v.toFixed(2) + " tok/step"; },
-    note: "Accepted length -- tokens emitted per verify step, drafted plus the guaranteed "
-      + "correction token." },
+    note: "Tokens emitted per step, including the correction token." },
   { name: "accept%", section: "Decode", unit: "accept%", engines: ["llama.cpp"], unitLabel: "%",
     value: function (p) { return p.accept_pct; },
     num: function (v) { return (v * 100).toFixed(1); },
     format: function (v) { return (v * 100).toFixed(1) + "%"; },
     tickFormat: function (v) { return (v * 100).toFixed(0) + "%"; },
-    note: "The fraction of offered draft tokens accepted, as llama.cpp reports it. The AL "
-      + "above is computed from it." },
+    note: "Draft acceptance reported by llama.cpp." },
   { name: "prefill tok/s", section: "Prefill", unit: "tok/s", on: true, unitLabel: "tok/s",
     value: function (p) { return p.prefill; },
     num: function (v) { return v.toFixed(0); },
     format: function (v) { return v.toFixed(0) + " tok/s"; },
-    note: "Prompt tokens per second over the whole prefill." },
+    note: "Prompt tokens / client-side TTFT." },
   { name: "TTFT s", section: "Prefill", unit: "seconds", log: true, unitLabel: "s",
     value: function (p) { return p.ttft; },
     num: function (v) { return v < 10 ? v.toFixed(2) : v.toFixed(0); },
     format: function (v) { return v < 10 ? v.toFixed(2) + " s" : v.toFixed(0) + " s"; },
-    note: "Time to first token, cold, nothing cached. Log axis: half a second to nearly an "
-      + "hour across the arms, and a linear one would show only the top rung." },
+    note: "Client-side time to first output; logarithmic axis." },
 ];
 
 var SERIES_PALETTES = {
-  "SnowLLM": ["#0e8fa6", "#1f6feb", "#12a594", "#7c5cd6", "#0f766e", "#3f8f4f", "#2563eb",
+  "SnowLLM": ["#5572d4", "#1f6feb", "#12a594", "#7c5cd6", "#0f766e", "#3f8f4f", "#2563eb",
               "#0891b2", "#6d28d9", "#047857"],
   "llama.cpp": ["#e07a30", "#c2410c", "#b45309", "#9a3412", "#d97706"],
 };
@@ -482,8 +477,7 @@ function renderMetricCharts(host, series, selectedKeys, metrics, view) {
     if (dropped) note += dropped === 1 ? " One checked series cannot answer it, and draws no line."
       : " " + dropped + " checked series cannot answer it, and draw no line.";
     if (lines.some(function (l) { return l.derived; })) {
-      note += " llama.cpp's AL and step time are computed from its accept% and its draft width, "
-        + "not measured: a ceiling on AL, a floor on the step.";
+      note += " llama.cpp AL and step time are derived estimates.";
     }
     group.appendChild(el("p", { class: "note", text: note }));
     var chart = el("div", { class: "chart" });

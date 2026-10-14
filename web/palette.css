@@ -1,0 +1,27 @@
+/* Shared color palette for the homepage and documentation. */
+:root {
+  --palette-light-ground: #f8f8fa;
+  --palette-light-panel: #ffffff;
+  --palette-light-ink: #202126;
+  --palette-light-muted: #5f626c;
+  --palette-light-faint: #6d707b;
+  --palette-light-line: #d9dbe1;
+  --palette-light-hair: #e7e8ed;
+  --palette-light-accent: #3957c4;
+  --palette-light-accent-soft: #3957c40d;
+  --palette-light-c2: #7486b1;
+  --palette-light-c3: #3957c4;
+  --palette-light-core: #6881e8;
+  --palette-dark-ground: #17181c;
+  --palette-dark-panel: #202127;
+  --palette-dark-ink: #e6e7eb;
+  --palette-dark-muted: #a7a9b3;
+  --palette-dark-faint: #9295a0;
+  --palette-dark-line: #383b45;
+  --palette-dark-hair: #2b2d35;
+  --palette-dark-accent: #a0b0ff;
+  --palette-dark-accent-soft: #a0b0ff14;
+  --palette-dark-c2: #8396c4;
+  --palette-dark-c3: #a0b0ff;
+  --palette-dark-core: #6d83df;
+}

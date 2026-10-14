@@ -99,13 +99,21 @@ def check_benchmarks_json() -> None:
                                 f"{want_ttft:.2f}")
 
 
-def check_figures() -> None:
-    for name in ("headline", "decay"):
-        if f"<!-- {name}:begin -->" not in PAGE or f"<!-- {name}:end -->" not in PAGE:
-            problems.append(f"web/index.html has no {name} markers for build-benchmarks.py "
-                            f"to write between")
-    if not re.search(r'<span class="figure">[\d.]+<sup>', PAGE):
-        problems.append("web/index.html has no headline figure -- run build-benchmarks.py")
+def check_benchmark_view() -> None:
+    need(r'<div id="benchmarks-picker"[^>]*data-src="benchmarks.json"', PAGE,
+         "benchmark series picker")
+    need(r'<div id="benchmarks-charts"', PAGE, "benchmark charts")
+    path = ROOT / "web" / "benchmarks.json"
+    if not path.exists():
+        return
+    try:
+        series = json.loads(path.read_text())["series"]
+    except (ValueError, KeyError) as e:
+        problems.append(f"benchmarks.json has no usable series: {e}")
+        return
+    featured = [s for s in series if s.get("featured")]
+    if not featured or any(not s.get("points") for s in featured):
+        problems.append("benchmarks.json must have a default series with measured points")
 
 
 def check_catalogue() -> None:
@@ -159,11 +167,18 @@ def check_catalogue() -> None:
 def check_flags() -> None:
     named = re.findall(r'<td class="flag">([^<]+)</td>', PAGE)
     if not named:
-        problems.append("no flag table found in web/index.html")
-        return
+        need(r'href="/docs/"', PAGE, "documentation entry link")
+        for page in ("cli", "configuration"):
+            path = ROOT / "docs" / "reference" / f"{page}.md"
+            if not path.exists():
+                problems.append(f"{path.relative_to(ROOT)} is missing")
+                continue
+            for line in path.read_text().splitlines():
+                if line.startswith("| `"):
+                    named.extend(re.findall(r"--[a-z][a-z0-9-]*|[A-Z][A-Z0-9_]+", line.split("|")[1]))
     hay = "".join((ROOT / f).read_text(errors="replace")
                   for f in ("snowllm/cli.py", "snowllm/daemon/cli.py",
-                            "snowllm/config.py", "snowllm/hub/recipes.py", "install.sh"))
+                            "snowllm/config.py", "snowllm/hub/recipes.py", "snowllm/ops/_common.py", "install.sh"))
     for cell in named:
         for token in cell.split():
             if token.startswith("--") and f'"{token}"' not in hay:
@@ -175,7 +190,7 @@ def check_flags() -> None:
 check_pins()
 check_install_command()
 check_python_range()
-check_figures()
+check_benchmark_view()
 check_flags()
 check_benchmarks_json()
 check_catalogue()
