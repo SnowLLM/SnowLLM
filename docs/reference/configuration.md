@@ -57,7 +57,6 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | `HF_ENDPOINT` | Hugging Face endpoint or mirror; download credentials are sent to this host. |
 | `SNOWLLM_HF_TOKEN` | Download token; takes precedence over `HF_TOKEN`. |
 | `HF_TOKEN` | Download token; also falls back to `HUGGING_FACE_HUB_TOKEN` and the saved HF token. |
-| `SNOWLLM_HOST_PAGES` | Linux host weight allocation: `default` or `thp`; see [huge pages](../guides/performance#linux-huge-pages). |
 | `SNOWLLM_HOME` | Installer directory; defaults to `$XDG_DATA_HOME/snowllm` or `~/.local/share/snowllm`. |
 | `SNOWLLM_BIN_DIR` | Installer command directory; defaults to `$XDG_BIN_HOME` or `~/.local/bin`. |
 | `SNOWLLM_PYTHON` | Interpreter used by the installer. |
