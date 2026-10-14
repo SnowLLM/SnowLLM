@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-labelledby="sl-mini-t">
 <title id="sl-mini-t">SnowLLM</title>
 <style>
-.ink{fill:#101820}
-.core{fill:#2fd3e8}
-@media (prefers-color-scheme:dark){.ink{fill:#dfe8ed}.core{fill:#0b7285}}
+.ink{fill:#202126}
+.core{fill:#6881e8}
+@media (prefers-color-scheme:dark){.ink{fill:#e6e7eb}.core{fill:#6d83df}}
 </style>
 <mask id="sl-mini">
 <polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/>

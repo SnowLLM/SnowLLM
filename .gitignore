@@ -42,3 +42,9 @@ __pycache__/
 /.vscode
 
 /.dev
+# Documentation tooling
+/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/
+
+/web/docs/

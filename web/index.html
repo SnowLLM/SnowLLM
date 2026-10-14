@@ -4,27 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)</title>
-<meta name="description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta name="description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="typography.css">
+<link rel="stylesheet" href="palette.css">
 <link rel="canonical" href="https://snowllm.dev/">
 <meta name="robots" content="index, follow, max-image-preview:large">
-<meta name="theme-color" content="#edf1f3" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#121a21" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f8f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17181c" media="(prefers-color-scheme: dark)">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SnowLLM">
 <meta property="og:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta property="og:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta property="og:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
 <meta property="og:url" content="https://snowllm.dev/">
 <meta property="og:image" content="https://snowllm.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="SnowLLM — 62.4 tokens per second on Qwen3.6-35B-A3B-FP8, and output throughput across context length.">
+<meta property="og:image:alt" content="SnowLLM — local LLM inference on Ryzen AI Max.">
 <meta property="og:locale" content="en_US">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta name="twitter:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.">
+<meta name="twitter:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
 <meta name="twitter:image" content="https://snowllm.dev/og.png">
 
 <script type="application/ld+json">
@@ -33,7 +35,7 @@
   "@type": "SoftwareApplication",
   "name": "SnowLLM",
   "url": "https://snowllm.dev/",
-  "description": "Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). 62.4 tok/s on Qwen3.6-35B-A3B-FP8 at 8K context, with hand-tuned HIP kernels.",
+  "description": "Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.",
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "LLM inference server",
   "operatingSystem": "Linux x86_64, Windows 11",
@@ -50,76 +52,71 @@
   *, *::before, *::after { box-sizing: border-box; }
 
   :root {
-    --ground: #edf1f3;
-    --panel: #f8fafb;
-    --ink: #101820;
-    --muted: #4b5863;
-    --faint: #5e6d78;
-    --line: #ccd6dc;
-    --hair: #dde5ea;
-    --accent: #0b7285;
-    --accent-soft: #0b728514;
-    --c2: #eda23f;
-    --c3: #e2551f;
-    --core: #2fd3e8;
+    --ground: var(--palette-light-ground);
+    --panel: var(--palette-light-panel);
+    --ink: var(--palette-light-ink);
+    --muted: var(--palette-light-muted);
+    --faint: var(--palette-light-faint);
+    --line: var(--palette-light-line);
+    --hair: var(--palette-light-hair);
+    --accent: var(--palette-light-accent);
+    --accent-soft: var(--palette-light-accent-soft);
+    --c2: var(--palette-light-c2);
+    --c3: var(--palette-light-c3);
+    --core: var(--palette-light-core);
 
-    --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
-    --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Source Serif 4", "Noto Serif", Georgia, serif;
+    --measure: 100%;
+    --fs-ui: 1rem;
+    --fs-label: 0.875rem;
+    --fs-note: var(--fs-body);
 
-    --measure: 40rem;
-
-    --fs-label: 0.66rem;
-    --fs-ui: 0.74rem;
-    --fs-code: 0.83rem;
-    --fs-note: 0.93rem;
-    --fs-rail: 1.02rem;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --ground: #121a21;
-      --panel: #1a242c;
-      --ink: #dfe8ed;
-      --muted: #9aa9b4;
-      --faint: #7d8d99;
-      --line: #2c3a45;
-      --hair: #222e37;
-      --accent: #2fd3e8;
-      --accent-soft: #2fd3e81f;
-      --c2: #f5b45a;
-      --c3: #f2683a;
-      --core: #0b7285;
+      --ground: var(--palette-dark-ground);
+      --panel: var(--palette-dark-panel);
+      --ink: var(--palette-dark-ink);
+      --muted: var(--palette-dark-muted);
+      --faint: var(--palette-dark-faint);
+      --line: var(--palette-dark-line);
+      --hair: var(--palette-dark-hair);
+      --accent: var(--palette-dark-accent);
+      --accent-soft: var(--palette-dark-accent-soft);
+      --c2: var(--palette-dark-c2);
+      --c3: var(--palette-dark-c3);
+      --core: var(--palette-dark-core);
     }
   }
 
   :root[data-theme="dark"] {
-    --ground: #121a21;
-    --panel: #1a242c;
-    --ink: #dfe8ed;
-    --muted: #9aa9b4;
-    --faint: #7d8d99;
-    --line: #2c3a45;
-    --hair: #222e37;
-    --accent: #2fd3e8;
-    --accent-soft: #2fd3e81f;
-    --c2: #f5b45a;
-    --c3: #f2683a;
-    --core: #0b7285;
+    --ground: var(--palette-dark-ground);
+    --panel: var(--palette-dark-panel);
+    --ink: var(--palette-dark-ink);
+    --muted: var(--palette-dark-muted);
+    --faint: var(--palette-dark-faint);
+    --line: var(--palette-dark-line);
+    --hair: var(--palette-dark-hair);
+    --accent: var(--palette-dark-accent);
+    --accent-soft: var(--palette-dark-accent-soft);
+    --c2: var(--palette-dark-c2);
+    --c3: var(--palette-dark-c3);
+    --core: var(--palette-dark-core);
   }
 
   :root[data-theme="light"] {
-    --ground: #edf1f3;
-    --panel: #f8fafb;
-    --ink: #101820;
-    --muted: #4b5863;
-    --faint: #5e6d78;
-    --line: #ccd6dc;
-    --hair: #dde5ea;
-    --accent: #0b7285;
-    --accent-soft: #0b728514;
-    --c2: #eda23f;
-    --c3: #e2551f;
-    --core: #2fd3e8;
+    --ground: var(--palette-light-ground);
+    --panel: var(--palette-light-panel);
+    --ink: var(--palette-light-ink);
+    --muted: var(--palette-light-muted);
+    --faint: var(--palette-light-faint);
+    --line: var(--palette-light-line);
+    --hair: var(--palette-light-hair);
+    --accent: var(--palette-light-accent);
+    --accent-soft: var(--palette-light-accent-soft);
+    --c2: var(--palette-light-c2);
+    --c3: var(--palette-light-c3);
+    --core: var(--palette-light-core);
   }
 
   :root { color-scheme: light dark; }
@@ -132,7 +129,7 @@
     background: var(--ground);
     color: var(--ink);
     font-family: var(--serif);
-    font-size: 17px;
+    font-size: var(--fs-body);
     line-height: 1.65;
     margin: 0;
 
@@ -157,10 +154,10 @@
     display: flex;
     flex-direction: column;
     gap: 1.6rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
   }
 
   .side .mark {
@@ -170,7 +167,7 @@
     font-size: var(--fs-rail);
     color: var(--ink);
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: normal;
     text-decoration: none;
   }
 
@@ -204,11 +201,11 @@
   #benchmarks p { max-width: none; }
 
   .rail {
-    font-family: var(--mono);
-    font-size: var(--fs-rail);
+    font-family: var(--serif);
+    font-size: 1.375rem;
     line-height: 1.4;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     margin: 0 0 1.4rem;
   }
 
@@ -252,7 +249,7 @@
   .clip video { width: 100%; display: block; aspect-ratio: 1920 / 1080; border: 1px solid var(--line); background: #0d1117; }
   .clip figcaption { font-size: var(--fs-note); color: var(--muted); margin-top: 0.75rem; }
   .clip figcaption .claim { display: block; color: var(--ink); }
-  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--mono); font-size: var(--fs-label); line-height: 1.55; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--serif); font-size: var(--fs-label); line-height: 1.55; letter-spacing: normal; text-transform: none; color: var(--faint); }
 
   .glyph { width: 1.6em; height: 1.6em; flex: none; }
 
@@ -307,7 +304,7 @@
   }
 
   .figure {
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: clamp(3.5rem, 15cqw, 8.5rem);
     font-weight: 500;
     line-height: 0.84;
@@ -318,16 +315,16 @@
 
   .figure sup {
     font-size: 0.2em;
-    letter-spacing: 0.14em;
+    letter-spacing: normal;
     vertical-align: 0.9em;
     color: var(--muted);
     margin-left: 0.5em;
   }
 
   .caliper {
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.05em;
+    letter-spacing: normal;
     color: var(--muted);
     margin-top: 1.1rem;
     border-top: 1px solid var(--line);
@@ -342,7 +339,7 @@
     margin: 0;
   }
 
-  .caliper dt { color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; }
+  .caliper dt { color: var(--faint); text-transform: none; letter-spacing: normal; }
   .caliper dd { margin: 0; font-variant-numeric: tabular-nums; }
 
   .decay { min-width: 0; }
@@ -350,12 +347,12 @@
   .decay svg { display: block; width: 100%; height: auto; overflow: visible; }
 
   .decay figcaption {
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
-    letter-spacing: 0.06em;
+    letter-spacing: normal;
     color: var(--faint);
     margin-top: 0.75rem;
-    text-transform: uppercase;
+    text-transform: none;
   }
 
   .install { margin: 2.75rem 0 0; }
@@ -377,11 +374,11 @@
     align-items: center;
     padding: 0 0.9rem;
     background: var(--ground);
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
     font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--faint);
   }
 
@@ -398,9 +395,9 @@
     align-items: center;
     justify-content: center;
     min-height: 2.5rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.03em;
+    letter-spacing: normal;
     color: var(--muted);
     background: var(--panel);
     border: 0;
@@ -459,7 +456,6 @@
     background: var(--panel);
     padding: 0.8rem 0.9rem;
     min-width: 0;
-    overflow-x: auto;
   }
 
   .cmd pre {
@@ -468,7 +464,9 @@
     line-height: 1.65;
     margin: 0;
     flex: 1;
-    white-space: pre;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .cmd .p {
@@ -479,10 +477,10 @@
 
   .copy {
     flex: none;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--muted);
     background: transparent;
     border: 1px solid var(--line);
@@ -531,11 +529,11 @@
   .group { margin: 0 0 2rem; }
   .group:last-child { margin-bottom: 0; }
   .group h3, .group h4 {
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
     font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--muted);
     margin: 0 0 0.9rem;
     padding-bottom: 0.5rem;
@@ -560,7 +558,7 @@
   table {
     border-collapse: collapse;
     width: 100%;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
     font-variant-numeric: tabular-nums;
   }
@@ -574,8 +572,8 @@
 
   th {
     font-weight: 600;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     font-size: var(--fs-label);
     color: var(--faint);
     white-space: nowrap;
@@ -589,7 +587,7 @@
     min-width: 20rem;
   }
 
-  td.flag { white-space: nowrap; color: var(--ink); }
+  td.flag { font-family: var(--mono); font-size: var(--fs-code); white-space: nowrap; color: var(--ink); }
 
   .jstable { margin: 0 0 1rem; }
 
@@ -605,9 +603,9 @@
     align-items: center;
     gap: 0.6rem 1.25rem;
     margin: 0 0 0.75rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.04em;
+    letter-spacing: normal;
     color: var(--faint);
   }
 
@@ -669,11 +667,11 @@
   [popover].card::backdrop { background: #10182047; }
 
   [popover].card h4 {
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
     font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--faint);
     margin: 0 0 0.75rem;
   }
@@ -685,11 +683,11 @@
     grid-template-columns: 4rem minmax(0, 1fr);
     gap: 0.3rem 0.9rem;
     margin: 0;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
   }
 
-  [popover].card dt { color: var(--faint); text-transform: uppercase; letter-spacing: 0.1em; }
+  [popover].card dt { color: var(--faint); text-transform: none; letter-spacing: normal; }
   [popover].card dd { margin: 0; }
 
   @supports not selector(:popover-open) {
@@ -720,9 +718,9 @@
     flex-wrap: wrap;
     gap: 0.35rem 1.4rem;
     margin: 0 0 0.7rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.04em;
+    letter-spacing: normal;
     color: var(--muted);
   }
 
@@ -732,10 +730,10 @@
   .chart .axis-caption {
     margin: 0.55rem 0 0;
     max-width: none;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-label);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: normal;
+    text-transform: none;
     color: var(--faint);
   }
 
@@ -753,9 +751,9 @@
     align-items: center;
     gap: 0.6rem;
     margin: 0 0 0.75rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.04em;
+    letter-spacing: normal;
     color: var(--faint);
   }
 
@@ -775,9 +773,9 @@
     flex-wrap: wrap;
     gap: 0.5rem 1.1rem;
     margin: 0 0 0.75rem;
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.03em;
+    letter-spacing: normal;
   }
 
   .picker .pick {
@@ -851,11 +849,11 @@
     border-radius: 0.4rem;
     padding: 0.35rem 0.6rem;
     background: var(--panel);
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
   }
 
-  .dropdown summary { cursor: pointer; color: var(--ink); letter-spacing: 0.03em; }
+  .dropdown summary { cursor: pointer; color: var(--ink); letter-spacing: normal; }
 
   .dropdown[open] { padding-bottom: 0.55rem; }
 
@@ -866,9 +864,9 @@
     justify-content: space-between;
     padding: 2.5rem 0 0;
     border-top: 1px solid var(--hair);
-    font-family: var(--mono);
+    font-family: var(--serif);
     font-size: var(--fs-ui);
-    letter-spacing: 0.06em;
+    letter-spacing: normal;
     color: var(--faint);
   }
 
@@ -910,12 +908,12 @@
     <a class="mark" href="#top"><svg class="glyph" viewBox="0 0 128 128" aria-hidden="true" focusable="false"><mask id="sl-head"><polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/><path d="M64 64L64.00 22.00M64.00 38.00L50.14 30.00M64.00 38.00L77.86 30.00M64 64L27.63 43.00M41.48 51.00L27.63 59.00M41.48 51.00L41.48 35.00M64 64L27.63 85.00M41.48 77.00L41.48 93.00M41.48 77.00L27.63 69.00M64 64L64.00 106.00M64.00 90.00L77.86 98.00M64.00 90.00L50.14 98.00M64 64L100.37 85.00M86.52 77.00L100.37 69.00M86.52 77.00L86.52 93.00M64 64L100.37 43.00M86.52 51.00L86.52 35.00M86.52 51.00L100.37 59.00" stroke="#000" stroke-width="11" stroke-linecap="round" fill="none"/></mask><rect width="128" height="128" fill="currentColor" mask="url(#sl-head)"/><rect x="55" y="55" width="18" height="18" fill="var(--core)"/></svg>SnowLLM</a>
     <nav class="side-nav">
       <a href="#install">Install</a>
-      <a href="#pi">Integrate</a>
+      <a href="#pi">Integrations</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#run">Run</a>
       <a href="#webui">Web UI</a>
-      <a href="#recipes">Recipes</a>
-      <a href="#flags">Flags</a>
+      <a href="#recipes">Models</a>
+      <a href="/docs/">Docs ↗</a>
       <span class="side-rule"></span>
       <a href="https://github.com/SnowLLM/SnowLLM">GitHub</a>
       <a href="https://github.com/SnowLLM/SnowLLM/discussions">Discuss</a>
@@ -969,87 +967,22 @@
   <figure class="clip">
     <video src="https://github.com/user-attachments/assets/fa191709-bca4-4caa-a5ed-9a0ef290a76b"
            controls playsinline preload="metadata"></video>
-    <figcaption><span class="claim">SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through
-      <a href="https://pi.dev">pi.dev</a> on nginx log triage task, running
-      Qwen3.6 35B A3B with a <strong>2.4&times;</strong> speedup.</span>
-      <span class="fine"><a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B
-      UD-Q4_K_XL</a> GGUF for both, on the same hardware, one engine at a time.</span></figcaption>
+    <figcaption><strong>2.4× faster than llama.cpp</strong> on nginx log triage through <a href="https://pi.dev">Pi</a>.
+      <span class="fine">Same Ryzen AI Max+ 395, same <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B UD-Q4_K_XL</a>, one engine at a time.</span></figcaption>
   </figure>
 
   <section class="band" id="pi">
-    <div class="rail"><b>Integrate with Pi</b></div>
+    <div class="rail"><b>Integrations</b></div>
     <div>
       <pre class="block">snowllm pi --port 8000</pre>
-      <p class="note">One command points <a href="https://pi.dev">Pi</a> at the server already
-        running here: it writes every recipe into <code>~/.pi/agent/models.json</code>, ready to
-        pick from Pi's model list. <code>--host</code> names a server elsewhere on the network,
-        <code>localhost</code> by default.</p>
+      <p>Supports OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. <a href="/docs/guides/integrations">Client setup ↗</a></p>
     </div>
   </section>
 
   <section class="band" id="benchmarks">
     <div class="rail"><b>Benchmarks</b></div>
-    <div class="readout">
-      <div>
-        <!-- headline:begin -->
-      <span class="figure">62.4<sup>tok/s</sup></span>
-      <div class="caliper">
-        <dl>
-          <dt>Model</dt><dd>Qwen3.6-35B-A3B-FP8</dd>
-          <dt>Machine</dt><dd>Ryzen AI Max+ 395</dd>
-          <dt>Shape</dt><dd>8K in / 1K out, one user</dd>
-          <dt>Spec</dt><dd>MTP depth 2, AL 2.371</dd>
-          <dt>4 users</dt><dd>128.4 tok/s total</dd>
-          <dt>AIME 2026</dt><dd>91.7% avg@4, &plusmn;4.2 &mdash; Qwen reports 92.7 avg@8</dd>
-        </dl>
-      </div>
-      <!-- headline:end -->
-      </div>
-
-      <figure class="decay">
-        <!-- decay:begin -->
-      <svg viewBox="0 0 420 150" role="img" aria-label="Output throughput falls from 67.4 tokens per second at a 1K-token input context to 39.4 at 220K tokens.">
-        <g stroke="var(--hair)" stroke-width="1">
-          <line x1="0" y1="10" x2="420" y2="10" />
-          <line x1="0" y1="50" x2="420" y2="50" />
-          <line x1="0" y1="90" x2="420" y2="90" />
-          <line x1="0" y1="130" x2="420" y2="130" />
-        </g>
-        <polyline points="9.58,25 20.62,29 58.5,34 210.0,53 355.19,69"
-                  fill="none" stroke="var(--c2)" stroke-width="2"
-                  stroke-linejoin="round" stroke-linecap="round" />
-        <g fill="var(--ground)" stroke="var(--c2)" stroke-width="2">
-          <circle cx="9.58" cy="25" r="3.5" />
-          <circle cx="20.62" cy="29" r="3.5" />
-          <circle cx="58.5" cy="34" r="3.5" />
-          <circle cx="210.0" cy="53" r="3.5" />
-        </g>
-        <circle cx="355.19" cy="69" r="4.5" fill="var(--c3)" stroke="none" />
-        <g font-family="ui-monospace, monospace" font-size="11" fill="var(--faint)">
-          <text x="8.0" y="148" text-anchor="start">0</text>
-          <text x="109.0" y="148" text-anchor="middle">64K</text>
-          <text x="210.0" y="148" text-anchor="middle">128K</text>
-          <text x="311.0" y="148" text-anchor="middle">192K</text>
-          <text x="412.0" y="148" text-anchor="end">256K</text>
-        </g>
-        <g font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="var(--muted)">
-          <text x="8" y="16">67.4</text>
-          <text x="355.19" text-anchor="end" y="62">39.4</text>
-        </g>
-      </svg>
-      <!-- decay:end -->
-        <figcaption>Output tok/s by input context, one user &mdash; linear token axis, K = 1024</figcaption>
-      </figure>
-    </div>
     <div>
-      <p>One client, one server per arm, the same OpenAI request at the same five context
-        lengths. Prompts are real text (Project Gutenberg via PG-19) sized exactly by tokenizer,
-        not synthetic filler &mdash; see <code>benchmarks/perf_sweep.sh</code>. Horizontal distances
-        are proportional to input token counts. Dots are measured lengths; connecting lines
-        are guides, not measurements at intermediate lengths.</p>
-      <p>A line is one (engine, model, drafter). Metrics sharing a unit share a chart; since
-        <code>decode tok/s = AL &times; step/s</code>, the gap between an arm's two lines there is
-        its acceptance.</p>
+      <p>Measured on Ryzen AI Max+ 395. <a href="/docs/development/benchmarks">Methodology ↗</a></p>
 
       <div id="benchmarks-picker" data-src="benchmarks.json" data-empty="Loading&hellip;"></div>
       <div id="benchmarks-charts"><p class="empty">Loading charts&hellip;</p></div>
@@ -1063,174 +996,33 @@
   <section class="band" id="run">
     <div class="rail"><b>Run</b></div>
     <div>
-      <pre class="block">snowllm pull qwen3.6-35b-a3b-fp8
-snowllm qwen3.6-35b-a3b-fp8</pre>
-      <p class="note">A recipe is one model at one precision, and <code>snowllm recipes</code>
-        lists them. The pull runs over several connections at once and resumes where it stopped,
-        checking every file against the sha256 the repository publishes. A local safetensors
-        directory works just as well.</p>
-      <p class="note">A GGUF works too &mdash; <code>snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash</code>
-        gets the UD-Q4_K_XL quant with its DFlash drafter beside it: a smaller download, and
-        llama.cpp serves the same file.</p>
-      <p class="note">Serves OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages APIs.
-        <code>snowllm --help</code> lists model options.</p>
-      <p class="note">If huggingface.co is slow from where you are, the pull honours the
-        <code>HF_ENDPOINT</code> environment variable &mdash; point it at a mirror you trust.</p>
+      <pre class="block">snowllm pull qwen3.8-flash-next-q3-k-xl
+snowllm qwen3.8-flash-next-q3-k-xl</pre>
+      <p>Choose a model that fits your memory. <a href="/docs/getting-started/quick-start">Quick start ↗</a> · <a href="/docs/reference/models">Supported models ↗</a></p>
     </div>
   </section>
 
   <section class="band" id="webui">
     <div class="rail"><b>Web UI</b></div>
     <div>
-      <pre class="block">snowllm webui                  # opens the local Web UI
-snowllm webui --no-browser     # terminal / headless use
-snowllm load qwen3.6-35b-a3b-fp8
-snowllm status
-snowllm unload</pre>
-      <p>The Web UI runs at <code>http://127.0.0.1:8001</code>. The daemon keeps
-        the inference API at <code>http://127.0.0.1:8000</code> across model switches.
-        Load a recipe or a local checkpoint with inference overrides.</p>
-      <ul class="terse">
-        <li>Browse and download models. Locally available recipes appear in bold in the
-          loading dropdown; model cards also mark local availability.</li>
-        <li>Remember load settings per model, inspect the worker&rsquo;s effective configuration,
-          cancel loading, and retry after a failure.</li>
-        <li>See download progress, speed, remaining time and file verification status.
-          Stopped downloads retain partial files for resuming.</li>
-        <li>Chat with thinking controls detected from the loaded model&rsquo;s chat template.
-          Copy answers or code, regenerate a reply, switch saved conversations, and export them.</li>
-        <li>Monitor prefill and decode throughput, request queues and cache statistics,
-          plus GPU utilization, power, temperature and memory when sensors are available.
-          The inference API also exposes <code>/metrics</code>.</li>
-        <li>Configure model storage and the recipe catalogue, inspect model disk usage,
-          and delete unused models or partial downloads with confirmation.</li>
-      </ul>
-      <p class="note">English and Simplified Chinese (<code>zh_CN</code>) follow the browser
-        language by default. Settings &rarr; Language lets you choose manually.
-        Language preferences, load presets, conversations and chat parameters stay in
-        browser storage. No Node, CDN or separate frontend service is required.</p>
-      <p class="note">Server settings use a JSON file: <code>~/.config/snowllm/config.json</code>
-        on Linux (or <code>$XDG_CONFIG_HOME/snowllm/config.json</code>), and
-        <code>%APPDATA%\SnowLLM\config.json</code> on Windows. Settings provides single
-        editors for model storage and the recipe catalogue, plus a custom kernel library
-        under Developer settings. Environment and command-line overrides remain effective.</p>
-      <p class="note">The directory picker browses the SnowLLM host. Model deletion excludes
-        symlinks and files used by the loaded model or its DFlash drafter; stop downloads
-        before deleting files. The management listener stays on loopback. Use
-        <code>--admin-port</code> to change its port and <code>--port</code> for inference.</p>
+      <pre class="block">snowllm webui</pre>
+      <p>Download models, chat and monitor inference in your browser. <a href="/docs/webui">Web UI guide ↗</a></p>
     </div>
   </section>
 
   <section class="band" id="recipes">
-    <div class="rail"><b>Recipes</b></div>
+    <div class="rail"><b>Models</b></div>
     <div>
-      <p>Read live off the catalogue <code>snowllm recipes</code> shows and
-        <code>snowllm pull</code> resolves &mdash; never fresher than your last page reload.</p>
-
-      <div class="jstable" id="recipes-table" data-src="recipe.json" data-empty="Loading recipes&hellip;"></div>
-      <noscript><p class="note">This table needs JavaScript. Run <code>snowllm recipes</code>,
-        or read <a href="recipe.json">recipe.json</a> directly.</p></noscript>
+      <p><a href="/docs/guides/models">Download guide ↗</a></p>
+      <div class="jstable" id="recipes-table" data-src="recipe.json" data-empty="Loading models&hellip;"></div>
+      <noscript><p>Run <code>snowllm recipes</code> or read <a href="recipe.json">recipe.json</a>.</p></noscript>
     </div>
   </section>
 
   <section class="band" id="flags">
-    <div class="rail"><b>Flags</b></div>
+    <div class="rail"><b>Documentation</b></div>
     <div>
-      <div class="scroll">
-        <table>
-          <thead>
-            <tr><th scope="col">Flag</th><th scope="col">What it does</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="flag">--host --port</td>
-              <td class="desc">Where the OpenAI-compatible API listens. <code>127.0.0.1:8000</code> by default &mdash; loopback, so reaching it from another machine takes <code>--host 0.0.0.0</code>.</td>
-            </tr>
-            <tr>
-              <td class="flag">--max-num-seqs</td>
-              <td class="desc">Concurrency ceiling, up to 256. A memory choice: each request pins linear-attention state for its whole life.</td>
-            </tr>
-            <tr>
-              <td class="flag">--max-model-len</td>
-              <td class="desc">Context length. A per-request ceiling, not a reservation &mdash; the KV pool is shared, and a request that outgrows it is preempted and re-prefilled.</td>
-            </tr>
-            <tr>
-              <td class="flag">--gpu-memory-utilization</td>
-              <td class="desc">Fraction of the GPU the server may occupy, 0.9 by default.</td>
-            </tr>
-            <tr>
-              <td class="flag">--prefix-memory-ratio</td>
-              <td class="desc">Share of the memory budget spent remembering prompt prefixes, 0.08 by default, 0 to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s.</td>
-            </tr>
-            <tr>
-              <td class="flag">--num-spec</td>
-              <td class="desc">Speculative depth. The optimum depends on the workload; 2 is a robust default.</td>
-            </tr>
-            <tr>
-              <td class="flag">--kv-cache-dtype</td>
-              <td class="desc">bf16 or int8. int8 halves KV bytes: more decode throughput at long context, less prefill.</td>
-            </tr>
-            <tr>
-              <td class="flag">--dflash PATH</td>
-              <td class="desc">Speculate with a block-diffusion drafter instead of the MTP head, given the draft's directory. A recipe that ships one sets this for you.</td>
-            </tr>
-            <tr>
-              <td class="flag">--device-map</td>
-              <td class="desc">Which weight groups live in pinned host memory instead of the carve-out, trading a slower decode step for KV pool. <code>auto</code> is what the DeepSeek recipes use to fit their context.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="scroll">
-        <table>
-          <thead>
-            <tr><th scope="col">Environment</th><th scope="col">What it does</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="flag">SNOWLLM_MODELS</td>
-              <td class="desc">Overrides the JSON <code>models_dir</code> setting. Checkpoints default to <code>~/models</code>.</td>
-            </tr>
-            <tr>
-              <td class="flag">HF_ENDPOINT</td>
-              <td class="desc">Mirror to pull from instead of huggingface.co. The token below goes to whatever host this names.</td>
-            </tr>
-            <tr>
-              <td class="flag">HF_TOKEN</td>
-              <td class="desc">For gated repositories. <code>SNOWLLM_HF_TOKEN</code> overrides it where you want one token for this and another for everything else.</td>
-            </tr>
-            <tr>
-              <td class="flag">SNOWLLM_RECIPES_URL</td>
-              <td class="desc">Overrides the JSON <code>recipes_url</code> setting. Accepts a catalogue URL or local JSON file.</td>
-            </tr>
-            <tr>
-              <td class="flag">SNOWLLM_CONFIG</td>
-              <td class="desc">Selects the server settings JSON file. Daemon <code>--config</code> takes precedence.</td>
-            </tr>
-            <tr>
-              <td class="flag">SNOWLLM_LIB</td>
-              <td class="desc">Overrides the JSON <code>library_path</code> setting with a custom kernel library, for development. Otherwise SnowLLM uses bundled kernels.</td>
-            </tr>
-            <tr>
-              <td class="flag">SNOWLLM_HOME</td>
-              <td class="desc">Where <code>install.sh</code> puts the environment, <code>~/.local/share/snowllm</code> by default; <code>SNOWLLM_BIN_DIR</code> and <code>SNOWLLM_PYTHON</code> move the launcher and pick the interpreter.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-  <section class="band">
-    <div class="rail"><b>Next</b></div>
-    <div>
-      <ul class="terse">
-        <li>More models</li>
-        <li>Tensor parallelism at any degree</li>
-        <li>NPU/GPU co-working prefill</li>
-        <li>Native INT4 quantization</li>
-      </ul>
+      <p><a href="/docs/">Read the documentation ↗</a></p>
     </div>
   </section>
 
@@ -1269,19 +1061,15 @@ snowllm unload</pre>
 
   label();
 
-  var TORCH_LINES =
-    '<span class="p">$</span>pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \\\n'
-    + '      "torch[device-gfx1151]==2.12.0+rocm7.14.0" \\\n'
-    + '      "torchvision==0.27.0+rocm7.14.0"\n';
-  var SNOWLLM_LINE = '<span class="p">$</span>pip install snowllm snowllm-kernels';
+  var TORCH_LINE = '<span class="p">$</span>python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ '
+    + '"torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"\n';
+  var SNOWLLM_LINE = '<span class="p">$</span>python -m pip install snowllm snowllm-kernels';
   var CURL_LINE = '<span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh';
 
-  var WSL_NOTE = ' Under WSL2, ROCm uses <code>/dev/dxg</code>, not <code>/dev/kfd</code> — '
-    + 'follow <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/'
-    + 'installryz/wsl/howto_wsl.html">AMD\'s WSL guide</a> first.';
-  var SCRIPT_NOTE = 'Installs into <code>~/.local/share/snowllm</code>. Re-run to upgrade.';
-  var PIP_NOTE = 'torch and torchvision come from <a href="https://rocm.docs.amd.com/projects/'
-    + 'ai-ecosystem/en/latest/frameworks/pytorch/install.html">AMD\'s index</a>.';
+  var INSTALL_GUIDE = '<a href="/docs/getting-started/installation">Installation guide ↗</a>';
+  var WSL_NOTE = ' Set up ROCm in WSL2 first. ';
+  var SCRIPT_NOTE = 'Re-run to upgrade. ';
+  var PIP_NOTE = 'Requires AMD builds of torch and torchvision. ';
 
   var choice = { os: "linux", how: "script", gpu: "gfx1151" };
   var cmdEl = document.getElementById("install-cmd");
@@ -1302,10 +1090,11 @@ snowllm unload</pre>
 
     if (choice.how === "script") {
       cmdEl.innerHTML = CURL_LINE;
-      noteEl.innerHTML = SCRIPT_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "");
+      noteEl.innerHTML = SCRIPT_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "") + INSTALL_GUIDE;
     } else {
-      cmdEl.innerHTML = TORCH_LINES + SNOWLLM_LINE;
-      noteEl.innerHTML = PIP_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "");
+      cmdEl.innerHTML = TORCH_LINE + SNOWLLM_LINE;
+      noteEl.innerHTML = (windows ? "Windows: manual installation only. " : "")
+        + PIP_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "") + INSTALL_GUIDE;
     }
   }
 
@@ -1320,24 +1109,36 @@ snowllm unload</pre>
   renderInstall();
 
   var spied = Array.prototype.slice.call(document.querySelectorAll(".side-nav a[href^='#']"));
-  var byId = {};
-  spied.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
   var targets = spied.map(function (a) {
     return document.getElementById(a.getAttribute("href").slice(1));
   }).filter(Boolean);
 
-  if (window.IntersectionObserver && targets.length) {
-    var visible = {};
-    var spy = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { visible[e.target.id] = e.isIntersecting; });
-      var current = null;
-      targets.forEach(function (t) { if (visible[t.id] && !current) current = t.id; });
-      spied.forEach(function (a) {
-        a.classList.toggle("on", a.getAttribute("href") === "#" + current);
-      });
-    }, { rootMargin: "0px 0px -67% 0px" });
-    targets.forEach(function (t) { spy.observe(t); });
+  var navFrame = 0;
+  function updateNavigation() {
+    navFrame = 0;
+    if (!targets.length) return;
+    var current = targets[0].id;
+    targets.forEach(function (target) {
+      // Anchor positions can land just above or below zero after pixel rounding.
+      if (target.getBoundingClientRect().top <= 24) current = target.id;
+    });
+    spied.forEach(function (link) {
+      var active = link.getAttribute("href") === "#" + current;
+      link.classList.toggle("on", active);
+      if (active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
   }
+  function scheduleNavigation() {
+    if (!navFrame) navFrame = requestAnimationFrame(updateNavigation);
+  }
+  window.addEventListener("scroll", scheduleNavigation, { passive: true });
+  window.addEventListener("resize", scheduleNavigation);
+  window.addEventListener("hashchange", scheduleNavigation);
+  if (window.ResizeObserver) {
+    new ResizeObserver(scheduleNavigation).observe(document.querySelector(".main"));
+  }
+  updateNavigation();
 
   document.querySelectorAll(".copy").forEach(function (button) {
     button.addEventListener("click", function () {

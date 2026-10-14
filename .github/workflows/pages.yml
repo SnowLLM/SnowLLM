@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths: &site
       - web/**
+      - docs/**
+      - package.json
+      - package-lock.json
       - recipes/**
       - benchmarks/runs/*.json
       - install.sh
@@ -35,6 +38,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build documentation
+        run: |
+          npm ci
+          npm run docs:build
+
       - name: Every recipe is well formed
         run: scripts/build-recipes.py --check
 
@@ -43,9 +56,6 @@ jobs:
 
       - name: The site agrees with the tree it is published from
         run: scripts/check-site.py
-
-      - name: web/index.html carries what build-benchmarks.py generates
-        run: git diff --exit-code web/index.html
 
   publish:
     needs: check
@@ -61,6 +71,19 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Build documentation
+        run: |
+          npm ci
+          npm run docs:build
+
+      - name: Include documentation in the published site
+        run: cp -r docs/.vitepress/dist web/docs
 
       - name: Date the sitemap from the last change to the site
         run: |

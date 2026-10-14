@@ -1,4 +1,4 @@
-# SnowLLM FAQ
+# FAQ
 
 ## 1. How do I run a custom fine-tuned model?
 
@@ -21,7 +21,7 @@ GPU memory is mainly divided into three parts:
 - **Workspaces**: intermediate results and temporary buffers for prefill and decode.
 - **Caches and state**: the KV cache, linear attention state, and the prefix cache for reusing prompts.
 
-Available GPU memory must exceed the resident weight size, with room left for workspaces and caches. The Resident column in the README lists weight memory only. By default, SnowLLM uses up to 90% of GPU memory, subtracting weights and workspaces before allocating caches. Adjust this limit with `--gpu-memory-utilization`.
+Available GPU memory must exceed the resident weight size, with room left for workspaces and caches. The Resident column in the README lists weight memory only. The CLI memory budget defaults to 90%; recipes or model architectures may adjust it. Weights and workspaces are counted before caches. Adjust this limit with `--gpu-memory-utilization`.
 
 ## 3. How do I choose a quantization precision? Is lower-bit quantization always faster?
 
@@ -44,17 +44,17 @@ snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
 ```
 
-`--num-spec` has no effect when using DFlash or DSpark.
+`--num-spec` has no effect when using DFlash or DSpark. DSpark enforces its checkpoint's minimum draft block size.
 
 ## 5. Why does my measured speed differ from the published benchmarks?
 
-Our benchmarks were measured at an APU power draw of 100–110 W, as reported by `rocm-smi`. If insufficient cooling or power delivery causes throttling, your measured speed may be lower than the published results.
+Power limits, cooling, context length and drafter settings affect throughput. Compare like-for-like runs; see [Performance tuning](./guides/performance#power-limits).
 
 ## 6. Why does inference slow down with longer contexts? How can I improve it?
 
-As the context grows, each generated token requires reading and processing more historical KV data, slowing down decode. SnowLLM preallocates its cache pools, so with the same startup configuration, a longer context usually does not increase allocated GPU memory.
+Dense attention reads more KV history as context grows, which can slow decode. Sparse and recurrent attention have different costs. KV pools are allocated when the model loads; a longer conversation consumes more of the existing pool.
 
-Shorten the conversation history and remove repeated material where possible. When reusing the same long prompt, prefix caching can reduce prefill work. For long contexts, you can also try `--kv-cache-dtype int8` to reduce KV memory traffic, though prefill may become slower.
+Shorten unnecessary history and use prefix caching where supported. INT8 KV is experimental and unavailable for Qwen3.8 Flash Next sparse attention and DeepSeek V4; see [Long contexts](./guides/performance#long-contexts).
 
 ## 7. Which APIs are supported? Can I send images?
 
@@ -64,7 +64,7 @@ Use `http://127.0.0.1:8000/v1` for OpenAI clients and `http://127.0.0.1:8000` fo
 
 ## 8. How do I choose where model files are stored?
 
-Models are downloaded to `~/models` by default. Set `SNOWLLM_MODELS` to choose a different model root directory, then use the same terminal to download and start models.
+Models default to `~/models`. Save another root in Web UI Settings or set `SNOWLLM_MODELS`; the environment overrides the saved path. See [Configuration](./reference/configuration).
 
 Linux (bash / zsh):
 

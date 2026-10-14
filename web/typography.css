@@ -1,0 +1,21 @@
+/* Shared typography for the homepage and documentation. */
+:root {
+  --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Source Serif 4", "Noto Serif", Georgia, serif;
+  --fs-label: 0.75rem;
+  --fs-ui: 0.875rem;
+  --fs-code: 0.9375rem;
+  --fs-note: 1.0625rem;
+  --fs-rail: 1.125rem;
+  --fs-body: 1.125rem;
+}
+body {
+  font-family: var(--serif);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: 1.65;
+  font-synthesis: weight style small-caps;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
