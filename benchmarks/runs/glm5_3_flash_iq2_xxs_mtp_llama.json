@@ -1,0 +1,178 @@
+[
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_llama",
+  "isl_target": 1024,
+  "isl": 1042,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 5.614635788020678,
+  "ttft_s_reps": [
+   5.614635788020678,
+   5.6110694390081335,
+   5.605850975989597,
+   5.612485252000624
+  ],
+  "decode_tok_s": 18.907386504624434,
+  "prefill_tok_s": 185.58639230405635,
+  "edge_before_c": 60,
+  "edge_after_c": 76,
+  "accept_unit": "accept%",
+  "accept_mean": 0.656976748850359,
+  "accept_stdev": 0.05507983348725915,
+  "accept_reps": [
+   0.618421052631579,
+   0.6017316017316018,
+   0.7129186602870813,
+   0.6948356807511737
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ar-Dust\" by Fannie Hurst, the protagonist is K. Leffingwell, a minister. The passage mentions Palmer Howe, Sidney... Yes, this is from \"Star-Dust\" by Fannie Hur",
+   " \u2014 the second fragment: \"Much you care about that. Go and ride with your wife,\" said the girl... mentions Christine, Grace, Palmer. This could be from Dreiser's",
+   "ld be from \"The Street\" by... hmm. Actually, \"K.\" and \"Tillie\" and \"Schwitter\" and \"Le Moyne\" \u2014 this is from \"The Street\" (1914) by Mary E. Wall? No wait \u2014 \"The",
+   "m \"The Glimpses of the Moon\"? No... Let me think. The characters Joe, K., Carlotta, Max Wilson, Sidney, Schwitter's \u2014 this is from Fannie Hurst's \"Back Street\"?"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_llama",
+  "isl_target": 8192,
+  "isl": 8211,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 39.35443912600749,
+  "ttft_s_reps": [
+   39.35443912600749,
+   11.50263930100482,
+   11.494649049011059,
+   11.70339387797867
+  ],
+  "decode_tok_s": 17.07336915027234,
+  "prefill_tok_s": 208.64228235370118,
+  "edge_before_c": 73,
+  "edge_after_c": 77,
+  "accept_unit": "accept%",
+  "accept_mean": 0.6269102838609565,
+  "accept_stdev": 0.027792828095222682,
+  "accept_reps": [
+   0.6412556053811659,
+   0.5854700854700855,
+   0.6441441441441441,
+   0.6367713004484304
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "tar-Dust\" is about a Russian Jewish family... Actually the passage with K., Sidney, Palmer Howe is from Fannie Hurst's \"Star-Dust\"? I'm not certain. It could be",
+   "ed God\"? Let me think: characters Palmer, Grace, Christine, hospital, nurse Miss Page, Lipton and Homburg's store, January white sale. This sounds like it could",
+   "e, A Mennonite Maid; A Story of the Pennsylvania Dutch\" \u2014 no.\n\nActually, the second fragment with K. Le Moyne, Schwitter, Tillie appears to be from \"The Street\"",
+   "lly, I recall: \"Schwitter's\" is from \"The Happy End\" by... no. Let me think about \"K.\" \u2014 a character named K. This is from \"The Happy End\"? Or from \"The Man Who"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_llama",
+  "isl_target": 32768,
+  "isl": 32787,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 259.25491990402224,
+  "ttft_s_reps": [
+   259.25491990402224,
+   24.482778531004442,
+   24.573378674976993,
+   24.238479010004085
+  ],
+  "decode_tok_s": 13.775870494978015,
+  "prefill_tok_s": 126.46625958781398,
+  "edge_before_c": 75,
+  "edge_after_c": 78,
+  "accept_unit": "accept%",
+  "accept_mean": 0.6526475738537989,
+  "accept_stdev": 0.04735056968001112,
+  "accept_reps": [
+   0.6837209302325581,
+   0.6339285714285714,
+   0.6981132075471698,
+   0.5948275862068966
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "nt\" by... it could be from \"The House of Mirth\"? No. It's likely from a novel by Dorothy Canfield Fisher or perhaps \"The Second Floor Front\" \u2014 actually I recall",
+   "ed Underground\"? No. Actually it might be from \"Butterfield 8\" by John O'Hara? Hmm, no. It could be from \"The Last Tycoon\"? No.\n\nActually, the fragment seems to",
+   "eve this is from \"The Street\" \u2014 hmm, actually I recall \"K. Le Moyne\" and \"Tillie\" and \"Schwitter\" from \"The Street\" by Ann Petry? No \u2014 I think this is from \"The",
+   "ght be from \"The Man Who Lived Twice\"? Actually I recall \"Schwitter's\" appears in Louis Bromfield? Hmm, no \u2014 I believe this is from \"The Green Bay Tree\"? Let me"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_llama",
+  "isl_target": 131072,
+  "isl": 131091,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2694.976126988011,
+  "ttft_s_reps": [
+   2694.976126988011,
+   78.10010549298022,
+   77.68105488503352,
+   116.89214345003711
+  ],
+  "decode_tok_s": 7.421331160050043,
+  "prefill_tok_s": 48.6427314465718,
+  "edge_before_c": null,
+  "edge_after_c": null,
+  "accept_unit": "accept%",
+  "accept_mean": 0.6645003961180431,
+  "accept_stdev": 0.014077836801664101,
+  "accept_reps": [
+   0.6590909090909091,
+   0.6470588235294118,
+   0.6759259259259259,
+   0.6759259259259259
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "\n\n2. **Chapters VI-XIII**: Jennie's father Gerhardt is a strict Lutheran who disowns her when he learns of her pregnancy. She gives birth to a daughter (Vesta/W",
+   "lationship with Lester Kane (a wealthy Cincinnati carriage manufacturer's son), moving to Chicago, the concealment of her child, Lester's family discovering the",
+   " this might be from \"The Street\" - no. Let me think. The characters K. (Mr. Le Moyne), Tillie, Schwitter - this appears to be from \"The Street\" by Ann Petry? No",
+   " presented:\n\n**Chapters I-V:**\n- 1880, Columbus, Ohio. Mrs. Gerhardt and her 18-year-old daughter Jennie seek work at a hotel. They get cleaning work.\n- The Ger"
+  ],
+  "context": 227328
+ }
+]
