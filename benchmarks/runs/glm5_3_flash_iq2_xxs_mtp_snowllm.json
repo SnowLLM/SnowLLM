@@ -1,0 +1,198 @@
+[
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+  "isl_target": 1024,
+  "isl": 1042,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 2.3836657209903933,
+  "ttft_s_reps": [
+   2.3836657209903933,
+   2.397089434991358,
+   2.393104251998011,
+   2.4033428260008805
+  ],
+  "decode_tok_s": 27.65376885870476,
+  "prefill_tok_s": 437.141831937348,
+  "edge_before_c": 47,
+  "edge_after_c": 68,
+  "accept_unit": "AL",
+  "accept_mean": 2.3782770967350406,
+  "accept_stdev": 0.045420228964383934,
+  "accept_reps": [
+   2.383177570093458,
+   2.3181818181818183,
+   2.383177570093458,
+   2.4285714285714284
+  ],
+  "step_s": 0.08626335725702669,
+  "step_s_reps": [
+   0.08609783621510343,
+   0.08637889315458862,
+   0.08626056502809287,
+   0.08626614948596051
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   ", Aunt Harriet, Palmer Howe, Bill Taft (a cat, presumably). This is from Booth Tarkington's \"The Two Vanreys\"? No... Actually this is from \"Monsieur Beaucaire\"?",
+   "dent; eyes large and patient with a shadow of distress. The daughter is timid and shamefaced, standing back, looking away.\n- Jennie is described as a product of",
+   " characters: K. (Mr. Le Moyne, known as K.), Tillie, Schwitter, Mrs. McKee, \"the Street\" \u2014 this is from Kathleen Norris's \"The Story of Margaret Kent\"? Actually",
+   " Who Could Not Sleep\" or... Actually, the characters Joe, K., Carlotta, Max Wilson, Sidney, Schwitter's - this is from Louis Bromfield? No wait.\n\nActually, \"Sch"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+  "isl_target": 8192,
+  "isl": 8211,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 15.877605576999485,
+  "ttft_s_reps": [
+   15.877605576999485,
+   15.833665607991861,
+   15.709501403995091,
+   15.662543612997979
+  ],
+  "decode_tok_s": 25.76262219364314,
+  "prefill_tok_s": 517.1434672677955,
+  "edge_before_c": 66,
+  "edge_after_c": 75,
+  "accept_unit": "AL",
+  "accept_mean": 2.2836770692504347,
+  "accept_stdev": 0.0745501548410519,
+  "accept_reps": [
+   2.236842105263158,
+   2.2972972972972974,
+   2.217391304347826,
+   2.383177570093458
+  ],
+  "step_s": 0.0881125359519678,
+  "step_s_reps": [
+   0.08774254479820293,
+   0.08824897298210738,
+   0.08797609892182821,
+   0.08828832315896838
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ually I recall this passage: \"Sidney sprang to her feet... K. removed his pipe...\" This is from \"K.\" \u2014 no wait, this is from \"The Second Story\" by Fannie Hurst?",
+   "istine\" as his wife's name hesitated over - wait, \"He hesitated over his wife's name. 'A girl I know very well was in the training-school.'\" - so his wife might",
+   "der Martin? No.\n\nK. Le Moyne \u2014 this is from \"The Street\" by Mary Rhinelander? Hmm. Actually, \"K.\" (Katherine?) \u2014 \"K. Le Moyne\" appears in \"The Street\" by Mary E",
+   "Happy End\" by... Actually, I believe this is from \"The Happy End\" by Louis Bromfield? No. \"Schwitter's\" appears in \"The Happy End\" \u2014 hmm, I think it's from \"The"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+  "isl_target": 32768,
+  "isl": 32787,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 64.57886931797839,
+  "ttft_s_reps": [
+   64.57886931797839,
+   64.58344295801362,
+   64.66303378800512,
+   64.65551890301867
+  ],
+  "decode_tok_s": 26.169484697889864,
+  "prefill_tok_s": 507.70477009377254,
+  "edge_before_c": 73,
+  "edge_after_c": 72,
+  "accept_unit": "AL",
+  "accept_mean": 2.314589878701507,
+  "accept_stdev": 0.14438463809904742,
+  "accept_reps": [
+   2.125,
+   2.3181818181818183,
+   2.4757281553398056,
+   2.3394495412844036
+  ],
+  "step_s": 0.08890628901327141,
+  "step_s_reps": [
+   0.08844200496678241,
+   0.0887358758908125,
+   0.08907670213573034,
+   0.08924273623836039
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "... Actually it seems like it could be from \"The House of the Misty Star\"? Hmm.\n\nActually, the fragment with Sidney and K. appears to be from \"The Story of Jenn",
+   "race who was sick, nearly died, a nurse named Miss Page got her a job at Lipton and Homburg's for the January white sale. This sounds like it could be from \"The",
+   " \"K.\" and \"Tillie\" and \"Schwitter\" and \"Mrs. McKee\" - this is from \"The Street\" by Ann Petry? Actually I recall these characters from \"The Street\" - no, I think",
+   "seems to be from \"The Happy End\" by... I'm not certain. It could be from \"The Happy End\" (1916) by... Actually I think this is from \"The Happy End\" by... Hmm.\n\n"
+  ],
+  "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+  "isl_target": 131072,
+  "isl": 131091,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 266.9470002040034,
+  "ttft_s_reps": [
+   266.9470002040034,
+   266.8034047220135,
+   267.0007448060205,
+   266.49444334898726
+  ],
+  "decode_tok_s": 26.9151752366235,
+  "prefill_tok_s": 491.0750070231882,
+  "edge_before_c": 72,
+  "edge_after_c": 76,
+  "accept_unit": "AL",
+  "accept_mean": 2.4868231566820276,
+  "accept_stdev": 0.1938770398300934,
+  "accept_reps": [
+   2.5,
+   2.7419354838709675,
+   2.2767857142857144,
+   2.4285714285714284
+  ],
+  "step_s": 0.09164055467414679,
+  "step_s_reps": [
+   0.09122398213709376,
+   0.09292946993536065,
+   0.09137775877674618,
+   0.0919033505715474
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ship and objects. Bass (Sebastian) gets arrested for stealing coal. Jennie goes to Brander at night to ask for help getting Bass out of jail.\n\n7. **Chapter VIII",
+   "suddenly. \"I didn't ask you to come back. I don't want you.\"\n\n\"Good Heavens, Grace! You always knew I would have to marry some day.\"\n\n\"I was sick; I nearly died",
+   " factual literary summary, not generating erotic content.\n\nThe passage includes the Brander relationship \u2014 Jennie is 18, Brander is 52. The text describes their",
+   " main novel's plot in detail but concisely, and mention the final fragment briefly.\n\nLet me outline the plot of Jennie Gerhardt as presented:\n\nChapters I\u2013XLVIII"
+  ],
+  "context": 227328
+ }
+]

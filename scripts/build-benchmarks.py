@@ -18,6 +18,14 @@ def merged_rows() -> list[dict]:
 
 COMPARISONS = [
     {
+        "model": "GLM-5.3-Flash UD-IQ2_XXS",
+        "snow_label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+        "llama_label": "glm5_3_flash_iq2_xxs_mtp_llama",
+        "snow_arm": "MTP k=2",
+        "llama_arm": "MTP k=2",
+        "rungs": [(1024, "1K"), (8192, "8K"), (32768, "32K"), (131072, "128K")],
+    },
+    {
         "model": "Qwen3.6-35B-A3B UD-Q4_K_XL",
         "snow_label": "qwen3_6_35b_a3b_q4_k_xl_dflash_snowllm",
         "llama_label": "qwen3_6_35b_a3b_q4_k_xl_dflash_llama",
@@ -36,6 +44,10 @@ COMPARISONS = [
 
 
 ARMS = {
+    "glm5_3_flash_iq2_xxs_mtp_snowllm":
+        ("SnowLLM", "GLM-5.3-Flash UD-IQ2_XXS", "MTP k=2"),
+    "glm5_3_flash_iq2_xxs_mtp_llama":
+        ("llama.cpp", "GLM-5.3-Flash UD-IQ2_XXS", "MTP k=2", 2),
     "qwen3_6_35b_a3b_q4_k_xl_snowllm":
         ("SnowLLM", "Qwen3.6-35B-A3B UD-Q4_K_XL", "no spec"),
     "qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm":
