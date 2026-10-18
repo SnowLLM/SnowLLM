@@ -1,85 +1,117 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
+from collections import Counter
 
 import torch
 
 from .. import ops
 from ..trace import span
+from ..ops.sampling import penalties, sample_workspace_bytes
+from .host_io import HostArena, MappedBuffer
 from .request import Request
 
 
 class Sampler:
-    def __init__(self, stop_token_ids: frozenset[int], seed: int | None = None) -> None:
+    """Native sampling reads host parameters and publishes tokens directly to the CPU."""
+    def __init__(self, stop_token_ids, seed=None):
         self.stop_token_ids = stop_token_ids
+        self._init_rng(seed)
+        self.inputs = HostArena()
+        self.output = MappedBuffer(torch.int64)
+
+    def _init_rng(self, seed):
         self.rng = torch.Generator(device="cuda")
         if seed is not None:
             self.rng.manual_seed(seed)
 
-    def sample(self, logits: torch.Tensor, rows: list[Request]) -> torch.Tensor:
+    def _uniform(self, n):
+        if hasattr(self, "uniforms"):
+            return torch.rand(n, generator=self.rng, out=self.uniforms[:n])
+        return torch.rand(n,dtype=torch.float32,device="cuda",generator=self.rng)
+
+    def reserve(self, rows, vocab):
+        self.uniforms = torch.empty(rows,dtype=torch.float32,device="cuda")
+        self.workspace = torch.empty(
+            sample_workspace_bytes(rows,vocab,min(vocab,ops.SAMPLING_MAX_K)),
+            dtype=torch.uint8,device="cuda")
+        self.output.reserve(rows)
+
+    def sample(self, logits, rows, *, out=None):
         with span("sample"):
-            if any(r.params.penalized() for r in rows):
-                self._penalize(logits, rows)
-            if all(r.params.temperature <= 0.0 for r in rows):
-                return ops.argmax(logits)
-            ks = [r.params.kernel_top_k() for r in rows]
-            top_p = torch.tensor([r.params.top_p for r in rows], dtype=torch.float32,
-                                 device="cuda")
-            temp = torch.tensor([r.params.kernel_temperature() for r in rows],
-                                dtype=torch.float32, device="cuda")
-            k = torch.tensor(ks, dtype=torch.int32, device="cuda")
-            return ops.sample(logits, k, top_p, temp, max(ks), generator=self.rng)
+            self.inputs.begin()
+            try:
+                if any(r.params.penalized() for r in rows):
+                    self._penalize(logits,rows,prepared=True)
+                if all(r.params.temperature<=0 for r in rows):
+                    return ops.argmax(logits,out=out)
+                ks = [r.params.kernel_top_k() for r in rows]
+                top_p = self.inputs.tensor("top_p",[r.params.top_p for r in rows],torch.float32)
+                temp = self.inputs.tensor("temperature",[r.params.kernel_temperature() for r in rows],torch.float32)
+                k = self.inputs.tensor("top_k",ks,torch.int32)
+                uniform = self._uniform(len(rows))
+                return ops.sample(logits,k,top_p,temp,max(ks),uniform=uniform,out=out,
+                                  workspace=getattr(self,"workspace",None))
+            finally:
+                self.inputs.used()
 
-    def _histogram(self, r: Request, V: int) -> tuple[torch.Tensor, torch.Tensor]:
-        if r.out_counts is None:
-            r.out_counts = torch.zeros(V, dtype=torch.int32, device="cuda")
-            r.prompt_seen = torch.zeros(V, dtype=torch.bool, device="cuda")
-            if r.prompt:
-                r.prompt_seen[torch.tensor(r.prompt, dtype=torch.int64, device="cuda")] = True
-            if r.out:
-                ids = torch.tensor(r.out, dtype=torch.int64, device="cuda")
-                r.out_counts.scatter_add_(0, ids, torch.ones_like(ids, dtype=torch.int32))
-        return r.out_counts, r.prompt_seen
 
-    def _penalize(self, logits: torch.Tensor, rows: list[Request]) -> None:
-        depth: dict[int, int] = {}
-        for i, r in enumerate(rows):
-            t = depth.get(id(r), 0)
-            depth[id(r)] = t + 1
-            p = r.params
-            if not p.penalized():
-                continue
-            counts, in_prompt = self._histogram(r, logits.shape[1])
-            row, drafted = logits[i], r.drafts[:t]
-            idx = torch.tensor(drafted, dtype=torch.int64, device="cuda") if drafted else None
+    def _read_tokens(self, logits, rows=None):
+        n = logits.shape[0]
+        if not n:
+            return []
+        self.inputs.begin()
+        self.output.reserve(n)
+        out = self.output.device[:n]
+        try:
+            if rows is None:
+                try:
+                    ops.argmax(logits,out=out)
+                finally:
+                    self.inputs.used()
+            else:
+                self.sample(logits,rows,out=out)
+        finally:
+            # The sampling fence protects parameters and publishes the result;
+            # no second event or device-to-host copy is necessary.
+            self.inputs.begin()
+        return self.output.host[:n].tolist()
 
-            if p.repetition_penalty != 1.0:
-                hit = in_prompt | (counts > 0)
-                if idx is not None:
-                    hit = hit.clone()
-                    hit[idx] = True
-                row.copy_(torch.where(hit, torch.where(row > 0, row / p.repetition_penalty,
-                                                       row * p.repetition_penalty), row))
-            if p.frequency_penalty:
-                row.sub_(counts.to(row.dtype), alpha=p.frequency_penalty)
-                if idx is not None:
-                    row.index_add_(0, idx, torch.full((len(drafted),), -p.frequency_penalty,
-                                                      dtype=row.dtype, device="cuda"))
-            if p.presence_penalty:
-                row.sub_((counts > 0).to(row.dtype), alpha=p.presence_penalty)
-                if idx is not None:
-                    uniq = torch.tensor(list(dict.fromkeys(drafted)), dtype=torch.int64,
-                                        device="cuda")
-                    fresh = (counts.index_select(0, uniq) == 0).to(row.dtype)
-                    row.index_add_(0, uniq, fresh.mul_(-p.presence_penalty))
+    def greedy_list(self, logits):
+        return self._read_tokens(logits)
+
+    def sample_list(self, logits, rows):
+        return self._read_tokens(logits,rows)
+
+    def _penalize(self, logits, rows, *, prepared=False):
+        if not prepared:
+            self.inputs.begin()
+        try:
+            depth = {}
+            for i,r in enumerate(rows):
+                t=depth.get(id(r),0);depth[id(r)]=t+1
+                p=r.params
+                if not p.penalized():
+                    continue
+                counts=Counter(r.out);counts.update(r.drafts[:t])
+                if not hasattr(r,"_sample_prompt_tokens"):
+                    r._sample_prompt_tokens=set(r.prompt)
+                tokens=sorted(r._sample_prompt_tokens | counts.keys())
+                ids=self.inputs.tensor(("penalty_ids",i),tokens)
+                cnt=self.inputs.tensor(("penalty_counts",i),[counts.get(v,0) for v in tokens],torch.int32)
+                penalties(logits[i],ids,cnt,p.presence_penalty,p.frequency_penalty,p.repetition_penalty)
+        finally:
+            if not prepared:
+                self.inputs.used()
+
+    def __del__(self):
+        if hasattr(self, "inputs"):
+            self.inputs.begin()
 
     def emit(self, logits: torch.Tensor, batch: list[Request]) -> None:
-        for r, tok in zip(batch, self.sample(logits, batch).tolist()):
+        for r, tok in zip(batch, self.sample_list(logits, batch)):
             self.append(r, tok)
 
     def append(self, r: Request, tok: int) -> None:
         r.out.append(tok)
-        if r.out_counts is not None:
-            r.out_counts[tok] += 1
         if tok in self.stop_token_ids or tok in r.params.stop_token_ids:
             r.done, r.finish_reason = True, "stop"
         elif len(r.out) >= r.params.max_new_tokens:

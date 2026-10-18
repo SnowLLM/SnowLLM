@@ -10,10 +10,11 @@ from ..._capi import SnowLLMError
 from ...checkpoint.gguf import dspark as dspark_gguf
 from ...checkpoint.gguf.source import GGUFReader
 from ...engine.block_manager import pad_table
-from ...engine.dsv4_cache import Cache
 from ...engine.forward_context import PLAN_DRAFT, Batch, Dsv4Walker
 from ..geometry import DSparkGeometry
 from . import deepseek4_weights
+from ...engine.cache import CacheStorage
+from .pools import create_cache
 from .deepseek4 import DeepSeekV4ForCausalLM
 from .layers import RMSNorm
 
@@ -29,17 +30,19 @@ class DSparkDraft:
         self.stack = stack
         self.geo = geo
         self.tap_layers = tap_layers
-        self.fc = fc
+        # Packed dense weights keep logical shapes; native owns the physical layout.
+        self.fc = ops.dspark_pack_weight(fc)
         self.enc_norm = enc_norm
         self.markov_w1 = markov_w1
-        self.markov_w2 = markov_w2
+        self.markov_w2 = ops.dspark_pack_weight(markov_w2)
         self.conf_proj = conf_proj
         self.conf_bias = conf_bias
-        self.cache: Cache | None = None
+        self.cache: CacheStorage | None = None
         self._table = None
+        self._context_ws = self._markov_ws = None
 
-    def pools(self, raw_blocks: int, block_size: int, slots: int = 1) -> Cache:
-        self.cache = Cache(self.geo.stack, raw_blocks, {}, block_size, slots)
+    def pools(self, raw_blocks: int, block_size: int, slots: int = 1) -> CacheStorage:
+        self.cache = create_cache(self.geo.stack, raw_blocks, {}, block_size, slots)
         self._table = pad_table([list(range(raw_blocks))])
         return self.cache
 
@@ -53,7 +56,10 @@ class DSparkDraft:
                                f"offered {taps.shape[1]}")
         ctx = self.walker.bare_context(self.stack, taps.shape[0])
         out = ctx.arena.new(taps.shape[0], self.fc.shape[0])
-        torch.matmul(taps, self.fc.t(), out=out)
+        need = ops.dspark_context_workspace_bytes(taps.shape[0], *self.fc.shape)
+        if self._context_ws is None or self._context_ws.numel() < need:
+            self._context_ws = torch.empty(need, dtype=torch.uint8, device=taps.device)
+        ops.dspark_context(taps, self.fc, out, self._context_ws)
         return out
 
     def write_context(self, feat: torch.Tensor, positions: torch.Tensor,
@@ -64,11 +70,8 @@ class DSparkDraft:
         cos, sin = self.stack.rope(ctx, positions, False)
         for i, layer in enumerate(self.stack.layers):
             attn = layer.attn
-            kv = attn.kv_norm(ctx, attn.fanout.kv(
-                ctx, feat, self.enc_norm.gamma, ctx.eps)).reshape(t, 1, geo.kv_dim)
-            ops.dsv4_rope_tail(kv, cos, sin)
-            ops.dsv4_fp8_kv_quantize(kv, geo.qk_rope_head_dim)
-            self.cache.layers[i].raw.write(kv.reshape(t, geo.kv_dim), slots)
+            raw = attn.fanout.kv(ctx, feat, self.enc_norm.gamma, ctx.eps)
+            attn.store_kv(ctx,raw,cos,sin,self.cache.layers[i].raw,slots)
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
                 block_tables: torch.Tensor, seq_lens: torch.Tensor,
@@ -77,19 +80,20 @@ class DSparkDraft:
         B = seq_lens.numel()
         blk = M // B
         total_q, qmap = ops.prefill_q_plan([blk] * B)
+        tokens,seq_of_row,cu,states=ops.metadata_ranges([
+            (torch.int64,[(0,0,M)]),(torch.int32,[(i,0,blk) for i in range(B)]),
+            (torch.int32,[(0,blk,B+1)]),(torch.int32,[(0,1,B)])])
         b = Batch(
-            input_ids=torch.zeros(M, dtype=torch.int64, device="cuda"),
+            input_ids=tokens,
             positions=positions,
-            seq_of_row=torch.repeat_interleave(
-                torch.arange(B, dtype=torch.int32, device="cuda"), blk),
-            cu_seqlens=torch.tensor([i * blk for i in range(B + 1)], dtype=torch.int32,
-                                    device="cuda"),
+            seq_of_row=seq_of_row,
+            cu_seqlens=cu,
             seq_lens=seq_lens,
             block_tables=block_tables if block_tables is not None else self._table,
-            slot_mapping=slots.to(torch.int32),
+            slot_mapping=slots,
             total_q_blocks=total_q, q_block_map=qmap, plans={}, block_q=True,
             is_prefill=True, num_tokens=M,
-            state_indices=torch.arange(B, dtype=torch.int32, device="cuda"))
+            state_indices=states)
         ctx = self.walker.context(self.stack, b, self.cache, PLAN_DRAFT,
                                   embedded=noise, pre_head=pre_head)
         self.walker.plan_for(self.stack, ctx)
@@ -106,20 +110,15 @@ class DSparkDraft:
             raise SnowLLMError("the confidence head needs conf_proj.weight and the pre-norm "
                                "hidden state; this drafter has "
                                + ("no conf_proj" if self.conf_proj is None else "no pre_head"))
-        prev = anchor
-        out = torch.empty(B, block, dtype=torch.int64, device="cuda")
-        for i in range(block):
-            w1_prev = self.markov_w1.index_select(0, prev)
-            col = base[i::block].float() + (w1_prev @ self.markov_w2.t()).float()
-            if conf is not None:
-                feat = torch.cat([pre_head[i::block].float(), w1_prev.float()], dim=1)
-                c = feat @ self.conf_proj
-                if self.conf_bias is not None:
-                    c = c + self.conf_bias
-                conf[:, i] = torch.sigmoid(c)
-            prev = col.argmax(dim=1)
-            out[:, i] = prev
-        return out
+        need = ops.dspark_markov_workspace_bytes(B, self.markov_w1.shape[0],
+                                                 self.geo.markov_rank, block)
+        if self._markov_ws is None or self._markov_ws.numel() < need:
+            self._markov_ws = torch.empty(need, dtype=torch.uint8, device=base.device)
+        return ops.dspark_markov(base, self.markov_w1, self.markov_w2, anchor, block,
+                                pre_head=pre_head, conf_weight=self.conf_proj,
+                                conf_bias=self.conf_bias, confidence=conf,
+                                workspace=self._markov_ws)
+
 
 
 def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,

@@ -42,11 +42,11 @@ class DeepSeekV4Model(nn.Module):
 
         for r, plan in b.plans.items():
             if plan.inplace and plan.keep_dst is not None:
-                cache.slide(r, plan)
+                cache.plan.slide(r, plan)
 
         if b.last_row is not None:
             picked = ctx.arena.new(b.last_row.numel(), self.geo.hc_mult, self.geo.hidden)
-            torch.index_select(streams, 0, b.last_row, out=picked)
+            ops.gather_rows(streams,b.last_row,out=picked)
             streams = picked
         out = self.head_fold(ctx, streams, ctx.pre_head)
         ctx.close()
@@ -57,10 +57,7 @@ class DeepSeekV4Model(nn.Module):
         if j is None:
             return
         t, h = ctx.M, self.geo.hidden
-        with ctx.arena.frame():
-            mean = ctx.arena.new(t, h, dtype=torch.float32)
-            torch.mean(streams, dim=1, dtype=torch.float32, out=mean)
-            ctx.taps[:t, j * h:(j + 1) * h] = mean
+        ops.dspark_tap_mean(streams, ctx.taps[:t, j * h:(j + 1) * h])
 
 
 class DeepSeekV4ForCausalLM(nn.Module):

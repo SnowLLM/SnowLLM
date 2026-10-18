@@ -7,6 +7,7 @@ from collections.abc import Callable
 from types import ModuleType
 
 _MODELS = {
+    "Glm5NextForConditionalGeneration": ("glm5_next", None),
     "Qwen3_5MoeForCausalLM": ("qwen3_5", "load_weights"),
     "Qwen3_5MoeForConditionalGeneration": ("qwen3_5", "load_weights"),
     "Qwen3_5ForCausalLM": ("qwen3_5", "load_weights"),

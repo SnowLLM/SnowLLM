@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -26,7 +27,7 @@ def i64(x: object) -> torch.Tensor:
 
 
 def positions(p: list[int]) -> torch.Tensor:
-    return i64(p).expand(3, len(p)).contiguous()
+    return i64(list(p)*3).view(3,len(p))
 
 
 class DecodeShape(NamedTuple):
@@ -66,6 +67,9 @@ class Batch:
     seq_of_row: torch.Tensor | None = None
     prev_ids: list[list[int]] | None = None
     host_ids: list[int] | None = None
+    host_seq_lens: list[int] | None = None
+    host_cu_seqlens: list[int] | None = None
+    carry_source_offset: int = 0
     plans: dict | None = None
     inplace: bool = False
     split: bool = False
@@ -81,9 +85,7 @@ class Batch:
 
     @property
     def varlen_attn(self) -> bool:
-        if self.is_prefill:
-            return True
-        return self.tokens_per_req > ops.PAGED_DECODE_MAX_Q_TOKENS and not self.chunk_decode
+        return ops.paged_attention_varlen(self.is_prefill,self.tokens_per_req,self.chunk_decode)
 
 
 @dataclass
@@ -115,24 +117,31 @@ class ForwardContext:
     def decode(self) -> bool:
         return not self.batch.is_prefill
 
-    @property
-    def shuffled_attn_out(self) -> bool:
-        return self.batch.is_prefill and not self.kv_int8
-
     def streams(self, a: ops.Arena, M: int) -> tuple[torch.Tensor, torch.Tensor]:
         H = self.x.shape[1]
         return a.new(M, H), a.new(M, H)
 
-    def open(self) -> None:
-        self.arena.planner.begin(self.plan_key)
+    def begin_plan(self, *, required: bool = False) -> None:
+        if self.arena is None:
+            return
+        planned = self.arena.planner.begin(self.plan_key)
         self.arena.reset()
+        if required and not planned:
+            raise ops.SnowLLMError("activation plan is missing for this batch")
+
+    def end_plan(self) -> None:
+        if self.arena is not None:
+            self.arena.end_plan()
+
+    def open(self) -> None:
+        self.begin_plan()
         a, M = self.arena, self.M
         self.residual, self.blk = self.streams(a, M)
         self.cos = a.new(M, 64, dtype=torch.float32)
         self.sin = a.new(M, 64, dtype=torch.float32)
 
     def close(self) -> None:
-        self.arena.end_plan()
+        self.end_plan()
 
     def apply_mscale(self) -> None:
         self.cos.mul_(self.mscale)
@@ -151,6 +160,7 @@ class QsaStep(NamedTuple):
 @dataclass
 class Qwen4ExpContext(ForwardContext):
     geo: object = None
+    max_prefill_seqs: int = 0
     ple_emb: torch.Tensor | None = None
     ple_has_state: torch.Tensor | None = None
     stream_buf: torch.Tensor | None = None
@@ -168,20 +178,9 @@ class Qwen4ExpContext(ForwardContext):
         a, b, g, M = self.arena, self.batch, self.geo, self.M
         self.xn_live = False
         self.hc_xn = None if b.is_prefill else a.new(M, g.hc_count, g.hidden)
-        B = b.batch_size
-        slots = b.state_indices.view(B, -1)
-        cells = a.new(M, dtype=torch.int64)
-        if not b.is_prefill:
-            T = b.tokens_per_req
-            torch.add(b.seq_lens.view(-1, 1).to(torch.int64) - T,
-                      torch.arange(T, device="cuda", dtype=torch.int64), out=cells.view(-1, T))
-        comp = a.new(B, dtype=torch.int32)
-        torch.div(b.seq_lens, g.index_ratio, rounding_mode="floor", out=comp)
-        weights = a.new(M, g.index_n_heads, dtype=torch.float32)
-        weights.fill_(1.0 / math.sqrt(float(g.index_head_dim)))
-        self.qsa = QsaStep(a.copy(slots[:, 0]),
-                           a.copy(slots[:, :min(slots.shape[1], M // B)]).view(-1),
-                           a.copy(b.positions[:, :M]), comp, weights, cells)
+        self.qsa = QsaStep(*ops.qsa_metadata(b.state_indices,b.positions,b.seq_lens,M,
+            g.index_ratio,g.index_n_heads,1.0/math.sqrt(float(g.index_head_dim)),b.is_prefill,a,
+            max_prefill_seqs=self.max_prefill_seqs))
 
     def take_xn(self) -> torch.Tensor | None:
         live, self.xn_live = self.xn_live, False
@@ -192,6 +191,33 @@ class Qwen4ExpContext(ForwardContext):
         carrier = (a.new(M, g.hc_count, g.hidden) if self.stream_buf is None
                    else self.stream_buf[:M])
         return carrier, a.new(M, g.hidden)
+
+
+@dataclass
+class Glm5NextContext(ForwardContext):
+    num_spec: int = 0
+    embedded: torch.Tensor | None = None
+    sparse: object = None
+    hidden: torch.Tensor | None = None
+    head_hidden: torch.Tensor | None = None
+    draft_hidden: torch.Tensor | None = None
+    logits: torch.Tensor | None = None
+    last_hidden: torch.Tensor | None = None
+    scratch: Callable[[int], torch.Tensor] | None = None
+    ws: torch.Tensor | None = None
+    embedding_weight: torch.Tensor | None = None
+    next_ids: torch.Tensor | None = None
+    max_pools: int = 0
+    require_plan: bool = False
+
+    def open(self) -> None:
+        from ..ops.glm5_next import prepare_embedding
+        self.begin_plan(required=self.require_plan)
+        self.embedded, self.sparse = prepare_embedding(
+            self.batch,self.embedding_weight,self.max_pools,self.next_ids,self.arena)
+
+    def workspace(self, n: int) -> None:
+        self.ws = self.scratch(n)
 
 
 @dataclass
@@ -207,15 +233,14 @@ class Dsv4Context(ForwardContext):
     hidden: torch.Tensor | None = None
 
     def open(self) -> None:
-        self.arena.planner.begin(self.plan_key)
-        self.arena.reset()
+        self.begin_plan()
         a, t, g = self.arena, self.M, self.geo
         self.banks = (a.new(t, g.hc_mult, g.hidden), a.new(t, g.hc_mult, g.hidden))
         self.hidden = self.embedded if self.embedded is not None else a.new(t, g.hidden)
 
     def close(self) -> None:
         self.rot = self.banks = self.hidden = None
-        self.arena.end_plan()
+        super().close()
 
 
 class Dsv4Walker:
@@ -247,7 +272,8 @@ class Dsv4Walker:
                  embedded: torch.Tensor | None = None) -> tuple:
         return (tag, b.inplace, b.last_row is not None, embedded is not None,
                 b.split, tuple(sorted(self.tap_at)),
-                b.input_ids.numel() == 1, b.input_ids.numel() <= self.decode_max_m,
+                b.input_ids.numel() == 1,
+                ops.dsv4_projection_plan(b.input_ids.numel(),self.decode_max_m).path,
                 tuple((int(pl.keep_dst is not None), int(pl.n_new > 0), int(pl.max_n_comp > 0))
                       for _, pl in sorted(b.plans.items())))
 
@@ -264,21 +290,10 @@ class Dsv4Walker:
         planner = self.arena.planner
         if planner.buf is None:
             return
-        key, rows = ctx.plan_key, ctx.M
-        have = planner.plans.get(key)
-        if have is not None and rows <= have.rows:
-            return
-        with ops.dummy_run() as t:
-            held = stack(ctx)
-        plan = ops.pack(t, rows)
-        del held
-        if plan.high + after <= planner.buf.numel():
-            planner.install(key, plan)
-        else:
-            planner.plans.pop(key, None)
+        self.arena.plan(ctx.plan_key, ctx.M, lambda: stack(ctx), after)
 
     def run(self, stack: object, tokens: torch.Tensor, positions: torch.Tensor,
             cache: object) -> torch.Tensor:
         first = int(positions[0].item())
-        b = cache.batch(tokens, positions, [first], [tokens.numel()], [0])
+        b = cache.plan.batch(tokens, positions, [first], [tokens.numel()], [0])
         return stack(self.context(stack, b, cache))

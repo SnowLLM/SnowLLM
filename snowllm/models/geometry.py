@@ -10,8 +10,39 @@ GEMM_N_QUANTUM = 128
 COFF = {4: 2, 128: 1}
 
 
-def _align(n: int, a: int = GEMM_N_QUANTUM) -> int:
-    return ((n + a - 1) // a) * a
+def pad_gemm_n(n: int) -> int:
+    return ((n + GEMM_N_QUANTUM - 1) // GEMM_N_QUANTUM) * GEMM_N_QUANTUM
+
+
+def is_gemm_n_aligned(n: int) -> bool:
+    return n % GEMM_N_QUANTUM == 0
+
+
+@dataclass(frozen=True)
+class Glm5NextGeometry:
+    hidden: int
+    vocab_size: int
+    num_layers: int
+    layer_types: tuple
+    num_heads: int
+    linear_heads: int
+    linear_dim: int
+    latent: int
+    index_dim: int
+    index_heads: int
+    index_ratio: int
+    index_topk: int
+    hc_mult: int
+    eps: float
+    linear_conv_k: int
+
+    @classmethod
+    def from_config(cls, c):
+        return cls(c["hidden_size"], c["vocab_size"], c["num_hidden_layers"], tuple(c["layer_types"]),
+                   c["num_attention_heads"], c["num_attention_heads"], c["linear_head_dim"],
+                   c["kv_lora_rank"], c["index_head_dim"], c["index_n_heads"], c["index_kpool"],
+                   c["index_topk"], c["hc_mult"], c["rms_norm_eps"], c["linear_conv_kernel_dim"])
+
 
 
 @dataclass(frozen=True)
@@ -112,11 +143,11 @@ class ModelGeometry:
 
     @property
     def lin_in_proj_n_pad(self) -> int:
-        return _align(self.lin_in_proj_n)
+        return pad_gemm_n(self.lin_in_proj_n)
 
     @property
     def lin_in_proj_ba_n_pad(self) -> int:
-        return _align(2 * self.lin_num_v_heads)
+        return pad_gemm_n(2 * self.lin_num_v_heads)
 
     @property
     def lin_qz_n(self) -> int:
