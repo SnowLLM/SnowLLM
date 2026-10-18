@@ -13,7 +13,7 @@ from snowllm.checkpoint.gguf import deepseek4, tokenizer
 from snowllm.checkpoint.gguf.source import GGUFReader, find_gguf
 from snowllm.models.deepseek_v4 import deepseek4 as model
 from snowllm.models.deepseek_v4 import deepseek4_weights as weights
-from snowllm.engine.dsv4_cache import make_cache
+from snowllm.models.deepseek_v4.pools import make_cache
 from snowllm.engine.forward_context import Dsv4Walker
 from snowllm.models.geometry import DeepSeekV4Geometry
 
@@ -61,7 +61,7 @@ def block_cos(net: model.DeepSeekV4ForCausalLM, ref: Reference, i: int, stem: st
     cur = ref.get2d(f"hc_{'attn' if stem == 'attn_out' else 'ffn'}_pre-{i}")
     cur = cur.cuda().to(torch.bfloat16).contiguous()
     cache = make_cache(net.geo, positions.numel(), ops.KV_BLOCK_SIZES[0])
-    b = cache.batch(tokens, positions, [0], [positions.numel()], [0])
+    b = cache.plan.batch(tokens, positions, [0], [positions.numel()], [0])
     ctx = WALKER.context(net, b, cache)
     if stem == "ffn_out":
         return cos(layer.moe(ctx, cur), ref.get2d(f"ffn_out-{i}"))

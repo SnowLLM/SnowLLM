@@ -42,7 +42,7 @@ def main() -> int:
         return 0
 
     ck = _harness.Checks(13)
-    model = loader.load(MODEL_DIR)
+    model = loader.load(MODEL_DIR, device_map=os.environ.get('SNOWLLM_DSV4_DEVICE_MAP', ''))
     tok = tokenizer.build(GGUF(find_gguf(MODEL_DIR)))
     eng = Engine(model, max_num_seqs=1, max_model_len=1024, stop_token_ids=(), seed=0,
                  enforce_eager=False, preempt=False, gpu_memory_utilization=UTIL,

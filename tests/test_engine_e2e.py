@@ -40,7 +40,7 @@ def main() -> int:
     print(f"  stop tokens {eos}")
     mem("+ engine buffers")
     print(f"  KV pool {eng.blocks.total} blocks x {eng.runner.kv.__len__()} full-attn layers; "
-          f"{len(eng.runner.state)} linear-attn layers x {eng.max_num_seqs} state slots")
+          f"{len(eng.runner.linear_mods)} linear-attn layers x {eng.max_num_seqs} state slots")
 
     print("\n=== greedy decode ===")
     greedy = SamplingParams(temperature=0.0, max_new_tokens=12)

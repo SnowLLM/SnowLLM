@@ -14,7 +14,7 @@ from snowllm.checkpoint.gguf import deepseek4
 from snowllm.checkpoint.gguf.source import GGUFReader, find_gguf
 from snowllm.engine.block_manager import BlockAllocator, pad_table, slot_mapping
 from snowllm.engine.dsv4_runner import Dsv4Runner
-from snowllm.engine.dsv4_cache import make_cache
+from snowllm.models.deepseek_v4.pools import make_cache
 from snowllm.engine.forward_context import Batch, Dsv4Walker, i32, i64
 from snowllm.models.deepseek_v4 import deepseek4 as model
 from snowllm.models.deepseek_v4 import layers
@@ -62,7 +62,7 @@ class Packer:
         self.cache = make_cache(net.geo, tokens, ops.KV_BLOCK_SIZES[0], slots,
                                 raw_blocks=slots * ring if ring else None,
                                 spec_rows=spec)
-        self.blocks = BlockAllocator(self.cache.raw_blocks, ops.KV_BLOCK_SIZES[0], ring)
+        self.blocks = BlockAllocator(self.cache.plan.raw_blocks, ops.KV_BLOCK_SIZES[0], ring)
         self.held = {}
 
     def grow(self, slot: int, upto: int) -> list[int]:
@@ -86,7 +86,7 @@ class Packer:
             slots.append(slot)
             tables.append(self.grow(slot, hi))
         bt = pad_table(tables)
-        b = self.cache.batch(i64(ids), i64(pos), firsts, lens, slots, bt, slot_mapping(bt, rows, ops.KV_BLOCK_SIZES[0]))
+        b = self.cache.plan.batch(i64(ids), i64(pos), firsts, lens, slots, bt, slot_mapping(bt, rows, ops.KV_BLOCK_SIZES[0]))
         return self.net(WALKER.context(self.net, b, self.cache))
 
 
@@ -97,7 +97,7 @@ def noise_floor(ck: _harness.Checks, net: model.DeepSeekV4ForCausalLM) -> float:
     ids = i64(LONG + [0] * pad)
     pos = torch.cat([torch.arange(len(LONG), dtype=torch.int64, device="cuda"),
                      torch.zeros(pad, dtype=torch.int64, device="cuda")])
-    b = cache.batch(ids, pos, [0], [len(LONG)], [0])
+    b = cache.plan.batch(ids, pos, [0], [len(LONG)], [0])
     got = net(WALKER.context(net, b, cache))[:len(LONG)]
     g = gap(got, want)
     ck("running a forward in more rows than it has tokens changes only the GEMM", g < 1e-3,
@@ -205,7 +205,7 @@ def split_verify(ck: _harness.Checks, net: model.DeepSeekV4ForCausalLM, T: int =
 def reuse(ck: _harness.Checks, net: model.DeepSeekV4ForCausalLM) -> None:
     pk = Packer(net, [LONG, SHORT], 1)
     pk.forward([(0, LONG, 0, len(LONG))])
-    pk.cache.release(0)
+    pk.cache.reset(0)
     pk.blocks.release(pk.held.pop(0))
     got = pk.forward([(0, SHORT, 0, len(SHORT))])
     g = gap(got, hidden_of(net, SHORT))
