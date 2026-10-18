@@ -9,7 +9,8 @@ from snowllm.checkpoint import loader
 from snowllm import engine as engine_mod
 from snowllm.engine import Engine, SamplingParams
 from snowllm.engine.forward_context import Batch
-from snowllm.engine.runner import MAX_NUM_SEQS, Runner
+from snowllm.defaults import MAX_NUM_SEQS
+from snowllm.engine.qwen_runner import QwenRunner
 
 import _harness
 
@@ -30,15 +31,15 @@ def main() -> int:
     max_seqs = MAX_NUM_SEQS
     spec_max = engine_mod.SPEC_MAX_STEP_ROWS // (NUM_SPEC + 1)
     steps = []
-    orig = Runner.forward
+    orig = QwenRunner.forward
 
-    def hooked(self: Runner, b: Batch) -> torch.Tensor:
+    def hooked(self: QwenRunner, b: Batch) -> torch.Tensor:
         if not b.is_prefill:
             steps.append((b.tokens_per_req, b.state_indices.tolist(),
                           None if b.num_accepted is None else b.num_accepted.tolist()))
         return orig(self, b)
 
-    Runner.forward = hooked
+    QwenRunner.forward = hooked
     eng = Engine(model, num_kv_blocks=4096, max_num_seqs=max_seqs, max_model_len=1024, seed=0,
                  enforce_eager=True, num_spec=NUM_SPEC, preempt=False)
     probe = eng.add(tok.encode(PROBE), SamplingParams(temperature=0.0, max_new_tokens=64))
@@ -48,7 +49,7 @@ def main() -> int:
         eng.add(tok.encode(FILLER), SamplingParams(temperature=0.0, max_new_tokens=8))
     while not probe.done:
         eng.step()
-    Runner.forward = orig
+    QwenRunner.forward = orig
 
     modes, written, ok, first_bad = [], None, True, None
     for i, (T, sidx, nacc) in enumerate(steps):

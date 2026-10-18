@@ -66,7 +66,7 @@ def main() -> int:
         return 0
 
     c = _harness.Checks(56)
-    model = loader.load(MODEL_DIR)
+    model = loader.load(MODEL_DIR, device_map=os.environ.get('SNOWLLM_DSV4_DEVICE_MAP', ''))
     tok = tokenizer.build(GGUF(find_gguf(MODEL_DIR)))
     body = "".join(SHARED.format(i=i) for i in range(180))
     a, b = tok.encode(body + TAIL_A), tok.encode(body + TAIL_B)
