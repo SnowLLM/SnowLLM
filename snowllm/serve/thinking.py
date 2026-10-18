@@ -12,7 +12,7 @@ def thinking_capabilities(tokenizer) -> dict:
     result = {"switch": False, "levels": [], "source": "chat_template"}
     try:
         template = tokenizer.get_chat_template()
-        tree = Environment().parse(template)
+        tree = Environment(extensions=["jinja2.ext.loopcontrols"]).parse(template)
     except (ValueError, TypeError, TemplateError, AttributeError):
         return result
 
@@ -49,6 +49,9 @@ def thinking_capabilities(tokenizer) -> dict:
             elif effort(operand.expr):
                 candidates.extend(literals(left))
             left = operand.expr
+    for conditional in tree.find_all(nodes.CondExpr):
+        if effort(conditional.expr1):
+            candidates.extend(literals(conditional.expr2))
     for lookup in tree.find_all(nodes.Getitem):
         if effort(lookup.arg):
             candidates.extend(literals(lookup.node))
