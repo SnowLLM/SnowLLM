@@ -4,9 +4,47 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+import tempfile
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 
 class CLITests(unittest.TestCase):
+    def launch_options(self, extra=(), recipe=None):
+        from snowllm import cli
+        from snowllm.errors import SnowLLMError
+        from snowllm.hub import recipes
+        with tempfile.TemporaryDirectory() as root:
+            # Model contents belong to build(), not to CLI default selection.
+            (Path(root)/'model.gguf').write_bytes(b'GGUF')
+            native = SimpleNamespace(SnowLLMError=SnowLLMError)
+            modules = {'snowllm._capi': native, 'uvicorn': SimpleNamespace(run=Mock()),
+                       'snowllm.serve.api': SimpleNamespace(app=object()),
+                       'snowllm.serve.state': SimpleNamespace(install=Mock())}
+            with patch.dict(sys.modules,modules), patch.object(recipes,'locate',return_value=(Path(root),recipe)), \
+                 patch.object(cli,'build') as build, patch.object(sys,'argv',['snowllm',root,*extra]):
+                cli.main()
+            return build.call_args
+
+    def test_bare_path_uses_shared_defaults(self):
+        from snowllm.cli import parser
+        defaults=parser().parse_args(['MODEL'])
+        args,kw=self.launch_options()
+        self.assertEqual(args[1:3],(defaults.max_num_seqs,defaults.max_model_len))
+        self.assertEqual(kw['gpu_memory_utilization'],defaults.gpu_memory_utilization)
+        self.assertEqual(kw['prefix_memory_ratio'],defaults.prefix_memory_ratio)
+        self.assertEqual(kw['device_map'],defaults.device_map)
+
+    def test_capacity_options_follow_recipe_and_explicit_flags(self):
+        recipe=SimpleNamespace(id='local-glm',serve_as='GLM-5.3-Flash',defaults=dict(
+            max_num_seqs=1,max_model_len=8192,gpu_memory_utilization=.95,
+            prefix_memory_ratio=0.,device_map='auto'))
+        args,kw=self.launch_options(('--max-num-seqs','2','--prefix-memory-ratio','0.1'),recipe)
+        self.assertEqual(args[1:3],(2,8192))
+        self.assertEqual(kw['gpu_memory_utilization'],.95)
+        self.assertEqual(kw['device_map'],'auto')
+        self.assertEqual(kw['prefix_memory_ratio'],.1)
+
     def run_cli(self, *args):
         code = '''
 import importlib.abc
