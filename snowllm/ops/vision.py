@@ -9,9 +9,11 @@ from ._common import _chk, _p, _passthru, _stream
 
 def _supported(sym: str) -> tuple[int, ...]:
     import ctypes
-    buf = (ctypes.c_int64 * 16)()
-    n = getattr(lib, "snowllm_" + sym)(ctypes.cast(buf, ctypes.c_void_p), 16)
-    return tuple(buf[i] for i in range(min(n, 16)))
+    query = getattr(lib, "snowllm_" + sym)
+    n = query(None, 0)
+    buf = (ctypes.c_int64 * n)()
+    query(ctypes.cast(buf, ctypes.c_void_p), n)
+    return tuple(buf)
 
 
 SUPPORTED_HEAD_DIMS = _supported("vision_supported_head_dims")
@@ -21,9 +23,6 @@ SUPPORTED_LN_HIDDEN = _supported("vision_supported_ln_hidden")
 def vision_layernorm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
                      out: torch.Tensor, eps: float) -> None:
     M, H = x.shape
-    if H not in SUPPORTED_LN_HIDDEN:
-        raise SnowLLMError(f"vision_layernorm: this build has no variant for H={H}; it was "
-                           f"compiled for {SUPPORTED_LN_HIDDEN}")
     _chk(x, "x", torch.bfloat16, M, H)
     _chk(gamma, "gamma", torch.bfloat16, H)
     _chk(beta, "beta", torch.bfloat16, H)
@@ -56,8 +55,37 @@ def vision_rope_qk(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, hidd
 
 def vision_attn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, o: torch.Tensor, S: int,
                 hidden: int, num_heads: int, head_dim: int) -> None:
-    if head_dim not in SUPPORTED_HEAD_DIMS:
-        raise SnowLLMError(f"vision_attn: this build has no variant for head_dim={head_dim}; "
-                           f"it was compiled for {SUPPORTED_HEAD_DIMS}")
     check(lib.snowllm_vision_attn(_p(q), _p(k), _p(v), _p(o), S, hidden, num_heads, head_dim,
                                   _stream()), "vision_attn")
+
+
+def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
+                         indices: torch.Tensor, weights: torch.Tensor) -> None:
+    M, H = hidden.shape
+    _chk(hidden, "hidden", torch.bfloat16, M, H)
+    _chk(table, "position table", torch.bfloat16, table.shape[0], H)
+    _chk(indices, "position indices", torch.int32, 4, M)
+    _chk(weights, "position weights", torch.float32, 4, M)
+    if any(t.device != hidden.device for t in (table, indices, weights)):
+        raise SnowLLMError("vision_pos_embed_add: all tensors must share a device")
+    check(lib.snowllm_vision_pos_embed_add(_p(hidden), _p(table), _p(indices), _p(weights),
+                                          M, H, table.shape[0], _stream()),
+          "vision_pos_embed_add")
+
+
+def vision_attention(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
+                     cu: torch.Tensor, out: torch.Tensor, num_heads: int,
+                     head_dim: int) -> None:
+    M, H = out.shape
+    _chk(qkv, "qkv", torch.bfloat16, M, 3 * H)
+    _chk(out, "attention output", torch.bfloat16, M, H)
+    _chk(cos, "cos", torch.float32, M, head_dim)
+    _chk(sin, "sin", torch.float32, M, head_dim)
+    _chk(cu, "image row offsets", torch.int32)
+    if cu.dim() != 1 or cu.numel() < 1:
+        raise SnowLLMError("vision_attention: expected cumulative image row offsets")
+    if any(t.device != qkv.device for t in (cos, sin, cu, out)):
+        raise SnowLLMError("vision_attention: all tensors must share a device")
+    check(lib.snowllm_vision_attention(_p(qkv), _p(cos), _p(sin), _p(cu), _p(out),
+                                      M, cu.numel() - 1, H, num_heads, head_dim, _stream()),
+          "vision_attention")

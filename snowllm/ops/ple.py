@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import ctypes
+import functools
+
 import torch
 
 from .._capi import check, lib
 from ._common import _chk, _chk_dense, _chk_rows, _p, _stream
+from .attention_full import _PagedAttentionStep
 
 
 def qwen4exp_ple_gate(key: torch.Tensor, query: torch.Tensor, value: torch.Tensor,
@@ -100,11 +104,16 @@ def qwen4exp_qsa_gather(k_cache: torch.Tensor, v_cache: torch.Tensor,
         max_blocks, ratio, topk, block_size, _stream()), "qwen4exp_qsa_gather")
 
 
+@functools.lru_cache(None)
+def _qsa_produce_workspace_bytes(batch, width, ratio):
+    return lib.snowllm_qwen4exp_qsa_produce_workspace_bytes(batch, width, ratio)
+
+
 def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: torch.Tensor,
                          resume_slots: torch.Tensor, snap_slots: torch.Tensor,
                          cu_seqlens: torch.Tensor, seq_lens: torch.Tensor, positions: torch.Tensor,
                          slot_mapping: torch.Tensor, gamma: torch.Tensor, inv_freq: torch.Tensor,
-                         pool: torch.Tensor, blocks_per_seq: int, ratio: int, eps: float) -> None:
+                         pool: torch.Tensor, ratio: int, eps: float) -> None:
     M, D = k_raw.shape
     B = resume_slots.numel()
     n_snap = snap_slots.numel() // B
@@ -121,10 +130,13 @@ def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: to
     _chk(gamma, "gamma", torch.bfloat16, D)
     _chk(inv_freq, "inv_freq", torch.float32)
     _chk(pool, "pool", torch.bfloat16, pool.shape[0], D)
-    check(lib.snowllm_qwen4exp_qsa_produce(
+    need = _qsa_produce_workspace_bytes(B, D, ratio)
+    workspace = torch.empty(need, dtype=torch.uint8, device=k_raw.device)
+    check(lib.snowllm_qwen4exp_qsa_produce_snapshot(
         _p(k_raw), k_raw.stride(0), _p(carry), _p(carry_pos), _p(resume_slots), _p(snap_slots),
         _p(cu_seqlens), _p(seq_lens), _p(positions), _p(slot_mapping), _p(gamma), _p(inv_freq),
-        _p(pool), B, n_snap, M, blocks_per_seq, D, ratio, eps, _stream()), "qwen4exp_qsa_produce")
+        _p(pool), B, n_snap, M, D, ratio, eps,
+        _p(workspace), need, _stream()), "qwen4exp_qsa_produce")
 
 
 def qwen4exp_indexer_q(qk: torch.Tensor, gamma: torch.Tensor, cos: torch.Tensor,
@@ -165,7 +177,7 @@ def qwen4exp_qsa_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: t
                               block_tables: torch.Tensor, seq_lens: torch.Tensor,
                               total_num_q_blocks: int, scale: float, q_block_map: torch.Tensor,
                               mask: torch.Tensor, axis: torch.Tensor, axis_len: torch.Tensor,
-                              block_size: int, shuf: tuple = (0, 0, 0)) -> None:
+                              block_size: int, shuf: tuple = (0, 0, 0), out_row0: int = 0) -> None:
     _chk(q, "q", torch.bfloat16)
     _chk(out, "out", torch.bfloat16)
     for t, n in ((cu_seqlens_q, "cu_seqlens_q"), (block_tables, "block_tables"),
@@ -174,7 +186,85 @@ def qwen4exp_qsa_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: t
         _chk(t, n, torch.int32)
     _chk(mask, "mask", torch.int8, mask.shape[0], mask.shape[1])
     check(lib.snowllm_qwen4exp_qsa_attn_prefill(
-        _p(q), _p(k_cache), _p(v_cache), _p(out), _p(cu_seqlens_q), _p(block_tables),
+        _p(q), _p(k_cache), _p(v_cache),
+        lib.snowllm_attn_output_destination(_p(out),shuf[0],out_row0),
+        _p(cu_seqlens_q), _p(block_tables),
         _p(seq_lens), block_tables.shape[1], total_num_q_blocks, scale, _p(q_block_map), _p(mask),
         mask.shape[1], _p(axis), _p(axis_len), axis.shape[1], block_size, *shuf, _stream()),
         "qwen4exp_qsa_attn_prefill")
+
+
+# Host descriptors contain tensors and batch semantics only; native owns all tiling.
+
+class _QsaJob(ctypes.Structure):
+    _fields_=[(n,ctypes.c_int64) for n in ('at','rows','request','first','q_blocks')]+[
+        (n,ctypes.c_void_p) for n in ('cu','length','qmap')]
+
+class _QsaStep(ctypes.Structure):
+    _fields_=[('attention',_PagedAttentionStep),('inputs',ctypes.c_void_p*6),
+        ('compact',ctypes.c_void_p*5),('jobs',ctypes.c_void_p)]+[
+        (n,ctypes.c_int64) for n in ('job_count','rows','n_comp','heads','dim','ratio','topk',
+                                    'wave','compact_pages','compact_slots')]+[('prefill',ctypes.c_int)]
+
+class _PleStep(ctypes.Structure):
+    _fields_=[('inputs',ctypes.c_void_p*8),('state',ctypes.c_void_p),('out',ctypes.c_void_p)]+[
+        (n,ctypes.c_int64) for n in ('B','M','C','kernel','dilation','slot_count')]+[('prefill',ctypes.c_int)]
+
+
+def qsa_group_rows():
+    return lib.snowllm_qsa_group_rows()
+
+
+def qsa_decode_rows(rows):
+    return lib.snowllm_qsa_decode_rows(rows)
+
+
+def qsa_attention(ctx, module, q, pools, out, proj):
+    b=ctx.batch
+    gate=module.shuf(ctx,proj)
+    ks,vs=pools[2:] if len(pools)==4 else (None,None)
+    att=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
+        (q,pools[0],pools[1],ks,vs,b.cu_seqlens,b.block_tables,b.seq_lens,b.q_block_map)],gate[0]),
+        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan),_p(ctx.decode_ws)),b.batch_size,
+        b.block_tables.shape[1],b.total_q_blocks,ctx.num_slots,b.tokens_per_req,ctx.block_size,
+        gate[1],gate[2],module.attn_scale,int(b.varlen_attn))
+    jobs=(_QsaJob*len(ctx.qsa_lens or []))(*[
+        _QsaJob(at,n,r,first,total,_p(cu),_p(seq),_p(qmap))
+        for at,n,r,first,cu,seq,total,qmap in ctx.qsa_lens or []])
+    ck,cv=module.compact or (None,None)
+    table=module.compact_table
+    ix=module.indexer
+    step=_QsaStep(att,(ctypes.c_void_p*6)(*[_p(t) for t in
+        (module._q_index,ix.pool,ctx.qsa.weights,ctx.qsa.comp,ctx.qsa.cells,ctx.qsa_seq_of_row)]),
+        (ctypes.c_void_p*5)(*[_p(t) for t in (ck,cv,table,module.plan,module.plan_ws)]),
+        ctypes.addressof(jobs) if ctx.qsa_lens is not None else 0,len(jobs),q.shape[0],
+        ctx.qsa_max_blocks,ix.heads,ix.dim,ix.ratio,ix.topk,
+        table.shape[0] if table is not None else 0,table.shape[1] if table is not None else 0,
+        module.plan_slots,int(b.is_prefill))
+    need=lib.snowllm_qsa_attention_scratch_bytes(ctypes.byref(step))
+    with ctx.arena.frame():
+        ws=ctx.arena.flat(need,torch.uint8)
+        check(lib.snowllm_qsa_attention(ctypes.byref(step),_p(ws),need,_stream()),'qsa_attention')
+
+
+def ple_step(ctx,x,state,w,hidden,gated,out,dilation):
+    b=ctx.batch
+    step=_PleStep((ctypes.c_void_p*8)(*[_p(t) for t in
+        (x,b.state_indices,b.cu_seqlens,ctx.ple_has_state,w,hidden,gated,None)]),_p(state),_p(out),
+        b.batch_size,x.shape[0],x.shape[1],w.shape[1],dilation,b.state_indices.numel(),int(b.is_prefill))
+    need=lib.snowllm_ple_step_scratch_bytes(ctypes.byref(step))
+    with ctx.arena.frame():
+        ws=ctx.arena.flat(need,torch.uint8)
+        check(lib.snowllm_ple_step(ctypes.byref(step),_p(ws),need,_stream()),'ple_step')
+
+
+def qsa_job_plan(cumulative_lengths,sequence_lengths):
+    b=len(sequence_lengths)
+    if len(cumulative_lengths)!=b+1:
+        raise ValueError('QSA needs B+1 cumulative lengths')
+    cu=(ctypes.c_int64*(b+1))(*cumulative_lengths)
+    lengths=(ctypes.c_int64*b)(*sequence_lengths)
+    n=lib.snowllm_qsa_job_plan(cu,lengths,b,None)
+    out=(ctypes.c_int64*(n*5))()
+    lib.snowllm_qsa_job_plan(cu,lengths,b,out)
+    return [tuple(out[i:i+5]) for i in range(0,n*5,5)]

@@ -7,15 +7,15 @@ from ._common import zero_bytes
 
 
 class Slab:
-    def __init__(self, nbytes: int) -> None:
-        self._t = zero_bytes(int(nbytes))
+    def __init__(self, nbytes: int, *, dtype: torch.dtype = torch.uint8) -> None:
+        self._t = zero_bytes(int(nbytes)).view(dtype)
 
     def span(self) -> torch.Tensor:
         return self._t
 
     @property
     def committed(self) -> int:
-        return 0 if self._t is None else self._t.numel()
+        return 0 if self._t is None else self._t.nbytes
 
     def release(self) -> None:
         self._t = None
@@ -25,8 +25,8 @@ class Slabs:
     def __init__(self) -> None:
         self.pools: list = []
 
-    def take(self, nbytes: int) -> Slab:
-        slab = Slab(nbytes)
+    def take(self, nbytes: int, *, dtype: torch.dtype = torch.uint8) -> Slab:
+        slab = Slab(nbytes, dtype=dtype)
         if int(nbytes) > 0:
             self.pools.append(slab)
         return slab

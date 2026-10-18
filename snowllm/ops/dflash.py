@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import enum
+import ctypes
+import functools
 from typing import TYPE_CHECKING
 
 import torch
@@ -9,6 +11,7 @@ import torch
 from .. import _capi
 from .._capi import SnowLLMError, check, lib
 from ._common import (KQuantProjWeight, _chk, _p, _passthru, _stream, empty_bytes)
+from .inference import _Weight, _weight
 
 if TYPE_CHECKING:
     from ..models.geometry import DFlashGeometry
@@ -41,6 +44,11 @@ def select(geo: "DFlashGeometry") -> None:
                            f"{have}")
     global _G
     _G = geo
+    _activation_workspace_bytes.cache_clear()
+    proj_shape.cache_clear()
+    _projection_plan.cache_clear()
+    projections_workspace_bytes.cache_clear()
+    _norm_rope_store_layout.cache_clear()
 
 
 def selected() -> "DFlashGeometry":
@@ -50,22 +58,40 @@ def selected() -> "DFlashGeometry":
     return _G
 
 
-def _nk(which: Proj) -> tuple[int, int]:
-    g = selected()
-    return {
-        Proj.FC: (g.hidden, g.fc_k),
-        Proj.CTX_KV: (g.ctx_kv_proj_n, g.hidden),
-        Proj.QKV: (g.qkv_proj_n, g.hidden),
-        Proj.O: (g.hidden, g.q_dim),
-        Proj.GATE_UP: (g.gate_up_n, g.hidden),
-        Proj.DOWN: (g.hidden, g.intermediate),
-        Proj.CONV: (g.conv_proj_n, g.hidden),
-        Proj.SELECTOR_HIDDEN: (g.selector_rank, g.hidden),
-    }[which]
+@functools.lru_cache(None)
+def proj_shape(which: Proj) -> tuple[int, int]:
+    nk = (ctypes.c_int64*2)()
+    check(lib.snowllm_draft_projection_shape(int(which),nk),'draft_projection_shape')
+    return tuple(nk)
+
+
+@functools.lru_cache(None)
+def _projection_plan(which: Proj, m: int, kind: int, fmt: int) -> tuple[int,int,int]:
+    # Planning consumes storage metadata, not pointers. Rebuild the live descriptor
+    # for execution so replacing a weight cannot leave a cached stale address.
+    weight = _Weight(kind=kind,fmt=fmt)
+    plan = (ctypes.c_int64*3)()
+    check(lib.snowllm_draft_projection_plan(int(which),ctypes.byref(weight),m,plan),
+          'draft_projection_plan')
+    return tuple(plan)
+
+
+def proj_plan(which: Proj, w, m: int) -> tuple[int,int,int]:
+    weight = _weight(w)
+    return _projection_plan(which,m,weight.kind,weight.fmt)
+
+
+def proj_workspace_bytes(which: Proj, w, m: int) -> int:
+    return proj_plan(which,w,m)[2]
+
+
+@functools.lru_cache(None)
+def projections_workspace_bytes(m: int) -> int:
+    return lib.snowllm_draft_projections_workspace_bytes(m)
 
 
 def proj_shuffle_w(which: Proj, w: torch.Tensor) -> torch.Tensor:
-    n, k = _nk(which)
+    n, k = proj_shape(which)
     _chk(w, f"draft {which.name} w", torch.bfloat16, n, k)
     buf = empty_bytes(lib.snowllm_shuffle_bytes(w.numel() * w.element_size()))
     check(lib.snowllm_draft_proj_shuffle_w(int(which), _p(w), _p(buf), _stream()),
@@ -73,25 +99,25 @@ def proj_shuffle_w(which: Proj, w: torch.Tensor) -> torch.Tensor:
     return buf
 
 
-def proj_scratch_bytes(which: Proj, m: int, decode: bool = True) -> int:
-    return lib.snowllm_draft_proj_scratch_bytes(int(which), int(m), int(decode))
-
-
 def proj(which: Proj, a: torch.Tensor, w_shuffled: torch.Tensor | KQuantProjWeight,
-         a_scratch: torch.Tensor | None, out: torch.Tensor, decode: bool) -> None:
-    if isinstance(w_shuffled, KQuantProjWeight):
-        proj_kquant(which, a, w_shuffled, a_scratch, out, decode)
-        return
-    n, k = _nk(which)
+         a_scratch: torch.Tensor | None, out: torch.Tensor) -> None:
+    """One native projection entry for every supported weight storage and row count."""
     m = a.shape[0]
+    weight = _weight(w_shuffled)
+    n,k,need = _projection_plan(which,m,weight.kind,weight.fmt)
     _chk(a, "a", torch.bfloat16, m, k)
     _chk(out, "out", torch.bfloat16, m, n)
-    check(lib.snowllm_draft_proj(int(which), _p(a), _p(w_shuffled), _p(a_scratch), _p(out), m,
-                                 int(decode), _stream()), "draft_proj")
+    if a_scratch is not None:
+        _chk(a_scratch,'draft projection scratch',torch.uint8)
+    capacity = a_scratch.nbytes if a_scratch is not None else 0
+    if capacity < need:
+        raise SnowLLMError(f'draft projection needs {need} scratch bytes, got {capacity}')
+    check(lib.snowllm_draft_projection(int(which),ctypes.byref(weight),_p(a),_p(out),
+          _p(a_scratch),capacity,m,_stream()),'draft_projection')
 
 
 def proj_shuffle_w_kquant(which: Proj, blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
-    n, k = _nk(which)
+    n, k = proj_shape(which)
     _chk(blocks, f"draft {which.name} blocks", torch.uint8)
     want = lib.snowllm_kquant_gguf_bytes(fmt, n, k)
     if blocks.numel() != want:
@@ -102,17 +128,6 @@ def proj_shuffle_w_kquant(which: Proj, blocks: torch.Tensor, fmt: int) -> KQuant
     check(lib.snowllm_draft_proj_shuffle_w_kquant(int(which), fmt, _p(blocks), _p(quant), _p(meta),
                                                   _stream()), "draft_proj_shuffle_w_kquant")
     return KQuantProjWeight(quant, meta, fmt)
-
-
-def proj_kquant(which: Proj, a: torch.Tensor, w: KQuantProjWeight,
-                a_scratch: torch.Tensor | None, out: torch.Tensor, decode: bool) -> None:
-    n, k = _nk(which)
-    m = a.shape[0]
-    _chk(a, "a", torch.bfloat16, m, k)
-    _chk(out, "out", torch.bfloat16, m, n)
-    check(lib.snowllm_draft_proj_kquant(int(which), w.fmt, _p(a), _p(w.quant), _p(w.meta),
-                                        _p(a_scratch), _p(out), m, int(decode), _stream()),
-          "draft_proj_kquant")
 
 
 def swiglu(gate_up: torch.Tensor, out: torch.Tensor) -> None:
@@ -196,6 +211,39 @@ def k_norm_rope(ctx_kv: torch.Tensor, layer: int, k_gamma: torch.Tensor, cos: to
           "draft_k_norm_rope")
 
 
+@functools.lru_cache(None)
+def _norm_rope_store_layout(stride,layer,block_size):
+    layout=(ctypes.c_int64*5)()
+    check(lib.snowllm_draft_norm_rope_store_layout(stride,int(layer is not None),
+          0 if layer is None else layer,block_size,layout),
+          'draft_norm_rope_store_layout')
+    return tuple(layout)
+
+
+def norm_rope_store(proj, q_gamma, k_gamma, cos, sin, q, k_cache, v_cache,
+                     slots, eps, block_size, *, layer=None):
+    m, stride = proj.shape
+    off,gamma_n,rope_cols,q_width,pool_bytes = _norm_rope_store_layout(
+        stride,layer,block_size)
+    _chk(proj, "draft projection", torch.bfloat16, m, stride)
+    _chk(k_gamma, "draft K gamma", torch.bfloat16, gamma_n)
+    _chk(cos, "draft cos", torch.float32, m, rope_cols)
+    _chk(sin, "draft sin", torch.float32, m, rope_cols)
+    _chk(slots, "draft cache slots", torch.int32, m)
+    if layer is None:
+        _chk(q_gamma, "draft Q gamma", torch.bfloat16, gamma_n)
+        _chk(q, "draft Q", torch.bfloat16, m, q_width)
+    if k_cache.dtype not in (torch.uint8,torch.bfloat16):
+        raise SnowLLMError("draft norm/RoPE/store requires BF16 KV storage")
+    _chk(k_cache, "draft K cache", k_cache.dtype)
+    _chk(v_cache, "draft V cache", k_cache.dtype)
+    if k_cache.nbytes != v_cache.nbytes or k_cache.nbytes % pool_bytes:
+        raise SnowLLMError("draft cache size mismatch")
+    check(lib.snowllm_draft_norm_rope_store(_p(proj)+off*2,stride,_p(q_gamma),_p(k_gamma),
+        _p(cos),_p(sin),_p(q),_p(k_cache),_p(v_cache),_p(slots),m,eps,
+        int(layer is not None),block_size,_stream()), "draft_norm_rope_store")
+
+
 def reshape_and_cache(new_k: torch.Tensor, new_v: torch.Tensor, k_cache: torch.Tensor,
                       v_cache: torch.Tensor, slot_mapping: torch.Tensor,
                       block_size: int) -> None:
@@ -245,3 +293,29 @@ def gated_delta_rule_advance(qkv: torch.Tensor, b_logit: torch.Tensor, a_logit: 
                                                _p(a_log), _p(dt_bias), _p(state_indices),
                                                _p(num_accepted), _p(state), b, t, _stream()),
           "gated_delta_rule_advance")
+
+
+@functools.lru_cache(None)
+def _activation_workspace_bytes(m: int,packed: bool,fmt: int) -> int:
+    return lib.snowllm_draft_mlp_activation_workspace_bytes(m,int(packed),fmt)
+
+
+def gate_up_swiglu_workspace_bytes(m: int,w: torch.Tensor | KQuantProjWeight) -> int:
+    packed=isinstance(w,KQuantProjWeight)
+    return _activation_workspace_bytes(m,packed,w.fmt if packed else 8)
+
+
+def gate_up_swiglu(x, w, out, scratch=None):
+    """Native dispatch owns fused versus projection-plus-activation execution."""
+    g=selected();m=x.shape[0]
+    _chk(x,'draft MLP input',torch.bfloat16,m,g.hidden)
+    _chk(out,'draft activation',torch.bfloat16,m,g.intermediate)
+    need=gate_up_swiglu_workspace_bytes(m,w)
+    if need and scratch is None:scratch=torch.empty(need,dtype=torch.uint8,device=x.device)
+    if scratch is not None:
+        _chk(scratch,'draft activation scratch',scratch.dtype)
+    if need and scratch.nbytes<need:
+        raise SnowLLMError(f'draft activation needs {need} scratch bytes')
+    bf16,quant,meta,fmt=(None,w.quant,w.meta,w.fmt) if isinstance(w,KQuantProjWeight) else (w,None,None,8)
+    check(lib.snowllm_draft_mlp_activation(_p(x),_p(bf16),_p(quant),_p(meta),fmt,_p(out),
+          _p(scratch),scratch.nbytes if scratch is not None else 0,m,_stream()),'draft_mlp_activation')

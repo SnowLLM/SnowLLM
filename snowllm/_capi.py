@@ -28,12 +28,13 @@ os.environ.setdefault("ROCSHMEM_DEBUG_LEVEL", "NONE")
 __all__ = ["SnowLLMError", "build_geometry", "draft_count", "draft_name", "draft_shape", "lib",
            "select_draft", "select_geometry", "geometry_id", "geometry_name", "synchronize",
            "assert_single_hip_runtime", "GEO_QWEN36_35B_A3B", "GEO_QWEN36_27B",
-           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT"]
+           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH"]
 
 GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
 GEO_DEEPSEEK_V4_FLASH = 2
 GEO_QWEN38_FLASH_NEXT = 3
+GEO_GLM53_FLASH = 4
 
 
 class BuildGeometry(ctypes.Structure):
@@ -92,7 +93,7 @@ def select_geometry(geo: int) -> None:
             f"this build has no geometry {geo}; it carries "
             + ", ".join(f"{i} ({geometry_name(i)})"
                         for i in (GEO_QWEN36_35B_A3B, GEO_QWEN36_27B,
-                                  GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT)
+                                  GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH)
                         if geometry_name(i))
         )
 
@@ -157,7 +158,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 58
+ABI_VERSION = 60
 
 
 def _check_abi() -> None:
@@ -181,6 +182,24 @@ class Stream:
 
 P, S = c_void_p, Stream
 _SIGS = [
+    ("snowllm_dsv4_attention_scratch_bytes", c_int64, [c_int64,c_int]),
+    ("snowllm_dsv4_attention", c_int, [P,P,P,c_int64,S]),
+    ("snowllm_paged_attention_scratch_bytes", c_int64, [c_int64,c_int64,c_int]),
+    ("snowllm_paged_attention_varlen", c_int, [c_int,c_int64,c_int]),
+    ("snowllm_paged_attention", c_int, [P,P,c_int64,S]),
+    ("snowllm_dsv4_projection_plan", c_int, [c_int64]*4+[P]),
+    ("snowllm_attn_output_plan", c_int, [c_int64,c_int,c_int,P]),
+    ("snowllm_attn_output_gate", P, [P,c_int,c_int]),
+    ("snowllm_attn_output_destination", P, [P,P,c_int64]),
+    ("snowllm_attn_output_project", c_int, [P,P,c_int64,P,P,P,P,c_int,P,P,c_int64,c_int,c_int,S]),
+    ("snowllm_draft_mlp_activation_workspace_bytes", c_int64, [c_int64,c_int,c_int]),
+    ("snowllm_draft_projection_shape", c_int, [c_int,P]),
+    ("snowllm_draft_projection_plan", c_int, [c_int,P,c_int64,P]),
+    ("snowllm_draft_projections_workspace_bytes", c_int64, [c_int64]),
+    ("snowllm_draft_projection", c_int, [c_int,P,P,P,P,c_int64,c_int64,S]),
+    ("snowllm_draft_mlp_activation", c_int, [P,P,P,P,c_int,P,P,c_int64,c_int64,S]),
+    ("snowllm_glm_dense_projection_workspace_bytes", c_int64, [c_int]*4),
+    ("snowllm_glm_dense_projection", c_int, [P]*4+[c_int64]+[c_int]*5+[S]),
     ("snowllm_model_config", None, [POINTER(BuildGeometry)]),
     ("snowllm_select_draft", c_int, [POINTER(DraftShape)]),
     ("snowllm_active_draft", c_int, []),
@@ -219,14 +238,16 @@ _SIGS = [
     ("snowllm_linear_out_proj_shuffle_w_kquant", c_int, [c_int, P, P, P, S]),
     ("snowllm_linear_in_proj_ba_shuffle_w", c_int, [P, P, S]),
     ("snowllm_fused_linear_attn_workspace_bytes", c_int64, [c_int64, c_int]),
+    ("snowllm_linear_attn_checkpoint_rows", c_int64, [c_int64, c_int64, c_int64]),
     ("snowllm_mtp_fc_shuffle_w", c_int, [P, P, S]),
     ("snowllm_mtp_fc_scratch_bytes", c_int64, [c_int64]),
-    ("snowllm_mtp_pre_fc", c_int, [P, P, P, P, P, c_int64, c_float, S]),
+    ("snowllm_mtp_pre_fc", c_int, [P, P, P, P, P, c_int64, c_float, c_int, S]),
     ("snowllm_mtp_fc", c_int, [P, P, P, P, c_int64, c_int, S]),
     ("snowllm_draft_proj_shuffle_w", c_int, [c_int, P, P, S]),
     ("snowllm_draft_proj_scratch_bytes", c_int64, [c_int, c_int64, c_int]),
     ("snowllm_draft_proj", c_int, [c_int, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_draft_swiglu", c_int, [P, c_int64, P, c_int64, S]),
+    ("snowllm_draft_gate_up_swiglu", c_int, [P, P, P, P, c_int, P, c_int64, S]),
     ("snowllm_draft_proj_shuffle_w_kquant", c_int, [c_int, c_int, P, P, P, S]),
     ("snowllm_draft_proj_kquant", c_int, [c_int, c_int, P, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_draft_dyn_conv", c_int, [P, P, P, P, c_int64, c_int64, c_int, S]),
@@ -236,6 +257,8 @@ _SIGS = [
     ("snowllm_draft_rope_cos_sin", c_int, [P, P, P, P, c_int64, S]),
     ("snowllm_draft_qk_norm_rope", c_int, [P, c_int64, P, P, P, P, P, P, c_int64, c_float, S]),
     ("snowllm_draft_k_norm_rope", c_int, [P, c_int64, P, P, P, P, c_int64, c_float, S]),
+    ("snowllm_draft_norm_rope_store", c_int,
+     [P, c_int64, P, P, P, P, P, P, P, P, c_int64, c_float, c_int, c_int64, S]),
     ("snowllm_draft_reshape_and_cache", c_int,
      [P, P, c_int64, c_int64, P, P, P, c_int64, c_int64, S]),
     ("snowllm_draft_paged_attn", c_int,
@@ -336,6 +359,11 @@ _SIGS = [
     ("snowllm_qk_norm_rope_split_k", c_int,
      [P, c_int64, P, c_int64, P, P, P, P, P, P, c_int64, c_float, S]),
     ("snowllm_qk_norm_rope", c_int, [P, c_int64, P, P, P, P, P, P, c_int64, c_float, S]),
+    ("snowllm_latent_norm_store", c_int,
+     [P, c_int64, P, P, P, P, P, c_int64, c_int, c_int, c_int, c_float, S]),
+    ("snowllm_qk_norm_rope_cache", c_int,
+     [P, c_int64, P, c_int64, P, c_int64, P, P, P, P, P, P, P, P, P, P,
+      c_int64, c_float, c_int64, S]),
     ("snowllm_attn_out_scale_oproj", c_int, [P, P, c_int64, P, P, P, c_int64, c_int, S]),
     ("snowllm_attn_out_scale_oproj_fp8", c_int, [P, P, c_int64, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_attn_oproj_shuffled_a", c_int, [P, P, P, c_int64, S]),
@@ -343,6 +371,7 @@ _SIGS = [
     ("snowllm_attn_oproj_shuffled_a_kquant", c_int, [c_int, P, P, P, P, c_int64, S]),
     ("snowllm_attn_out_scale_oproj_kquant", c_int,
      [c_int, P, P, c_int64, P, P, P, P, c_int64, c_int, S]),
+    ("snowllm_rope_cos_sin_scaled", c_int, [P, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_rope_cos_sin", c_int, [P, P, P, P, c_int64, S]),
     ("snowllm_rope_cos_sin_mrope", c_int, [P, P, P, P, c_int64, S]),
     ("snowllm_rope_apply_q", c_int, [P, P, P, c_int64, S]),
@@ -400,6 +429,10 @@ _SIGS = [
     ("snowllm_qwen4exp_qsa_produce", c_int,
      [P, c_int64, P, P, P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64,
       c_int64, c_float, S]),
+    ("snowllm_qwen4exp_qsa_produce_workspace_bytes", c_int64, [c_int64, c_int64, c_int64]),
+    ("snowllm_qwen4exp_qsa_produce_snapshot", c_int,
+     [P, c_int64, P, P, P, P, P, P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64,
+      c_int64, c_float, P, c_int64, S]),
     ("snowllm_qwen4exp_indexer_q", c_int,
      [P, c_int64, P, P, P, P, c_int64, c_int64, c_int64, c_float, S]),
     ("snowllm_qwen4exp_qsa_attn_prefill", c_int,
@@ -483,11 +516,45 @@ _SIGS = [
     ("snowllm_fused_moe_fp8", c_int, [P, P, P, P, P, P, P, P, c_int64, S]),
     ("snowllm_lm_head_gemm_decode", c_int, [P, P, P, c_int64, S]),
     ("snowllm_lm_head_gemm_prefill", c_int, [P, P, P, P, c_int64, S]),
+    ("snowllm_glm_projection_plan", c_int, [P]+[c_int]*4+[P]),
+    ("snowllm_glm_projection_fanout_workspace_bytes", c_int64, [P]+[c_int]*3),
+    ("snowllm_glm_projection_fanout", c_int, [P,P]+[c_int]*3+[P,c_int64,S]),
+    ("snowllm_glm_hc_projection_workspace_bytes", c_int64, [P]+[c_int]*4),
+    ("snowllm_glm_hc_projection", c_int, [P]*3+[c_float]+[P,P]+[c_int]*4+[P,c_int64,S]),
+    ("snowllm_glm_projection", c_int, [P]*4+[c_int64]+[c_int]*4+[S]),
+    ("snowllm_latent_norm_store_layout", c_int, [c_int64]*3+[c_int]*3+[P]),
+    ("snowllm_draft_norm_rope_store_layout", c_int, [c_int64,c_int,c_int,c_int64,P]),
+    ("snowllm_glm_sparse_geometry", c_int, [c_int]*6),
+    ("snowllm_sampling_workspace_bytes", c_int64, [c_int64]*3),
+    ("snowllm_sampling_sample", c_int, [P]*7+[c_int64]*4+[S]),
+    ("snowllm_row_copies_workspace_bytes",c_int64,[P,c_int64]),
+    ("snowllm_row_copies",c_int,[P,c_int64,P,c_int64,S]),
+    ("snowllm_dspark_weight_bytes",c_int64,[c_int64]*2),
+    ("snowllm_dspark_pack_weight",c_int,[P,P,c_int64,c_int64,S]),
+    ("snowllm_dspark_tap_mean",c_int,[P,P]+[c_int64]*5+[S]),
+    ("snowllm_dspark_context_workspace_bytes",c_int64,[c_int64]*3),
+    ("snowllm_dspark_context",c_int,[P]*4+[c_int64]*4+[S]),
+    ("snowllm_dspark_markov_workspace_bytes",c_int64,[c_int64]*4),
+    ("snowllm_dspark_markov",c_int,[P]*10+[c_int64]*8+[S]),
+    ("snowllm_metadata_ranges",c_int,[P,c_int64,S]),
+    ("snowllm_row_copy_workspace_bytes",c_int64,[P]),
+    ("snowllm_row_copy",c_int,[P,P,c_int64,S]),
+    ("snowllm_causal_compress_mask",c_int,[P]*4+[c_int64]*4+[S]),
+    ("snowllm_qsa_metadata",c_int,[P]*9+[c_int64]*7+[c_float,c_int,S]),
+    ("snowllm_spec_accept",c_int,[P]*3+[c_int64]*4+[S]),
+    ("snowllm_spec_first_metadata",c_int,[P]*7+[c_int64]*5+[S]),
+    ("snowllm_spec_step_table_width",c_int64,[c_int64]*3),
+    ("snowllm_spec_step_metadata",c_int,[P]*9+[c_int64]*7+[S]),
+    ("snowllm_draft_metadata",c_int,[P]*4+[c_int64]*3+[S]),
+    ("snowllm_paged_window_view_shifted",c_int,[P,c_int64,P,c_int]+[c_int64]*4+[P,c_int64,P,c_int64,S]),
     ("snowllm_sampling_softmax", c_int, [P, P, c_int64, c_int64, P, S]),
     ("snowllm_sampling_topk_topp", c_int, [P, P, P, c_int64, c_int64, c_int64, P, P, S]),
+    ("snowllm_sampling_topk_topp_sample", c_int, [P, P, P, c_int64, c_int64, c_int64, P, P, S]),
     ("snowllm_sampling_multinomial", c_int, [P, P, P, P, c_int64, c_int64, S]),
+    ("snowllm_sampling_penalties", c_int, [P, P, P, c_int, c_int, c_float, c_float, c_float, S]),
     ("snowllm_sampling_argmax", c_int, [P, P, c_int64, c_int64, S]),
 
+    ("snowllm_mlp_swiglu", c_int, [P,P,P,c_int64,c_float,c_int,S]),
     ("snowllm_mlp_gate_up_shuffle_w", c_int, [P, P, S]),
     ("snowllm_mlp_gate_up_shuffle_w_fp8", c_int, [P, P, S]),
     ("snowllm_mlp_gate_up_shuffle_w_kquant", c_int, [c_int, P, P, P, S]),
@@ -541,18 +608,67 @@ _SIGS = [
     ("snowllm_dsv4_narrow_proj_rows", c_int64, [c_int]),
     ("snowllm_dsv4_narrow_proj_partials_bytes", c_int64, [c_int, c_int64]),
     ("snowllm_dsv4_narrow_proj_bf16", c_int, [c_int, P, P, P, P, c_int64, S]),
+    ("snowllm_glm_proj_workspace_bytes", c_int64, [c_int]*5 + [P]),
+    ("snowllm_glm_grouped_projection_cols", c_int, [c_int]*3),
+    ("snowllm_glm_grouped_projection", c_int, [P]*3 + [c_int]*4 + [S]),
+    ("snowllm_glm_proj", c_int, [c_int] + [P]*5 + [c_int]*4 + [c_int64, S]),
+    ("snowllm_glm_proj_fanout_workspace_bytes", c_int64, [P,c_int,c_int,c_int]),
+    ("snowllm_glm_proj_fanout", c_int, [P,P,c_int,c_int,c_int,P,c_int64,S]),
     ("snowllm_vision_layernorm", c_int, [P, P, P, P, c_int64, c_int64, c_float, S]),
     ("snowllm_vision_gemm_scratch_bytes", c_int64, [c_int64, c_int64]),
     ("snowllm_vision_gemm_bias_act", c_int,
      [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int, S]),
     ("snowllm_vision_rope_qk", c_int, [P, P, P, c_int64, c_int64, c_int64, c_int64, S]),
     ("snowllm_vision_attn", c_int, [P, P, P, P, c_int64, c_int64, c_int64, c_int64, S]),
+    ("snowllm_vision_pos_embed_add", c_int, [P, P, P, P, c_int64, c_int64, c_int64, S]),
+    ("snowllm_vision_attention", c_int, [P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, S]),
     ("snowllm_vision_supported_head_dims", c_int64, [P, c_int64]),
     ("snowllm_vision_supported_ln_hidden", c_int64, [P, c_int64]),
 
     ("snowllm_file_reader_create", P, [c_int, c_int64, c_int]),
     ("snowllm_file_reader_destroy", None, [P]),
     ("snowllm_file_reader_read", c_int, [P, c_char_p, c_int64, c_int64, P, S]),
+]
+_SIGS += [
+ ("snowllm_qsa_job_plan", c_int64, [P,P,c_int64,P]),
+ ("snowllm_qsa_group_rows", c_int64, []),
+ ("snowllm_qsa_decode_rows", c_int64, [c_int64]),
+ ("snowllm_qsa_attention_scratch_bytes", c_int64, [P]),
+ ("snowllm_qsa_attention", c_int, [P,P,c_int64,S]),
+ ("snowllm_ple_step_scratch_bytes", c_int64, [P]),
+ ("snowllm_ple_step", c_int, [P,P,c_int64,S]),
+]
+_SIGS += [
+ ("snowllm_inference_qkv_layout", None, [P,c_int64,P]),
+ ("snowllm_inference_qkv", c_int, [P,P,P,P,c_float,P,P,c_int64,c_int,P,P,S]),
+ ("snowllm_inference_mlp", c_int, [P,P,P,P,c_int64,c_int,S]),
+ ("snowllm_inference_moe_workspace_bytes", c_int64, [c_int64,c_int64]),
+ ("snowllm_inference_moe", c_int, [P]*7+[c_int64]*3+[S]),
+ ("snowllm_inference_head", c_int, [P,P,P,P,c_int64,S]),
+ ("snowllm_inference_hc", c_int, [P,P,P,P,P,c_int64,c_int64,c_int64,c_int64,c_int64,c_float,P,P,S]),
+]
+_SIGS += [
+ ("snowllm_indexer_select_scratch_bytes", c_int64, [c_int64,c_int64]),
+ ("snowllm_indexer_select", c_int, [P,P,c_int64,S]),
+]
+_SIGS += [
+    ("snowllm_layernorm_rows", c_int, [P,P,P,P,c_int64,c_int64,c_float,S]),
+    ("snowllm_rmsnorm_gated_rows", c_int, [P,P,P,P,c_int64,c_int64,c_float,c_int,S]),
+    ("snowllm_glm_pack_qkv", c_int, [P, P, P, P, c_int, c_int, S]),
+    ("snowllm_glm_hc_mean", c_int, [P, P, P, c_int, c_int, S]),
+    ("snowllm_glm_group_major", c_int, [P, P, c_int, c_int, S]),
+    ("snowllm_glm_rms_f32", c_int, [P, P, c_int, c_int, c_float, S]),
+    ("snowllm_glm_hc_weighted_norm", c_int, [P, P, P, P, c_int, c_float, S]),
+]
+_SIGS += [
+    ("snowllm_glm_prepare_embedding", c_int, [P]*10+[c_int]*2+[S]),
+    ("snowllm_glm_kda", c_int, [P]*12+[c_int]*3+[c_float,S]),
+    ("snowllm_glm_kda_checkpoint", c_int, [P]*16+[c_int]*4+[c_float,S]),
+    ("snowllm_glm_kda_spec", c_int, [P]*12+[c_int]*3+[c_float,S]),
+    ("snowllm_glm_sparse_produce_step", c_int, [P]*12+[c_int]*5+[S]),
+    ("snowllm_glm_sparse_produce_accepted", c_int, [P]*13+[c_int]*5+[S]),
+    ("snowllm_glm_sparse_attention", c_int, [P]*15+[c_int]*5+[c_float,c_int64,S]),
+    ("snowllm_glm_hc_norm_proj", c_int, [P]*4+[c_int,c_float,S]),
 ]
 _missing = []
 for _name, _res, _args in _SIGS:
