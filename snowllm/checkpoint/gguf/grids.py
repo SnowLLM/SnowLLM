@@ -171,31 +171,21 @@ GRID_HEX = {
     ),
 }
 
-_CACHE: dict = {}
-
 
 def grid(name: str, device: torch.device | str) -> torch.Tensor:
-    key = (name, str(device))
-    hit = _CACHE.get(key)
-    if hit is None:
-        alphabet = GRID_MAP[name]
-        bits = (len(alphabet) - 1).bit_length()
-        per_byte = 8 // bits
-        raw = torch.frombuffer(bytearray.fromhex(GRID_HEX[name]), dtype=torch.uint8).to(device)
-        shift = torch.arange(0, 8, 8 // per_byte, dtype=torch.uint8, device=device)
-        code = ((raw[:, None] >> shift) & ((1 << bits) - 1)).reshape(-1).long()
-        alpha = torch.tensor(alphabet, dtype=torch.float32, device=device)
-        hit = _CACHE[key] = alpha[code].reshape(GRID_SHAPE[name])
-    return hit
+    alphabet = GRID_MAP[name]
+    bits = (len(alphabet) - 1).bit_length()
+    per_byte = 8 // bits
+    raw = torch.frombuffer(bytearray.fromhex(GRID_HEX[name]), dtype=torch.uint8).to(device)
+    shift = torch.arange(0, 8, 8 // per_byte, dtype=torch.uint8, device=device)
+    code = ((raw[:, None] >> shift) & ((1 << bits) - 1)).reshape(-1).long()
+    alpha = torch.tensor(alphabet, dtype=torch.float32, device=device)
+    return alpha[code].reshape(GRID_SHAPE[name])
 
 
 def ksigns(device: torch.device | str) -> torch.Tensor:
-    key = ("ksigns", str(device))
-    hit = _CACHE.get(key)
-    if hit is None:
-        i = torch.arange(128, dtype=torch.int32, device=device)
-        parity = torch.zeros_like(i)
-        for b in range(7):
-            parity ^= (i >> b) & 1
-        hit = _CACHE[key] = (i | (parity << 7)).to(torch.uint8)
-    return hit
+    i = torch.arange(128, dtype=torch.int32, device=device)
+    parity = torch.zeros_like(i)
+    for b in range(7):
+        parity ^= (i >> b) & 1
+    return (i | (parity << 7)).to(torch.uint8)
