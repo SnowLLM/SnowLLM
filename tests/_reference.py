@@ -66,19 +66,3 @@ class Reference:
     def get2d(self, name: str, nth: int = 0) -> torch.Tensor:
         t = self.get(name, nth)
         return t.reshape(-1, t.shape[-1])
-
-
-def compare(got: torch.Tensor, want: torch.Tensor, name: str, rtol: float = 2e-2,
-            atol: float = 2e-2) -> tuple[bool, str]:
-    got = got.detach().float().cpu().reshape(-1)
-    want = want.detach().float().cpu().reshape(-1)
-    if got.shape != want.shape:
-        return False, f"{name}: shape {tuple(got.shape)} vs reference {tuple(want.shape)}"
-    diff = (got - want).abs()
-    scale = want.abs().clamp_min(1e-6)
-    rel = (diff / scale).max().item()
-    mx = diff.max().item()
-    ok = bool((diff <= atol + rtol * want.abs()).all())
-    cos = torch.nn.functional.cosine_similarity(got, want, dim=0).item()
-    return ok, (f"{name}: max_abs {mx:.4g} max_rel {rel:.4g} cos {cos:.6f} "
-                f"rms {want.pow(2).mean().sqrt().item():.4g}")

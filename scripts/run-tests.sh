@@ -3,7 +3,7 @@
 #
 # Usage: scripts/run-tests.sh [pattern...]   (default: all of them)
 #
-# A pattern is any substring of a test's name: `run-tests.sh xcheck yarn`.
+# A pattern is any substring of a test's name: `run-tests.sh glm5_next cache_storage`.
 #
 # Tests listed in a suite below share ONE process and ONE checkpoint load; SNOWLLM_TIMEOUT then
 # bounds the whole suite rather than each test. Run a suite member on its own to isolate it.
@@ -20,13 +20,7 @@ PYTHON="${PYTHON:-python}"
 
 suite_of() {
     case "$1" in
-    test_dflash_e2e|test_mtp_dynamic_depth|test_mtp_e2e|test_spec_switch|test_step_accounting|\
-    test_wide_decode_rows) echo fp8a ;;
-    test_decode_tile_rows|test_dflash_context_holes|test_dflash_memory_budget|\
-    test_dflash_pool_reuse|test_graph_dflash|test_graph_verify|test_linear_state_pool|\
-    test_mtp_chunked_prefill) echo fp8b ;;
-    test_aliases|test_prefill_batch_equiv|test_prefix_cache) echo bf16a ;;
-    test_engine_e2e|test_graph_engine|test_kv_int8|test_vision_e2e) echo bf16b ;;
+    test_engine_e2e|test_preemption) echo bf16 ;;
     *) echo "" ;;
     esac
 }
