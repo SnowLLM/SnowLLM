@@ -6,7 +6,7 @@ import torch
 from ... import ops
 from ..._capi import GEO_QWEN38_FLASH_NEXT, SnowLLMError
 from .. import placement
-from ..geometry import Qwen4ExpGeometry, _align
+from ..geometry import Qwen4ExpGeometry, pad_gemm_n
 from ..qwen3_5.layers import VocabEmbedding
 from ..qwen3_5.qwen3_5_weights import (
     BAKED,
@@ -65,13 +65,14 @@ def _hc_format(w: object, p: str) -> int | None:
 def _hc_down(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool, fmt: int) -> KQuantDense:
     K, lr = geo.hc_dim, geo.hc_lowrank
     rows = lr + (geo.hc_count if inject else 0)
+    n = pad_gemm_n(rows)
     per = ops.kquant_bytes(fmt, 1, K)[2]
-    blocks = ops.zero_bytes(_align(rows) * per)
+    blocks = ops.zero_bytes(n * per)
     raw, = w.blocks(p + "input_mix_weight_down.weight")
     blocks[:lr * per] = raw
     if inject:
         blocks[lr * per:rows * per] = _q8_0(w.read_f32(p + "block_inject_weight.weight"))
-    return KQuantDense(fmt, blocks, _align(rows), K)
+    return KQuantDense(fmt, blocks, n, K)
 
 
 def _hc_up(w: object, p: str, geo: Qwen4ExpGeometry, fmt: int) -> KQuantDense:

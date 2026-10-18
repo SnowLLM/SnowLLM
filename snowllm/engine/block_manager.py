@@ -77,8 +77,10 @@ class Staging:
             self.cap = max(n, 2 * self.cap)
             self.h64 = torch.zeros(self.cap, dtype=torch.int64).pin_memory()
             self.h32 = torch.zeros(self.cap, dtype=torch.int32).pin_memory()
-            self.d64 = torch.zeros(self.cap, dtype=torch.int64, device="cuda")
-            self.d32 = torch.zeros(self.cap, dtype=torch.int32, device="cuda")
+            # Every returned view is filled by the flat host copy below. Avoid
+            # Torch fill kernels when a serving batch first grows this buffer.
+            self.d64 = torch.empty(self.cap, dtype=torch.int64, device="cuda")
+            self.d32 = torch.empty(self.cap, dtype=torch.int32, device="cuda")
         out = []
         for h, d, parts, code in ((self.h64, self.d64, i64s, "q"),
                                   (self.h32, self.d32, i32s, "i")):
@@ -131,17 +133,20 @@ class BlockAllocator:
             if self.ref[b] == 0:
                 self.free.append(b)
 
-    def grow(self, r: Request, n: int = 1) -> bool:
-        need = ops.kv_blocks_for(r.num_cached + n, self.block_size)
-        while need > len(r.blocks):
-            if self.ring and len(r.blocks) >= self.ring:
-                r.blocks.append(r.blocks[len(r.blocks) % self.ring])
-                continue
-            more = self.alloc(1)
-            if more is None:
-                return False
-            r.blocks += more
+    def ensure(self, blocks: list[int], count: int) -> bool:
+        physical = min(count, self.ring) if self.ring else count
+        extra = max(0, physical-len(blocks))
+        if extra > len(self.free):
+            return False
+        if extra:
+            blocks.extend(self.alloc(extra))
+        if self.ring:
+            while len(blocks) < count:
+                blocks.append(blocks[len(blocks) % self.ring])
         return True
+
+    def grow(self, r: Request, n: int = 1) -> bool:
+        return self.ensure(r.blocks, ops.kv_blocks_for(r.num_cached+n, self.block_size))
 
 
 class StateSlots:
@@ -161,4 +166,4 @@ class StateSlots:
         return ops.linear_state_slots(r.slot, r.state_head, rows, self.T)
 
     def dummy_indices(self, n: int) -> torch.Tensor:
-        return torch.full((n,), self._dummy, dtype=torch.int32, device="cuda")
+        return ops.metadata_ranges([(torch.int32,[(self._dummy,0,n)])])[0]

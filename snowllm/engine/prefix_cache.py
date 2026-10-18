@@ -3,23 +3,21 @@
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
-import torch
-
+from .. import ops
 from ..defaults import CKPT_EVERY, DEFAULT_PREFIX_MEMORY_RATIO
 
+from .cache import CheckpointLayout, StateRows
 from .forward_context import Batch
 from .forward_context import i32 as _i32
 
 if TYPE_CHECKING:
-    from .dsv4_cache import Cache
     from ..models.qwen3_5.layers import GatedDeltaNet
     from ..models.qwen4exp.layers import Ple
     from .block_manager import BlockAllocator
     from .request import Request
 
-Held = dict[int, list[int]]
 Pair = tuple[object, list[int]]
 
 
@@ -33,6 +31,21 @@ def thin(marks: list[int], k: int) -> list[int]:
     if k == 1:
         return marks[-1:]
     return [marks[round(i * (len(marks) - 1) / (k - 1))] for i in range(k)]
+
+
+class Pages(Protocol):
+    align: int
+    is_ring: bool
+
+    def retain(self, blocks: Any) -> Any: ...
+    def release(self, blocks: Any) -> None: ...
+    def at(self, r: "Request", m: int, slot: int) -> Any: ...
+    def prefix(self, blocks: Any, n_tokens: int) -> Any: ...
+    def count(self, held: list[Any]) -> int: ...
+    def target(self, blocks: Any) -> Any: ...
+    def covered(self, hit: "Entry") -> tuple[int, int]: ...
+    def own(self, alloc: "BlockAllocator", blocks: Any, fresh: list[int],
+            r: "Request") -> list[int]: ...
 
 
 class BlockPages:
@@ -68,42 +81,41 @@ class BlockPages:
         return alloc.retain(blocks) + fresh
 
 
-class RatioPages:
+class HistoryPages:
     is_ring = False
 
-    def __init__(self, cache: "Cache") -> None:
-        self.cache = cache
-        self.align = cache.ckpt_align()
+    def __init__(self, history) -> None:
+        self.history = history
+        self.align = history.align
 
-    def retain(self, held: Held) -> Held:
-        return {r: self.cache.blocks[r].retain(bs) for r, bs in held.items()}
+    def retain(self, held: dict[int, list[int]]) -> dict[int, list[int]]:
+        return self.history.retain(held)
 
-    def release(self, held: Held) -> None:
-        for r, bs in held.items():
-            self.cache.blocks[r].release(bs)
+    def release(self, held: dict[int, list[int]]) -> None:
+        self.history.release(held)
 
-    def at(self, r: "Request", m: int, slot: int) -> Held:
-        return self.cache.held_prefix(slot, m)
+    def at(self, r: "Request", m: int, slot: int) -> dict[int, list[int]]:
+        return self.history.prefix(slot, m)
 
-    def prefix(self, held: Held, n_tokens: int) -> Held:
+    def prefix(self, held: dict[int, list[int]], n_tokens: int) -> dict[int, list[int]]:
         return held
 
-    def count(self, held: list[Held]) -> int:
+    def count(self, held: list[dict[int, list[int]]]) -> int:
         return len({(r, b) for h in held for r, bs in h.items() for b in bs})
 
-    def target(self, blocks: Held) -> Held:
+    def target(self, blocks: dict[int, list[int]]) -> dict[int, list[int]]:
         return blocks
 
     def covered(self, hit: "Entry") -> tuple[int, int]:
         return 0, len(hit.tokens)
 
-    def own(self, alloc: "BlockAllocator", blocks: Held, fresh: list[int],
+    def own(self, alloc: "BlockAllocator", blocks: dict[int, list[int]], fresh: list[int],
             r: "Request") -> list[int]:
         return fresh
 
 
 class WithDraft:
-    def __init__(self, inner: BlockPages | RatioPages, alloc: "BlockAllocator",
+    def __init__(self, inner: Pages, alloc: "BlockAllocator",
                  block_size: int) -> None:
         self.inner = inner
         self.draft = BlockPages(alloc, block_size)
@@ -146,6 +158,9 @@ class WithDraft:
 class Residue:
     mid_walk = True
 
+    def prefill_rows(self, first: int, rows: int) -> int:
+        return rows
+
     def bytes_each(self) -> int:
         return 0
 
@@ -156,7 +171,7 @@ class Residue:
         return True
 
     def load(self, i: int, slot: int, raw_blocks: list[int] | None = None,
-             held: Held | None = None) -> None:
+             held: object = None) -> None:
         pass
 
     def drop(self, i: int) -> None:
@@ -167,16 +182,14 @@ class NoResidue(Residue):
     pass
 
 
-class LinearResidue(Residue):
-    mid_walk = True
-
-    def __init__(self, mods: "list[tuple[int, GatedDeltaNet]]") -> None:
-        self.dev = [m.state for _, m in mods]
-        self.ckpt = [m.ckpt for _, m in mods]
+class RecurrentResidue(Residue):
+    def __init__(self, states) -> None:
+        self.dev = [dev for dev, _ in states]
+        self.ckpt = [ckpt for _, ckpt in states]
+        self.layout = CheckpointLayout(StateRows(t) for state in self.dev for t in state)
 
     def bytes_each(self) -> int:
-        return sum(c[0].numel() * c.element_size() + r[0].numel() * r.element_size()
-                   for c, r in self.dev)
+        return self.layout.bytes_each()
 
     def arm(self, b: Batch, marks: list[int], idx: list[int], lo: int) -> None:
         b.ckpt_at = _i32([[m - lo for m in marks]])
@@ -184,80 +197,82 @@ class LinearResidue(Residue):
         b.ckpt_n = len(marks)
 
     def load(self, i: int, slot: int, raw_blocks: list[int] | None = None,
-             held: Held | None = None) -> None:
-        for (hc, hr), (dc, dr) in zip(self.ckpt, self.dev):
-            dc[slot].copy_(hc[i], non_blocking=True)
-            dr[slot].copy_(hr[i], non_blocking=True)
+             held: object = None) -> None:
+        self.layout.load(slot, tuple(t for state in self.ckpt for t in state), index=i)
+
+
+class LinearResidue(RecurrentResidue):
+    def __init__(self, mods: "list[tuple[int, GatedDeltaNet]]", extra=()) -> None:
+        self.has_linear = bool(mods)
+        super().__init__([(m.state, m.ckpt) for _, m in mods] + list(extra))
+
+    def prefill_rows(self, first: int, rows: int) -> int:
+        return ops.linear_attn_checkpoint_rows(first, rows, CKPT_EVERY) if self.has_linear else rows
 
 
 class Qwen4ExpResidue(LinearResidue):
     def __init__(self, mods: "list[tuple[int, GatedDeltaNet]]", ple: "list[Ple]") -> None:
-        super().__init__(mods)
-        self.ple = [(m.state, m.ckpt) for m in ple]
-
-    def bytes_each(self) -> int:
-        return super().bytes_each() + sum(c[0].numel() * c.element_size() for _, c in self.ple)
-
-    def load(self, i: int, slot: int, raw_blocks: list[int] | None = None,
-             held: Held | None = None) -> None:
-        super().load(i, slot, raw_blocks, held)
-        for dev, ck in self.ple:
-            dev[slot].copy_(ck[i], non_blocking=True)
+        super().__init__(mods, [((m.state,), (m.ckpt,)) for m in ple])
 
 
-class Dsv4Residue(Residue):
+class SnapshotResidue(Residue):
     mid_walk = False
 
-    def __init__(self, cache: "Cache", capacity: int) -> None:
-        self.cache = cache
-        self.each = cache.ckpt_bytes()
-        self.buf = torch.empty(capacity * self.each, dtype=torch.uint8, device="cuda") \
-            if capacity else None
-        self.meta: dict[int, object] = {}
-        self.at: dict[int, int] = {}
+    def __init__(self, cache, buffer, align):
+        self.cache, self.buf, self.align = cache, buffer, align
+        self.meta, self.at = {}, {}
 
-    def bytes_each(self) -> int:
-        return self.each
+    def bytes_each(self):
+        return self.buf.shape[1]
 
-    def _slice(self, i: int) -> torch.Tensor:
-        return self.buf[i * self.each:(i + 1) * self.each]
-
-    def save(self, i: int, slot: int, m: int, r: "Request") -> bool:
-        meta = self.cache.save_ckpt(slot, m, r.blocks, self._slice(i))
-        if meta is None:
+    def save(self, i, slot, m, r):
+        if m % self.align or not self.cache.snapshots.save(slot, self.buf[i], blocks=r.blocks,
+                                                         position=m):
             return False
-        self.meta[i], self.at[i] = meta, m
+        self.meta[i], self.at[i] = self.cache.state.save(slot), m
         return True
 
-    def drop(self, i: int) -> None:
+    def load(self, i, slot, raw_blocks=None, held=None):
+        self.cache.snapshots.load(slot, self.buf[i], blocks=raw_blocks, position=self.at[i])
+        self.cache.history.attach(slot, held)
+        self.cache.state.load(slot, self.meta[i])
+
+    def drop(self, i):
         self.meta.pop(i, None)
         self.at.pop(i, None)
 
-    def load(self, i: int, slot: int, raw_blocks: list[int] | None = None,
-             held: Held | None = None) -> None:
-        self.cache.load_ckpt(slot, self.meta[i], raw_blocks, self._slice(i), self.at[i], held)
-
-
-Pages = BlockPages | RatioPages | WithDraft
-
 
 class PrefixStore:
-    def __init__(self, pages: Pages, residue: Residue, capacity: int) -> None:
+    def __init__(self, pages: Pages, residue: Residue, capacity: int, *,
+                 lookahead: int = 0) -> None:
         self.pages, self.residue, self.capacity = pages, residue, capacity
         self.free = list(range(capacity))
+        self.lookahead = lookahead
+        self.next_tokens: dict[int, tuple[int, ...]] = {}
 
     def take(self) -> int | None:
         return self.free.pop() if self.free else None
 
     def give(self, i: int) -> None:
         self.residue.drop(i)
+        self.next_tokens.pop(i, None)
         self.free.append(i)
 
     def marks(self, lo: int, hi: int) -> list[int]:
         got = checkpoints(lo, hi) if self.residue.mid_walk else ([hi] if hi > lo else [])
         return [m for m in got if m % self.pages.align == 0]
 
+    def prefill_end(self, lo: int, hi: int) -> int:
+        return lo + self.residue.prefill_rows(lo, hi - lo)
+
     def took(self, r: "Request", m: int, i: int, slot: int) -> object:
+        if self.lookahead:
+            # Shifted MTP row m-1 consumes token m. A stopped prefill skips the
+            # draft forward, so none of that chunk's draft pages can be published.
+            tokens = r.tokens
+            if r.done or m + self.lookahead > len(tokens):
+                return None
+            self.next_tokens[i] = tuple(tokens[m:m + self.lookahead])
         return self.pages.at(r, m, slot) if self.residue.save(i, slot, m, r) else None
 
     def describe(self) -> str:
@@ -274,6 +289,7 @@ class Entry:
     blocks: object = None
     ckpt: int = -1
     used: int = 0
+    lookahead: tuple[int, ...] = ()
 
 
 class PrefixCache:
@@ -290,7 +306,8 @@ class PrefixCache:
         best = None
         for e in self.entries:
             n = len(e.tokens)
-            if n < limit and (best is None or n > len(best.tokens)) and tokens[:n] == e.tokens:
+            if n < limit and (best is None or n > len(best.tokens)) and tokens[:n] == e.tokens \
+                    and tuple(tokens[n:n + len(e.lookahead)]) == e.lookahead:
                 best = e
         return best
 
@@ -316,13 +333,14 @@ class PrefixCache:
 
     def insert(self, tokens: list[int], blocks: object, i: int) -> bool:
         n = len(tokens)
+        lookahead = self.store.next_tokens.get(i, ())
         kept = None if blocks is None else self.pages.prefix(blocks, n)
         if kept is None or n % self.pages.align \
-                or any(len(e.tokens) == n and e.tokens == tokens for e in self.entries):
+                or any(e.tokens == tokens and e.lookahead == lookahead for e in self.entries):
             self.store.give(i)
             return False
         self.clock += 1
-        self.entries.append(Entry(list(tokens), self.pages.retain(kept), i, self.clock))
+        self.entries.append(Entry(list(tokens), self.pages.retain(kept), i, self.clock, lookahead))
         return True
 
     def evict(self, keep: Entry | None = None) -> bool:

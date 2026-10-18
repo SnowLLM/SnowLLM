@@ -104,7 +104,7 @@ class DSparkDecoder:
         )
         tv = self.sampler.sample(self.runner.forward(b),
                                  [r for r in batch for _ in range(T)]).view(B, T)
-        nacc = (tv[:, :T - 1] == drafted.view(B, T - 1)).long().cumprod(1).sum(1) + 1
+        nacc = ops.spec_accept(tv,drafted.view(B,T-1))
 
         acc, got = nacc.tolist(), tv.tolist()
         kept = []
@@ -127,7 +127,7 @@ class DSparkDecoder:
                 cpos.append(first + t)
                 rpos.append(first + t + r.pos_delta)
         self._write_ctx(rows, seqs, cpos, rpos, bt)
-        self._block([batch[i] for i in live], bt[live] if len(live) < len(batch) else bt)
+        self._block([batch[i] for i in live], ops.gather_rows(bt,i64(live)) if len(live) < len(batch) else bt)
 
     def after_prefill(self, r: Request, lo: int, hi: int, M: int, propose: bool) -> None:
         bt = self._draft_table([r])
@@ -165,7 +165,7 @@ class DSparkDecoder:
         taps = self.runner.walker.taps
         with self.runner.arena.frame():
             feat = self.draft.context_feature(
-                taps[:rows] if isinstance(rows, int) else taps.index_select(0, i64(rows)))
+                taps[:rows] if isinstance(rows, int) else ops.gather_rows(taps,i64(rows)))
             self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
                                      ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
                                                        self.runner.block_size))

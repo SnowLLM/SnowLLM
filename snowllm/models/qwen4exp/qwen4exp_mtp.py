@@ -45,7 +45,7 @@ class Qwen4ExpMTP(nn.Module):
         if b.last_row is not None:
             ctx.take_xn()
             folded = a.new(b.last_row.numel(), n_hc, E)
-            torch.index_select(streams, 0, b.last_row, out=folded)
+            ops.gather_rows(streams,b.last_row,out=folded)
         out = self.head_fold(ctx, folded, ctx.take_xn())
         ctx.close()
         return streams, out

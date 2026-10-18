@@ -11,11 +11,11 @@ import torch
 from torch import nn
 
 from ... import ops
-from ...engine.dsv4_cache import RatioPlan, mask_stride
-from ...engine.dsv4_pools import Carry, IndexPool, LayerPools, Pool
 from ...engine.forward_context import Dsv4Context
 from ...trace import span
-from ..geometry import COFF, DeepSeekV4Geometry
+from ..geometry import COFF, DeepSeekV4Geometry, pad_gemm_n
+from .compression import RatioPlan, mask_stride
+from .pools import Carry, IndexPool, LayerPools, Pool
 from . import rope as dsv4_rope
 
 ExpertWeight = ops.KQuantExpertWeight | ops.LowBitExpertWeight
@@ -31,9 +31,6 @@ def _ws(a: ops.Arena, dtype: torch.dtype, rows: int, rows_cap: int, cols: int,
     buf = a.flat(rows_cap * cols_cap, dtype)
     return buf[:rows * cols].view(rows, cols)
 
-
-def _split_ws(ctx: Dsv4Context, blocks: int) -> torch.Tensor:
-    return ctx.arena.flat(ops.dsv4_mla_split_workspace_bytes(blocks), torch.uint8)
 
 
 class RMSNorm(nn.Module):
@@ -60,8 +57,6 @@ class VocabEmbedding(nn.Module):
 
 
 class ProjWeight:
-    N_QUANTUM = 128
-
     def __init__(self, which: ops.Dsv4Proj, n: int, k: int, rows: int) -> None:
         self.which, self.n, self.k, self.rows = which, n, k, rows
         self.kq = None
@@ -77,7 +72,7 @@ class ProjWeight:
     @classmethod
     def dense(cls, which: ops.Dsv4Proj, w: torch.Tensor, narrow: bool = False) -> "ProjWeight":
         rows, k = w.shape
-        n = ((rows + cls.N_QUANTUM - 1) // cls.N_QUANTUM) * cls.N_QUANTUM
+        n = pad_gemm_n(rows)
         self = cls(which, n, k, rows)
         padded = torch.zeros(n, k, dtype=torch.bfloat16, device="cuda")
         padded[:rows] = w.to(torch.bfloat16)
@@ -91,15 +86,13 @@ class ProjWeight:
 
     def normed(self, ctx: Dsv4Context, x: torch.Tensor, eps: float) -> torch.Tensor:
         arena, m = ctx.arena, x.shape[0]
-        decode = m <= ctx.decode_max_m
-        path = ops.Path.DECODE if decode else ops.Path.PREFILL
-        out = (arena.new(m, self.rows if self.narrow is not None else self.n) if decode
-               else arena.new(m, self.n, dtype=torch.float32))
+        plan = ops.dsv4_projection_plan(m,ctx.decode_max_m,self.n,self.rows if self.narrow is not None else self.n)
+        out = arena.new(m,plan.columns,dtype=plan.dtype)
         with arena.frame():
             ws = arena.flat(ops.dsv4_norm_proj_scratch_bytes(
-                self.which, ctx.decode_max_m if decode else m, path), torch.uint8)
+                self.which, plan.scratch_rows, plan.path), torch.uint8)
             ops.dsv4_norm_proj_bf16(self.which, arena.dense(x, torch.bfloat16), None, eps, self.w,
-                                    self.narrow, out, ws, path)
+                                    self.narrow, out, ws, plan.path)
         return self._live(out[:m])
 
 
@@ -124,38 +117,36 @@ class AttnFanout(nn.Module):
 
     def forward(self, ctx: Dsv4Context, x: torch.Tensor) -> Fan:
         arena, m = ctx.arena, x.shape[0]
-        decode = m <= ctx.decode_max_m
-        path = ops.Path.DECODE if decode else ops.Path.PREFILL
-        wide = arena.new(m, self.n, dtype=torch.bfloat16 if decode else torch.float32)
+        plan = ops.dsv4_projection_plan(m,ctx.decode_max_m)
+        wide = arena.new(m,self.n,dtype=plan.dtype)
         q_a = arena.new(m, self.q_a.n)
         proj = None
         if self.proj is not None:
-            proj = (arena.new(m, self.proj.rows) if decode
-                    else arena.new(m, self.proj.n, dtype=torch.float32))
+            pplan = ops.dsv4_projection_plan(m,ctx.decode_max_m,self.proj.n,self.proj.rows)
+            proj = arena.new(m,pplan.columns,dtype=pplan.dtype)
         with arena.frame():
             ws = arena.flat(ops.dsv4_attn_fanout_scratch_bytes(
-                ctx.decode_max_m if decode else m, path), torch.uint8)
+                plan.scratch_rows, plan.path), torch.uint8)
             ops.dsv4_attn_fanout(arena.dense(x, torch.bfloat16), self.gamma, self.eps, self.which,
                                  self.arm, wide, self.q_a.kq, q_a,
                                  None if self.proj is None else self.proj.w,
-                                 None if self.proj is None else self.proj.narrow, proj, ws, path)
+                                 None if self.proj is None else self.proj.narrow, proj, ws, plan.path)
         cut, live = self.cuts, wide[:m]
         return Fan(q_a[:m], live[:, :cut[0]],
                    (live[:, cut[0]:cut[1]], live[:, cut[1]:cut[2]]) if len(cut) > 2 else None,
                    (live[:, cut[2]:cut[3]], live[:, cut[3]:cut[4]]) if len(cut) > 4 else None,
-                   None if proj is None else (proj if decode else proj[:m, :self.proj.rows]))
+                   None if proj is None else proj[:m, :self.proj.rows])
 
     def kv(self, ctx: Dsv4Context, x: torch.Tensor, gamma: torch.Tensor,
            eps: float) -> torch.Tensor:
         arena, m = ctx.arena, x.shape[0]
-        decode = m <= ctx.decode_max_m
-        path = ops.Path.DECODE if decode else ops.Path.PREFILL
-        out = arena.new(m, self.n, dtype=torch.bfloat16 if decode else torch.float32)
+        plan = ops.dsv4_projection_plan(m,ctx.decode_max_m)
+        out = arena.new(m,self.n,dtype=plan.dtype)
         with arena.frame():
             ws = arena.flat(ops.dsv4_norm_proj_kquant_scratch_bytes(
-                self.which, ctx.decode_max_m if decode else m, path), torch.uint8)
+                self.which, plan.scratch_rows, plan.path), torch.uint8)
             ops.dsv4_norm_proj_kquant(self.which, arena.dense(x, torch.bfloat16), gamma, eps,
-                                      self.arm, out, ws, path)
+                                      self.arm, out, ws, plan.path)
         return out[:m, :self.cuts[0]]
 
 
@@ -186,16 +177,17 @@ class Compressor(nn.Module):
                 slots: torch.Tensor, kv: torch.Tensor, score: torch.Tensor, plan: RatioPlan,
                 rot: tuple[torch.Tensor, torch.Tensor] | None, fp8: int) -> None:
         with span("compressor"), ctx.arena.frame():
-            if kv.dtype != torch.float32:
-                kv, score = ctx.arena.copy(kv, torch.float32), ctx.arena.copy(
-                    score, torch.float32)
             if plan.inplace:
-                carry.kv[plan.new_dst] = kv[:plan.n_rows]
-                carry.score[plan.new_dst] = score[:plan.n_rows]
+                # Row copy converts BF16 projections directly into the FP32 carry.
+                ops.copy_rows((carry.kv,carry.score),(kv,score),dst_index=plan.new_dst,count=plan.n_rows)
                 if plan.n_new:
                     self.pool(ctx, carry.kv, carry.score, plan.cur_row, plan.prev_row, ctx.eps,
                               plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size)
                 return
+            if kv.dtype != torch.float32:
+                converted=(ctx.arena.like(kv,torch.float32),ctx.arena.like(score,torch.float32))
+                ops.copy_rows(converted,(kv,score))
+                kv,score=converted
             if plan.n_new:
                 self.pool(ctx, carry.kv, carry.score, plan.cur_row, plan.prev_row, ctx.eps,
                           plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size,
@@ -204,12 +196,10 @@ class Compressor(nn.Module):
                 return
             if plan.keep_carry is not None:
                 dst, src = plan.keep_carry
-                carry.kv[dst] = carry.kv[src]
-                carry.score[dst] = carry.score[src]
+                ops.copy_rows((carry.kv,carry.score),(carry.kv,carry.score),src_index=src,dst_index=dst)
             if plan.keep_new is not None:
                 dst, src = plan.keep_new
-                carry.kv[dst] = kv[src]
-                carry.score[dst] = score[src]
+                ops.copy_rows((carry.kv,carry.score),(kv,score),src_index=src,dst_index=dst)
 
     def pool(self, ctx: Dsv4Context, kv: torch.Tensor, score: torch.Tensor,
              cur_row: torch.Tensor, prev_row: torch.Tensor, eps: float,
@@ -229,8 +219,6 @@ class Compressor(nn.Module):
 
 
 class Indexer(nn.Module):
-    ROW_TILE = 512
-
     def __init__(self, wq_b: ProjWeight, compressor: Compressor,
                  n_heads: int, head_dim: int, topk: int) -> None:
         super().__init__()
@@ -253,20 +241,18 @@ class Indexer(nn.Module):
         cos, sin = ctx.rot[True]
         with span("indexer"), ctx.arena.frame():
             ops.dsv4_rope_tail(iq, cos, sin)
-            rows = min(t, self.ROW_TILE)
-            scores = _ws(ctx.arena, torch.float32, rows, rows, plan.stride, plan.stride_cap)
-            for lo in range(0, t, rows):
-                hi = min(lo + rows, t)
-                s = scores[:hi - lo]
-                ops.dsv4_indexer_scores(iq[lo:hi], lp.index_k.k, plan.table, weights[lo:hi], s,
-                                        plan.comp_lens, b.seq_of_row[lo:hi], b.positions[lo:hi],
-                                        ratio, plan.max_n_comp, ctx.cache.block_size)
-                ops.dsv4_indexer_topk_mask(s, mask[lo:hi], b.positions[lo:hi], plan.comp_lens,
-                                           b.seq_of_row[lo:hi], ratio, self.topk,
-                                           sel[lo:hi], cnt[lo:hi])
+            scores = ctx.arena.flat(ops.indexer_select_scratch_bytes(t,plan.stride_cap),torch.uint8)
+            ops.indexer_select(iq,lp.index_k.k,plan.table,weights,plan.comp_lens,
+                               b.seq_of_row,b.positions,ratio,plan.max_n_comp,self.topk,
+                               mask,sel,cnt,scores,plan.stride,ctx.cache.block_size)
+
 
 
 class Attention(nn.Module):
+    def store_kv(self, ctx, raw, cos, sin, dest, slots):
+        ops.latent_norm_store(raw,self.kv_norm.gamma,dest.k,slots,cos,sin,
+                              mode=1,eps=ctx.eps)
+
     def __init__(self, fanout: AttnFanout, q_norm: RMSNorm, wq_b: ProjWeight,
                  kv_norm: RMSNorm, wo_a: list[ProjWeight],
                  wo_b: ProjWeight, sinks: torch.Tensor, ratio: int,
@@ -293,8 +279,7 @@ class Attention(nn.Module):
         cos, sin = ctx.rot[compressed]
 
         plan = b.plans[self.ratio] if compressed else None
-        decode = t <= ctx.decode_max_m
-        path = ops.Path.DECODE if decode else ops.Path.PREFILL
+        projection = ops.dsv4_projection_plan(t,ctx.decode_max_m)
         rows = t
         index = compressed and plan.max_n_comp and plan.mask is None
 
@@ -313,65 +298,53 @@ class Attention(nn.Module):
                 with span("fanout"), ctx.arena.frame():
                     fan = self.fanout(ctx, cur)
                     with span("q_proj"):
-                        self._q_proj(ctx, fan.q_a, qn, iq, path)
+                        self._q_proj(ctx, fan.q_a, qn, iq, projection)
                     with span("kv_proj"):
-                        kv = self.kv_norm(ctx, fan.kv).reshape(t, 1, self.kv_dim)
-                        ops.dsv4_rope_tail(kv, cos, sin)
-                        ops.dsv4_fp8_kv_quantize(kv, self.rope_dim)
-                        lp.raw.write(kv.reshape(t, self.kv_dim), b.slot_mapping)
+                        self.store_kv(ctx,fan.kv,cos,sin,lp.raw,b.slot_mapping)
                     if compressed:
                         self._compress(ctx, lp, fan, plan)
                     if iw is not None:
                         ops.dsv4_indexer_weights(fan.proj, iw, self.indexer.scale)
-                    del fan, kv
+                    del fan
                 q = qn[:t]
-                ops.dsv4_rmsnorm(q, None, q, self.eps)
-                ops.dsv4_rope_tail(q, cos, sin)
+                ops.latent_norm_store(q,None,q,cos=cos,sin=sin,
+                                      mode=2,heads=q.shape[1],eps=self.eps)
                 if index:
                     self.indexer(ctx, lp, iw, iq[:t], plan, self.ratio, mask, sel, cnt)
 
             out = ctx.arena.like(q)
-            if mask is not None:
-                args = (q, lp.raw.k, None, out, b.cu_seqlens, b.block_tables, b.seq_lens,
-                        b.total_q_blocks, self.kq_scale, b.q_block_map, self.sinks,
-                        self.window, lp.comp.k, None, plan.table, plan.comp_lens, mask)
-                page = ctx.cache.block_size
-                with span("mla_attn"):
-                    if b.split:
-                        ops.dsv4_mla_attn_split_compressed(
-                            *args, _split_ws(ctx, b.total_q_blocks), page, sel, cnt)
-                    else:
-                        ops.dsv4_mla_attn_prefill_compressed(*args, page, sel, cnt)
-                del args, mask, sel, cnt
-            else:
-                fn = ops.dsv4_mla_attn_prefill_block if b.block_q else ops.dsv4_mla_attn_prefill
-                with span("mla_attn"):
-                    fn(q, lp.raw.k, None, out, b.cu_seqlens, b.block_tables, b.seq_lens,
-                       b.total_q_blocks, self.kq_scale, b.q_block_map, self.sinks, self.window,
-                       ctx.cache.block_size)
+            with span("mla_attn"), ctx.arena.frame():
+                scratch=ctx.arena.flat(ops.dsv4_attention_scratch_bytes(
+                    b.total_q_blocks,mask is not None),torch.uint8)
+                ops.dsv4_attention(q,lp.raw.k,out,b.cu_seqlens,b.block_tables,b.seq_lens,
+                    b.q_block_map,b.total_q_blocks,self.kq_scale,self.sinks,self.window,
+                    ctx.cache.block_size,scratch,block_q=b.block_q,
+                    comp_k=lp.comp.k if mask is not None else None,
+                    comp_table=plan.table if mask is not None else None,
+                    comp_lens=plan.comp_lens if mask is not None else None,
+                    mask=mask,selection=sel,counts=cnt)
 
             with span("o_proj"):
-                self._o_proj(ctx, out, cos, sin, folded, path)
+                self._o_proj(ctx, out, cos, sin, folded, projection)
         return folded[:t]
 
     def _q_proj(self, ctx: Dsv4Context, q_a: torch.Tensor, qn: torch.Tensor,
-                iq: torch.Tensor | None, path: ops.Path) -> None:
-        t = q_a.shape[0]
-        m = ctx.decode_max_m if path == ops.Path.DECODE else t
+                iq: torch.Tensor | None, plan: ops.Dsv4ProjectionPlan) -> None:
+        m = plan.scratch_rows
         with ctx.arena.frame():
-            ws = ctx.arena.flat(ops.dsv4_q_proj_scratch_bytes(m, path), torch.uint8)
+            ws = ctx.arena.flat(ops.dsv4_q_proj_scratch_bytes(m, plan.path), torch.uint8)
             ops.dsv4_q_proj_kquant(ctx.arena.dense(q_a, torch.bfloat16), self.q_norm.gamma,
                                    self.eps, self.wq_b.kq, qn,
-                                   None if iq is None else self.indexer.wq_b.kq, iq, ws, path)
+                                   None if iq is None else self.indexer.wq_b.kq, iq, ws, plan.path)
 
     def _o_proj(self, ctx: Dsv4Context, out: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                folded: torch.Tensor, path: ops.Path) -> None:
+                folded: torch.Tensor, plan: ops.Dsv4ProjectionPlan) -> None:
         t = out.shape[0]
-        m = ctx.decode_max_m if path == ops.Path.DECODE else t
+        m = plan.scratch_rows
         with ctx.arena.frame():
-            ws = ctx.arena.flat(ops.dsv4_o_proj_scratch_bytes(m, path), torch.uint8)
+            ws = ctx.arena.flat(ops.dsv4_o_proj_scratch_bytes(m, plan.path), torch.uint8)
             ops.dsv4_o_proj_kquant(out.reshape(t, -1), cos, sin, [p.kq for p in self.wo_a],
-                                   self.wo_b.kq, folded, ws, path)
+                                   self.wo_b.kq, folded, ws, plan.path)
 
     def _compress(self, ctx: Dsv4Context, lp: LayerPools, fan: Fan, plan: RatioPlan) -> None:
         rot = self.rope(ctx, plan.positions, True) if plan.n_new else None
@@ -397,20 +370,9 @@ class MoE(nn.Module):
         out = ctx.arena.new(t, self.hidden)
         with span("moe"), ctx.arena.frame():
             ws = ctx.arena.flat(ops.moe_workspace_bytes(t), torch.uint8)
-            if isinstance(self.gate_up, ops.KQuantExpertWeight):
-                if self.tid2eid is not None:
-                    raise ops.SnowLLMError("a hashed layer with k-quant routed experts has no "
-                                           "kernel; requantise those experts to a low-bit format")
-                ops.fused_moe_kquant_split(cur, self.router_w, self.gate_up, self.down,
-                                           self.shared_gate_up, self.shared_down, out, ws)
-            elif self.tid2eid is None:
-                ops.fused_moe_lowbit_split(cur, self.router_w, self.gate_up, self.down,
-                                           self.shared_gate_up, self.shared_down, out, ws)
-            else:
-                ops.moe_experts_lowbit_split_tid2eid(cur, self.router_w, ctx.batch.input_ids,
-                                                     self.tid2eid, self.gate_up, self.down,
-                                                     self.shared_gate_up, self.shared_down, out,
-                                                     ws)
+            ops.inference_moe(cur,self.router_w,self.gate_up,self.down,self.shared_gate_up,
+                              self.shared_down,out,ws,token_ids=ctx.batch.input_ids,
+                              tid2eid=self.tid2eid)
         return out
 
 
@@ -483,7 +445,7 @@ class HCHead(nn.Module):
                              self.base, pre, self.hc_eps)
             ops.dsv4_hc_weighted_sum(streams, pre, folded)
             if pre_head is not None:
-                pre_head[:t].copy_(folded)
+                ops.copy_rows(pre_head[:t],folded)
             self.norm(ctx, folded, out)
         return out
 

@@ -9,13 +9,15 @@ from ..defaults import SPEC_MAX_STEP_ROWS
 
 from .. import ops
 from .._capi import SnowLLMError
-from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror, slot_mapping
+from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
 from .forward_context import Batch, DecodeShape, i32, i64, positions
 from .request import Request
+from .host_io import HostArena
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
-    from .runner import GraphRunner, Runner
+    from .runner import GraphRunner
+    from .qwen_runner import QwenRunner
     from .sampler import Sampler
 
 
@@ -24,7 +26,10 @@ def context_len(r: Request) -> int:
 
 
 class SpecDecoder:
-    def __init__(self, runner: "Runner", sampler: "Sampler", slots: StateSlots,
+    # A persistent MTP row combines hidden[t] with token[t+1].
+    prefix_lookahead = 1
+
+    def __init__(self, runner: "GraphRunner", sampler: "Sampler", slots: StateSlots,
                  tables: TableMirror, stage: Staging, *,
                  num_spec: int, window: int = 0, sinks: int = 64) -> None:
         self.runner = runner
@@ -33,12 +38,26 @@ class SpecDecoder:
         self.tables, self.stage = tables, stage
         self.num_spec = num_spec
         self.window, self.sinks = window, sinks
+        self.messages = HostArena()
 
         S = runner.max_num_seqs
         self.d_drafts = torch.zeros(S, max(num_spec, 1), dtype=torch.int64, device="cuda")
         self.d_c = torch.zeros(S, dtype=torch.int64, device="cuda")
         self.d_pd = torch.zeros(S, dtype=torch.int64, device="cuda")
-        self.d_ar = torch.arange(max(S, num_spec + 1), dtype=torch.int64, device="cuda")
+        M = S*(num_spec+1)
+        self.d_tokens = torch.empty(M,dtype=torch.int64,device="cuda")
+        self.d_accept = torch.empty(S,dtype=torch.int64,device="cuda")
+        self.d_next = torch.empty(M,dtype=torch.int64,device="cuda")
+        self.d_mapping = torch.empty(M,dtype=torch.int32,device="cuda")
+        self.d_rows = torch.empty(S,dtype=torch.int64,device="cuda")
+        self.d_argmax = torch.empty(M,dtype=torch.int64,device="cuda")
+        self.d_step_ids = torch.empty(S,dtype=torch.int64,device="cuda")
+        self.d_step_pos = torch.empty(3*S,dtype=torch.int64,device="cuda")
+        self.d_step_slots = torch.empty(S,dtype=torch.int32,device="cuda")
+        self.d_step_lens = torch.empty(S,dtype=torch.int32,device="cuda")
+        self.d_step_ends = torch.empty(S,dtype=torch.int64,device="cuda")
+        width = ops.spec_step_table_width(sinks,window,runner.block_size)
+        self.d_step_table = torch.empty(S,width,dtype=torch.int32,device="cuda") if width else None
 
     chunk_decode = True
 
@@ -82,18 +101,18 @@ class SpecDecoder:
             is_prefill=False, num_tokens=B * T,
             state_indices=d_sidx,
             num_accepted=ones,
-            cu_seqlens=cu, total_q_blocks=ops.prefill_q_plan([T] * B)[0],
+            cu_seqlens=cu, total_q_blocks=self.messages.q_plan(("verify",B,T),[T]*B)[0],
             chunk_decode=True,
             prev_ids=self._ngram_context(batch, T),
             host_ids=ids,
         )
-        self.d_drafts[:B, :k] = drafts.view(B, k)
-        self.d_c[:B] = cs
-        self.d_pd[:B] = pds
+        ops.copy_rows(self.d_drafts[:B,:k],drafts.view(B,k))
+        ops.copy_rows(self.d_c[:B],cs)
+        ops.copy_rows(self.d_pd[:B],pds)
 
         tv = self.sampler.sample(self.runner.forward(b),
-                                 [r for r in batch for _ in range(T)]).view(B, T)
-        nacc = (tv[:, :k] == self.d_drafts[:B, :k]).long().cumprod(1).sum(1) + 1
+                                 [r for r in batch for _ in range(T)],out=self.d_tokens[:B*T]).view(B, T)
+        nacc = ops.spec_accept(tv,self.d_drafts[:B,:k],out=self.d_accept[:B])
 
         self.propose_first(batch, pos, cu, b.total_q_blocks, k, tv, nacc, seq)
 
@@ -144,77 +163,78 @@ class SpecDecoder:
         T, B = k + 1, len(batch)
         self._bt = self.tables([r.blocks for r in batch])
         bt, seq_lens = self._window(self._bt, seq)
-        t_ax = self.d_ar[:T].view(1, T).expand(B, T)
-        real = t_ax < nacc.view(B, 1)
-        ids_next = tv.gather(1, torch.minimum(t_ax, (nacc - 1).view(B, 1))).reshape(-1)
-        row_seq = torch.where(real, self.d_ar[:B].view(B, 1).expand(B, T), -1).reshape(-1)
-        row_pos = torch.where(real, self.d_c[:B].view(B, 1) + t_ax, 0).reshape(-1)
+        ids_next,slots,rows=self._first_metadata(tv,nacc)
         mb = Batch(
             input_ids=ids_next, positions=pos,
-            slot_mapping=ops.resolve_slots(self._bt, row_seq.to(torch.int32),
-                                           row_pos.to(torch.int32), self.runner.block_size),
+            slot_mapping=slots,
             block_tables=bt, seq_lens=seq_lens, is_prefill=False, num_tokens=B * T,
             state_indices=self.slots.dummy_indices(B * T),
             cu_seqlens=cu, total_q_blocks=total_q_blocks,
             chunk_decode=True,
         )
         logits, hid = self.runner.mtp_draft(self.runner.last_hidden, ids_next, mb)
-        rows = self.d_ar[:B] * T + nacc - 1
-        self.d_drafts[:B, 0] = ops.argmax(logits).index_select(0, rows)
+        ops.gather_rows(self._draft_tokens(logits),rows,out=self.d_drafts[:B,0])
         if k > 1:
+            self._scratch = self._draft_states(batch)
             self._propose_rest_dev(
-                B, torch.index_select(hid, 0, rows, out=self.runner.mtp_h[:B]), k, nacc)
+                B, ops.gather_rows(hid,rows,out=self.runner.mtp_h[:B]), k, nacc)
 
     def _propose_rest_dev(self, B: int, h: torch.Tensor, k: int, nacc: torch.Tensor) -> None:
-        p = self.d_c[:B] + nacc - 1
-        for j in range(1, k):
-            p = p + 1
-            bt, seq_lens = self._attn_window_dev(B, p)
-            ids = self.d_drafts[:B, j - 1].contiguous()
+        for j in range(1,k):
+            pos,slots,bt,seq_lens=self._step_metadata(B,nacc,j)
+            ids=self.d_step_ids[:B]
+            ops.copy_rows(ids,self.d_drafts[:B,j-1])
             cb = Batch(
                 input_ids=ids,
-                positions=(p + self.d_pd[:B]).expand(3, B).contiguous(),
-                slot_mapping=ops.resolve_slots(self._bt, self.d_ar[:B].to(torch.int32),
-                                               p.to(torch.int32), self.runner.block_size),
+                positions=pos,slot_mapping=slots,
                 block_tables=bt, seq_lens=seq_lens, is_prefill=False, num_tokens=B,
-                state_indices=self.slots.dummy_indices(B),
+                state_indices=self._scratch,
+                carry_source_offset=self._draft_source_offset(j),
             )
             logits, h = self.runner.mtp_draft(h, ids, cb)
-            self.d_drafts[:B, j] = ops.argmax(logits)
+            ops.copy_rows(self.d_drafts[:B,j],self._draft_tokens(logits))
 
-    def _attn_window_dev(self, B: int, p: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        if not self.window:
-            return self._bt, (p + 1).to(torch.int32)
-        return ops.paged_window_view(self._bt, p.to(torch.int32), self.sinks, self.window,
-                                     self.runner.block_size)
+    def _draft_states(self, batch: list[Request]) -> torch.Tensor:
+        return self.slots.dummy_indices(len(batch))
+
+    def _draft_source_offset(self, step: int) -> int:
+        return 0
+
+    def _draft_tokens(self,logits):
+        return ops.argmax(logits,out=self.d_argmax[:logits.shape[0]])
+
+    def _first_metadata(self,tokens,accepted):
+        b,t = tokens.shape
+        return ops.spec_first_metadata(tokens,accepted,self.d_c[:b],self._bt,self.runner.block_size,
+            out=(self.d_next[:b*t],self.d_mapping[:b*t],self.d_rows[:b]))
+
+    def _step_metadata(self,b,accepted,step):
+        table = self._bt if self.d_step_table is None else self.d_step_table[:b]
+        return ops.spec_step_metadata(self.d_c[:b],accepted,self.d_pd[:b],self._bt,
+            step,self.runner.block_size,self.sinks,self.window,
+            out=(self.d_step_pos[:3*b].view(3,b),self.d_step_slots[:b],self.d_step_lens[:b],
+                 self.d_step_ends[:b],table))
 
     def propose_rest(self, batch: list[Request], h: torch.Tensor, k: int) -> None:
         B = len(batch)
-        p = [r.num_cached - 1 for r in batch]
-        for _ in range(k - 1):
-            p = [q + 1 for q in p]
-            ids = i64([r.drafts[-1] for r in batch])
-            bt, seq_lens = self.attn_window(batch, p)
-            cb = Batch(
-                input_ids=ids,
-                positions=positions([p[i] + batch[i].pos_delta for i in range(B)]),
-                slot_mapping=slot_mapping(self.tables([r.blocks for r in batch]),
-                                          [(i, p[i]) for i in range(B)], self.runner.block_size),
-                block_tables=bt, seq_lens=seq_lens,
-                is_prefill=False, num_tokens=B, state_indices=self.slots.dummy_indices(B),
-            )
-            logits, h = self.runner.mtp_draft(h, ids, cb)
-            for r, tok in zip(batch, ops.argmax(logits).tolist()):
-                r.drafts.append(tok)
+        with self.messages.reading(reuse=True):
+            self._scratch = self._draft_states(batch)
+            self._bt = self.tables([r.blocks for r in batch])
+            ops.copy_rows(self.d_c[:B],self.messages.tensor("cached",[r.num_cached-1 for r in batch]))
+            ops.copy_rows(self.d_pd[:B],self.messages.tensor("delta",[r.pos_delta for r in batch]))
+            ops.copy_rows(self.d_drafts[:B,0],self.messages.tensor("first",[r.drafts[0] for r in batch]))
+            accepted = self.messages.tensor("accepted",[1]*B)
+            self._propose_rest_dev(B,h,k,accepted)
+        for r,drafts in zip(batch,self.d_drafts[:B,:k].tolist()):
+            r.drafts = drafts
 
     def propose_after_prefill(self, r: Request, b: Batch, lo: int, hi: int, M: int,
                               sampled: int | None = None
                               ) -> tuple[torch.Tensor, torch.Tensor]:
         from dataclasses import replace
 
-        ids_next = torch.zeros(M, dtype=torch.int64, device="cuda")
         nxt = r.tokens[lo + 1:hi] + [sampled] if sampled is not None else r.tokens[lo + 1:hi + 1]
-        ids_next[:len(nxt)] = torch.tensor(nxt, dtype=torch.int64)
+        ids_next=i64(nxt+[0]*(M-len(nxt)))
         return self.runner.mtp_draft(self.runner.last_hidden, ids_next,
                                      replace(b, input_ids=ids_next))
 
@@ -226,12 +246,12 @@ class SpecDecoder:
                 seq_lens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         if not self.window:
             return bt, seq_lens
-        return ops.paged_window_view(bt, seq_lens - 1, self.sinks, self.window,
-                                     self.runner.block_size)
+        return ops.paged_window_view(bt,seq_lens,self.sinks,self.window,
+                                     self.runner.block_size,end_offset=-1)
 
 
 class DFlashDecoder:
-    def __init__(self, runner: "Runner", sampler: "Sampler", slots: StateSlots,
+    def __init__(self, runner: "QwenRunner", sampler: "Sampler", slots: StateSlots,
                  draft: "DFlashDraft", draft_blocks: BlockAllocator, tables: TableMirror,
                  stage: Staging, *, block: int, max_blocks_per_seq: int) -> None:
         self.runner = runner
@@ -257,9 +277,7 @@ class DFlashDecoder:
         self.draft_tables = TableMirror(S, max_blocks_per_seq)
         self.d_bt = self.draft_tables.dev
         self.d_draft = torch.zeros(S, max(block - 1, 1), dtype=torch.int64, device="cuda")
-        self.h_i64 = torch.zeros(3 * M, dtype=torch.int64).pin_memory()
-        self.h_i32 = torch.zeros(4 * M, dtype=torch.int32).pin_memory()
-        self.h_len = torch.zeros(S, dtype=torch.int32).pin_memory()
+        self.messages=HostArena()
         self.noise = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
         self.keep = i64([i * block + t for i in range(S) for t in range(1, block)])
         self.draft.reserve(M)
@@ -309,7 +327,7 @@ class DFlashDecoder:
         )
         tv = self.sampler.sample(self.runner.forward(b),
                                  [r for r in batch for _ in range(T)]).view(B, T)
-        nacc = (tv[:, :T - 1] == drafted.view(B, T - 1)).long().cumprod(1).sum(1) + 1
+        nacc = ops.spec_accept(tv,drafted.view(B,T-1))
 
         acc, got = nacc.tolist(), tv.tolist()
         keep = []
@@ -347,28 +365,18 @@ class DFlashDecoder:
         return self.draft_tables([r.draft_blocks for r in batch])
 
     def _stage_rows(self, batch: list[Request], accepted: list[int] | None) -> None:
-        B, blk = len(batch), self.block
-        M = B * blk
-        mask = self.geo.mask_token_id
-        c_rope, ids, b_rope = [], [], []
-        c_seq, c_pos, b_seq, b_pos = [], [], [], []
-        for i, r in enumerate(batch):
-            c, pd = r.num_cached, r.pos_delta
-            n = accepted[i] if accepted is not None else 0
-            base = c - n
-            c_rope += [base + t + pd for t in range(blk)]
-            c_pos += [base + t for t in range(blk)]
-            c_seq += [i if t < n else -1 for t in range(blk)]
-            ids += [r.last] + [mask] * (blk - 1)
-            b_rope += [c + t + pd for t in range(blk)]
-            b_pos += [c + t for t in range(blk)]
-            b_seq += [i] * blk
-            self.h_len[i] = c + blk
-        self.h_i64[:3 * M] = torch.tensor(c_rope + ids + b_rope, dtype=torch.int64)
-        self.h_i32[:4 * M] = torch.tensor(c_seq + c_pos + b_seq + b_pos, dtype=torch.int32)
-        self.d_i64[:3 * M].copy_(self.h_i64[:3 * M], non_blocking=True)
-        self.d_i32[:4 * M].copy_(self.h_i32[:4 * M], non_blocking=True)
-        self.d_len[:B].copy_(self.h_len[:B], non_blocking=True)
+        B = len(batch)
+        values=([r.num_cached for r in batch]
+                +[accepted[i] if accepted is not None else 0 for i in range(B)]
+                +[r.last for r in batch]+[r.pos_delta for r in batch])
+        self._stage_values(B,values)
+
+    def _stage_values(self,B,values):
+        with self.messages.reading(reuse=True):
+            requests=self.messages.tensor('draft_requests',values,torch.int64).view(4,B)
+            m=B*self.block
+            ops.draft_metadata(requests,self.d_i64[:3*m],self.d_i32[:4*m],self.d_len[:B],
+                               self.block,self.geo.mask_token_id)
 
     def _ctx_dev(self, B: int) -> None:
         M = B * self.block
@@ -387,13 +395,14 @@ class DFlashDecoder:
             ops.resolve_slots(self.d_bt[:B], self.d_i32[2 * M:3 * M], self.d_i32[3 * M:4 * M],
                               self.runner.block_size),
             self.d_bt[:B], self.d_len[:B])
-        kept = hid.index_select(0, self.keep[:n])
+        kept = ops.gather_rows(hid,self.keep[:n])
         logits = self.runner.model.lm_head(kept, self.runner.draft_logits[:n])
         if self.geo.dflash2:
-            anchor = self.d_i64[M:2 * M].view(B, blk)[:, 0].contiguous()
+            anchor=torch.empty(B,dtype=torch.int64,device="cuda")
+            ops.copy_rows(anchor,self.d_i64[M:2*M].view(B,blk)[:,0])
             self.draft.propose(kept, logits, anchor, self.d_draft[:B, :blk - 1])
         else:
-            self.d_draft[:B, :blk - 1] = ops.argmax(logits).view(B, blk - 1)
+            ops.copy_rows(self.d_draft[:B,:blk-1],ops.argmax(logits).view(B,blk-1))
 
     def propose(self, batch: list[Request], accepted: list[int]) -> None:
         B = len(batch)
@@ -436,22 +445,13 @@ class DFlashDecoder:
 
     def capture(self, runner: "GraphRunner") -> list[int]:
         blk, S = self.block, self.runner.max_num_seqs
-        ar = torch.arange(blk, device="cuda")
         got = []
         for B in range(1, S + 1):
             if self.verify_rows(B) != blk or not runner._graph_room():
                 continue
             M = B * blk
-            seq = torch.arange(B, device="cuda").repeat_interleave(blk)
             self.d_bt[:B].zero_()
-            self.d_i64[:M] = ar.repeat(B)
-            self.d_i64[M:2 * M] = self.geo.mask_token_id
-            self.d_i64[2 * M:3 * M] = (ar + blk).repeat(B)
-            self.d_i32[:M] = seq.to(torch.int32)
-            self.d_i32[M:2 * M] = ar.repeat(B).to(torch.int32)
-            self.d_i32[2 * M:3 * M] = seq.to(torch.int32)
-            self.d_i32[3 * M:4 * M] = (ar + blk).repeat(B).to(torch.int32)
-            self.d_len[:B] = 2 * blk
+            self._stage_values(B,[blk]*B+[blk]*B+[self.geo.mask_token_id]*B+[0]*B)
 
             def walk(B: int = B) -> None:
                 self._ctx_dev(B)

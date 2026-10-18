@@ -186,7 +186,7 @@ def validate_config(cfg: dict) -> None:
 
 
 def load_gguf_weights(rd: GGUFReader, cfg: dict, want: range, progress: Progress = None,
-                      device_map: placement.DeviceMap | None = None
+                      device_map: placement.DeviceMap | None = None, mtp: bool = False
                       ) -> DeepSeekV4ForCausalLM:
     geo = DeepSeekV4Geometry.from_config(cfg)
     if tuple(want) != tuple(range(geo.num_layers)):

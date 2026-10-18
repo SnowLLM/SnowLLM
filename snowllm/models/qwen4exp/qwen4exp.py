@@ -45,7 +45,7 @@ class Qwen4ExpModel(nn.Module):
         if b.last_row is not None:
             ctx.take_xn()
             picked = ctx.arena.new(b.last_row.numel(), self.geo.hc_count, self.geo.hidden)
-            torch.index_select(streams, 0, b.last_row, out=picked)
+            ops.gather_rows(streams,b.last_row,out=picked)
             streams = picked
         out = self.head_fold(ctx, streams, ctx.take_xn())
         ctx.close()
