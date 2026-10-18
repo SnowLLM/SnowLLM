@@ -6,6 +6,7 @@ import ctypes
 import enum
 import functools
 import mmap
+import os
 import weakref
 from collections.abc import Callable, Iterator, Sequence
 
@@ -97,6 +98,7 @@ def _chk_norm_x(t: torch.Tensor, dtype: torch.dtype) -> None:
 
 _host_alloc = False
 HOST_ALIGN = 1 << 16
+HOST_HUGE_PAGE = 2 << 20
 _host_pinned = 0
 
 
@@ -124,12 +126,58 @@ class _Mapped:
                                          "strides": None, "version": 3}
 
 
-def _register(n: int) -> torch.Tensor:
+class _THPBuffer:
+    """Own a posix_memalign allocation, released with free rather than munmap."""
+
+    def __init__(self, size: int) -> None:
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.posix_memalign.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_size_t,
+                                       ctypes.c_size_t]
+        libc.posix_memalign.restype = ctypes.c_int
+        libc.free.argtypes = [ctypes.c_void_p]
+        libc.free.restype = None
+        libc.madvise.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+        libc.madvise.restype = ctypes.c_int
+        ptr = ctypes.c_void_p()
+        error = libc.posix_memalign(ctypes.byref(ptr), HOST_HUGE_PAGE, size)
+        if error:
+            raise OSError(error, os.strerror(error))
+        self.address = ptr.value
+        self.close = weakref.finalize(self, libc.free, ptr)
+        try:
+            if libc.madvise(ptr, size, mmap.MADV_HUGEPAGE):
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            # Trigger allocation before HIP pins the pages.
+            for offset in range(0, size, HOST_HUGE_PAGE):
+                ctypes.c_ubyte.from_address(self.address + offset).value = 0
+        except BaseException:
+            self.close()
+            raise
+
+
+def _host_buffer(n: int) -> tuple[mmap.mmap | _THPBuffer, int, int]:
+    pages = os.environ.get("SNOWLLM_HOST_PAGES", "default")
+    if pages not in ("default", "thp"):
+        raise SnowLLMError("SNOWLLM_HOST_PAGES must be 'default' or 'thp'")
+    if pages == "thp" and n >= HOST_HUGE_PAGE:
+        if not hasattr(mmap, "MADV_HUGEPAGE"):
+            raise SnowLLMError("SNOWLLM_HOST_PAGES=thp requires Linux transparent huge pages")
+        # Request aligned memory directly; libc owns any allocation overhead.
+        size = (n + HOST_HUGE_PAGE - 1) // HOST_HUGE_PAGE * HOST_HUGE_PAGE
+        buf = _THPBuffer(size)
+        return buf, buf.address, size
     buf = mmap.mmap(-1, n + HOST_ALIGN)
     base = ctypes.addressof(ctypes.c_char.from_buffer(buf))
+    return buf, base, n + HOST_ALIGN
+
+
+def _register(n: int) -> torch.Tensor:
+    buf, base, size = _host_buffer(n)
     skip = -base % HOST_ALIGN
-    if int(torch.cuda.cudart().cudaHostRegister(base, n + HOST_ALIGN, 1)):
-        raise RuntimeError(f"cudaHostRegister of {n + HOST_ALIGN} bytes")
+    if int(torch.cuda.cudart().cudaHostRegister(base, size, 1)):
+        buf.close()
+        raise RuntimeError(f"cudaHostRegister of {size} bytes")
     _mapped.append(buf)
     _ranges.append((base + skip, base + skip + n))
     return torch.as_tensor(_Mapped(base + skip, n), device="cuda")
@@ -145,6 +193,8 @@ def _pinned(fn: Callable[..., torch.Tensor], n: int) -> torch.Tensor:
     n = int(n)
     try:
         got = _register(n)
+    except SnowLLMError:
+        raise
     except (RuntimeError, OSError, ValueError, torch.AcceleratorError) as e:
         raise SnowLLMError(
             f"a device-mapped weight of {n / (1 << 20):.1f} MiB would not pin, with "
@@ -161,19 +211,44 @@ class DryLoad:
         self._tag: dict[int, int] = {}
         self._refs: list = []
         self._next = 0
+        self.placement: tuple[str, int | None] | None = None
+        self._placements: dict[int, tuple[str, int | None]] = {}
+        self._storage_tags: dict[int, int] = {}
+        self._storages: dict[int, int] = {}
+        self._aliases: dict[int, set[int]] = {}
+        self._peak_device = 0
 
     def note(self, t: torch.Tensor, host: bool = False) -> torch.Tensor:
-        tag = self._tag.get(id(t))
+        storage = t.untyped_storage()
+        key = storage._cdata
+        tag = self._storage_tags.get(key)
         if tag is None:
+            # meta() can mark the new storage as host after this initial note.
+            self._peak_device = max(self._peak_device, self.device)
             tag, self._next = self._next, self._next + 1
+            self._storage_tags[key] = tag
+            self._storages[tag] = key
+            self._aliases[tag] = set()
+            self._live[tag] = (storage.nbytes(), host)
+        elif host:
+            self._live[tag] = (storage.nbytes(), True)
+        if id(t) not in self._tag:
             self._tag[id(t)] = tag
+            self._aliases[tag].add(id(t))
             self._refs.append(weakref.ref(t, functools.partial(self._died, tag, id(t))))
-        self._live[tag] = (t.numel() * t.element_size(), host)
+        if host and self.placement is not None:
+            self._placements[tag] = self.placement
         return t
 
     def _died(self, tag: int, key: int, _ref: weakref.ref) -> None:
-        self._live.pop(tag, None)
+        self._peak_device = max(self._peak_device, self.device)
         self._tag.pop(key, None)
+        self._aliases[tag].discard(key)
+        if not self._aliases[tag]:
+            self._aliases.pop(tag)
+            self._live.pop(tag, None)
+            self._placements.pop(tag, None)
+            self._storage_tags.pop(self._storages.pop(tag))
 
     def meta(self, shape: Sequence[int], dtype: torch.dtype,
              host: bool = False) -> torch.Tensor:
@@ -185,8 +260,20 @@ class DryLoad:
         return sum(n for n, h in self._live.values() if not h)
 
     @property
+    def peak_device(self) -> int:
+        return max(self._peak_device, self.device)
+
+    @property
     def host(self) -> int:
         return sum(n for n, h in self._live.values() if h)
+
+    def placed_bytes(self) -> dict[tuple[str, int | None], int]:
+        out = {}
+        for tag, (n, host) in self._live.items():
+            if host and tag in self._placements:
+                key = self._placements[tag]
+                out[key] = out.get(key, 0) + n
+        return out
 
 
 def _wants_cuda(x: object) -> bool:
@@ -217,7 +304,7 @@ class _DryMode(torch.overrides.TorchFunctionMode):
             out = func(*args, **kwargs)
             if moving and func is torch.Tensor.to and out is args[0]:
                 out = self._to_device(args[0])
-        if isinstance(out, torch.Tensor) and out.device.type == "meta" and out._base is None:
+        if isinstance(out, torch.Tensor) and out.device.type == "meta":
             self.dry.note(out)
         return out
 

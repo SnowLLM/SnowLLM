@@ -3,6 +3,8 @@
 
 import ctypes
 import enum
+import functools
+from typing import NamedTuple
 
 import torch
 
@@ -30,6 +32,124 @@ class Dsv4Proj(enum.IntEnum):
     INDEX_PROJ = 9
     FANOUT_INDEXED = 10
     FANOUT_COMPRESSED = 11
+
+
+class Dsv4ProjectionPlan(NamedTuple):
+    path: Path
+    scratch_rows: int
+    columns: int
+    dtype: torch.dtype
+
+
+@functools.lru_cache(None)
+def dsv4_projection_plan(m: int, decode_rows: int, wide_columns: int = 0,
+                          narrow_columns: int = 0) -> Dsv4ProjectionPlan:
+    out=(ctypes.c_int64*4)()
+    check(lib.snowllm_dsv4_projection_plan(m,decode_rows,wide_columns,narrow_columns,out),
+          'dsv4_projection_plan')
+    return Dsv4ProjectionPlan(Path(out[0]),out[1],out[2],(torch.bfloat16,torch.float32)[out[3]])
+
+
+@functools.lru_cache(None)
+def _attn_output_plan(geometry: int, m: int, prefill: bool, kv_int8: bool) -> tuple[int,int]:
+    out=(ctypes.c_int64*2)()
+    check(lib.snowllm_attn_output_plan(m,int(prefill),int(kv_int8),out),'attn_output_plan')
+    return tuple(out)
+
+
+def attn_output_plan(m: int, prefill: bool, kv_int8: bool) -> tuple[int,int]:
+    from ._common import geometry_id
+    return _attn_output_plan(geometry_id(),m,prefill,kv_int8)
+
+
+def attn_output_shape(m: int, prefill: bool, kv_int8: bool) -> tuple[int,int,int]:
+    g=geo();elements,_=attn_output_plan(m,prefill,kv_int8)
+    return elements//(g.num_heads*g.head_size),g.num_heads,g.head_size
+
+
+def attn_output_gating(proj: torch.Tensor,prefill: bool,kv_int8: bool,row0: int = 0) -> tuple:
+    return (lib.snowllm_attn_output_gate(_p(proj),int(prefill),int(kv_int8)) or 0,
+            proj.shape[1],row0)
+
+
+def attn_output_project(a: torch.Tensor,proj: torch.Tensor,w: torch.Tensor | KQuantProjWeight,
+                         scale: torch.Tensor | None,scratch: torch.Tensor | None,
+                         out: torch.Tensor,prefill: bool,kv_int8: bool) -> None:
+    m=out.shape[0]
+    _chk(a,'attention output',torch.bfloat16)
+    _chk(proj,'projection',torch.bfloat16,m,proj.shape[1])
+    _chk(out,'attention projection output',torch.bfloat16,m,geo().hidden)
+    elements,need=attn_output_plan(m,prefill,kv_int8)
+    if a.numel()<elements:
+        raise SnowLLMError(f'attention output needs {elements} elements')
+    if need and (scratch is None or scratch.nbytes<need):
+        raise SnowLLMError(f'attention output needs {need} scratch bytes')
+    dense,q,meta,fmt=(None,w.quant,w.meta,w.fmt) if isinstance(w,KQuantProjWeight) else (w,None,None,8)
+    check(lib.snowllm_attn_output_project(_p(a),_p(proj),proj.shape[1],_p(dense),_p(q),
+          _p(meta),_p(scale),fmt,_p(scratch),_p(out),m,int(prefill),int(kv_int8),_stream()),
+          'attn_output_project')
+
+
+class _PagedAttentionStep(ctypes.Structure):
+    _fields_=[('inputs',ctypes.c_void_p*10),('outputs',ctypes.c_void_p*3)]+[
+        (n,ctypes.c_int64) for n in ('batch','pages','q_blocks','slots','tokens','page_size','gate_stride','gate_row0')]+[
+        ('scale',ctypes.c_float),('varlen',ctypes.c_int)]
+
+
+@functools.lru_cache(None)
+def paged_attention_scratch_bytes(batch: int,tokens: int,varlen: bool) -> int:
+    return lib.snowllm_paged_attention_scratch_bytes(batch,tokens,int(varlen))
+
+
+@functools.lru_cache(None)
+def paged_attention_varlen(prefill: bool,tokens: int,chunk_decode: bool) -> bool:
+    return bool(lib.snowllm_paged_attention_varlen(int(prefill),tokens,int(chunk_decode)))
+
+
+def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,slots,tokens,
+                     block_size,scale,varlen,scratch,gate=(0,0,0)):
+    batch=lens.numel()
+    _chk(q,'attention Q',torch.bfloat16)
+    _chk(out,'attention output',torch.bfloat16)
+    _chk(table,'attention block table',torch.int32)
+    _chk(lens,'attention sequence lengths',torch.int32,batch)
+    need=paged_attention_scratch_bytes(batch,tokens,varlen)
+    if need and (scratch is None or scratch.nbytes<need):
+        raise SnowLLMError(f'paged attention needs {need} scratch bytes')
+    ks,vs=pools[2:] if len(pools)==4 else (None,None)
+    step=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
+         (q,pools[0],pools[1],ks,vs,cu,table,lens,qmap)],gate[0]),
+         (ctypes.c_void_p*3)(_p(out),_p(plan),_p(workspace)),batch,table.shape[1],total_blocks,
+         slots,tokens,block_size,gate[1],gate[2],scale,int(varlen))
+    check(lib.snowllm_paged_attention(ctypes.byref(step),_p(scratch),
+          scratch.nbytes if scratch is not None else 0,_stream()),'paged_attention')
+
+
+class _Dsv4AttentionStep(ctypes.Structure):
+    _fields_=[('inputs',ctypes.c_void_p*15)]+[(n,ctypes.c_int64) for n in
+       ('batch','pages','q_blocks','page_size','window','comp_pages','mask_stride','sel_stride')]+[
+       ('scale',ctypes.c_float),('block_q',ctypes.c_int)]
+
+
+def dsv4_attention_scratch_bytes(q_blocks: int,compressed: bool) -> int:
+    return lib.snowllm_dsv4_attention_scratch_bytes(q_blocks,int(compressed))
+
+
+def dsv4_attention(q,k,out,cu,table,lens,qmap,q_blocks,scale,sinks,window,page,scratch,*,
+                    block_q=False,comp_k=None,comp_table=None,comp_lens=None,mask=None,
+                    selection=None,counts=None):
+    _chk(q,'DeepSeek Q',torch.bfloat16)
+    _chk(out,'DeepSeek output',torch.bfloat16,*q.shape)
+    need=dsv4_attention_scratch_bytes(q_blocks,mask is not None)
+    if need and (scratch is None or scratch.nbytes<need):
+        raise SnowLLMError(f'DeepSeek attention needs {need} scratch bytes')
+    step=_Dsv4AttentionStep((ctypes.c_void_p*15)(*[_p(t) for t in
+        (q,k,None,cu,table,lens,qmap,sinks,comp_k,None,comp_table,comp_lens,mask,selection,counts)]),
+        lens.numel(),table.shape[1],q_blocks,page,window,
+        0 if comp_table is None else comp_table.shape[1],0 if mask is None else mask.shape[1],
+        0 if selection is None else selection.shape[1],scale,int(block_q))
+    check(lib.snowllm_dsv4_attention(ctypes.byref(step),_p(out),_p(scratch),
+          scratch.nbytes if scratch is not None else 0,_stream()),'dsv4_attention')
 
 
 def dsv4_norm_proj_scratch_bytes(which: Dsv4Proj, M: int, path: Path) -> int:
@@ -312,16 +432,16 @@ def prefill_q_plan(query_lens: list[int]) -> tuple[int, torch.Tensor]:
 
 
 def paged_window_view(block_tables: torch.Tensor, ends: torch.Tensor, sinks: int, window: int,
-                      block_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+                      block_size: int, *, end_offset: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
     B = ends.numel()
     _chk(block_tables, "block_tables", torch.int32)
-    _chk(ends, "ends", torch.int32)
+    _chk(ends, "ends", ends.dtype)
     w = lib.snowllm_paged_window_blocks(sinks, window, block_size)
     out = torch.empty(B, w, dtype=torch.int32, device="cuda")
     lens = torch.empty(B, dtype=torch.int32, device="cuda")
-    check(lib.snowllm_paged_window_view(_p(block_tables), block_tables.shape[1], _p(ends), B,
-                                        sinks, window, _p(out), w, _p(lens), block_size,
-                                        _stream()),
+    check(lib.snowllm_paged_window_view_shifted(_p(block_tables),block_tables.shape[1],_p(ends),
+          {torch.int32:0,torch.int64:1}.get(ends.dtype,-1),end_offset,B,sinks,window,
+          _p(out),w,_p(lens),block_size,_stream()),
           "paged_window_view")
     return out, lens
 
@@ -453,6 +573,87 @@ def qk_norm_rope(proj: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tenso
     _chk(k, "k", torch.bfloat16, M, k.shape[1], D)
     check(lib.snowllm_qk_norm_rope(_p(proj), N, _p(q_gamma), _p(k_gamma), _p(cos),
                                    _p(sin), _p(q), _p(k), M, eps, _stream()), "qk_norm_rope")
+
+
+@functools.lru_cache(None)
+def _latent_norm_store_layout(rows,width,stride,heads,mode,dtype):
+    layout=(ctypes.c_int64*6)()
+    check(lib.snowllm_latent_norm_store_layout(rows,width,stride,heads,mode,
+          {torch.bfloat16:0,torch.float32:1}.get(dtype,-1),layout),'latent_norm_store_layout')
+    return tuple(layout)
+
+
+def latent_norm_store(x, gamma, out, slots=None, cos=None, sin=None, *, mode, heads=1, eps=1e-6):
+    """GLM KV (0), DeepSeek raw KV (1), or DeepSeek per-head query (2)."""
+    if x.ndim == 3:
+        x = x.view(x.shape[0]*x.shape[1], x.shape[-1])
+    _chk_rows(x, "latent input", x.dtype)
+    rows = x.shape[0]
+    dense,pool,gamma_n,rope_rows,rope_cols,slot_rows = _latent_norm_store_layout(
+        rows,x.shape[1],x.stride(0),heads,mode,x.dtype)
+    _chk(out, "latent output/pool", torch.bfloat16)
+    if pool:
+        if out.numel()%pool:raise SnowLLMError('invalid latent pool capacity')
+        _chk(slots,'latent slots',torch.int32,slot_rows)
+    elif out.numel()!=dense:raise SnowLLMError('query norm/store output size mismatch')
+    if gamma_n:_chk(gamma,'latent gamma',torch.bfloat16,gamma_n)
+    elif gamma is not None:raise SnowLLMError('query norm/store has no gamma')
+    if rope_cols:
+        _chk(cos,'latent cos',torch.float32,rope_rows,rope_cols)
+        _chk(sin,'latent sin',torch.float32,rope_rows,rope_cols)
+    check(lib.snowllm_latent_norm_store(_p(x), x.stride(0), _p(gamma), _p(cos), _p(sin),
+        _p(out), _p(slots), rows, heads, mode, int(x.dtype is torch.float32), eps, _stream()),
+        "latent_norm_store")
+
+
+def qk_norm_rope_cache(proj, q_gamma, k_gamma, cos, sin, q, v, k_cache, v_cache,
+                       slots, eps, block_size, *, k_proj=None, k_scale=None, v_scale=None):
+    """Normalize/rotate QK and publish KV, preserving the original BF16 boundary."""
+    g = geo()
+    m, n = proj.shape
+    d, nk, nh = g.head_size, g.num_kv_heads, g.num_heads
+    _chk(proj, "projection", torch.bfloat16, m, n)
+    _chk(q_gamma, "q gamma", torch.bfloat16, d)
+    _chk(k_gamma, "k gamma", torch.bfloat16, d)
+    _chk(q, "q", torch.bfloat16, m, nh, d)
+    _chk(cos, "cos", torch.float32, m, 64)
+    _chk(sin, "sin", torch.float32, m, 64)
+    _chk(slots, "slot mapping", torch.int32, m)
+    _chk_rows(v, "v projection", torch.bfloat16)
+    if v.shape != (m, nk*d) or n < (nh-1)*g.qkv_q_head_stride+d:
+        raise SnowLLMError("QK/cache projection shape mismatch")
+    if k_proj is None:
+        if n < g.qkv_off_k+nk*d:
+            raise SnowLLMError("projection does not contain K")
+        kp, ks = _p(proj)+g.qkv_off_k*2, n
+    else:
+        _chk_rows(k_proj, "k projection", torch.bfloat16)
+        if k_proj.shape[0] != m or k_proj.shape[1] < nk*d:
+            raise SnowLLMError("K projection shape mismatch")
+        kp, ks = _p(k_proj), k_proj.stride(0)
+    if (n % 8 or ks % 8 or v.stride(0) % 8
+            or kp % 16 or _p(v) % 16):
+        raise SnowLLMError("QK/cache source rows must be aligned to 8 BF16 elements")
+    if (k_scale is None) != (v_scale is None):
+        raise SnowLLMError("KV scales must be paired")
+    dtype = k_cache.dtype if k_scale is None else torch.int8
+    if k_scale is None and dtype not in (torch.uint8, torch.bfloat16):
+        raise SnowLLMError("BF16 KV pools must contain BF16 elements or raw bytes")
+    _chk(k_cache, "k cache", dtype)
+    _chk(v_cache, "v cache", dtype)
+    elements = k_cache.numel()//2 if dtype is torch.uint8 else k_cache.numel()
+    if (block_size != g.block_size or (dtype is torch.uint8 and k_cache.numel() % 2)
+            or elements % (block_size*nk*d)
+            or k_cache.numel() != v_cache.numel()):
+        raise SnowLLMError("KV pool size or block size mismatch")
+    if k_scale is not None:
+        _chk(k_scale, "k scale", torch.bfloat16)
+        _chk(v_scale, "v scale", torch.bfloat16)
+        if k_scale.numel() != k_cache.numel()//32 or v_scale.numel() != v_cache.numel()//d:
+            raise SnowLLMError("KV scale size mismatch")
+    check(lib.snowllm_qk_norm_rope_cache(_p(proj), n, kp, ks, _p(v), v.stride(0),
+        _p(q_gamma), _p(k_gamma), _p(cos), _p(sin), _p(q), _p(k_cache), _p(v_cache),
+        _p(k_scale), _p(v_scale), _p(slots), m, eps, block_size, _stream()), "qk_norm_rope_cache")
 
 
 def qk_norm_rope_split_k(proj: torch.Tensor, k_proj: torch.Tensor, q_gamma: torch.Tensor,

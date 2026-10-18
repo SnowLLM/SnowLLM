@@ -22,6 +22,17 @@ from ._common import (
     synchronize,
 )
 from .attention_full import (
+    paged_attention,
+    paged_attention_scratch_bytes,
+    paged_attention_varlen,
+    dsv4_attention,
+    dsv4_attention_scratch_bytes,
+    dsv4_projection_plan,
+    Dsv4ProjectionPlan,
+    attn_output_plan,
+    attn_output_shape,
+    attn_output_gating,
+    attn_output_project,
     dsv4_attn_fanout,
     dsv4_attn_fanout_scratch_bytes,
     dsv4_norm_proj_bf16,
@@ -84,6 +95,8 @@ from .attention_full import (
     paged_decode_workspace_size,
     qk_norm,
     qk_norm_rope,
+    qk_norm_rope_cache,
+    latent_norm_store,
     qk_norm_rope_split_k,
     qkv_proj,
     qkv_proj_fp8,
@@ -105,6 +118,7 @@ from .attention_linear import (
     fused_linear_attn,
     fused_linear_attn_workspace_bytes,
     linear_attn_advance,
+    linear_attn_checkpoint_rows,
     linear_attn_retain_bytes,
     linear_in_proj_ba_shuffle_w,
     linear_in_proj_shuffle_w,
@@ -144,6 +158,7 @@ from .gemm import (
     proj_scale_shuffle_fp8,
 )
 from .mlp import (
+    swiglu,
     fused_mlp,
     fused_mlp_fp8,
     fused_mlp_kquant,
@@ -234,7 +249,10 @@ from .ple import (
 )
 from .norm import (
     dsv4_rmsnorm,
+    layernorm_rows,
     rmsnorm,
+    rmsnorm_gated_rows,
+    rmsnorm_rows,
     rmsnorm_residual,
 )
 from .rope import (
@@ -267,8 +285,21 @@ from .trace import (
 )
 from .vision import (
     vision_attn,
+    vision_attention,
+    vision_pos_embed_add,
     vision_gemm_bias_act,
     vision_gemm_scratch_bytes,
     vision_layernorm,
     vision_rope_qk,
 )
+
+from .ple import qsa_job_plan, qsa_group_rows, qsa_decode_rows, qsa_attention, ple_step
+from .inference import (qkv_projection_blocks, inference_qkv, inference_mlp, inference_moe,
+                        inference_moe_workspace_bytes, inference_head, inference_hc)
+from .inference import indexer_select, indexer_select_scratch_bytes
+from .metadata import (metadata_ranges, copy_rows, copy_batch, gather_rows, causal_compress_mask,
+                       qsa_metadata, spec_accept, spec_first_metadata, spec_step_metadata, spec_step_table_width,
+                       draft_metadata)
+
+from .dspark import (dspark_pack_weight, dspark_tap_mean, dspark_context,
+                     dspark_context_workspace_bytes, dspark_markov, dspark_markov_workspace_bytes)

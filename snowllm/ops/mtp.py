@@ -3,8 +3,8 @@
 
 import torch
 
-from .._capi import check, lib
-from ._common import _chk, _p, _shuffle, _passthru, _stream
+from .._capi import SnowLLMError, check, lib
+from ._common import geo, _chk, _p, _shuffle, _passthru, _stream
 
 
 def mtp_fc_shuffle_w(w: torch.Tensor) -> torch.Tensor:
@@ -16,15 +16,19 @@ mtp_fc_scratch_bytes = _passthru("mtp_fc_scratch_bytes")
 
 
 def mtp_pre_fc(embed: torch.Tensor, hidden: torch.Tensor, gamma_embed: torch.Tensor,
-               gamma_hidden: torch.Tensor, out: torch.Tensor, eps: float) -> None:
+               gamma_hidden: torch.Tensor, out: torch.Tensor, eps: float, *,
+               round_before_weight: bool = False) -> None:
+    """Normalize both inputs and concatenate, optionally rounding before gamma."""
     M, H = embed.shape
+    if H != geo().hidden:
+        raise SnowLLMError(f"MTP input width must match the active geometry ({geo().hidden})")
     _chk(embed, "embed", torch.bfloat16, M, H)
     _chk(hidden, "hidden", torch.bfloat16, M, H)
     _chk(gamma_embed, "gamma_embed", torch.bfloat16, H)
     _chk(gamma_hidden, "gamma_hidden", torch.bfloat16, H)
     _chk(out, "out", torch.bfloat16, M, 2 * H)
     check(lib.snowllm_mtp_pre_fc(_p(embed), _p(hidden), _p(gamma_embed), _p(gamma_hidden), _p(out),
-                                 M, eps, _stream()), "mtp_pre_fc")
+                                 M, eps, round_before_weight, _stream()), "mtp_pre_fc")
 
 
 def mtp_fc(x: torch.Tensor, w_shuffled: torch.Tensor, a_scratch: torch.Tensor | None,

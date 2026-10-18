@@ -57,6 +57,11 @@ def fused_linear_attn_workspace_bytes(M: int, path: Path = Path.PREFILL) -> int:
     return lib.snowllm_fused_linear_attn_workspace_bytes(int(M), int(path))
 
 
+def linear_attn_checkpoint_rows(first: int, rows: int, interval: int) -> int:
+    """Token capacity for a span that publishes complete periodic checkpoints."""
+    return lib.snowllm_linear_attn_checkpoint_rows(first, rows, interval)
+
+
 def _blocks(w: KQuantProjWeight | None) -> tuple:
     return (w.quant, w.meta) if w is not None else (None, None)
 
