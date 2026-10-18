@@ -11,6 +11,8 @@ from .._capi import SnowLLMError
 from .._platform import host_available
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
     from ..checkpoint.gguf import GGUF
 
 # EMPIRICAL, not derived: (GiB moved to host, % added to a decode step), measured per group
@@ -64,11 +66,36 @@ def layer_bytes(gguf: "GGUF") -> dict[str, dict[int, int]]:
     return out
 
 
+@contextlib.contextmanager
 def place(dmap: "DeviceMap | None", group: str,
-          layer: int | None = None) -> contextlib.AbstractContextManager[None]:
-    if dmap is not None and dmap.on_host(group, layer):
-        return ops.host_memory(True)
-    return contextlib.nullcontext()
+          layer: int | None = None) -> "Iterator[None]":
+    host = dmap is not None and dmap.on_host(group, layer)
+    dry = ops.drying()
+    previous = None if dry is None else dry.placement
+    if dry is not None:
+        dry.placement = (group, layer)
+    try:
+        with ops.host_memory(host):
+            yield
+    finally:
+        if dry is not None:
+            dry.placement = previous
+
+
+def measure_weights(build: "Callable[[DeviceMap], object]"
+                    ) -> tuple[int, dict[str, int], dict[str, dict[int, int]]]:
+    """Count final storage through the loader's existing offload scopes."""
+    with ops.dry_load() as dry:
+        model = build(DeviceMap(frozenset(GROUPS), {}))
+        sizes = dict.fromkeys(GROUPS, 0)
+        by = {g: {} for g in LAYERED}
+        for (group, layer), nbytes in dry.placed_bytes().items():
+            sizes[group] += nbytes
+            if group in by and layer is not None:
+                by[group][layer] = by[group].get(layer, 0) + nbytes
+        total = dry.device + dry.host
+    del model
+    return total, sizes, by
 
 
 def cost_of(group: str, nbytes: int) -> float:
@@ -101,6 +128,7 @@ class DeviceMap:
     layers: dict[str, frozenset[int]] = dataclasses.field(default_factory=dict)
     per_layer: dict[str, dict[int, int]] = dataclasses.field(default_factory=dict)
     short: int = 0
+    total_bytes: int | None = None
 
     def on_host(self, group: str, layer: int | None = None) -> bool:
         if group not in self.host:
@@ -123,7 +151,8 @@ class DeviceMap:
 
     @property
     def device_bytes(self) -> int:
-        return sum(self.sizes.values()) - self.host_bytes
+        total = sum(self.sizes.values()) if self.total_bytes is None else self.total_bytes
+        return total - self.host_bytes
 
     @property
     def slowdown(self) -> float:
@@ -166,6 +195,26 @@ def take(g: str, sizes: dict[str, int], per_layer: dict[str, dict[int, int]], ro
             continue
         pick.append(i)
         took += by[i]
+    if took < need <= room:
+        # Mixed native formats can leave an unusable gap after largest-first.
+        # Try byte sums before falling back to a more expensive weight group.
+        sums, best = {0: ()}, None
+        for i in sorted(by, key=lambda i: (-by[i], i)):
+            more = {}
+            for total, chosen in sums.items():
+                value = total + by[i]
+                if value > room or (best is not None and value >= best[0]):
+                    continue
+                if value >= need:
+                    best = value, chosen + (i,)
+                elif value not in sums and value not in more:
+                    more[value] = chosen + (i,)
+            sums.update(more)
+            # Bound planning work for checkpoints with many distinct layer sizes.
+            if len(sums) > 65536:
+                break
+        if best is not None:
+            took, pick = best
     return frozenset(pick), took
 
 
