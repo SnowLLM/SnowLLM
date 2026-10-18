@@ -117,7 +117,7 @@ class GGUFReader:
     def raw(self, name: str, out: torch.Tensor | None = None) -> torch.Tensor:
         t = self.gguf[name]
         dry = ops.drying()
-        if dry is not None:
+        if dry is not None and out is None:
             return dry.meta((t.nbytes,), torch.uint8)
         if out is None:
             buf = torch.empty(t.nbytes, dtype=torch.uint8, device="cuda")
@@ -126,6 +126,8 @@ class GGUFReader:
                                f"want {t.nbytes} uint8")
         else:
             buf = out
+        if dry is not None:
+            return buf
         check(lib.snowllm_file_reader_read(self._r, self._paths[self.gguf.part_of(name)],
                                            self.gguf.file_offset(name),
                                            t.nbytes, buf.data_ptr(),
@@ -135,7 +137,7 @@ class GGUFReader:
         return buf
 
     def reserve_transient(self, nbytes: int) -> None:
-        self._slab = None if ops.drying() is not None or nbytes <= 0 else \
+        self._slab = None if nbytes <= 0 else \
             torch.empty(int(nbytes), dtype=torch.uint8, device="cuda")
 
     def transient(self, *names: str) -> list[torch.Tensor]:
@@ -156,13 +158,11 @@ class GGUFReader:
     def drop_transient(self) -> None:
         if self._slab is not None:
             self._slab = None
-            torch.cuda.empty_cache()
+            if ops.drying() is None:
+                torch.cuda.empty_cache()
 
     def tensor(self, name: str, dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
         t = self.gguf[name]
-        dry = ops.drying()
-        if dry is not None:
-            return dry.meta(t.shape, dtype)
         return dequantize(self.raw(name), t.quant.name, t.numel, dtype).view(t.shape)
 
     def keys(self) -> KeysView[str]:

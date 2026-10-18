@@ -2,10 +2,12 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the llama.cpp project
 
+from functools import partial
+
 import torch
 
 from ..._capi import SnowLLMError
-from .grids import grid, ksigns
+from .grids import GRID_SHAPE, grid, ksigns
 
 QK_K = 256
 CHUNK_BLOCKS = 1 << 14
@@ -106,40 +108,41 @@ def _q6_k(b: torch.Tensor) -> torch.Tensor:
     return out.reshape(nb, QK_K)
 
 
-def _signs_from(word: torch.Tensor, device: torch.device | str) -> torch.Tensor:
+def _signs_from(word: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
+    device = word.device
     idx = (word[..., None] >> torch.tensor([0, 7, 14, 21], device=device).view(1, 1, 4)) & 0x7F
-    byte = ksigns(device)[idx.long()].int()
+    byte = signs[idx.long()].int()
     bit = (byte[..., None] >> torch.arange(8, device=device).view(1, 1, 1, 8)) & 1
     return 1.0 - 2.0 * bit.float()
 
 
-def _iq2_xxs(b: torch.Tensor) -> torch.Tensor:
-    nb, dev = b.shape[0], b.device
+def _iq2_xxs(b: torch.Tensor, *, table: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
+    nb = b.shape[0]
     q = b[:, 2:66].view(nb, 8, 8).int()
     word = q[:, :, 4] | (q[:, :, 5] << 8) | (q[:, :, 6] << 16) | (q[:, :, 7] << 24)
     db = _f16(b, 0) * (0.5 + ((word >> 28) & 0xF).float()) * 0.25
-    g = grid("IQ2_XXS", dev)[q[:, :, 0:4].long()]
-    return (db[:, :, None, None] * g * _signs_from(word, dev)).reshape(nb, QK_K)
+    g = table[q[:, :, 0:4].long()]
+    return (db[:, :, None, None] * g * _signs_from(word, signs)).reshape(nb, QK_K)
 
 
-def _iq3_xxs(b: torch.Tensor) -> torch.Tensor:
-    nb, dev = b.shape[0], b.device
+def _iq3_xxs(b: torch.Tensor, *, table: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
+    nb = b.shape[0]
     idx = b[:, 2:66].long()
     s = b[:, 66:98].view(nb, 8, 4).int()
     word = s[:, :, 0] | (s[:, :, 1] << 8) | (s[:, :, 2] << 16) | (s[:, :, 3] << 24)
     db = _f16(b, 0) * (0.5 + ((word >> 28) & 0xF).float()) * 0.5
-    g = grid("IQ3_XXS", dev)[idx].reshape(nb, 8, 4, 8)
-    return (db[:, :, None, None] * g * _signs_from(word, dev)).reshape(nb, QK_K)
+    g = table[idx].reshape(nb, 8, 4, 8)
+    return (db[:, :, None, None] * g * _signs_from(word, signs)).reshape(nb, QK_K)
 
 
-def _iq2_s(b: torch.Tensor) -> torch.Tensor:
+def _iq2_s(b: torch.Tensor, *, table: torch.Tensor) -> torch.Tensor:
     nb, dev = b.shape[0], b.device
     qs, sg = b[:, 2:34].int(), b[:, 34:66].int()
     qh, sc = b[:, 66:74].int(), b[:, 74:82].int()
     scale = ((sc[:, :, None] >> torch.tensor([0, 4], device=dev).view(1, 1, 2)) & 0xF).reshape(nb, 16)
     db = _f16(b, 0) * (0.5 + scale.float()) * 0.25
     hi = (qh[:, :, None] >> torch.tensor([0, 2, 4, 6], device=dev).view(1, 1, 4)) & 3
-    g = grid("IQ2_S", dev)[(qs | (hi.reshape(nb, 32) << 8)).long()].reshape(nb, 16, 2, 8)
+    g = table[(qs | (hi.reshape(nb, 32) << 8)).long()].reshape(nb, 16, 2, 8)
     bit = (sg[:, :, None] >> torch.arange(8, device=dev).view(1, 1, 8)) & 1
     sign = (1.0 - 2.0 * bit.float()).reshape(nb, 16, 2, 8)
     return (db[:, :, None, None] * g * sign).reshape(nb, QK_K)
@@ -193,7 +196,7 @@ def _iq4_xs(b: torch.Tensor) -> torch.Tensor:
     return (dl[:, :, None] * out).reshape(nb, QK_K)
 
 
-def _iq3_s(b: torch.Tensor) -> torch.Tensor:
+def _iq3_s(b: torch.Tensor, *, table: torch.Tensor) -> torch.Tensor:
     nb, dev = b.shape[0], b.device
     d = _f16(b, 0)
     qs = b[:, 2:66].int()
@@ -207,15 +210,15 @@ def _iq3_s(b: torch.Tensor) -> torch.Tensor:
     shift8 = torch.arange(8, device=dev).view(1, 1, 8)
     hi = ((qh[:, :, None] >> shift8) & 1).reshape(nb, 64)
     idx = (qs | (hi << 8)).long()
-    g = grid("IQ3_S", dev)[idx].reshape(nb, 8, 4, 8)
+    g = table[idx].reshape(nb, 8, 4, 8)
 
     bit = (signs[:, :, None] >> shift8) & 1
     sign = (1.0 - 2.0 * bit.float()).reshape(nb, 8, 4, 8)
     return (db[:, :, None, None] * g * sign).reshape(nb, QK_K)
 
 
-def _iq2_xs(b: torch.Tensor) -> torch.Tensor:
-    nb, dev = b.shape[0], b.device
+def _iq2_xs(b: torch.Tensor, *, table: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
+    nb = b.shape[0]
     d = _f16(b, 0)
     qs = b[:, 2:66].contiguous().view(torch.int16).int()
     scales = b[:, 66:74].int()
@@ -223,14 +226,15 @@ def _iq2_xs(b: torch.Tensor) -> torch.Tensor:
     sc2 = torch.stack([scales & 0xF, (scales >> 4) & 0xF], dim=-1).reshape(nb, 16)
     db = d * (0.5 + sc2.float()) * 0.25
 
-    g = grid("IQ2_XS", dev)[(qs & 0x1FF).long()].reshape(nb, 16, 2, 8)
-    sign = _signs_from_index(qs, dev).reshape(nb, 16, 2, 8)
+    g = table[(qs & 0x1FF).long()].reshape(nb, 16, 2, 8)
+    sign = _signs_from_index(qs, signs).reshape(nb, 16, 2, 8)
     return (db[:, :, None, None] * g * sign).reshape(nb, QK_K)
 
 
-def _signs_from_index(qs: torch.Tensor, device: torch.device | str) -> torch.Tensor:
+def _signs_from_index(qs: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
+    device = qs.device
     idx = (qs >> 9) & 0x7F
-    byte = ksigns(device)[idx.long()].int()
+    byte = signs[idx.long()].int()
     bit = (byte[..., None] >> torch.arange(8, device=device).view(1, 1, 8)) & 1
     return 1.0 - 2.0 * bit.float()
 
@@ -278,7 +282,13 @@ def dequantize(raw: torch.Tensor, quant_name: str, numel: int,
         raise SnowLLMError(f"{quant_name}: {raw.numel()} bytes for {nb} blocks, want {nb * stride}")
 
     out = torch.empty(numel, dtype=dtype, device=raw.device)
+    if nb == 0:
+        return out
     blocks = raw.view(nb, stride)
+    if quant_name in GRID_SHAPE:
+        unpack = partial(unpack, table=grid(quant_name, raw.device))
+    if quant_name in ("IQ2_XXS", "IQ3_XXS", "IQ2_XS"):
+        unpack = partial(unpack, signs=ksigns(raw.device))
     for lo in range(0, nb, CHUNK_BLOCKS):
         hi = min(lo + CHUNK_BLOCKS, nb)
         out[lo * block:hi * block] = unpack(blocks[lo:hi]).reshape(-1).to(dtype)
