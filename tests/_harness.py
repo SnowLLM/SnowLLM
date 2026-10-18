@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import os
 import pathlib
 import sys
 from typing import TYPE_CHECKING
@@ -36,8 +37,13 @@ def skip(why: str) -> None:
     sys.exit(0)
 
 
-def checkpoint(name: str = BF16) -> pathlib.Path:
-    hit = pathlib.Path.home() / "models" / name
+def checkpoint_path(name: str = BF16, *, env: str | None = None) -> pathlib.Path:
+    override = os.environ.get(env) if env is not None else None
+    return pathlib.Path(override).expanduser() if override else pathlib.Path.home() / "models" / name
+
+
+def checkpoint(name: str = BF16, *, env: str | None = None) -> pathlib.Path:
+    hit = checkpoint_path(name, env=env)
     if not hit.is_dir():
         skip(f"no checkpoint at {hit}")
     return hit
