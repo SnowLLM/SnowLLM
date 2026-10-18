@@ -8,12 +8,18 @@ from ._common import _chk, _p, _stream
 
 
 def rope_cos_sin(position_ids: torch.Tensor, inv_freq: torch.Tensor, cos: torch.Tensor,
-                 sin: torch.Tensor, mrope: bool = True) -> None:
+                 sin: torch.Tensor, mrope: bool = True, mscale: torch.Tensor | None = None) -> None:
     M = cos.shape[0]
     _chk(position_ids, "position_ids", torch.int64)
     _chk(inv_freq, "inv_freq", torch.float32)
-    fn = lib.snowllm_rope_cos_sin_mrope if mrope else lib.snowllm_rope_cos_sin
-    check(fn(_p(position_ids), _p(inv_freq), _p(cos), _p(sin), M, _stream()), "rope_cos_sin")
+    if mscale is not None:
+        _chk(mscale, "RoPE scale", torch.float32, 1)
+        check(lib.snowllm_rope_cos_sin_scaled(_p(position_ids), _p(inv_freq), _p(mscale),
+                                             _p(cos), _p(sin), M, int(mrope), _stream()),
+              "rope_cos_sin_scaled")
+    else:
+        fn = lib.snowllm_rope_cos_sin_mrope if mrope else lib.snowllm_rope_cos_sin
+        check(fn(_p(position_ids), _p(inv_freq), _p(cos), _p(sin), M, _stream()), "rope_cos_sin")
 
 
 def rope_apply(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> None:

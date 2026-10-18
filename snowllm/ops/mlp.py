@@ -3,9 +3,19 @@
 
 import torch
 
-from .._capi import check, lib
+from .._capi import SnowLLMError, check, lib
 from ._common import (geo, KQuantProjWeight, _chk, _p, _proj_shuffle_kquant, _shuffle,
                       _passthru, _stream)
+
+
+def swiglu(gate, up, out, *, limit=0.0, round_silu=False):
+    """SiLU(gate) * up, with optional asymmetric clamp and BF16 SiLU rounding."""
+    for value, name in ((gate, "gate"), (up, "up"), (out, "SwiGLU output")):
+        _chk(value, name, torch.bfloat16, *gate.shape)
+    if limit < 0:
+        raise SnowLLMError("SwiGLU clamp must be nonnegative")
+    check(lib.snowllm_mlp_swiglu(_p(gate), _p(up), _p(out), gate.numel(), limit,
+                               round_silu, _stream()), "mlp_swiglu")
 
 
 def mlp_gate_up_shuffle_w(w: torch.Tensor) -> torch.Tensor:

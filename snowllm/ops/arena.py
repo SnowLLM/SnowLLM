@@ -2,12 +2,12 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import torch
 
 from .._capi import SnowLLMError
-from .trace import Planner, own, tracing
+from .trace import Planner, dummy_run, own, pack, tracing
 
 
 class Arena:
@@ -73,6 +73,22 @@ class Arena:
 
     def end_plan(self) -> None:
         self.at = max(self.at, self.planner.end())
+
+    def plan(self, key: tuple, rows: int, walk: Callable[[], object], after: int = 0) -> bool:
+        """Trace a wider walk and install it if it fits the frozen arena."""
+        planner = self.planner
+        have = planner.plans.get(key)
+        if rows <= 0 or (have is not None and rows <= have.rows):
+            return False
+        with dummy_run() as trace:
+            held = walk()
+        plan = pack(trace, rows)
+        del held
+        if planner.buf is not None and plan.high + after > planner.buf.numel():
+            planner.plans.pop(key, None)
+            return False
+        planner.install(key, plan)
+        return True
 
     def freeze(self, planned: int = 0) -> int:
         if self.buf is None:
