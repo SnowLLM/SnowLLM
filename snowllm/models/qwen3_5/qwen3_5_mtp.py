@@ -40,8 +40,7 @@ class Qwen3_5MoeMTP(nn.Module):
             with a.frame():
                 ws = a.flat(ops.mtp_fc_scratch_bytes(M), torch.uint8)
                 ops.mtp_fc(cat, self.fc_w, ws, residual, ctx.decode)
-        ops.rope_cos_sin(ctx.batch.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True)
-        ctx.apply_mscale()
+        ops.rope_cos_sin(ctx.batch.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True, mscale=ctx.mscale)
         self.layer(ctx, residual, None, x)
         self.norm.add_residual(ctx, ctx.blk, residual, x)
         ctx.close()

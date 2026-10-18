@@ -53,7 +53,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from .engine.async_engine import AsyncEngine
     from .engine import Engine
     from .engine.dspark_decode import DEFAULT_DSPARK_P_MIN
-    from .engine.runner import DEFAULT_GPU_UTIL
+    from .defaults import DEFAULT_GPU_UTIL
     from .engine.prefix_cache import DEFAULT_PREFIX_MEMORY_RATIO
     from .checkpoint.reader import read_bytes
     from .serve.state import Alias, ServerState
@@ -229,7 +229,7 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_UTIL, metavar="F",
                    help='Fraction of GPU memory available to the server.')
     g.add_argument("--device-map", type=str, default="", metavar="SPEC",
-                   help='Offload weights to host RAM: off, auto, all, or groups (DeepSeek-V4 GGUF).')
+                   help='Offload GGUF weights to host RAM: off, auto, all, or groups.')
     g.add_argument("--prefix-memory-ratio", type=float, default=DEFAULT_PREFIX_MEMORY_RATIO,
                    metavar="R",
                    help='Memory share for prompt caching; 0 disables caching.')

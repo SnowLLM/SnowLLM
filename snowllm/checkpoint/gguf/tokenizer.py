@@ -22,6 +22,9 @@ class Pre(NamedTuple):
 
 
 PRE_TOKENIZER = {
+    "glm4": Pre(NO_NORM, (
+        r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+"
+        r"[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",)),
     "qwen35": Pre(NFC, (
         r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}"
         r"\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",)),
@@ -131,6 +134,9 @@ def stop_token_ids(g: GGUF) -> tuple[int, ...]:
     eos = g.get("tokenizer.ggml.eos_token_id")
     if eos is not None:
         out.append(int(eos))
+    for key in ("tokenizer.ggml.eot_token_id", "tokenizer.ggml.eom_token_id"):
+        if (i := g.get(key)) is not None and int(i) not in out:
+            out.append(int(i))
     index = {t: i for i, t in enumerate(tokens)}
     for name in EXTRA_STOPS:
         if (i := index.get(name)) is not None and i not in out:

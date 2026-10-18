@@ -10,7 +10,8 @@ from dataclasses import dataclass
 import torch
 
 from .. import ops
-from .geometry import GEMM_N_QUANTUM
+from .._capi import SnowLLMError
+from .geometry import pad_gemm_n
 
 
 ROPE_THETA = 10000.0
@@ -55,7 +56,7 @@ class VisionGeometry:
 
     @property
     def intermediate_pad(self) -> int:
-        return _align(self.intermediate, GEMM_N_QUANTUM)
+        return pad_gemm_n(self.intermediate)
 
     @property
     def merge_unit(self) -> int:
@@ -68,10 +69,6 @@ class VisionGeometry:
     @property
     def grid_side(self) -> int:
         return math.isqrt(self.num_pos)
-
-
-def _align(n: int, a: int) -> int:
-    return ((n + a - 1) // a) * a
 
 
 def _seg_lengths(grid_thw: torch.Tensor) -> list[int]:
@@ -105,9 +102,8 @@ def _rope_cos_sin(grid_thw: torch.Tensor, device: torch.device | str,
     return emb.cos().to(device).contiguous(), emb.sin().to(device).contiguous()
 
 
-def _bilinear_pos_embed(grid_thw: torch.Tensor, pos_embed: torch.Tensor, side: int,
-                        m: int) -> torch.Tensor:
-    dev = pos_embed.device
+def _bilinear_pos_inputs(grid_thw: torch.Tensor, side: int,
+                         m: int) -> tuple[torch.Tensor, torch.Tensor]:
     idx_parts: list[list[torch.Tensor]] = [[] for _ in range(4)]
     w_parts: list[list[torch.Tensor]] = [[] for _ in range(4)]
     for t, h, w in grid_thw.tolist():
@@ -141,11 +137,9 @@ def _bilinear_pos_embed(grid_thw: torch.Tensor, pos_embed: torch.Tensor, side: i
         for i in range(4):
             idx_parts[i].append(corners[i][reorder])
             w_parts[i].append(weights[i][reorder])
-    indices = torch.stack([torch.cat(p) for p in idx_parts]).to(dev)
-    weights = torch.stack([torch.cat(p) for p in w_parts]).to(dev).to(torch.float32)
-    table = pos_embed.to(torch.float32)
-    out = (table[indices] * weights[:, :, None]).sum(0)
-    return out
+    indices = torch.stack([torch.cat(p) for p in idx_parts]).to(torch.int32)
+    weights = torch.stack([torch.cat(p) for p in w_parts]).to(torch.float32)
+    return indices, weights
 
 
 @dataclass
@@ -257,16 +251,33 @@ class VisionModel:
         g = self.geo
         HIDDEN, PATCH_IN, OUT_HIDDEN = g.hidden, g.patch_in, g.out_hidden
         INTERMEDIATE_PAD, MERGE_IN, MERGE_UNIT = g.intermediate_pad, g.merge_in, g.merge_unit
+        # Grid-derived metadata is CPU input preparation. Validate it before any
+        # GPU work so native offsets and position lookups are always in bounds.
+        if grid_thw.dim() != 2 or grid_thw.shape[1] != 3:
+            raise SnowLLMError("vision grid_thw must be an [images,3] tensor")
+        grid_thw = grid_thw.cpu()
+        grids = grid_thw.tolist()
+        if not grids or any(int(v) != v or v <= 0 for row in grids for v in row):
+            raise SnowLLMError("vision grids must contain positive integer dimensions")
+        if any(h % g.spatial_merge or w % g.spatial_merge for _, h, w in grids):
+            raise SnowLLMError("vision spatial grids must be divisible by spatial_merge")
+        if pixel_values.dim() != 2 or pixel_values.shape[1] != PATCH_IN:
+            raise SnowLLMError("vision pixel_values has the wrong patch shape")
+        if sum(t * h * w for t, h, w in grids) != pixel_values.shape[0]:
+            raise SnowLLMError("vision grid patch count does not match pixel_values")
         x = pixel_values.to(torch.bfloat16).cuda()
         M = x.shape[0]
 
         hidden = self._buf("hidden", M, HIDDEN)
         self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
-        pos = _bilinear_pos_embed(grid_thw, self.pos_embed, g.grid_side, g.spatial_merge)
-        hidden[:] = (hidden.float() + pos.float()).to(torch.bfloat16)
+        indices, weights = _bilinear_pos_inputs(grid_thw, g.grid_side, g.spatial_merge)
+        ops.vision_pos_embed_add(hidden, self.pos_embed, indices.to(x.device), weights.to(x.device))
 
         cos, sin = _rope_cos_sin(grid_thw, "cuda", g)
-        segs = _seg_lengths(grid_thw)
+        cu = [0]
+        for length in _seg_lengths(grid_thw):
+            cu.append(cu[-1] + length)
+        cu = torch.tensor(cu, dtype=torch.int32, device=x.device)
         o = self._buf("o", M, HIDDEN)
 
         for blk in self.blocks:
@@ -274,15 +285,7 @@ class VisionModel:
             ops.vision_layernorm(hidden, blk.norm1_w, blk.norm1_b, ln, LN_EPS)
             qkv = self._buf("qkv", M, 3 * HIDDEN)
             self._gemm(ln, blk.qkv_w, blk.qkv_b, 3 * HIDDEN, HIDDEN, qkv, act=0)
-            ops.vision_rope_qk(qkv[:M], cos, sin, HIDDEN, g.num_heads, g.head_dim)
-            start = 0
-            for S in segs:
-                q = qkv[start:start + S, 0:HIDDEN]
-                k = qkv[start:start + S, HIDDEN:2 * HIDDEN]
-                v = qkv[start:start + S, 2 * HIDDEN:3 * HIDDEN]
-                ops.vision_attn(q, k, v, o[start:start + S], S, HIDDEN, g.num_heads,
-                                g.head_dim)
-                start += S
+            ops.vision_attention(qkv, cos, sin, cu, o, g.num_heads, g.head_dim)
             self._gemm(o, blk.proj_w, blk.proj_b, HIDDEN, HIDDEN, hidden, act=0, residual=hidden)
             ops.vision_layernorm(hidden, blk.norm2_w, blk.norm2_b, ln, LN_EPS)
             h1 = self._buf("h1", M, INTERMEDIATE_PAD)

@@ -11,42 +11,31 @@ import torch
 from .. import ops
 from .._capi import SnowLLMError
 from .._platform import gpu_mem_info
-from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Qwen4ExpGeometry
-from .block_manager import (
-    BlockAllocator,
-    StateSlots,
-    Staging,
-    TableMirror,
-    block_tables,
-    slot_mapping,
-)
-from .forward_context import (
-    Batch,
-    i32,
-    i64,
-    plain_decode_shapes,
-)
+from ..defaults import DEFAULT_GPU_UTIL
+from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
+from .block_manager import BlockAllocator, StateSlots
+from .forward_context import Batch, plain_decode_shapes
 from .prefix_cache import CKPT_EVERY, Entry, PrefixCache, thin
 from .request import Request, SamplingParams
 from .dspark_decode import DEFAULT_DSPARK_P_MIN, DSparkDecoder
 from .runner import (
-    DEFAULT_GPU_UTIL,
     DraftGeometry,
-    GraphRunner,
-    Runner,
-    draft_pool_bytes,
+    BaseRunner,
 )
+from .resources import allocate_draft_pool, draft_pool_bytes
+from .qwen_runner import QwenRunner
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, SpecDecoder
 
 if TYPE_CHECKING:
     from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
+    from ..models.glm5_next.layers import Glm5NextForConditionalGeneration
     from ..models.qwen3_5.qwen3_5 import Qwen3_5MoeForCausalLM
     from ..models.qwen4exp.qwen4exp import Qwen4ExpForConditionalGeneration
 
     TargetModel = (Qwen3_5MoeForCausalLM | DeepSeekV4ForCausalLM
-                   | Qwen4ExpForConditionalGeneration)
+                   | Qwen4ExpForConditionalGeneration | Glm5NextForConditionalGeneration)
     DraftSource = GGUFDraftSource | DictDraftSource
 
 
@@ -260,18 +249,21 @@ def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
             draft_num_spec(geo, block), geo)
 
 
-def _runner_for(model: "TargetModel") -> type[GraphRunner]:
+def _runner_for(model: "TargetModel") -> type[BaseRunner]:
+    if isinstance(model.geo, Glm5NextGeometry):
+        from .glm5_next_runner import Glm5NextRunner
+        return Glm5NextRunner
     if isinstance(model.geo, DeepSeekV4Geometry):
         from .dsv4_runner import Dsv4Runner
         return Dsv4Runner
     if isinstance(model.geo, Qwen4ExpGeometry):
         from .qwen4exp_runner import Qwen4ExpRunner
         return Qwen4ExpRunner
-    return Runner
+    return QwenRunner
 
 
 def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
-                   weights: int) -> int:
+                   weights: int, *, load_peak: int = 0) -> int:
     from ..checkpoint.loader import geo_context
     ctx = min(int(kv.get("ctx") or 0), geo_context(cfg))
     if ctx <= 0:
@@ -285,9 +277,10 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
         prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False)
-    got = 0
+    loading = max(0, load_peak - free)
+    got = loading
     for rows in r.candidates():
-        got = max(0, weights + r.fixed_bytes(rows) + r.act_bytes_for(rows) - room)
+        got = max(loading, weights + r.fixed_bytes(rows) + r.act_bytes_for(rows) - room)
         if got <= budget:
             break
     return got
@@ -326,97 +319,96 @@ class Engine:
                              draft_geo=self.dflash_geo,
                              prefix_memory_ratio=prefix_memory_ratio,
                              plan_activations=plan_activations)
-        self.prefill_chunk = self.runner.max_prefill_tokens
-        self.dflash_blocks = self.runner.draft_blocks
-        self.ring_blocks = self.runner.ring_blocks
+        try:
+            self.prefill_chunk = self.runner.max_prefill_tokens
+            self.dflash_blocks = self.runner.draft_blocks
+            self.ring_blocks = self.runner.ring_blocks
 
-        self.num_spec = self.runner.num_spec
-        self.T = self.num_spec + 1
-        self.max_num_seqs = max_num_seqs
-        self.max_model_len = max_model_len
+            self.num_spec = self.runner.num_spec
+            self.T = self.num_spec + 1
+            self.max_num_seqs = max_num_seqs
+            self.max_model_len = max_model_len
 
-        self.slots = StateSlots(max_num_seqs, self.runner.slots_per_request,
-                                self.runner.dummy_slot)
-        self.sampler = Sampler(frozenset(stop_token_ids), seed)
-        self.tables = TableMirror(self.runner.max_num_seqs, self.runner.max_blocks_per_seq)
-        self.stage = Staging()
-        self.dflash = None
-        if dflash_path and _dspark(self.dflash_geo):
-            self.dflash = self._build_dspark(dflash_path, dflash_block, max_model_len,
-                                             dflash_p_min)
-        elif dflash_path:
-            self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len)
-        self.spec = self.dflash or (
-            SpecDecoder(self.runner, self.sampler, self.slots, self.tables, self.stage,
-                        num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks)
-            if self.num_spec else None)
+            self.slots = StateSlots(max_num_seqs, self.runner.slots_per_request,
+                                    self.runner.dummy_slot)
+            self.sampler = Sampler(frozenset(stop_token_ids),seed)
+            self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size)
+            self.tables, self.stage = self.runner.create_inputs()
+            self.dflash = None
+            if dflash_path and _dspark(self.dflash_geo):
+                self.dflash = self._build_dspark(dflash_path, dflash_block, max_model_len,
+                                                 dflash_p_min)
+            elif dflash_path:
+                self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len)
+            if self.dflash is not None:
+                self.runner.reserve_bytes = 0
+            self.spec = self.dflash or (
+                getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
+                            num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks)
+                if self.num_spec else None)
 
-        self.waiting: deque[Request] = deque()
-        self.running: list[Request] = []
-        self._prefill_turn = True
-        self.batch_prefill = batch_prefill
-        self.n_batched_prefills = 0
-        self.n_preemptions = 0
-        self.preempt = preempt
-        self.cache = None
-        self.acct = StepAccounting() if account else None
-        self.exact_stats = exact_stats
+            self.waiting: deque[Request] = deque()
+            self.running: list[Request] = []
+            self._prefill_turn = True
+            self.batch_prefill = batch_prefill
+            self.n_batched_prefills = 0
+            self.n_preemptions = 0
+            self.preempt = preempt
+            self.cache = None
+            self.acct = StepAccounting() if account else None
+            self.exact_stats = exact_stats
 
-        self._active_factor: float | None = None
-        self._rope_cache: dict[float, tuple] = {}
-        self._rope_orig_max = int(model.config.get("max_position_embeddings", 262144))
+            self._active_factor: float | None = None
+            self._rope_cache: dict[float, tuple] = {}
+            self._rope_orig_max = int(model.config.get("max_position_embeddings", 262144))
 
-        shapes = (self.spec.decode_shapes(self.runner.max_num_seqs) if self.spec is not None
-                  else plain_decode_shapes(self.runner.max_num_seqs))
-        each, n_shapes = (0, 0) if enforce_eager else self.runner.probe_graph_bytes(shapes)
-        num_kv_blocks = self.runner.finish_pools(each * n_shapes)
-        self.dflash_blocks = self.runner.draft_blocks
-        if self.dflash is not None:
-            self.dflash_blocks = max(self.dflash_blocks, self.dflash.max_blocks_per_seq)
-            self._retake_draft(self.dflash_blocks)
-        need = min(self.max_blocks, self.ring_blocks) if self.ring_blocks else self.max_blocks
-        if num_kv_blocks < need:
-            raise SnowLLMError(
-                f"the KV pool holds {num_kv_blocks} blocks but one sequence needs {need}. A "
-                f"request could be admitted and then never finish, so this is refused here: "
-                + (f"lower max_num_seqs, or lower --max-num-batched-tokens to shrink the window "
-                   f"each request holds."
-                   if self.ring_blocks else
-                   f"--max-model-len {num_kv_blocks * self.runner.block_size} is what this pool "
-                   f"holds at max_model_len={max_model_len}, or lower max_num_seqs to leave it "
-                   f"more room."))
-        self.blocks = BlockAllocator(num_kv_blocks, self.runner.block_size, self.ring_blocks)
-        if self.runner.prefix_slots:
-            store = self.runner.prefix_store(
-                self.blocks, self.dflash.blocks if self.dflash is not None else None)
-            if self.ring_blocks and store.pages.is_ring:
+            self.runner.resources.add(lambda slabs: None, [(self, ('dflash', 'spec', 'sampler',
+                'cache', 'tables', 'stage'))]).allocate()
+
+            shapes = (self.spec.decode_shapes(self.runner.max_num_seqs) if self.spec is not None
+                      else plain_decode_shapes(self.runner.max_num_seqs))
+            each, n_shapes = (0, 0) if enforce_eager else self.runner.probe_graph_bytes(shapes)
+            if self.dflash is not None:
+                self._draft_pool.release()
+            num_kv_blocks = self.runner.finish_pools(each * n_shapes)
+            self.dflash_blocks = self.runner.draft_blocks
+            if self.dflash is not None:
+                self.dflash_blocks = max(self.dflash_blocks, self.dflash.max_blocks_per_seq)
+                self._retake_draft(self.dflash_blocks)
+            need = min(self.max_blocks, self.ring_blocks) if self.ring_blocks else self.max_blocks
+            if num_kv_blocks < need:
                 raise SnowLLMError(
-                    "prefix caching cannot share a KV axis with a ring: a cached prefix names "
-                    "pages that the request which wrote them has since reused. Pass "
-                    "prefix_memory_ratio=0.")
-            self.cache = PrefixCache(store)
-        self.graph_sizes = []
-        if not enforce_eager:
-            self.graph_sizes = self.runner.capture(shapes)
-        if self.dflash and not enforce_eager:
-            self.dflash.capture(self.runner)
+                    f"the KV pool holds {num_kv_blocks} blocks but one sequence needs {need}. A "
+                    f"request could be admitted and then never finish, so this is refused here: "
+                    + (f"lower max_num_seqs, or lower --max-num-batched-tokens to shrink the window "
+                       f"each request holds."
+                       if self.ring_blocks else
+                       f"--max-model-len {num_kv_blocks * self.runner.block_size} is what this pool "
+                       f"holds at max_model_len={max_model_len}, or lower max_num_seqs to leave it "
+                       f"more room."))
+            self.blocks = BlockAllocator(num_kv_blocks, self.runner.block_size, self.ring_blocks)
+            if self.runner.prefix_slots:
+                store = self.runner.prefix_store(
+                    self.blocks, self.dflash.blocks if self.dflash is not None else None,
+                    lookahead=getattr(self.spec, "prefix_lookahead", 0))
+                if self.ring_blocks and store.pages.is_ring:
+                    raise SnowLLMError(
+                        "prefix caching cannot share a KV axis with a ring: a cached prefix names "
+                        "pages that the request which wrote them has since reused. Pass "
+                        "prefix_memory_ratio=0.")
+                self.cache = PrefixCache(store)
+            self.graph_sizes = []
+            if not enforce_eager:
+                self.graph_sizes = self.runner.capture(shapes)
+            if self.dflash and not enforce_eager:
+                self.dflash.capture(self.runner)
 
-    _draft_slabs = None
-    _draft_per = 0
+        except BaseException:
+            self.runner._discard_pools()
+            raise
 
     def _retake_draft(self, blocks: int) -> None:
-        import torch
-
-        if _dspark(self.dflash_geo):
-            self.dflash.draft.cache.slabs.release()
-            self.dflash.draft.pools(blocks, self.runner.block_size, 1)
-        else:
-            n = self.dflash_geo.num_layers
-            self._draft_slabs.release()
-            per = self._draft_per
-            planes = [self._draft_slabs.take(blocks * per).span().view(torch.bfloat16)
-                      for _ in range(2 * n)]
-            self.dflash.draft.pools[:] = [(planes[2 * i], planes[2 * i + 1]) for i in range(n)]
+        self._draft_pool.allocate(blocks)
         self.dflash.blocks.widen(blocks)
 
     def _draft_n(self) -> int:
@@ -443,7 +435,11 @@ class Engine:
             draft = dspark.load(rd, self.dflash_geo, self.runner.model, self.runner.walker)
         torch.cuda.empty_cache()
         need = self.dflash_blocks
-        draft.pools(need, self.runner.block_size, 1)
+        def allocate(slabs, blocks):
+            draft.cache = allocate_draft_pool(self.dflash_geo, blocks, self.runner.block_size, slabs)
+            return draft.cache
+        self._draft_pool = self.runner.resources.add(allocate, [(draft, ('cache',))])
+        self._draft_pool.allocate(need)
         return DSparkDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              max_blocks_per_seq=ops.kv_blocks_for(max_model_len + block,
@@ -462,13 +458,18 @@ class Engine:
         per_seq = ops.kv_blocks_for(max_model_len + block, self.runner.block_size)
         need = self.dflash_blocks
         page = self.runner.block_size
-        per = self._draft_per = page * g.kv_dim * 2
-        self._draft_slabs = ops.Slabs()
-        planes = [self._draft_slabs.take(need * per).span().view(torch.bfloat16)
-                  for _ in range(2 * g.num_layers)]
-        pools = [(planes[2 * i], planes[2 * i + 1]) for i in range(g.num_layers)]
-        draft = dflash_draft.load(src, g, pools, self.runner.arena, self.runner.block_size)
-        src.close()
+        def allocate(slabs, blocks):
+            pools = allocate_draft_pool(g, blocks, page, slabs)
+            if self.dflash is not None:
+                self.dflash.draft.pools = pools
+            return pools
+        self._draft_pool = self.runner.resources.add(allocate)
+        pools = self._draft_pool.allocate(need)
+        try:
+            draft = dflash_draft.load(src, g, pools, self.runner.arena, self.runner.block_size)
+        finally:
+            src.close()
+        self._draft_pool.bindings = ((draft, ('pools',)),)
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              block=block,
@@ -707,53 +708,7 @@ class Engine:
         self.runner.set_rope(*self._rope_table(factor))
 
     def _prefill(self, spans: list[tuple[Request, int, int]]) -> Batch:
-        n = sum(hi - lo for _, lo, hi in spans)
-        M = n
-
-        ids = torch.zeros(M, dtype=torch.int64, device="cuda")
-        pos = torch.zeros(3, M, dtype=torch.int64, device="cuda")
-        rows: list[tuple[int, int]] = []
-        cu, last_row, off = [0], [], 0
-        erows, eparts = [], []
-        hid: list[int] = []
-        for i, (r, lo, hi) in enumerate(spans):
-            base, li = off, hi - lo
-            src = r.prefill_src[lo:hi]
-            ids[base:base + li] = torch.tensor(src, dtype=torch.int64)
-            hid += src
-            pos[:, base:base + li] = r.prefill_positions(lo, hi)
-            rows += [(i, p) for p in range(lo, hi)]
-            ks = [k for k, p in enumerate(r.embed_rows) if lo <= p < hi]
-            if ks:
-                erows += [base + r.embed_rows[k] - lo for k in ks]
-                eparts.append(r.embeds[i64(ks)])
-            off += li
-            cu.append(off)
-            last_row.append(off - 1)
-
-        rows += [(-1, 0)] * (M - len(rows))
-        k = self.runner.prev_context
-        total_q, qmap = ops.prefill_q_plan([hi - lo for _, lo, hi in spans])
-        resuming = [1 if lo else 0 for _, lo, _ in spans]
-        bt = block_tables([r for r, _, _ in spans])
-        return Batch(
-            input_ids=ids, positions=pos, slot_mapping=slot_mapping(bt, rows, self.runner.block_size),
-            block_tables=bt,
-            seq_lens=i32([hi for _, _, hi in spans]),
-            last_row=i64(last_row),
-            is_prefill=True, num_tokens=n,
-            state_indices=i32([self.slots.name(r, 1)[0] for r, _, _ in spans]),
-            cu_seqlens=i32(cu),
-            has_state=i32(resuming) if any(resuming) else None,
-            total_q_blocks=total_q,
-            q_block_map=qmap,
-            need_logits=all(hi == r.prefill_len and not r.replay for r, _, hi in spans),
-            embeds=torch.cat(eparts) if eparts else None,
-            embed_rows=i64(erows) if erows else None,
-            prev_ids=([list(r.prefill_src[max(0, lo - k):lo]) for r, lo, _ in spans]
-                      if k else None),
-            host_ids=hid,
-        )
+        return self.runner.prefill_batch(spans, self.slots)
 
     def _reserve_draft(self, r: Request, rows: int, keep: Entry | None = None) -> bool:
         while not self.dflash.grow(r, rows):
@@ -764,6 +719,8 @@ class Engine:
     def _prefill_chunk(self, r: Request) -> None:
         lo = r.num_prefilled
         hi = min(lo + self.prefill_chunk, r.prefill_len)
+        if self.cache is not None and r.embeds is None:
+            hi = self.cache.store.prefill_end(lo, hi)
         marks, idx = [], []
         backed = self.dflash is None or self._reserve_draft(r, hi - lo)
         if self.cache is not None and backed and r.embeds is None:
@@ -777,28 +734,35 @@ class Engine:
 
         out = self.runner.forward(b)
         r.num_prefilled = hi
-        for m, i in zip(marks, idx):
-            self.cache.insert(r.prefill_src[:m],
-                              self.cache.store.took(r, m, i, self.slots.name(r, 1)[0]), i)
+
+        def publish() -> None:
+            # Draft caches must be complete before their shared pages are visible.
+            for m, i in zip(marks, idx):
+                self.cache.insert(r.prefill_src[:m],
+                                  self.cache.store.took(r, m, i, self.slots.name(r, 1)[0]), i)
+
         if not b.need_logits:
             if self.dflash:
                 self.dflash.after_prefill(r, lo, hi, M, propose=False)
             elif self.spec:
                 self.spec.propose_after_prefill(r, b, lo, hi, M)
+            publish()
             return
         self.sampler.emit(out, [r])
         if self.dflash and not r.done:
             self.dflash.after_prefill(r, lo, hi, M, propose=True)
             r.n_accepted = 1
+            publish()
             self._retire_finished()
             return
         if self.spec and not r.done:
             logits, hid = self.spec.propose_after_prefill(r, b, lo, hi, M, r.out[-1])
-            r.drafts = ops.argmax(logits).tolist()
+            r.drafts = self.sampler.greedy_list(logits)
             r.n_accepted = 1
             if (self.num_spec > 1 and r.num_cached + self.num_spec <= self.max_model_len
                     and self.blocks.grow(r, self.num_spec)):
                 self.spec.propose_rest([r], hid, self.num_spec)
+        publish()
         self._retire_finished()
 
     def _batchable_prefill_group(self) -> list[Request]:
@@ -859,7 +823,7 @@ class Engine:
         b = Batch(
             input_ids=d_ids, positions=pos.view(3, -1), slot_mapping=slots,
             block_tables=self.tables([r.blocks for r in batch]),
-            seq_lens=seq,
+            seq_lens=seq, host_seq_lens=[q + 1 for q in p],
             is_prefill=False, num_tokens=len(batch),
             state_indices=sidx,
             prev_ids=[r.tail(k + 1)[:-1] for r in batch] if k else None,
@@ -868,6 +832,8 @@ class Engine:
         self.sampler.emit(self.runner.forward(b), batch)
         if self.dflash:
             self.dflash.after_decode(batch, p)
+        elif self.spec and hasattr(self.spec,"after_decode"):
+            self.spec.after_decode(batch,p)
         for r in batch:
             r.drafts.clear()
         return len(batch)

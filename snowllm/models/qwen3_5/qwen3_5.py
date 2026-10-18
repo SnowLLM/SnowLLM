@@ -34,7 +34,7 @@ class Qwen3_5DecoderLayer(DecoderLayerBase):
         with span(self._attn_span):
             self.attn(ctx, x, ctx.blk, (residual, self.input_layernorm.gamma, ctx.eps))
         if tap is not None:
-            tap.copy_(ctx.residual)
+            ops.copy_rows(tap,ctx.residual)
         with span(self._mlp_span):
             self.post_attention_layernorm.add_residual(ctx, ctx.blk, ctx.residual, hidden)
             self.mlp(ctx, hidden, ctx.blk)
@@ -57,8 +57,7 @@ class Qwen3_5Model(nn.Module):
             self.embed_tokens(b.input_ids, residual)
             if b.embeds is not None:
                 residual[b.embed_rows] = b.embeds
-            ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True)
-            ctx.apply_mscale()
+            ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True, mscale=ctx.mscale)
 
         n = len(self.layers)
         H = residual.shape[1]
@@ -70,7 +69,7 @@ class Qwen3_5Model(nn.Module):
                   slot[i - 1] if i else None)
         self.norm.add_residual(ctx, ctx.blk, residual, hidden)
         if slot[n - 1] is not None:
-            slot[n - 1].copy_(residual)
+            ops.copy_rows(slot[n-1],residual)
         ctx.close()
         return hidden
 

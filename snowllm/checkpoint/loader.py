@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the HuggingFace transformers project
 
 import contextlib
+import dataclasses
 import json
 import math
 import pathlib
@@ -20,12 +21,12 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
+    from ..models.glm5_next.layers import Glm5NextForConditionalGeneration
     from ..models.placement import DeviceMap
     from ..models.qwen3_5.qwen3_5 import Qwen3_5MoeForCausalLM
     from ..models.vision import VisionModel
-    from .gguf import GGUF
 
-    TargetModel = Qwen3_5MoeForCausalLM | DeepSeekV4ForCausalLM
+    TargetModel = Qwen3_5MoeForCausalLM | DeepSeekV4ForCausalLM | Glm5NextForConditionalGeneration
 
 
 class WeightSource:
@@ -113,7 +114,6 @@ def yarn_rope_table(cfg: dict, factor: float, orig_max_pos: int | None = None,
 
 
 VISUAL_PREFIX = "model.visual."
-
 
 def load_vision(w: WeightSource, vision_config: dict | None) -> "VisionModel | None":
     keys = w.visual_keys()
@@ -244,19 +244,19 @@ def dry_need(build: "Callable[[], TargetModel]", cfg: dict, kv: dict | None,
         return 0
     with ops.dry_load() as d:
         model = build()
-        return carve_out_need(model, cfg, kv, budget, d.device)
+        return carve_out_need(model, cfg, kv, budget, d.device, load_peak=d.peak_device)
 
 
-def _device_map(gguf: "GGUF", spec: str, cfg: dict, kv: dict | None,
-                build: "Callable[[], TargetModel] | None" = None) -> "DeviceMap | None":
+def _device_map(spec: str, cfg: dict, kv: dict | None,
+                build: "Callable[[], TargetModel]", sizes: dict[str, int],
+                per_layer: dict[str, dict[int, int]]) -> "DeviceMap | None":
     if not spec:
         return None
     from ..models import placement
     budget = max(0, placement.auto_budget() - int((kv or {}).get("host_taken") or 0))
     need = dry_need(build, cfg, kv, budget)
     dmap = placement.check_budget(
-        placement.parse(spec, placement.group_bytes(gguf), budget=budget, need=need,
-                        per_layer=placement.layer_bytes(gguf)), budget)
+        placement.parse(spec, sizes, budget=budget, need=need, per_layer=per_layer), budget)
     print(f"{term.stamp()} {dmap.describe()}", flush=True)
     return dmap
 
@@ -287,8 +287,7 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
         def build(dmap: "DeviceMap | None" = None) -> "TargetModel":
             reads_raw = getattr(mod, "load_gguf_weights", None)
             if reads_raw is not None:
-                m = (reads_raw(rd, cfg, want, device_map=dmap) if dmap is not None
-                     else reads_raw(rd, cfg, want))
+                m = reads_raw(rd, cfg, want, device_map=dmap, mtp=mtp)
             else:
                 m = load_weights(GGUFWeightSource(rd, cfg, mtp_rd), cfg, want, False, mtp,
                                  device_map=dmap)
@@ -302,7 +301,12 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
                     m.visual = VisionModel.from_hf_state(vision_state(vrd), m.vision_config)
             return m
 
-        dmap = _device_map(rd.gguf, device_map, cfg, kv, build)
+        from ..models import placement
+        total, sizes, by = placement.measure_weights(build)
+        dmap = _device_map(device_map, cfg, kv, build, sizes, by)
+        dmap = (placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
+                if dmap is None else dataclasses.replace(dmap, total_bytes=total))
         model = build(dmap)
+        model.device_map = dmap
     torch.cuda.empty_cache()
     return model
