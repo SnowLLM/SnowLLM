@@ -1,4 +1,24 @@
 import { defineConfig } from 'vitepress'
+import type { DefaultTheme } from 'vitepress'
+import en from '../../web/locales/en.json'
+import zh from '../../web/locales/zh_cn.json'
+
+function docsTheme(messages: Record<string, string>, prefix = ''): DefaultTheme.Config {
+  const text = (key: string) => messages['docs.' + key]
+  const item = (key: string, path: string) => ({ text: text(key), link: prefix + path })
+  return {
+    outline: { level: [2, 3], label: text('outline') },
+    sidebarMenuLabel: text('menu'), returnToTopLabel: text('top'), darkModeSwitchLabel: messages['theme.dark'],
+    sidebar: [
+      { text: text('gettingStarted'), items: [item('overview', '/'), item('installation', '/getting-started/installation'), item('quickStart', '/getting-started/quick-start')] },
+      { text: text('guides'), items: [item('models', '/guides/models'), item('webui', '/webui'), item('integrations', '/guides/integrations'), item('performance', '/guides/performance'), item('faq', '/faq')] },
+      { text: text('reference'), items: [item('cli', '/reference/cli'), item('configuration', '/reference/configuration'), item('supportedModels', '/reference/models'), item('telemetry', '/reference/telemetry')] },
+      { text: text('development'), items: [item('benchmarks', '/development/benchmarks')] },
+    ],
+    editLink: { pattern: 'https://github.com/SnowLLM/SnowLLM/edit/main/docs/:path', text: text('edit') },
+    docFooter: { prev: text('previous'), next: text('next') },
+  }
+}
 
 export default defineConfig({
   title: 'SnowLLM',
@@ -17,35 +37,20 @@ export default defineConfig({
       } catch (_) {}
     })()`],
   ],
+  locales: {
+    root: { label: 'English', lang: 'en', themeConfig: docsTheme(en) },
+    zh: { label: '简体中文', lang: 'zh-CN', description: zh['home.description'], themeConfig: docsTheme(zh, '/zh') },
+  },
   themeConfig: {
     logo: '/logo.svg',
     siteTitle: 'SnowLLM',
-    search: { provider: 'local' },
-    outline: { level: [2, 3], label: 'On this page' },
-    nav: [{ text: 'Home', link: 'https://snowllm.dev/' }],
-    sidebar: [
-      { text: 'Getting started', items: [
-        { text: 'Overview', link: '/' },
-        { text: 'Installation', link: '/getting-started/installation' },
-        { text: 'Quick start', link: '/getting-started/quick-start' },
-      ] },
-      { text: 'Guides', items: [
-        { text: 'Model downloads', link: '/guides/models' },
-        { text: 'Web UI', link: '/webui' },
-        { text: 'Integrations', link: '/guides/integrations' },
-        { text: 'Performance tuning', link: '/guides/performance' },
-        { text: 'FAQ', link: '/faq' },
-      ] },
-      { text: 'Reference', items: [
-        { text: 'CLI options', link: '/reference/cli' },
-        { text: 'Configuration', link: '/reference/configuration' },
-        { text: 'Supported models', link: '/reference/models' },
-      ] },
-      { text: 'Development', items: [
-        { text: 'Benchmark methodology', link: '/development/benchmarks' },
-      ] },
-    ],
-    editLink: { pattern: 'https://github.com/SnowLLM/SnowLLM/edit/main/docs/:path', text: 'Edit this page on GitHub' },
-    docFooter: { prev: 'Previous', next: 'Next' },
+    search: { provider: 'local', options: { locales: { zh: { translations: {
+      button: { buttonText: zh['docs.search'], buttonAriaLabel: zh['docs.search'] },
+      modal: {
+        displayDetails: zh['docs.details'], resetButtonTitle: zh['docs.reset'], backButtonTitle: zh['docs.close'],
+        noResultsText: zh['docs.noResults'],
+        footer: { selectText: zh['docs.select'], navigateText: zh['docs.navigate'], closeText: zh['docs.closeHint'] },
+      },
+    } } } } },
   },
 })

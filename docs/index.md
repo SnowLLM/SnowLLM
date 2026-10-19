@@ -38,4 +38,4 @@ Linux, Windows 11 or WSL2 with a `gfx1151` APU. Tested on **Ryzen AI Max+ 395**;
 - [Configuration](./reference/configuration): storage and environment variables.
 - [Usage statistics](./reference/telemetry): collection fields, reporting behavior, and opt-out.
 
-[Benchmarks](https://snowllm.dev/#benchmarks) · [Discussions](https://github.com/SnowLLM/SnowLLM/discussions)
+<a href="/benchmark/" target="_self">Benchmarks</a> · [Discussions](https://github.com/SnowLLM/SnowLLM/discussions)

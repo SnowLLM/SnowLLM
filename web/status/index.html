@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="status.pageTitle">Inference usage — SnowLLM</title>
+<meta name="description" data-i18n-content="status.intro" content="The tokens processed by SnowLLM, added together.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://snowllm.dev/status/">
+<link rel="stylesheet" href="/typography.css">
+<link rel="stylesheet" href="/palette.css">
+<link rel="stylesheet" href="/site.css">
+<link rel="stylesheet" href="/site-header.css">
+<link rel="stylesheet" href="/status/status.css">
+<script>
+try {
+  const theme = localStorage.getItem('snowllm-theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+} catch {}
+</script>
+</head>
+<body class="usage" data-api-base="https://status.snowllm.dev">
+<div id="site-header"></div>
+<noscript><nav><a href="/">Home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/recipe/">Recipe</a> · <a href="/docs/">Docs</a> · <a href="/status/">Statistics</a></nav></noscript>
+<div class="wrap">
+<main class="main">
+  <section class="page-intro">
+    <div class="eyebrow">SnowLLM / Usage</div>
+    <h1 data-i18n="status.title">Inference usage</h1>
+    <p data-i18n="status.intro">The tokens processed by SnowLLM, added together.</p>
+    <p class="demo" hidden><strong data-i18n="status.demo">Demo data</strong> <span data-i18n="status.demoNote">This preview contains synthetic data, not actual community usage.</span></p>
+  </section>
+  <p class="loading" role="status" data-i18n="status.loading">Loading usage statistics…</p>
+  <p class="load-error" role="status" data-i18n="status.loadError" hidden>Unable to load usage statistics. Reload the page to try again.</p>
+  <noscript><p data-i18n="status.noscript">Enable JavaScript to load usage statistics and filter dates.</p></noscript>
+  <div id="usage-report" hidden>
+    <div class="usage-toolbar">
+      <nav class="periods" data-i18n-aria-label="status.periodLabel" aria-label="Aggregation period">
+        <a href="/status/?period=hour" data-i18n="status.hour">Hourly</a>
+        <a href="/status/?period=day" data-i18n="status.day" aria-current="page">Daily</a>
+        <a href="/status/?period=week" data-i18n="status.week">Weekly</a>
+        <a href="/status/?period=month" data-i18n="status.month">Monthly</a>
+      </nav>
+      <span class="range"></span>
+    </div>
+    <form class="date-filter" hidden>
+      <label><span data-i18n="status.from">From (UTC)</span><input name="from" type="date" required></label>
+      <label><span data-i18n="status.to">To (UTC)</span><input name="to" type="date" required></label>
+      <button type="submit" data-i18n="status.apply">Apply</button>
+      <button type="button" class="reset-range" data-i18n="status.reset">Reset</button>
+      <span class="filter-error" role="status"></span>
+    </form>
+    <p class="coverage" hidden></p>
+    <dl class="stats">
+      <div class="stat"><dt data-i18n="status.total">Total tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
+      <div class="stat"><dt data-i18n="status.prefill">Prefill tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
+      <div class="stat"><dt data-i18n="status.decode">Decode tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
+    </dl>
+    <section class="visual">
+      <div class="chart-heading"><h2 data-i18n="status.chart">Reported inference volume</h2><div class="legend"><span class="key key-prefill">Prefill</span><span class="key key-decode">Decode</span></div></div>
+      <div class="plot-container"></div>
+      <div class="chart-foot"><span data-i18n="status.timezone">UTC · weeks start on Monday</span><span><i class="partial-dot"></i><span data-i18n="status.partial">Current period · partial</span></span></div>
+    </section>
+    <div class="freshness"><span><span data-i18n="status.updated">Updated</span> <time></time></span><span><span data-i18n="status.next">Next update</span> <time></time></span></div>
+    <p class="note" data-i18n="status.note">Usage is assigned to the time a report arrives. The current period includes data up to the last update. Snapshots refresh hourly.</p>
+    <details class="usage-table"><summary><span data-i18n="status.table">View the numbers</span><span aria-hidden="true">＋</span></summary><div class="scroll"><table><thead><tr><th data-i18n="status.period">Period starting (UTC)</th><th>Prefill</th><th>Decode</th><th data-i18n="status.total">Total tokens</th></tr></thead><tbody></tbody></table></div></details>
+    <div class="all-time"><span data-i18n="status.allTime">All-time reported tokens</span><strong>—</strong></div>
+    <p class="usage-disclosure"><span data-i18n="status.foot">Community-reported counts; not independently verified.</span> <a href="/docs/reference/telemetry"><span data-i18n="status.privacy">Usage statistics</span> ↗</a></p>
+  </div>
+</main>
+<footer class="foot"><span>SnowLLM</span><a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a><a href="https://github.com/SnowLLM/SnowLLM">github.com/SnowLLM/SnowLLM</a></footer>
+</div>
+<script type="module" src="/site-shell.js?v=status"></script>
+</body>
+</html>
