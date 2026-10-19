@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import httpx
+from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
 from ..config import (models_directory, read_config, write_config, recipes_source,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
 
@@ -43,9 +44,26 @@ class DaemonManager:
         self.lock = asyncio.Lock()
         self.closing = False
         self.storage_busy = False
+        self.telemetry = None
         self.log_path = self.config_path.parent / "inference.log"
         self.download_log = self.config_path.parent / "download.log"
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=5), trust_env=False)
+
+    def start_telemetry(self):
+        if not telemetry_enabled(self.config_path):
+            announce_opt_out()
+        elif self.telemetry is None:
+            self.telemetry = Telemetry(self.telemetry_sample)
+            self.telemetry.start()
+
+    async def telemetry_sample(self):
+        backend = self.backend
+        if not backend:
+            return None
+        response = await self.client.get(backend + "/health", timeout=1)
+        response.raise_for_status()
+        if backend == self.backend:
+            return response.json().get("telemetry")
 
     @property
     def models_dir(self):
@@ -121,6 +139,8 @@ class DaemonManager:
         env["SNOWLLM_CONFIG"] = str(self.config_path)
         env["SNOWLLM_MODELS"] = self.models_dir
         env["SNOWLLM_RECIPES_URL"] = recipes_source(self.config_path, self.config)[0]
+        # Only the supervisor sends telemetry; workers expose local counters.
+        env["SNOWLLM_TELEMETRY_CHILD"] = "1"
         configured_library, _ = library_path(self.config_path, self.config)
         if configured_library:
             env["SNOWLLM_LIB"] = configured_library
@@ -178,6 +198,8 @@ class DaemonManager:
             while self.active and not force:
                 await asyncio.sleep(.1)
             self.transition_stage = "stopping"
+            if self.telemetry:
+                await self.telemetry.unloading()
             await self.stop_process(self.process)
             self.process = None
             self.backend = None
@@ -201,6 +223,8 @@ class DaemonManager:
                     if response.status_code == 200:
                         self.runtime_config = response.json().get("runtime_config")
                         self.state = "ready"
+                        if self.telemetry:
+                            self.telemetry.loaded(response.json().get("telemetry"))
                         return
                 except httpx.HTTPError:
                     pass
@@ -304,7 +328,11 @@ class DaemonManager:
                 await self.task
             except asyncio.CancelledError:
                 pass
+        if self.telemetry:
+            await self.telemetry.unloading()
         await self.stop_process(self.process)
         await self.stop_process(self.download)
         self.process = self.download = None
+        if self.telemetry:
+            await self.telemetry.close()
         await self.client.aclose()

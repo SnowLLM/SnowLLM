@@ -10,6 +10,7 @@ import sys
 import time
 
 from . import term
+from .telemetry import enabled as telemetry_enabled
 
 SUBCOMMANDS = ("pull", "recipes", "pi")
 
@@ -110,7 +111,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                     dflash_p_min=(DEFAULT_DSPARK_P_MIN if dflash_p_min is None
                                   else dflash_p_min),
                     prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
-                    account=stats_interval > 0, exact_stats=exact_stats,
+                    account=stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
                     gpu_memory_utilization=gpu_memory_utilization,
                     prefix_memory_ratio=prefix_memory_ratio)
     engine.runtime_config = dict(model_path=str(root.resolve()), max_model_len=engine.max_model_len,
