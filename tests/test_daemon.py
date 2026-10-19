@@ -43,7 +43,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         for child in self.children:
             self.assertIsNotNone(child.poll(), "owned child must be reaped")
 
-    def spawn(self, args, log, gpu=False):
+    def spawn(self, args, log):
         port = args[args.index("--port") + 1]
         child = subprocess.Popen([sys.executable, "-c", WORKER, port],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -197,14 +197,14 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen[-1].headers["x-api-key"], "test-key")
             self.assertEqual(self.manager.active, 0)
 
-    async def test_gpu_wrapper_and_no_nested_lock(self):
+    async def test_worker_uses_current_python_and_configured_environment(self):
         with patch("subprocess.Popen") as popen:
-            self.manager.spawn(["x"], self.manager.log_path, gpu=True)
+            self.manager.spawn(["x"], self.manager.log_path)
             command = popen.call_args.args[0]
-            if Path("/home/cwind").is_dir():
-                self.assertEqual(command[0], "/home/cwind/withgpu/withgpu")
-                self.assertEqual(command.count("/home/cwind/withgpu/withgpu"), 1)
-                self.assertNotIn("WITHGPU_LOCK", popen.call_args.kwargs["env"])
+            self.assertEqual(command, [sys.executable, "-m", "snowllm.cli", "x"])
+            env = popen.call_args.kwargs["env"]
+            self.assertEqual(env["SNOWLLM_CONFIG"], str(self.manager.config_path))
+            self.assertEqual(env["SNOWLLM_MODELS"], self.manager.models_dir)
 
     async def test_proxy_cleanup_before_stream_iteration(self):
         from starlette.requests import Request
