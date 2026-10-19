@@ -265,7 +265,6 @@ class SparseAttention(nn.Module):
                        spec=b.chunk_decode, source_offset=b.carry_source_offset,
                        accepted=b.num_accepted if not b.chunk_decode and not b.is_prefill else None)
         # One scratch buffer is shared sequentially by all trunk and MTP layers.
-        # Native scratch owns selection intermediates and bounded MLA partials.
         ctx.workspace(sparse_workspace_bytes(m,ctx.sparse.max_pools,c["index_topk"]))
         result = sparse_attention(q,self.kv,self.index,iq,scaled_iw,b,ctx.sparse,
                                   c["index_topk"],c["qk_nope_head_dim"]**-0.5,ctx.ws,self.sinks,
@@ -293,11 +292,9 @@ class MoE(nn.Module):
 
     def forward(self, x, ctx):
         out = _activation(x,*x.shape,ctx=ctx)
-        # Keep verification on the same dot2/BF16 path as ordinary decode.
-        rows = 0 if ctx.batch.is_prefill else 4
-        ctx.workspace(ops.inference_moe_workspace_bytes(x.shape[0],execution_rows=rows))
+        ctx.workspace(ops.inference_moe_workspace_bytes(x.shape[0]))
         ops.inference_moe(x,self.router,self.gate_up,self.down,self.shared_gate_up,
-                          self.shared_down,out,ctx.ws,execution_rows=rows)
+                          self.shared_down,out,ctx.ws)
         return out
 
 

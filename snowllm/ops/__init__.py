@@ -193,7 +193,6 @@ from .moe import (
     moe_kquant_shuffle_gate_up,
     fused_moe,
     fused_moe_fp8,
-    moe_lowbit_force_split,
     moe_variant_force,
     moe_variant_name,
     moe_shuffle_down,
@@ -231,6 +230,7 @@ from .hyper import (
     qwen4exp_hc_mix_kquant,
     qwen4exp_hc_mix_ws_bytes,
     qwen4exp_hc_norm,
+    qwen4exp_hc_up_prepare,
     qwen4exp_hc_qkv_proj_kquant,
     qwen4exp_hc_qkv_ws_bytes,
 )

@@ -11,7 +11,7 @@ SnowLLM is fast with:
 
 ## News
 
-- **Coming soon** — GLM-5.3-Flash support.
+- **2026-10-19** — **GLM-5.3-Flash support** with MTP: **26.8 tok/s at 220K context**, **4.3× faster than llama.cpp**, on a single Ryzen AI Max+ 395 using IQ2_XXS weights. [Benchmarks](https://snowllm.dev/benchmark/).
 - **2026-10-12** — **v0.3.9** adds a persistent daemon and local Web UI for model management and chat, shared JSON configuration, template-based thinking controls, and request/GPU metrics.
 - **2026-10-12** — **v0.3.8** fixes Windows weight-loading races, GPU memory budgeting and downloads, with quantized weight shuffle and file-read recovery fixes in SnowLLM-Kernels 0.3.4.
 - **2026-10-03** — New demo: **2.4× faster than llama.cpp** on an nginx log triage task through Pi, using the same Qwen3.6-35B-A3B GGUF on a single Ryzen AI Max+ 395.
