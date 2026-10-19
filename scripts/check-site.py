@@ -87,8 +87,13 @@ def check_benchmarks_json() -> None:
         return
     for r in rows:
         if "llama_decode" in r:
-            want = round(r["snow_decode"] / r["llama_decode"], 2)
-            if abs(want - r["ratio"]) > 0.015:
+            # Rates are displayed to one decimal, while the ratio is computed
+            # from raw measurements. Account for both rounding intervals.
+            snow, llama = r["snow_decode"], r["llama_decode"]
+            want = round(snow / llama, 2)
+            ratio_lo = max(0, snow - 0.05) / (llama + 0.05)
+            ratio_hi = (snow + 0.05) / (llama - 0.05) if llama > 0.05 else float("inf")
+            if not ratio_lo - 0.005 <= r["ratio"] <= ratio_hi + 0.005:
                 problems.append(f"benchmarks.json {r['model']!r}@{r['isl_target']} has ratio "
                                 f"{r['ratio']}, {r['snow_decode']}/{r['llama_decode']} tok/s wants "
                                 f"{want:.2f}")
