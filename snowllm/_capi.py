@@ -158,7 +158,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 60
+ABI_VERSION = 62
 
 
 def _check_abi() -> None:
@@ -280,8 +280,6 @@ _SIGS = [
     ("snowllm_moe_shuffle_router_bytes", c_int64, []),
     ("snowllm_moe_shuffle_router", c_int, [P, P, P, S]),
     ("snowllm_moe_workspace_bytes", c_int64, [c_int64]),
-    ("snowllm_moe_lowbit_narrow_force_max_m", None, [c_int]),
-    ("snowllm_moe_lowbit_force_split", None, [c_int]),
 
     ("snowllm_lm_head_kquant_gguf_bytes", c_int64, [c_int]),
     ("snowllm_lm_head_kquant_quant_bytes", c_int64, [c_int]),
@@ -404,6 +402,8 @@ _SIGS = [
     ("snowllm_dsv4_hc_expand", c_int,
      [P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, S]),
     ("snowllm_qwen4exp_hc_norm", c_int, [P, P, P, c_int64, c_int64, c_int64, c_float, S]),
+    ("snowllm_qwen4exp_hc_up_prepare", c_int, [P, P, P, c_int, c_int, c_int64, c_int64, c_int64, S]),
+    ("snowllm_glm_sparse_cache_gather", c_int, [P, P, P, c_int, c_int64, c_int, S]),
     ("snowllm_qwen4exp_hc_mix_ws_bytes", c_int64, [c_int64, c_int64, c_int64, c_int64]),
     ("snowllm_qwen4exp_hc_mix", c_int,
      [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, c_float, P, P, S]),

@@ -148,18 +148,6 @@ def prepare_embedding(batch, weight, max_pools, ids=None, arena=None):
                                qmap=qmap,max_pools=max_pools)
 
 
-@functools.lru_cache(None)
-def _kda_force():
-    fn = lib.snowllm_glm_kda_force
-    fn.restype, fn.argtypes = ctypes.c_int, [ctypes.c_int]
-    return fn
-
-
-def kda_force(variant=-1):
-    """Diagnostic norm reduction override; -1 restores the native default."""
-    check(_kda_force()(variant), "glm_kda_force")
-
-
 def kda(qkv, forget, beta, conv, a_log, dt, batch, history, state, lower_bound, arena=None, *, ckpt=None):
     m, h = qkv.shape[0], beta.shape[1]
     slots = state.shape[0]
@@ -203,7 +191,7 @@ def _sparse_entry(name):
     try:
         fn = getattr(lib, "snowllm_glm_sparse_" + name)
     except AttributeError:
-        raise SnowLLMError("GLM sparse MLA needs kernels built with attention/mla/glm5_next.cu") from None
+        raise SnowLLMError("the kernels library does not support this GLM sparse operation") from None
     if name == "attention_workspace_bytes":
         fn.restype, fn.argtypes = ctypes.c_int64, [ctypes.c_int]*3
     elif name == "attention":
@@ -212,11 +200,6 @@ def _sparse_entry(name):
                        + [ctypes.c_float,ctypes.c_int64,ctypes.c_void_p])
     elif name in ("workspace_bytes","workspace_bytes_rows"):
         fn.restype, fn.argtypes = ctypes.c_int64, ([] if name=="workspace_bytes" else [ctypes.c_int])
-    elif name == "merge_force":
-        fn.restype, fn.argtypes = ctypes.c_int, [ctypes.c_int]
-    elif name == "merge":
-        fn.restype = ctypes.c_int
-        fn.argtypes = [ctypes.c_void_p]*4 + [ctypes.c_int]*2 + [ctypes.c_void_p]
     else:
         fn.restype = ctypes.c_int
         ptrs, ints = {"produce_step": (12, 5), "produce": (12, 3), "produce_spec": (12, 3), "produce_from": (12, 4), "expand": (5, 3), "attn": (11, 4)}[name]
@@ -291,20 +274,13 @@ def sparse_workspace_bytes(m, max_pools, topk):
     return _sparse_entry("attention_workspace_bytes")(m,max_pools,topk)
 
 
-def sparse_merge_force(variant=-1):
-    """Diagnostic override, shared with the serving path; -1 restores its policy."""
-    check(_sparse_entry("merge_force")(variant), "glm_sparse_merge_force")
-
-
-def sparse_merge(po, ml, counts, out, variant=-1):
-    """Merge existing FP32 64-key partials; used for native correctness/timing."""
-    m = counts.numel()
-    _chk(po, "MLA partial outputs", torch.float32, m,34,64,512)
-    _chk(ml, "MLA partial normalizers", torch.float32, m,34,64,2)
-    _chk(counts, "MLA selected counts", torch.int32, m)
-    _chk(out, "MLA merged outputs", torch.bfloat16, m,64,512)
-    check(_sparse_entry("merge")(*[_p(t) for t in (po,ml,counts,out)],m,variant,_stream()),
-          "glm_sparse_merge")
+def sparse_cache_gather(kv, slots, block_size):
+    _chk(kv, "GLM latent cache", torch.bfloat16, kv.shape[0], 512)
+    _chk(slots, "GLM cache slots", torch.int32, slots.numel())
+    out = torch.empty(slots.numel(), 512, device=kv.device, dtype=kv.dtype)
+    check(lib.snowllm_glm_sparse_cache_gather(_p(kv), _p(slots), _p(out), slots.numel(),
+          kv.shape[0], block_size, _stream()), "glm_sparse_cache_gather")
+    return out
 
 
 def pack_qkv(q, k, v, out):

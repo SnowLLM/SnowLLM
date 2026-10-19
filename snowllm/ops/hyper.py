@@ -4,7 +4,8 @@
 import torch
 
 from .._capi import check, lib
-from ._common import Path, _chk, _chk_rows, _p, _stream
+from ._common import Path, _chk, _chk_rows, _p, _stream, empty_bytes, empty_shaped
+from .gemm import kquant_bytes
 
 
 def dsv4_hc_split_sinkhorn(mixes: torch.Tensor, scale: torch.Tensor, base: torch.Tensor,
@@ -58,6 +59,22 @@ def dsv4_hc_expand(block: torch.Tensor, residual: torch.Tensor, post: torch.Tens
     check(lib.snowllm_dsv4_hc_expand(_p(block), _p(residual), _p(post), _p(comb), _p(out), T, n_hc,
                                      E, post.stride(0), comb.stride(0), _stream()),
           "dsv4_hc_expand")
+
+
+def qwen4exp_hc_up_prepare(weight: torch.Tensor, hc: int, hidden: int, lr: int,
+                          fmt: int | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
+    n = hc * hidden
+    if fmt is None:
+        _chk(weight, "HC up weight", torch.bfloat16, n, lr)
+        out, meta = empty_shaped((n * lr,), torch.bfloat16), None
+    else:
+        quant_bytes, meta_bytes, gguf_bytes = kquant_bytes(fmt, n, lr)
+        _chk(weight, "HC up weight", torch.uint8, gguf_bytes)
+        out, meta = empty_bytes(quant_bytes), empty_bytes(meta_bytes)
+    check(lib.snowllm_qwen4exp_hc_up_prepare(_p(weight), _p(out), _p(meta),
+          0 if fmt is None else 2, 0 if fmt is None else fmt, hc, hidden, lr, _stream()),
+          "qwen4exp_hc_up_prepare")
+    return out, meta
 
 
 def qwen4exp_hc_norm(x: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor, eps: float) -> None:

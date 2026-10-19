@@ -43,8 +43,21 @@ class KQuantDense(nn.Module):
         self.quant, self.meta = ops.gemm_kquant_shuffle_b(fmt, gguf, n, k)
 
 
+class HcUp(nn.Module):
+    def __init__(self, weight: torch.Tensor, geo: Qwen4ExpGeometry, fmt: int | None = None) -> None:
+        super().__init__()
+        self.n, self.k = geo.hc_dim, geo.hc_lowrank
+        if fmt is None:
+            weight = weight.to(device="cuda", dtype=torch.bfloat16).contiguous()
+        prepared, meta = ops.qwen4exp_hc_up_prepare(weight, geo.hc_count, geo.hidden, self.k, fmt)
+        if fmt is None:
+            self.w = prepared
+        else:
+            self.fmt, self.quant, self.meta = fmt, prepared, meta
+
+
 class HyperMix(nn.Module):
-    def __init__(self, gamma: torch.Tensor, down: Dense | KQuantDense, up: Dense | KQuantDense,
+    def __init__(self, gamma: torch.Tensor, down: Dense | KQuantDense, up: HcUp,
                  has_inject: bool, geo: Qwen4ExpGeometry) -> None:
         super().__init__()
         self.gamma, self.down, self.up, self.has_inject = gamma, down, up, has_inject

@@ -83,10 +83,6 @@ def moe_variant_force(index: int) -> None:
     lib.snowllm_moe_variant_force(index)
 
 
-def moe_lowbit_force_split(on: bool) -> None:
-    lib.snowllm_moe_lowbit_force_split(1 if on else 0)
-
-
 def moe_variant_name(index: int) -> str:
     return lib.snowllm_moe_variant_name(index).decode()
 

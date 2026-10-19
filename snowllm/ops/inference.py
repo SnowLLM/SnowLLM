@@ -48,13 +48,12 @@ def inference_mlp(x,gate,down,out,scratch,decode,gate_scale=None,down_scale=None
                                     _stream()),'inference_mlp')
 
 
-def inference_moe_workspace_bytes(rows: int, *, execution_rows: int = 0) -> int:
-    """Scratch for one execution group; zero executes all rows together."""
-    return lib.snowllm_inference_moe_workspace_bytes(rows,execution_rows)
+def inference_moe_workspace_bytes(rows: int) -> int:
+    return lib.snowllm_inference_moe_workspace_bytes(rows,0)
 
 
 def inference_moe(x,router,gate,down,shared_gate,shared_down,out,scratch,gate_scale=None,
-                  down_scale=None,*,token_ids=None,tid2eid=None,execution_rows=0):
+                  down_scale=None,*,token_ids=None,tid2eid=None):
     _io(x,out)
     if tid2eid is not None:
         _chk(token_ids,'token IDs',torch.int64,x.shape[0])
@@ -63,12 +62,12 @@ def inference_moe(x,router,gate,down,shared_gate,shared_down,out,scratch,gate_sc
         if gate.stride!=down.stride and gate.p0.shape==down.p0.shape:
             raise SnowLLMError('gate/up and down were shuffled at different expert counts')
     weights=_weights((gate,gate_scale),(down,down_scale),(shared_gate,None),(shared_down,None))
-    need=inference_moe_workspace_bytes(x.shape[0],execution_rows=execution_rows)
+    need=inference_moe_workspace_bytes(x.shape[0])
     capacity=0 if scratch is None else scratch.nbytes
     if capacity<need:
         raise SnowLLMError(f'MoE needs {need} scratch bytes')
     check(lib.snowllm_inference_moe(weights,_p(x),_p(router),_p(token_ids),_p(tid2eid),
-        _p(out),_p(scratch),capacity,x.shape[0],execution_rows,_stream()),'inference_moe')
+        _p(out),_p(scratch),capacity,x.shape[0],0,_stream()),'inference_moe')
 
 
 def inference_head(x,w,out,scratch):
