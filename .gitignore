@@ -29,6 +29,8 @@ __pycache__/
 # Editor / tooling caches
 /.cache/
 /.claude/settings.local.json
+/AGENTS.md
+/CLAUDE.md
 
 # Profiler output
 .rocprofv3/

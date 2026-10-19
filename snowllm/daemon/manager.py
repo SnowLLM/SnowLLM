@@ -116,7 +116,7 @@ class DaemonManager:
         self.config = updated
         return self.status()
 
-    def spawn(self, args, log, gpu=False):
+    def spawn(self, args, log):
         env = os.environ.copy()
         env["SNOWLLM_CONFIG"] = str(self.config_path)
         env["SNOWLLM_MODELS"] = self.models_dir
@@ -129,13 +129,6 @@ class DaemonManager:
         else:
             env.pop("SNOWLLM_DOWNLOAD_PROGRESS", None)
         command = [sys.executable, "-m", "snowllm.cli", *args]
-        # This shared development machine requires its canonical GPU lock wrapper.
-        wrapper = Path("/home/cwind/withgpu/withgpu")
-        if gpu and Path("/home/cwind").is_dir():
-            if not wrapper.is_file():
-                raise RuntimeError(f"GPU launcher unavailable: {wrapper}")
-            env.pop("WITHGPU_LOCK", None)
-            command = [str(wrapper), *command]
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("wb") as output:
             return subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
@@ -144,7 +137,7 @@ class DaemonManager:
     async def stop_process(self, proc):
         if proc is None:
             return
-        # Kill the entire group, including a wrapper's child, even if the leader exited.
+        # Kill the entire group even if the leader exited.
         def terminate(sig):
             try:
                 if os.name == "nt":
@@ -198,7 +191,7 @@ class DaemonManager:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
             self.backend = f"http://127.0.0.1:{port}"
-            self.process = self.spawn([model, *options, "--host", "127.0.0.1", "--port", str(port)], self.log_path, gpu=True)
+            self.process = self.spawn([model, *options, "--host", "127.0.0.1", "--port", str(port)], self.log_path)
             deadline = asyncio.get_running_loop().time() + self.load_timeout
             while asyncio.get_running_loop().time() < deadline:
                 if self.process.poll() is not None:
