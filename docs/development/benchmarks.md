@@ -2,6 +2,16 @@
 
 Measurements use a Ryzen AI Max+ 395, with one client and one server per arm. Each arm identifies an engine, model and drafter.
 
+## Running a benchmark
+
+From the repository root, copy a command from `benchmarks/all_bench.sh`, or run:
+
+```sh
+ISL=8192 OSL=256 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl --num-spec 2
+```
+
+`benchmarks/run.sh` starts the selected engine (`snowllm` or `llama`), runs the sweep, and stops its server on completion, failure, or cancellation. Arguments after the recipe go to the server; environment variables such as `ISL`, `OSL`, `CONC`, and `LABEL` configure the sweep. Each command in `all_bench.sh` includes its own settings and starts a fresh server.
+
 ## Workload
 
 The default sweep uses five context lengths with the same request settings for each arm; `ISL` can override the lengths. Prompts use the PG-19 corpus, sliced by tokenizer; reported `isl` includes the server's chat formatting. See [`benchmarks/perf_sweep.sh`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/perf_sweep.sh) for the runs.
@@ -48,4 +58,4 @@ The llama.cpp point was measured on October 16; the SnowLLM point reuses the Oct
 
 All four retained requests produced 256 tokens. The first retained llama.cpp TTFT was 7,340.73 seconds; later requests reused the live slot's common prefix and took about 125–127 seconds to first token. Prefill uses the first retained request, as above; decode uses the median of all four.
 
-The points are recorded in `benchmarks/runs/glm5_3_flash_iq2_xxs_mtp_{llama,snowllm}.json`
+The points are recorded in `benchmarks/runs/glm5_3_flash_iq2_xxs_mtp_{llama,snowllm}.json`.
