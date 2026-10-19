@@ -257,6 +257,8 @@ class TerminalTests(unittest.TestCase):
             config = Path(tmp) / "config.json"
             command = [sys.executable, "-m", "snowllm.cli"]
             env = os.environ.copy()
+            # This real daemon test must never send usage data to production.
+            env["SNOWLLM_NO_USAGE_STATS"] = "1"
             env.pop("SNOWLLM_MODELS", None)
             marker = Path(tmp) / "browser-opened"
             browser = Path(tmp) / "fake-browser"

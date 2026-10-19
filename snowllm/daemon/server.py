@@ -56,6 +56,7 @@ async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
             if any(task.done() for task in tasks):
                 raise RuntimeError("a daemon listener stopped during startup")
             await asyncio.sleep(.01)
+        manager.start_telemetry()
         if browser:
             threading.Thread(target=browser, args=(local_url(admin_host, admin_port),), daemon=True).start()
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
