@@ -5,11 +5,9 @@ import argparse
 import json
 import os
 import pathlib
-import re
 import statistics as st
 import threading
 import time
-import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING
 
@@ -31,27 +29,29 @@ def _corpus() -> tuple[str, list[str]]:
 
 
 def _tokenizer(path: str) -> "PreTrainedTokenizerBase":
-    if "tok" not in _corpus_cache:
+    tokenizers = _corpus_cache.setdefault("tokenizers", {})
+    if path not in tokenizers:
         from transformers import AutoTokenizer
         try:
-            _corpus_cache["tok"] = AutoTokenizer.from_pretrained(path)
+            tokenizers[path] = AutoTokenizer.from_pretrained(path)
         except Exception as e:
             import pathlib as _pl
 
             from snowllm.checkpoint.loader import load_tokenizer
             print(f"  transformers cannot read {path!r} ({type(e).__name__}); reading the "
                   f"tokenizer out of the GGUF instead", flush=True)
-            _corpus_cache["tok"] = load_tokenizer(_pl.Path(path).expanduser())[0]
-    return _corpus_cache["tok"]
+            tokenizers[path] = load_tokenizer(_pl.Path(path).expanduser())[0]
+    return tokenizers[path]
 
 
 def _tokenized_corpus(path: str) -> tuple[list[int], list[list[int]]]:
-    if "pad_ids" not in _corpus_cache:
+    tokenized = _corpus_cache.setdefault("tokenized", {})
+    if path not in tokenized:
         tok = _tokenizer(path)
         pad, tails = _corpus()
-        _corpus_cache["pad_ids"] = tok.encode(pad, add_special_tokens=False)
-        _corpus_cache["tail_ids"] = [tok.encode(t, add_special_tokens=False) for t in tails]
-    return _corpus_cache["pad_ids"], _corpus_cache["tail_ids"]
+        tokenized[path] = (tok.encode(pad, add_special_tokens=False),
+                           [tok.encode(t, add_special_tokens=False) for t in tails])
+    return tokenized[path]
 
 
 _WORD_SNAP = 8
@@ -65,21 +65,63 @@ def _cut_at_word(tok: "PreTrainedTokenizerBase", ids: list[int], end: int) -> in
     return end
 
 
-def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
-              lane: int = 0) -> str:
+def _passage_of(target_tokens: int, rep: int, tokenizer: str, warm: bool,
+                lane: int, lane_width: int) -> str:
     tok = _tokenizer(tokenizer)
     pad_ids, tail_ids_all = _tokenized_corpus(tokenizer)
     tail_ids = tail_ids_all[rep % len(tail_ids_all)][:max(0, target_tokens - 2)]
     pad_want = max(0, target_tokens - len(tail_ids) - 2)
-    start = lane * pad_want
+    start = _cut_at_word(tok, pad_ids, lane * lane_width)
     if start + pad_want > len(pad_ids):
         raise ValueError(f"lane {lane} of {target_tokens} tokens wants padding to "
                          f"{start + pad_want} but the corpus only tokenizes to {len(pad_ids)} "
                          f"-- extend the PAD section, or sweep this rung at a lower --conc")
     ids = (pad_ids[len(pad_ids) - pad_want:] if warm
-           else pad_ids[_cut_at_word(tok, pad_ids, start):_cut_at_word(tok, pad_ids,
-                                                                      start + pad_want)])
+           else pad_ids[start:start + pad_want])
     return tok.decode(ids) + "\n\n" + tok.decode(tail_ids)
+
+
+def _messages(text: str) -> list[dict]:
+    return [{"role": "user", "content": text + "\n\nSummarise the passage above."}]
+
+
+def _prompt_tokens(tok: "PreTrainedTokenizerBase", text: str) -> int:
+    encoded = tok.apply_chat_template(
+        _messages(text), add_generation_prompt=True, tokenize=True, return_dict=True,
+        tools=None, thinking=False, enable_thinking=False)
+    ids = encoded["input_ids"]
+    return len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
+
+
+def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
+              lane: int = 0) -> str:
+    tok = _tokenizer(tokenizer)
+    minimum = _prompt_tokens(tok, "")
+    if target_tokens < minimum:
+        raise ValueError(f"input length {target_tokens} is below the {minimum} tokens needed "
+                         "for the chat template and instruction")
+    if target_tokens == minimum:
+        return ""
+    budget, seen, over = target_tokens, set(), None
+    for _ in range(32):
+        if budget in seen:
+            break
+        seen.add(budget)
+        text = _passage_of(budget, rep, tokenizer, warm, lane, target_tokens)
+        actual = _prompt_tokens(tok, text)
+        if actual == target_tokens:
+            return text
+        if actual > target_tokens and (over is None or actual < over[0]):
+            over = actual, text
+        budget = max(0, budget + target_tokens - actual)
+    # BPE decode/encode can skip a token length at a corpus boundary.
+    if over is not None:
+        for cut in range(1, min(128, len(over[1])) + 1):
+            text = over[1][:-cut]
+            if _prompt_tokens(tok, text) == target_tokens:
+                return text
+    raise ValueError(f"cannot construct an exact {target_tokens}-token chat prompt "
+                     f"for rep {rep}, lane {lane}; last length was {actual}")
 
 
 def loop_period(text: str, min_reps: int = 3, min_span: int = 24, max_period: int = 400) -> int:
@@ -98,10 +140,10 @@ def loop_period(text: str, min_reps: int = 3, min_span: int = 24, max_period: in
 def one(url: str, model: str, text: str, osl: int) -> dict:
     body = json.dumps({
         "model": model,
-        "messages": [{"role": "user", "content": text + "\n\nSummarise the passage above."}],
+        "messages": _messages(text),
         "max_tokens": osl, "temperature": 0.0, "stream": True,
         "stream_options": {"include_usage": True},
-        "thinking": False,
+        "thinking": False, "enable_thinking": False,
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     t0 = time.perf_counter()
@@ -168,41 +210,14 @@ def draft_accept_len(base_url: str) -> tuple[int, int] | None:
         return None
 
 
-_CTX_OVERFLOW_RE = re.compile(r"prompt \((\d+) tokens\) fills context (\d+)")
-
-
-def _overflow(url: str, model: str, text: str) -> tuple[int, int] | None:
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": text}],
-                       "max_tokens": 1, "temperature": 0.0, "stream": False}).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    try:
-        urllib.request.urlopen(req, timeout=60)
-        return None
-    except urllib.error.HTTPError as e:
-        m = _CTX_OVERFLOW_RE.search(e.read().decode())
-        return (int(m.group(1)), int(m.group(2))) if m else None
-
-
 def one_at(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
           tokenizer: str, lane: int = 0) -> dict:
-    target = isl
-    for attempt in range(3):
-        try:
-            return one(url, model, prompt_of(target, rep, tokenizer, warm=warm, lane=lane), osl)
-        except RuntimeError:
-            if attempt == 2:
-                raise
-            overflow = _overflow(url, model,
-                                 prompt_of(target, rep, tokenizer, warm=warm, lane=lane))
-            if overflow:
-                actual, ctx = overflow
-                target = int(target * (ctx - 64) / actual)
-                print(f"  isl {isl} rep {rep}: {actual} tokens against a {ctx} ceiling, "
-                     f"retrying at ~{target}", flush=True)
-            else:
-                target = int(target * 0.97)
-                print(f"  isl {isl} rep {rep}: server rejected the prompt with no ctx-overflow "
-                     f"message to measure from, retrying at ~{target} tokens", flush=True)
+    text = prompt_of(isl, rep, tokenizer, warm=warm, lane=lane)
+    result = one(url, model, text, osl)
+    if result["isl"] != isl:
+        raise ValueError(f"requested {isl} input tokens but server reported {result['isl']}; "
+                         "check that the local tokenizer and chat template match the server")
+    return result
 
 
 def one_rep(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
@@ -257,7 +272,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     ap.add_argument("--model", default="DeepSeek-V4-Flash-0731")
-    ap.add_argument("--isl", default="1024,32768", help="comma list of target input lengths")
+    ap.add_argument("--isl", default="1024,32768",
+                    help="comma list of exact input lengths, including the chat template")
     ap.add_argument("--osl", type=int, default=128)
     ap.add_argument("--reps", type=int, default=4)
     ap.add_argument("--warm", type=int, default=1, help="untimed requests before the timed ones")
@@ -269,8 +285,7 @@ def main() -> None:
     ap.add_argument("--commit", default="", help="the source revision these rows were served from")
     ap.add_argument("--out", default="benchmarks/results/results_dsv4_context.json")
     ap.add_argument("--tokenizer", required=True,
-                    help="local HF tokenizer dir/name; prompt_of() slices the corpus by exact "
-                         "token count against it")
+                    help="local tokenizer matching the server, including its chat template")
     a = ap.parse_args()
 
     url = a.base_url.rstrip("/") + "/chat/completions"
@@ -311,6 +326,7 @@ def main() -> None:
             row = {
                 "label": a.label if conc == 1 else f"{a.label}_c{conc}",
                 "isl_target": isl,
+                "input_length_mode": "chat_template_exact",
                 "isl": got[0]["isl"],
                 "osl": got[0]["osl"],
                 "conc": conc,
