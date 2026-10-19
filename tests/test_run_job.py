@@ -137,8 +137,37 @@ class RunJobTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0)
         self.assert_collected()
 
+    def test_test_runner_solo_and_suite(self):
+        self.sandbox()
+        self.script('tests/test_one.py', "print('PASS')")
+        for name in ('test_engine_e2e', 'test_preemption'):
+            self.script(f'tests/{name}.py', "print('PASS')")
+        self.script('tests/_group.py', '''import pathlib, sys
+for p in sys.argv[1:]: print('>>', pathlib.Path(p).stem, 'PASS', 0)
+''')
+        r = subprocess.run(['bash', 'scripts/run-tests.sh'], env=self.env, cwd=self.base,
+                           capture_output=True, text=True, timeout=8)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn('3 passed, 0 skipped, 0 failed', r.stdout)
 
+    def test_test_runner_cancel_collects_descendants(self):
+        self.sandbox()
+        self.script('tests/test_worker.py', WORKER)
+        p = self.start(['bash', 'scripts/run-tests.sh'], cwd=self.base)
+        p.terminate()
+        p.communicate(timeout=6)
+        self.assertEqual(p.returncode, 143)
+        self.assert_collected()
 
+    def test_test_runner_timeout_reports_failure_and_collects(self):
+        self.sandbox()
+        self.script('tests/test_worker.py', WORKER)
+        self.env['SNOWLLM_TIMEOUT'] = '.5'
+        p = self.start(['bash', 'scripts/run-tests.sh'], cwd=self.base)
+        out, _ = p.communicate(timeout=6)
+        self.assertEqual(p.returncode, 1, out)
+        self.assertIn('exit 124', out)
+        self.assert_collected()
 
     def test_llama_launcher_cancel(self):
         self.sandbox()
