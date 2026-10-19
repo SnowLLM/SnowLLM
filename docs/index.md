@@ -36,5 +36,6 @@ Linux, Windows 11 or WSL2 with a `gfx1151` APU. Tested on **Ryzen AI Max+ 395**;
 - [Performance tuning](./guides/performance): memory, context and speculative decoding.
 - [CLI options](./reference/cli): flags and defaults.
 - [Configuration](./reference/configuration): storage and environment variables.
+- [Usage statistics](./reference/telemetry): collection fields, reporting behavior, and opt-out.
 
 [Benchmarks](https://snowllm.dev/#benchmarks) · [Discussions](https://github.com/SnowLLM/SnowLLM/discussions)

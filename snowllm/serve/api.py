@@ -19,14 +19,18 @@ from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
 from .thinking import thinking_capabilities
 from ..metrics import gpu_sensors, prometheus
+from ..telemetry import model_session, model_snapshot
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     serving().engine.start()
-    yield
-    with contextlib.suppress(Exception):
-        await serving().engine.close()
+    async with model_session(serving(), _app.state):
+        try:
+            yield
+        finally:
+            with contextlib.suppress(Exception):
+                await serving().engine.close()
 
 
 app = FastAPI(title="SnowLLM", lifespan=_lifespan)
@@ -40,6 +44,8 @@ async def _template_error(_raw: Request, e: TemplateError) -> JSONResponse:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "runtime_config": getattr(serving().engine.engine, "runtime_config", None),
+            **({"telemetry": model_snapshot(serving(), app.state.telemetry_arch)}
+               if getattr(app.state, "telemetry_enabled", False) else {}),
             **asdict(serving().engine.stats())}
 
 
