@@ -23,7 +23,7 @@ COMPARISONS = [
         "llama_label": "glm5_3_flash_iq2_xxs_mtp_llama",
         "snow_arm": "MTP k=2",
         "llama_arm": "MTP k=2",
-        "rungs": [(1024, "1K"), (8192, "8K"), (32768, "32K"), (131072, "128K")],
+        "rungs": [(1024, "1K"), (8192, "8K"), (32768, "32K"), (131072, "128K"), (225280, "220K")],
     },
     {
         "model": "Qwen3.6-35B-A3B UD-Q4_K_XL",
@@ -148,9 +148,11 @@ def rows_by_isl(rows: list[dict], label: str) -> dict:
     return {r["isl_target"]: r for r in rows if r["label"] == label}
 
 
-def accept_of(row: dict) -> dict | None:
-    return ({"unit": row["accept_unit"], "mean": round(row["accept_mean"], 3)}
-            if row.get("accept_mean") is not None else None)
+def accept_of(row: dict, n_max: int | None = None) -> dict | None:
+    al, derived = al_of(row, n_max)
+    if al is None:
+        return None
+    return {"unit": "AL", "mean": round(al, 3), "derived": derived}
 
 
 def step_ms_of(row: dict) -> float | None:
@@ -188,7 +190,7 @@ def build_rows(rows: list[dict]) -> list[dict]:
                 row["llama_prefill"] = round(l["prefill_tok_s"], 1)
                 row["llama_ttft"] = round(l["ttft_s"], 2)
                 row["ttft_ratio"] = round(l["ttft_s"] / s["ttft_s"], 2)
-                row["llama_accept"] = accept_of(l)
+                row["llama_accept"] = accept_of(l, ARMS[cmp["llama_label"]][3])
                 row["llama_arm"] = cmp.get("llama_arm")
                 if step_ms_of(l) is not None:
                     row["llama_step_ms"] = step_ms_of(l)

@@ -194,5 +194,54 @@
    " main novel's plot in detail but concisely, and mention the final fragment briefly.\n\nLet me outline the plot of Jennie Gerhardt as presented:\n\nChapters I\u2013XLVIII"
   ],
   "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 468.7152281400049,
+  "ttft_s_reps": [
+   468.7152281400049,
+   467.5919227169943,
+   467.4586598830065,
+   467.3660404330003
+  ],
+  "decode_tok_s": 26.794079700511197,
+  "prefill_tok_s": 480.66925603002585,
+  "edge_before_c": 75,
+  "edge_after_c": 80,
+  "accept_unit": "AL",
+  "accept_mean": 2.489726431358316,
+  "accept_stdev": 0.07919262954327648,
+  "accept_reps": [
+   2.55,
+   2.383177570093458,
+   2.4757281553398056,
+   2.55
+  ],
+  "step_s": 0.09378512414412751,
+  "step_s_reps": [
+   0.09373159756010863,
+   0.09407456893453192,
+   0.09383865072814639,
+   0.09332643647008808
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "nd Palmer Howe... this might be from \"The Custom of the Country\" or another novel. Actually, looking at the style, this might be from \"The House of Mirth\" - no,",
+   "th\" but I don't recall those names. Wait, this might be from \"The House of Mirth\" - no. Let me think. Grace and Palmer... this could be from \"The House of Mirth",
+   " to provide a comprehensive summary that covers the main plot points of what appears to be primarily \"Jennie Gerhardt\" by Theodore Dreiser, with the other texts",
+   "r's\" - this appears to be from \"The Girl in the Fog\" by Donato Carrisi? No... Let me think. The characters Joe, Max Wilson, Sidney, Schwitter's - this is from \""
+  ],
+  "context": 227328
  }
 ]
