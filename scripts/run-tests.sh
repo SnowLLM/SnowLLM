@@ -37,11 +37,37 @@ for t in "$ROOT"/tests/test_*.py; do
 done
 (( ${#TESTS[@]} )) || { echo "run-tests.sh: nothing matches: $*" >&2; exit 2; }
 
-RUN=("$PYTHON")
-[[ -n "${SNOWLLM_TIMEOUT:-}" ]] && RUN=(timeout -k 5 "$SNOWLLM_TIMEOUT" "$PYTHON")
+RUN=("$PYTHON" "$ROOT/scripts/run-job.py")
+[[ -n "${SNOWLLM_TIMEOUT:-}" ]] && RUN+=(--timeout "$SNOWLLM_TIMEOUT")
+RUN+=(-- "$PYTHON")
 
 LOG="$(mktemp -d)"
-trap 'rm -rf "$LOG"' EXIT
+ACTIVE_JOB=""
+cleanup() {
+    if [[ -n "$ACTIVE_JOB" ]]; then
+        kill "$ACTIVE_JOB" 2>/dev/null || true
+        wait "$ACTIVE_JOB" 2>/dev/null || true
+    fi
+    rm -rf "$LOG"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
+run_logged() {
+    local file=$1 rc log_fd log_pid
+    shift
+    exec {log_fd}> >(tee "$file")
+    log_pid=$!
+    PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${RUN[@]}" "$@" >&"$log_fd" 2>&1 &
+    ACTIVE_JOB=$!
+    wait "$ACTIVE_JOB"; rc=$?
+    ACTIVE_JOB=""
+    exec {log_fd}>&-
+    wait "$log_pid" || true
+    return "$rc"
+}
 
 PASS=() SKIP=() FAIL=() SECS=()
 
@@ -68,8 +94,8 @@ for t in ${SOLO[@]+"${SOLO[@]}"}; do
     echo
     echo "== $n"
     t0=$SECONDS
-    PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${RUN[@]}" "$t" 2>&1 | tee "$LOG/$n"
-    rc=${PIPESTATUS[0]}
+    run_logged "$LOG/$n" "$t"
+    rc=$?
     st=PASS
     (( rc != 0 )) && st="exit $rc"
     [[ "$st" == PASS ]] && grep -q -- "-- skipping" "$LOG/$n" && st=SKIP
@@ -80,9 +106,8 @@ for s in $( (( ${#SUITES[@]} )) && printf '%s\n' "${!SUITES[@]}"); do
     read -r -a members <<< "${SUITES[$s]}"
     echo
     echo "== suite $s (${#members[@]} tests, one load)"
-    PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" "${RUN[@]}" "$ROOT/tests/_group.py" \
-        "${members[@]}" 2>&1 | tee "$LOG/suite-$s"
-    rc=${PIPESTATUS[0]}
+    run_logged "$LOG/suite-$s" "$ROOT/tests/_group.py" "${members[@]}"
+    rc=$?
     seen=0
     while read -r _ n st took; do
         record "$n" "$took" "$st"
