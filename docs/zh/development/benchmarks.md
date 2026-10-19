@@ -2,6 +2,16 @@
 
 使用 Ryzen AI Max+ 395，每组测试只运行一个客户端和一个服务端。每组数据标明引擎、模型和草稿方案。
 
+## 运行单项测试 {#running-a-benchmark}
+
+在仓库根目录复制 `benchmarks/all_bench.sh` 中的一条完整命令，或运行：
+
+```sh
+ISL=8192 OSL=256 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl --num-spec 2
+```
+
+`benchmarks/run.sh` 启动指定引擎（`snowllm` 或 `llama`），运行 sweep，并在完成、失败或取消时停止服务。Recipe 后的参数传给服务端；`ISL`、`OSL`、`CONC`、`LABEL` 等环境变量配置客户端。`all_bench.sh` 中每条命令都包含自己的参数，并启动独立的服务。
+
 ## 工作负载 {#workload}
 
 默认在五种上下文长度下，以相同请求设置测试各方案。`ISL` 可覆盖长度。提示词来自 PG-19 语料，按 tokenizer 截取；报告的 `isl` 包含服务端的聊天模板。测试脚本见 [`benchmarks/perf_sweep.sh`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/perf_sweep.sh)。

@@ -5,6 +5,7 @@
 #   benchmarks/launch_snowllm.sh qwen3.8-27b-q4-k-xl --num-spec 2
 #   CTX=32768 PORT=8001 SEQS=4 benchmarks/launch_snowllm.sh qwen3.6-27b-q4-k-s
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 [ $# -ge 1 ] || { sed -n '2,6p' "$0" >&2; exit 2; }
 RECIPE=$1; shift
@@ -31,4 +32,4 @@ ARGS=(--host "$HOST" --port "$PORT" --max-num-seqs "$SEQS" --stats-interval 2 --
 [ -n "$CTX" ] && ARGS+=(--max-model-len "$CTX")
 
 set -x
-exec snowllm "$RECIPE" "${ARGS[@]}" "$@"
+exec "$PY" "$ROOT/scripts/run-job.py" -- snowllm "$RECIPE" "${ARGS[@]}" "$@"

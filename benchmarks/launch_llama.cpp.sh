@@ -99,4 +99,4 @@ ARGS=(serve -m "$GGUF" -a "$NAME" -ngl 99 -fa on -b 4096 -ub "$UB" -np 1 --no-wa
 [ -n "$CTX" ] && ARGS+=(-c "$CTX")
 
 set -x
-exec "$LLAMA" "${ARGS[@]}" "$@"
+exec "$PY" scripts/run-job.py -- "$LLAMA" "${ARGS[@]}" "$@"
