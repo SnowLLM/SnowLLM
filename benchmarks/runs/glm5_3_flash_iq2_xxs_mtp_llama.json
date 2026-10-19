@@ -174,5 +174,49 @@
    " presented:\n\n**Chapters I-V:**\n- 1880, Columbus, Ohio. Mrs. Gerhardt and her 18-year-old daughter Jennie seek work at a hotel. They get cleaning work.\n- The Ger"
   ],
   "context": 227328
+ },
+ {
+  "label": "glm5_3_flash_iq2_xxs_mtp_llama",
+  "isl_target": 225280,
+  "isl": 225297,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 7340.729351254995,
+  "ttft_s_reps": [
+   7340.729351254995,
+   125.46597740997095,
+   126.70118567202007,
+   126.35855622199597
+  ],
+  "decode_tok_s": 6.169644019679941,
+  "prefill_tok_s": 30.69136447068199,
+  "edge_before_c": 41,
+  "edge_after_c": 75,
+  "accept_unit": "accept%",
+  "accept_mean": 0.7520435711136958,
+  "accept_stdev": 0.06242895118310191,
+  "accept_reps": [
+   0.6805555555555556,
+   0.7414634146341463,
+   0.8324607329842932,
+   0.7536945812807881
+  ],
+  "step_s": null,
+  "step_s_reps": [],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "agment seems to be from a different novel entirely - about Sidney and K. and bread recipes.\n\nActually, looking more carefully, the passage is extremely long and",
+   " from \"The Custom of the Country\" or perhaps \"Sister Carrie\"? No, it mentions Palmer and Grace, Christine, Lipton and Homburg's... This might be from \"The House",
+   " which are from \"The Leavenworth Case\" by Anna Katharine Green\n- Then a fragment about K., Tillie, Schwitter, and Mrs. McKee which seems to be from \"The Street\"",
+   "or large portions of novels.\n\nLet me think about the best approach. The user wants a summary of this massive text. I should:\n1. Note that this contains multiple"
+  ],
+  "context": 227328
  }
 ]
