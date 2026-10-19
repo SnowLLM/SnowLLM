@@ -1,0 +1,51 @@
+:root { --site-header-height: 76px; }
+.snow-header {
+  --header-bg: var(--ground, var(--snow-ground));
+  --header-ink: var(--ink, var(--snow-ink));
+  --header-muted: var(--muted, var(--snow-muted));
+  --header-line: var(--hair, var(--snow-hair));
+  --header-accent: var(--accent, var(--snow-accent));
+  position: fixed; inset: 0 0 auto; z-index: 70;
+  height: var(--site-header-height); background: var(--header-bg);
+  border-bottom: 1px solid var(--header-line); color: var(--header-ink);
+  font: 16px/1.4 var(--serif); box-sizing: border-box;
+}
+.snow-header *, .snow-header *::before, .snow-header *::after { box-sizing: border-box; }
+.snow-header-inner { max-width: calc(78rem + 2 * clamp(1.5rem, 4vw, 4rem)); height: 100%; padding: 0 clamp(1.5rem, 4vw, 4rem); margin: auto; display: flex; align-items: center; gap: 2.5rem; }
+.snow-header a { text-decoration: none; color: inherit; }
+.snow-header .snow-brand { display: inline-flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; white-space: nowrap; }
+.snow-brand img { display: block; flex: 0 0 28px; width: 28px; height: 28px; max-width: none; object-fit: contain; }
+.snow-navigation { display: flex; align-self: stretch; align-items: stretch; gap: 1.75rem; }
+.snow-navigation a { display: flex; align-items: center; position: relative; color: var(--header-muted); }
+.snow-navigation a[aria-current] { color: var(--header-ink); }
+.snow-navigation a[aria-current]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--header-accent); }
+.snow-header a:hover, .snow-header button:hover { color: var(--header-accent); }
+.snow-header-tools { margin-left: auto; display: flex; align-items: center; gap: 1.25rem; white-space: nowrap; color: var(--header-muted); }
+.snow-theme { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--header-line); border-radius: 3px; padding: 5px 9px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.snow-header :focus-visible { outline: 2px solid var(--header-accent); outline-offset: 5px; }
+html { scroll-padding-top: calc(var(--site-header-height) + 24px); }
+@media (max-width: 760px) {
+  :root { --site-header-height: 112px; }
+  .snow-header-inner { flex-wrap: wrap; gap: 0; align-content: space-between; padding-top: 14px; }
+  .snow-header .snow-brand { font-size: 20px; }
+  .snow-header-tools { gap: 14px; font-size: 14px; }
+  .snow-navigation { order: 3; width: 100%; height: 48px; gap: 0; justify-content: space-between; }
+}
+@media (max-width: 360px) { .snow-header-tools > a { display: none; } }
+
+.snow-language { max-width: 7rem; padding: 5px 3px; font: inherit; color: inherit; border: 1px solid var(--header-line); border-radius: 3px; background: var(--header-bg); cursor: pointer; }
+@media (max-width: 760px) {
+  .snow-header-tools { gap: 8px; }
+  .snow-header-tools > a { display: none; }
+}
+@media (min-width: 761px) and (max-width: 1000px) {
+  .snow-header-inner { gap: 1.25rem; }
+  .snow-navigation { gap: 1.1rem; }
+  .snow-header-tools { gap: .65rem; }
+}
+
+@media (max-width: 380px) {
+  .snow-header .snow-brand { font-size: 18px; gap: 7px; }
+  .snow-theme-label { display: none; }
+  .snow-language { max-width: 6rem; }
+}

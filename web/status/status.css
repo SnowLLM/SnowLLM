@@ -1,0 +1,83 @@
+/* Status-specific layout only. Palette, typography, page shell and header are shared. */
+.usage { --prefill: var(--c2); --decode: var(--accent); }
+.usage .demo { margin-top: 1.25rem; font-size: var(--fs-ui); color: var(--muted); }
+.demo strong { font: inherit; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: .15rem .5rem; margin-right: .5rem; background: var(--accent-soft); }
+.usage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.75rem 0 0; }
+.periods { display: inline-flex; flex-wrap: wrap; gap: .5rem; }
+.periods a { padding: .35rem .7rem; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); font: var(--fs-ui)/1.5 var(--serif); text-decoration: none; color: var(--muted); }
+.periods a[aria-current] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.range { font-size: var(--fs-ui); color: var(--faint); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; padding: 2rem 0 2.5rem; gap: 1.5rem; }
+.stat { border-right: 1px solid var(--hair); padding-right: 1.5rem; }
+.stat:last-child { border-right: 0; }
+.stat dt { font-size: var(--fs-ui); color: var(--muted); }
+.stat dd { font: 500 clamp(2rem, 4vw, 3rem)/1.2 var(--serif); letter-spacing: -.04em; margin: .6rem 0 .4rem; font-variant-numeric: tabular-nums; }
+.stat span { font-size: .875rem; color: var(--faint); }
+.visual { padding-top: 1.5rem; border-top: 1px solid var(--hair); }
+.chart-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; }
+.chart-heading h2 { font: 600 1.375rem/1.4 var(--serif); margin: 0; }
+.legend { display: flex; gap: 1.4rem; font-size: var(--fs-ui); color: var(--muted); }
+.key::before, .partial-dot { content: ''; display: inline-block; width: .65em; height: .65em; border-radius: 50%; margin-right: .5em; background: var(--prefill); }
+.key-decode::before { background: var(--decode); }
+.plot { display: block; width: 100%; height: auto; overflow: visible; }
+.plot-400 { display: none; }
+.grid { stroke: var(--hair); stroke-width: 1; stroke-dasharray: 3 5; }
+.plot-axis { fill: var(--faint); font: 11px var(--mono); }
+.prefill { fill: var(--prefill); }
+.decode { fill: var(--decode); }
+.bar:hover, .bar:focus { filter: brightness(1.13); }
+.bar:focus { outline: none; }
+.bar:focus rect { stroke: var(--ink); stroke-width: 1; }
+.chart-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; color: var(--faint); font-size: .875rem; }
+.partial-dot { background: transparent; border: 1px solid var(--faint); width: .55em; height: .55em; }
+.freshness { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; margin-top: 1.4rem; color: var(--muted); font-size: .875rem; }
+.freshness time { font-family: var(--mono); font-size: .88em; }
+.usage .note { margin: 1rem 0 2rem; font-size: 1rem; }
+.usage-table { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.usage-table > summary { padding: 1.1rem 0; cursor: pointer; list-style: none; display: flex; justify-content: space-between; font-size: var(--fs-ui); }
+.usage-table > summary::-webkit-details-marker { display: none; }
+.usage-table[open] > summary span[aria-hidden] { transform: rotate(45deg); }
+.usage-table .scroll { padding-bottom: 1rem; }
+.usage-table table { white-space: nowrap; }
+.usage-table th, .usage-table td { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-table th:first-child { text-align: left; }
+.partial { display: block; font-size: .8rem; color: var(--faint); }
+.all-time { display: flex; justify-content: space-between; align-items: center; margin: 2rem 0; gap: 1rem; color: var(--muted); font-size: var(--fs-ui); }
+.all-time strong { font: 500 1.5rem var(--serif); color: var(--ink); font-variant-numeric: tabular-nums; }
+.usage-disclosure { font-size: .875rem; color: var(--faint); }
+.usage-disclosure a { display: inline-block; margin-left: .5em; }
+.empty { min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.empty h3 { font-weight: 400; font-size: 1.4rem; margin: 0 0 .7rem; }
+.empty p { font-size: var(--fs-ui); color: var(--muted); margin: 0; }
+@media (max-width: 600px) {
+  .usage-toolbar { flex-wrap: wrap; }
+  .periods { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .periods a { text-align: center; padding-inline: .3rem; }
+  .range { font-size: .875rem; }
+  .stats { gap: .75rem; padding: 1.5rem 0 2rem; }
+  .stat { padding-right: .4rem; }
+  .stat dt { font-size: .8rem; min-height: 3.3em; }
+  .stat dd { font-size: clamp(1.35rem, 6vw, 2rem); }
+  .stat span { font-size: .75rem; }
+  .chart-heading { align-items: flex-start; }
+  .chart-heading h2 { font-size: 1.125rem; }
+  .legend { font-size: .8rem; gap: .75rem; }
+  .plot-960 { display: none; }
+  .plot-400 { display: block; }
+  .chart-foot { font-size: .75rem; }
+  .freshness { flex-direction: column; font-size: .8rem; }
+  .usage .note { font-size: .9375rem; }
+  .empty { min-height: 240px; }
+}
+.date-filter { display: flex; align-items: flex-end; flex-wrap: wrap; gap: .8rem; margin-top: 1.4rem; font-size: .875rem; color: var(--muted); }
+.date-filter[hidden] { display: none; }
+.date-filter label { display: grid; gap: .4rem; }
+.date-filter input, .date-filter button { font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 3px; background: var(--panel); padding: .45rem .65rem; min-height: 2.5rem; }
+.date-filter button { cursor: pointer; }
+.date-filter button:hover { border-color: var(--accent); color: var(--accent); }
+.filter-error, .load-error { color: var(--accent); }
+@media (max-width: 600px) { .date-filter label { flex: 1 1 40%; min-width: 0; } .date-filter input { width: 100%; min-width: 0; box-sizing: border-box; } }
+.usage .coverage { margin: .9rem 0 0; color: var(--faint); font-size: .875rem; }
+.periods a[aria-disabled='true'] { opacity: .45; cursor: not-allowed; }
+
+.usage .loading { color: var(--muted); font-size: var(--fs-ui); }

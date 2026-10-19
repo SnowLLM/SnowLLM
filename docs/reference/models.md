@@ -25,4 +25,4 @@ DeepSeek wants a 128 GiB machine with a large carve-out, and `--device-map auto`
 Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table
 read off disk per batch, so keep it on the SSD you serve from. Image input requires a checkpoint with a vision tower; DeepSeek V4 is text-only.
 
-Sizes are reference values, not memory reservations. Drafter weights and runtime buffers add to them. Recipes can have different defaults: `qwen3.6-35b-a3b-fp8` sets `--num-spec 0`; its `-mtp` recipe enables MTP. See [benchmarks](https://snowllm.dev/#benchmarks) for measured performance.
+Sizes are reference values, not memory reservations. Drafter weights and runtime buffers add to them. Recipes can have different defaults: `qwen3.6-35b-a3b-fp8` sets `--num-spec 0`; its `-mtp` recipe enables MTP. See [benchmarks](https://snowllm.dev/benchmark/) for measured performance.

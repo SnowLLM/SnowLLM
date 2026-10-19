@@ -33,7 +33,7 @@ Ms/step = 1000 × AL / Decode tok/s
 
 The chart and comparison data use AL for both engines. Raw llama.cpp runs store acceptance rates as fractions from 0 to 1, so the conversion is `AL = 1 + N × accept_mean`. The chart estimates llama.cpp AL using its configured maximum draft width. If fewer tokens are proposed, this is an upper bound on AL and derived ms/step, not a direct measurement.
 
-Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs). The homepage reads [benchmarks.json](https://snowllm.dev/benchmarks.json).
+Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs). The [Benchmark page](https://snowllm.dev/benchmark/) reads [benchmarks.json](https://snowllm.dev/benchmarks.json).
 
 ## GLM-5.3-Flash 220K completion (2026-10-16)
 
