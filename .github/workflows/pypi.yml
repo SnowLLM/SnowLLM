@@ -29,7 +29,7 @@ jobs:
       - name: Build
         run: |
           python -m pip install --upgrade pip setuptools
-          SNOWLLM_KERNELS_DIST=/nonexistent scripts/build-wheel.sh dist
+          scripts/build-wheel.sh dist --python-only
 
       - name: dist/ holds nothing but this release's wheel
         run: |

@@ -850,7 +850,7 @@ def dsv4_indexer_topk_mask(scores: torch.Tensor, mask: torch.Tensor | None,
         _chk(sel, "sel", torch.int32, T, sel_stride)
         _chk(sel_cnt, "sel_cnt", torch.int32, T)
         if sel_stride % COMP_MASK_QUANTUM or sel_stride < topk:
-            raise SnowLLMError(f"sel stride {sel_stride} must be a whole key tile of "
+            raise SnowLLMError(f"sel stride {sel_stride} must be a multiple of "
                                f"{COMP_MASK_QUANTUM} and at least topk {topk}")
     check(lib.snowllm_dsv4_indexer_topk_mask(_p(scores), _p(mask), _p(sel), _p(sel_cnt),
                                              _p(positions), _p(comp_lens), _p(seq_of_row), T,
@@ -903,11 +903,9 @@ def _sel_stride(sel: torch.Tensor | None, sel_cnt: torch.Tensor | None, q: torch
     _chk(sel, "sel", torch.int32, q.shape[0], stride)
     _chk(sel_cnt, "sel_cnt", torch.int32, q.shape[0])
     if stride % COMP_MASK_QUANTUM:
-        raise SnowLLMError(f"sel stride {stride} is not a whole key tile; the last tile reads "
-                           f"{COMP_MASK_QUANTUM} entries whatever the count is")
+        raise SnowLLMError(f"sel stride {stride} must be a multiple of {COMP_MASK_QUANTUM}")
     if kc_cache.numel() * kc_cache.element_size() >= 1 << 31:
-        raise SnowLLMError("the compressed KV pool is 2 GiB or larger, which the gathered "
-                           "attention's 32-bit pool offset cannot address")
+        raise SnowLLMError("the compressed KV pool must be smaller than 2147483648 bytes")
     return stride
 
 
@@ -929,8 +927,8 @@ def dsv4_mla_attn_prefill_compressed(q: torch.Tensor, k_cache: torch.Tensor,
     _chk(sinks, "sinks", torch.float32)
     _chk(comp_mask, "comp_mask", torch.int8)
     if comp_mask.shape[1] % COMP_MASK_QUANTUM:
-        raise SnowLLMError(f"comp_mask stride {comp_mask.shape[1]} is not a whole key tile; "
-                           f"the kernel reads {COMP_MASK_QUANTUM} columns at a time")
+        raise SnowLLMError(f"comp_mask stride {comp_mask.shape[1]} must be a multiple of "
+                           f"{COMP_MASK_QUANTUM}")
     sel_stride = _sel_stride(sel, sel_cnt, q, kc_cache)
     check(lib.snowllm_dsv4_mla_attn_prefill_compressed(
         _p(q), _p(k_cache), _p(v_cache), _p(out), _p(cu_seqlens_q), _p(block_tables),
@@ -970,8 +968,8 @@ def dsv4_mla_attn_split_compressed(q: torch.Tensor, k_cache: torch.Tensor,
     _chk(sinks, "sinks", torch.float32)
     _chk(comp_mask, "comp_mask", torch.int8)
     if comp_mask.shape[1] % COMP_MASK_QUANTUM:
-        raise SnowLLMError(f"comp_mask stride {comp_mask.shape[1]} is not a whole key tile; "
-                           f"the kernel reads {COMP_MASK_QUANTUM} columns at a time")
+        raise SnowLLMError(f"comp_mask stride {comp_mask.shape[1]} must be a multiple of "
+                           f"{COMP_MASK_QUANTUM}")
     sel_stride = _sel_stride(sel, sel_cnt, q, kc_cache)
     want = dsv4_mla_split_workspace_bytes(total_num_q_blocks)
     if workspace.numel() < want:

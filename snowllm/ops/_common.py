@@ -92,8 +92,7 @@ def _chk_norm_x(t: torch.Tensor, dtype: torch.dtype) -> None:
         raise SnowLLMError(f"x: must be row-strided in its last axis and contiguous above it, got "
                            f"shape {tuple(t.shape)} stride {t.stride()}")
     if t.stride(-2) % 8:
-        raise SnowLLMError(f"x: the norm reads eight elements at a time, so its row stride must be "
-                           f"a multiple of 8 (got {t.stride(-2)})")
+        raise SnowLLMError(f"x: row stride must be a multiple of 8 (got {t.stride(-2)})")
 
 
 _host_alloc = False

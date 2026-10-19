@@ -25,6 +25,7 @@ from .layers import (
     KQuantDense,
     FusedMoE,
     HcHead,
+    HcUp,
     HyperMix,
     Ple,
     QsaIndexer,
@@ -75,12 +76,9 @@ def _hc_down(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool, fmt: int) -
     return KQuantDense(fmt, blocks, n, K)
 
 
-def _hc_up(w: object, p: str, geo: Qwen4ExpGeometry, fmt: int) -> KQuantDense:
-    N, K = geo.hc_dim, geo.hc_lowrank
-    per = ops.kquant_bytes(fmt, 1, K)[2]
+def _hc_up(w: object, p: str, geo: Qwen4ExpGeometry, fmt: int) -> HcUp:
     raw, = w.blocks(p + "input_mix_weight_up.weight")
-    rows = raw.view(geo.hc_count, geo.hidden // 16, 16, per).permute(1, 0, 2, 3)
-    return KQuantDense(fmt, rows.reshape(N, per).contiguous(), N, K)
+    return HcUp(raw, geo, fmt)
 
 
 def _hyper(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool) -> HyperMix:
@@ -92,8 +90,7 @@ def _hyper(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool) -> HyperMix:
     if inject:
         down = torch.cat([down, w.read(p + "block_inject_weight.weight")], dim=0)
     up = w.read(p + "input_mix_weight_up.weight")
-    up = up.view(geo.hc_count, geo.hidden // 16, 16, -1).permute(1, 0, 2, 3).reshape(up.shape)
-    return HyperMix(g, Dense(down), Dense(up), inject, geo)
+    return HyperMix(g, Dense(down), HcUp(up, geo), inject, geo)
 
 
 def _ple(w: object, lp: str, geo: Qwen4ExpGeometry) -> Ple:

@@ -1,21 +1,50 @@
 #!/usr/bin/env bash
 # Build the distributable wheel and check the artifact is what it claims to be.
 #
-# Usage: scripts/build-wheel.sh [output-dir]        (default: dist/)
+# Usage: scripts/build-wheel.sh [output-dir] [--python-only] (default: dist/)
 #        PYTHON=/path/to/python scripts/build-wheel.sh
 #        SNOWLLM_KERNELS_DIST=/path/to/dist scripts/build-wheel.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="${1:-$ROOT/dist}"
+OUT=""
+PYTHON_ONLY=0
+for arg in "$@"; do
+    case "$arg" in
+        --python-only) PYTHON_ONLY=1 ;;
+        --help|-h) echo "usage: $0 [output-dir] [--python-only]"; exit 0 ;;
+        -*) echo "unknown option: $arg" >&2; exit 2 ;;
+        *) [[ -z "$OUT" ]] || { echo "only one output directory is allowed" >&2; exit 2; }; OUT="$arg" ;;
+    esac
+done
+OUT="${OUT:-$ROOT/dist}"
 PY="${PYTHON:-python3}"
 
 command -v "$PY" >/dev/null || { echo "build-wheel.sh: no such interpreter: $PY" >&2; exit 2; }
 
-rm -rf "$OUT" "$ROOT/build"
-"$PY" -m pip wheel "$ROOT" --no-deps --no-build-isolation -w "$OUT" -q
+"$PY" - "$OUT" <<'EOF'
+from pathlib import Path
+import sys
+out = Path(sys.argv[1])
+if out.exists() and (not out.is_dir() or any(out.iterdir())):
+    sys.exit(f"output must be an empty directory; existing artifacts are preserved: {out}")
+EOF
 
-WHEEL=$(ls "$OUT"/snowllm-*.whl)
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+"$PY" - "$ROOT" "$STAGE/source" <<'EOF'
+from pathlib import Path
+import shutil
+import sys
+root, source = map(Path, sys.argv[1:])
+shutil.copytree(root / 'snowllm', source / 'snowllm',
+                ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+for name in ('pyproject.toml', 'README.md', 'LICENSE'):
+    shutil.copyfile(root / name, source / name)
+EOF
+"$PY" -m pip wheel "$STAGE/source" --no-deps --no-build-isolation -w "$STAGE" -q
+
+WHEEL=$(ls "$STAGE"/snowllm-*.whl)
 
 "$PY" - "$WHEEL" "$ROOT" <<'EOF'
 import pathlib, sys, zipfile
@@ -33,15 +62,10 @@ if ghosts := [n for n in names if n.endswith(".py") and not (root / n).exists()]
 print(f"{whl}\n{len(names)} files, pure Python")
 EOF
 
-KDIST="${SNOWLLM_KERNELS_DIST:-$ROOT/../SnowLLM-Kernels/dist}"
-KWHEEL=$(ls -t "$KDIST"/snowllm_kernels-*.whl 2>/dev/null | head -1 || true)
-if [[ -n "$KWHEEL" ]]; then
-    cp "$KWHEEL" "$OUT/"
-    echo "$OUT/$(basename "$KWHEEL")  (copied, not built)"
-    echo
-    echo "install:  $PY -m pip install $OUT/*.whl"
-else
-    echo
-    echo "no snowllm_kernels-*.whl in $KDIST -- an install from $OUT will have no kernels." >&2
-    echo "Build one from the kernels tree, or point SNOWLLM_KERNELS_DIST at one." >&2
+if [[ "$PYTHON_ONLY" = 0 ]]; then
+    KDIST="${SNOWLLM_KERNELS_DIST:-$ROOT/../SnowLLM-Kernels/dist}"
+    "$PY" "$ROOT/scripts/prepare-kernel-wheel.py" "$WHEEL" "$KDIST" "$STAGE" "$ROOT"
 fi
+mkdir -p "$OUT"
+cp "$STAGE"/*.whl "$OUT/"
+echo "wheels verified -> $OUT"
