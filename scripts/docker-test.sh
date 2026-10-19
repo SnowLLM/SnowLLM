@@ -56,8 +56,11 @@ if docker info --format '{{.SecurityOptions}}' 2>/dev/null | grep -q 'name=rootl
     ROOTLESS=1
 fi
 USER_ARGS=(--user "$(id -u):$(id -g)")
+SYSFS_ARGS=()
 if [ "$ROOTLESS" = 1 ]; then
     USER_ARGS=()
+    # Rootless host networking leaves /sys empty; ROCm needs its GPU topology.
+    SYSFS_ARGS=(-v /sys:/sys:ro)
 else
     for node in /dev/kfd /dev/dri/*; do
         [[ -c "$node" ]] && GPU+=(--group-add "$(stat -c %g "$node")")
@@ -87,6 +90,7 @@ if not torch.cuda.is_available():
 dev = torch.cuda.get_device_properties(0)
 print(f"device         {dev.name} ({dev.gcnArchName}, {dev.total_memory >> 20} MB)")
 
+_capi.select_geometry(_capi.GEO_QWEN36_35B_A3B)
 g = _capi.build_geometry()
 print(f"compiled for   hidden={g.hidden} heads={g.num_heads}/{g.num_kv_heads} "
       f"vocab={g.vocab_size} experts={g.moe_num_experts} topk={g.moe_topk}")
@@ -113,6 +117,7 @@ printf '   %s\n' "${NAMES[@]}"
 exec docker run --rm --network=host \
     --security-opt seccomp=unconfined \
     "${USER_ARGS[@]}" \
+    "${SYSFS_ARGS[@]}" \
     "${GPU[@]}" \
     -v "$MOUNT:/wheels:ro" \
     "${MOUNTS[@]}" \
