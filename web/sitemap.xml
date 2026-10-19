@@ -5,4 +5,9 @@
     <lastmod>2026-08-07</lastmod>
     <changefreq>daily</changefreq>
   </url>
+  <url><loc>https://snowllm.dev/benchmark/</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://snowllm.dev/recipe/</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://snowllm.dev/docs/</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://snowllm.dev/docs/zh/</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://snowllm.dev/status/</loc><changefreq>hourly</changefreq></url>
 </urlset>

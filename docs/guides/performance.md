@@ -1,6 +1,6 @@
 # Performance tuning
 
-Tune for your model, context length and workload. Published measurements are available on the [benchmark page](https://snowllm.dev/#benchmarks).
+Tune for your model, context length and workload. Published measurements are available on the [benchmark page](https://snowllm.dev/benchmark/).
 
 ## Memory budget
 

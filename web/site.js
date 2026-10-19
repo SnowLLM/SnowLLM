@@ -1,4 +1,9 @@
+import { t, onLanguageChange } from "./i18n.js"
 "use strict";
+
+var LABEL_KEYS = {"Decode": "benchmark.decode", "Prefill": "benchmark.prefill", "Chart": "benchmark.chart", "Table": "benchmark.table", "decode tok/s": "metric.decode.label", "step/s": "metric.steps.label", "ms/step": "metric.ms.label", "AL": "metric.al.label", "prefill tok/s": "metric.prefill.label", "TTFT s": "metric.ttft.label"};
+function labelOf(name) { return LABEL_KEYS[name] ? t(LABEL_KEYS[name]) : name; }
+function armOf(name) { return name.replace(/no spec/g, t("benchmark.noSpec")); }
 
 var HEAT_HUE = "#3957c4";
 var HEAT_INK = "#f7f8ff";
@@ -52,6 +57,7 @@ function mountTable(container, rows, columns, opts) {
 
   function render() {
     container.innerHTML = "";
+    columns.forEach(function (c) { if (c.labelKey) c.label = t(c.labelKey); });
     var visible = visibleRows();
 
     var filterKeys = columns.filter(function (c) { return c.filter; });
@@ -59,11 +65,12 @@ function mountTable(container, rows, columns, opts) {
       var controls = el("div", { class: "controls" });
       filterKeys.forEach(function (c) {
         var values = Array.from(new Set(rows.map(function (r) { return r[c.key]; }))).sort();
-        var select = el("select", { "aria-label": "Filter by " + c.label });
-        select.appendChild(el("option", { value: "", text: "All " + c.label.toLowerCase() }));
+        var select = el("select", { "aria-label": t("common.filter", { label: c.label }) });
+        select.appendChild(el("option", { value: "", text: t("common.all", { label: c.label.toLowerCase() }) }));
         values.forEach(function (v) {
-          select.appendChild(el("option", { value: v, text: v }));
+          select.appendChild(el("option", { value: v, text: c.key === "spec" && v === "none" ? t("recipe.none") : v }));
         });
+        select.value = state.filters[c.key] || "";
         select.addEventListener("change", function () {
           state.filters[c.key] = select.value;
           render();
@@ -84,7 +91,7 @@ function mountTable(container, rows, columns, opts) {
 
     if (!visible.length) {
       container.appendChild(el("p", { class: "empty",
-        text: "No rows match this filter." }));
+        text: t("common.noRows") }));
       return;
     }
 
@@ -136,6 +143,7 @@ function mountTable(container, rows, columns, opts) {
   }
 
   render();
+  if (opts.liveLocale !== false) onLanguageChange(render);
 }
 
 var SVG_NS = "http://www.w3.org/2000/svg";
@@ -183,38 +191,32 @@ var METRIC_SPECS = [
     value: function (p) { return p.decode; },
     num: function (v) { return v.toFixed(1); },
     format: function (v) { return v.toFixed(1) + " tok/s"; },
-    note: "Tokens emitted per second \u2014 AL × step/s." },
+    noteKey: "metric.decode.note" },
   { name: "step/s", section: "Decode", unit: "per second", unitLabel: "step/s",
     value: function (p) { return p.step_ms ? 1000 / p.step_ms : null; },
     num: function (v) { return v.toFixed(2); },
     format: function (v) { return v.toFixed(2) + " step/s"; },
-    note: "Verification steps per second." },
+    noteKey: "metric.steps.note" },
   { name: "ms/step", section: "Decode", unit: "ms", unitLabel: "ms",
     value: function (p) { return p.step_ms; },
     num: function (v) { return v.toFixed(1); },
     format: function (v) { return v.toFixed(1) + " ms"; },
-    note: "Milliseconds per verification step." },
+    noteKey: "metric.ms.note" },
   { name: "AL", section: "Decode", unit: "tok/step", unitLabel: "tok/step",
     value: function (p) { return p.al; },
     num: function (v) { return v.toFixed(2); },
     format: function (v) { return v.toFixed(2) + " tok/step"; },
-    note: "Tokens emitted per step, including the correction token." },
-  { name: "accept%", section: "Decode", unit: "accept%", engines: ["llama.cpp"], unitLabel: "%",
-    value: function (p) { return p.accept_pct; },
-    num: function (v) { return (v * 100).toFixed(1); },
-    format: function (v) { return (v * 100).toFixed(1) + "%"; },
-    tickFormat: function (v) { return (v * 100).toFixed(0) + "%"; },
-    note: "Draft acceptance reported by llama.cpp." },
+    noteKey: "metric.al.note" },
   { name: "prefill tok/s", section: "Prefill", unit: "tok/s", on: true, unitLabel: "tok/s",
     value: function (p) { return p.prefill; },
     num: function (v) { return v.toFixed(0); },
     format: function (v) { return v.toFixed(0) + " tok/s"; },
-    note: "Prompt tokens / client-side TTFT." },
+    noteKey: "metric.prefill.note" },
   { name: "TTFT s", section: "Prefill", unit: "seconds", log: true, unitLabel: "s",
     value: function (p) { return p.ttft; },
     num: function (v) { return v < 10 ? v.toFixed(2) : v.toFixed(0); },
     format: function (v) { return v < 10 ? v.toFixed(2) + " s" : v.toFixed(0) + " s"; },
-    note: "Client-side time to first output; logarithmic axis." },
+    noteKey: "metric.ttft.note" },
 ];
 
 var SERIES_PALETTES = {
@@ -247,29 +249,31 @@ function buildSeriesCatalog(data) {
 function mountSeriesPicker(container, series, opts) {
   var selSeries = series.filter(function (s) { return s.featured; })
     .map(function (s) { return s.key; });
-  if (!selSeries.length) selSeries = series.map(function (s) { return s.key; });
+  if (!selSeries.length && series.length) selSeries = [series[0].key];
 
   var phases = [];
   METRIC_SPECS.forEach(function (m) {
     if (phases.indexOf(m.section) === -1) phases.push(m.section);
   });
-  var phase = phases[0];
+  var phase = opts.state?.phase || phases[0];
   var selMetrics = {};
   phases.forEach(function (ph) {
-    selMetrics[ph] = METRIC_SPECS.filter(function (m) { return m.section === ph && m.on; })
-      .map(function (m) { return m.name; });
+    var available = METRIC_SPECS.filter(function (m) { return m.section === ph; });
+    selMetrics[ph] = (available.find(function (m) { return m.on; }) || available[0]).name;
   });
-  var view = "Chart";
+  if (opts.state) selMetrics = opts.state.selMetrics;
+  var view = opts.state?.view || "Chart";
 
   function emit() {
     opts.onChange(selSeries.slice(), METRIC_SPECS.filter(function (m) {
-      return m.section === phase && selMetrics[phase].indexOf(m.name) !== -1;
+      return m.section === phase && selMetrics[phase] === m.name;
     }), view);
   }
 
   function chip(text, pressed, onPick) {
     var b = el("button", { class: "opt", type: "button" });
-    b.textContent = text;
+    b.textContent = labelOf(text);
+    b.dataset.value = text;
     b.setAttribute("aria-pressed", pressed ? "true" : "false");
     b.addEventListener("click", function () {
       onPick(b.getAttribute("aria-pressed") !== "true");
@@ -308,69 +312,157 @@ function mountSeriesPicker(container, series, opts) {
   container.innerHTML = "";
   var bar = el("div", { class: "toolbar" });
 
-  var drop = el("details", { class: "dropdown" });
-  var summary = el("summary", {});
-  function retitle() {
-    summary.textContent = selSeries.length + " of " + series.length + " series";
-  }
-  drop.appendChild(summary);
-
   var models = [], byModel = {};
   series.forEach(function (s) {
     if (!byModel[s.model]) { byModel[s.model] = []; models.push(s.model); }
     byModel[s.model].push(s);
   });
 
-  var rowBoxes = [], groupBoxes = [];
-  function syncGroups() {
-    groupBoxes.forEach(function (g) {
-      var on = g.keys.filter(function (k) { return selSeries.indexOf(k) !== -1; }).length;
-      g.input.checked = on === g.keys.length;
-      g.input.indeterminate = on > 0 && on < g.keys.length;
-      g.label.classList.toggle("on", on > 0);
+  function comparisonKeys(model) {
+    var choices = byModel[model];
+    var engines = Array.from(new Set(choices.map(function (s) { return s.engine; })));
+    var common = choices.find(function (candidate) {
+      return engines.every(function (engine) {
+        return choices.some(function (s) { return s.engine === engine && s.arm === candidate.arm; });
+      });
+    });
+    return engines.map(function (engine) {
+      return choices.find(function (s) { return s.engine === engine && (!common || s.arm === common.arm); }).key;
     });
   }
 
-  var list = el("div", { class: "picker stacked" });
+  var groups = [];
   models.forEach(function (model) {
-    var keys = byModel[model].map(function (s) { return s.key; });
-    var head = tick(model, true, null, function (on) {
-      keys.forEach(function (k) {
-        var i = selSeries.indexOf(k);
-        if (on && i === -1) selSeries.push(k);
-        if (!on && i !== -1) selSeries.splice(i, 1);
-      });
-      rowBoxes.forEach(function (r) {
-        if (keys.indexOf(r.key) === -1) return;
-        r.input.checked = on;
-        r.label.classList.toggle("on", on);
-      });
-      syncGroups(); retitle(); emit();
-    });
-    head.classList.add("group-head");
-    list.appendChild(head);
-    groupBoxes.push({ input: head.querySelector("input"), label: head, keys: keys });
+    var selected = byModel[model].filter(function (s) { return selSeries.indexOf(s.key) !== -1; });
+    if (selected.length) groups.push({ model: model, keys: selected.map(function (s) { return s.key; }) });
+  });
+  if (opts.state) groups = opts.state.groups.map(function (g) { return { model: g.model, keys: g.keys.slice() }; });
+  var modelArea = el("div", { class: "model-selection" });
+  var groupList = el("div", { class: "model-groups" });
+  var status = el("span", { class: "selection-count", "aria-live": "polite" });
+  modelArea.appendChild(el("div", { class: "selection-heading" }, [
+    el("span", { text: t("benchmark.compare") }), status,
+  ]));
+  modelArea.appendChild(groupList);
+  container.appendChild(modelArea);
 
-    byModel[model].forEach(function (s) {
-      var lbl = tick(s.engine + " · " + s.arm, selSeries.indexOf(s.key) !== -1, s.color,
-        function (on) {
-          var i = selSeries.indexOf(s.key);
-          if (on && i === -1) selSeries.push(s.key);
-          if (!on && i !== -1) selSeries.splice(i, 1);
-          syncGroups(); retitle(); emit();
+  function syncSelection() {
+    selSeries = groups.flatMap(function (g) { return g.keys; });
+    status.textContent = t("benchmark.count", { models: groups.length, series: selSeries.length });
+    emit();
+  }
+
+  function modelMenu(current, onChoose) {
+    var menu = el("details", { class: "model-menu" });
+    var summary = el("summary", { text: current || t("benchmark.add"), "aria-label": current ? t("benchmark.change", { model: current }) : t("benchmark.addLabel") });
+    var search = el("input", { type: "search", placeholder: t("benchmark.searchPlaceholder"), "aria-label": t("benchmark.search"), autocomplete: "off" });
+    var results = el("div", { class: "model-results" });
+    var panel = el("div", { class: "model-menu-panel" }, [search, results]);
+    menu.appendChild(summary);
+    menu.appendChild(panel);
+    function renderResults() {
+      results.innerHTML = "";
+      var query = search.value.toLowerCase().trim();
+      var available = models.filter(function (model) {
+        return model.toLowerCase().indexOf(query) !== -1
+          && !groups.some(function (g) { return g.model === model && model !== current; });
+      });
+      available.forEach(function (model) {
+        var engines = Array.from(new Set(byModel[model].map(function (s) { return s.engine; })));
+        var button = el("button", { type: "button", class: "model-result" }, [
+          el("span", { text: model }), el("small", { text: engines.join(" · ") + " · " + t("benchmark.seriesCount", { count: byModel[model].length }) }),
+        ]);
+        if (model === current) button.setAttribute("aria-current", "true");
+        button.addEventListener("click", function () { menu.open = false; onChoose(model); });
+        results.appendChild(button);
+      });
+      if (!available.length) results.appendChild(el("p", { class: "model-no-results", text: t("benchmark.noModels") }));
+    }
+    search.addEventListener("input", renderResults);
+    search.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") { e.preventDefault(); results.querySelector("button")?.focus(); }
+      if (e.key === "Enter") { e.preventDefault(); results.querySelector("button")?.click(); }
+    });
+    menu.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { e.preventDefault(); menu.open = false; summary.focus(); }
+    });
+    menu.addEventListener("toggle", function () {
+      if (menu.open) {
+        modelArea.querySelectorAll(".model-menu[open]").forEach(function (other) { if (other !== menu) other.open = false; });
+        renderResults(); search.focus();
+      }
+    });
+    renderResults();
+    return menu;
+  }
+
+  function renderGroups(focusIndex) {
+    groupList.innerHTML = "";
+    groups.forEach(function (group, index) {
+      var choices = byModel[group.model];
+      var card = el("section", { class: "model-group", "aria-label": group.model });
+      var menu = modelMenu(group.model, function (model) {
+        group.model = model;
+        group.keys = comparisonKeys(model);
+        renderGroups(index); syncSelection();
+      });
+      var head = el("div", { class: "model-group-head" }, [menu]);
+      if (groups.length > 1) {
+        var remove = el("button", { type: "button", class: "selection-action remove-model", text: t("benchmark.remove"), "aria-label": t("benchmark.removeLabel", { model: group.model }) });
+        remove.addEventListener("click", function () {
+          groups.splice(index, 1); renderGroups(Math.min(index, groups.length - 1)); syncSelection();
         });
-      lbl.classList.add("group-item");
-      rowBoxes.push({ key: s.key, input: lbl.querySelector("input"), label: lbl });
-      list.appendChild(lbl);
+        head.appendChild(remove);
+      }
+      card.appendChild(head);
+      var list = el("div", { class: "picker model-options", role: "group", "aria-label": t("benchmark.variants", { model: group.model }) });
+      function refreshChecks() {
+        list.querySelectorAll("input").forEach(function (input) {
+          input.checked = group.keys.indexOf(input.value) !== -1;
+          input.closest("label").classList.toggle("on", input.checked);
+        });
+      }
+      choices.forEach(function (s) {
+        var label = tick(s.engine + " · " + armOf(s.arm), group.keys.indexOf(s.key) !== -1, s.color, function (checked) {
+          group.keys = checked ? group.keys.concat(s.key) : group.keys.filter(function (key) { return key !== s.key; });
+          syncSelection();
+        });
+        label.querySelector("input").value = s.key;
+        list.appendChild(label);
+      });
+      var actions = el("div", { class: "model-actions" });
+      var compare = el("button", { type: "button", class: "selection-action", text: t("benchmark.engines") });
+      if (new Set(choices.map(function (s) { return s.engine; })).size < 2) {
+        compare.disabled = true; compare.title = t("benchmark.singleEngine");
+      }
+      compare.addEventListener("click", function () { group.keys = comparisonKeys(group.model); refreshChecks(); syncSelection(); });
+      var all = el("button", { type: "button", class: "selection-action", text: t("benchmark.allVariants") });
+      all.addEventListener("click", function () { group.keys = choices.map(function (s) { return s.key; }); refreshChecks(); syncSelection(); });
+      actions.appendChild(compare); actions.appendChild(all);
+      card.appendChild(list); card.appendChild(actions); groupList.appendChild(card);
+    });
+    modelArea.querySelector(".add-model-menu")?.remove();
+    if (groups.length < models.length) {
+      var add = modelMenu(null, function (model) {
+        groups.push({ model: model, keys: comparisonKeys(model) });
+        renderGroups(groups.length - 1); syncSelection();
+      });
+      add.classList.add("add-model-menu"); modelArea.appendChild(add);
+    }
+    if (focusIndex != null) groupList.children[focusIndex]?.querySelector("summary").focus();
+  }
+  modelArea.addEventListener("click", function (e) {
+    modelArea.querySelectorAll(".model-menu[open]").forEach(function (menu) {
+      if (!menu.contains(e.target)) menu.open = false;
     });
   });
-  syncGroups();
-  retitle();
-  drop.appendChild(list);
-  document.addEventListener("click", function (e) {
-    if (drop.open && !drop.contains(e.target)) drop.open = false;
-  });
-  bar.appendChild(tool("Series", drop));
+  function closeModelMenus(e) {
+    if (!modelArea.contains(e.target)) modelArea.querySelectorAll(".model-menu[open]").forEach(function (menu) { menu.open = false; });
+  }
+  document.addEventListener("click", closeModelMenus);
+  renderGroups();
+  selSeries = groups.flatMap(function (g) { return g.keys; });
+  status.textContent = t("benchmark.count", { models: groups.length, series: selSeries.length });
 
   var phaseOpts = el("div", { class: "opts" });
   var phaseChips = [];
@@ -378,7 +470,7 @@ function mountSeriesPicker(container, series, opts) {
     var c = chip(ph, ph === phase, function () {
       phase = ph;
       phaseChips.forEach(function (b) {
-        b.setAttribute("aria-pressed", b.textContent === phase ? "true" : "false");
+        b.setAttribute("aria-pressed", b.dataset.value === phase ? "true" : "false");
       });
       renderMetrics();
       emit();
@@ -386,24 +478,24 @@ function mountSeriesPicker(container, series, opts) {
     phaseChips.push(c);
     phaseOpts.appendChild(c);
   });
-  bar.appendChild(tool("Phase", phaseOpts));
+  bar.appendChild(tool(t("benchmark.phase"), phaseOpts));
 
   var metricOpts = el("div", { class: "opts" });
   function renderMetrics() {
     metricOpts.innerHTML = "";
     METRIC_SPECS.filter(function (m) { return m.section === phase; }).forEach(function (m) {
-      metricOpts.appendChild(chip(m.name, selMetrics[phase].indexOf(m.name) !== -1,
-        function (on) {
-          var i = selMetrics[phase].indexOf(m.name);
-          if (on && i === -1) selMetrics[phase].push(m.name);
-          if (!on && i !== -1) selMetrics[phase].splice(i, 1);
-          renderMetrics();
+      metricOpts.appendChild(chip(m.name, selMetrics[phase] === m.name,
+        function () {
+          selMetrics[phase] = m.name;
+          metricOpts.querySelectorAll("button").forEach(function (button) {
+            button.setAttribute("aria-pressed", button.dataset.value === m.name ? "true" : "false");
+          });
           emit();
         }));
     });
   }
   renderMetrics();
-  bar.appendChild(tool("Metric", metricOpts));
+  bar.appendChild(tool(t("benchmark.metric"), metricOpts));
 
   var viewOpts = el("div", { class: "opts" });
   var viewChips = [];
@@ -411,17 +503,24 @@ function mountSeriesPicker(container, series, opts) {
     var c = chip(name, name === view, function () {
       view = name;
       viewChips.forEach(function (b) {
-        b.setAttribute("aria-pressed", b.textContent === view ? "true" : "false");
+        b.setAttribute("aria-pressed", b.dataset.value === view ? "true" : "false");
       });
       emit();
     });
     viewChips.push(c);
     viewOpts.appendChild(c);
   });
-  bar.appendChild(tool("View", viewOpts));
+  bar.appendChild(tool(t("benchmark.view"), viewOpts));
 
   container.appendChild(bar);
   emit();
+  container.stopPickerLocale?.();
+  container.stopPickerLocale = onLanguageChange(function () {
+    document.removeEventListener("click", closeModelMenus);
+    mountSeriesPicker(container, series, Object.assign({}, opts, { state: {
+      groups: groups, phase: phase, selMetrics: selMetrics, view: view,
+    } }));
+  });
 }
 
 var DASHES = ["", "6,4", "2,3", "9,3,2,3"];
@@ -430,7 +529,7 @@ function renderMetricCharts(host, series, selectedKeys, metrics, view) {
   if (!host) return;
   host.innerHTML = "";
   if (!metrics.length) {
-    host.appendChild(el("p", { class: "empty", text: "No metric checked." }));
+    host.appendChild(el("p", { class: "empty", text: t("benchmark.noMetric") }));
     return;
   }
   var byKey = {};
@@ -455,7 +554,7 @@ function renderMetricCharts(host, series, selectedKeys, metrics, view) {
           model: s.model,
           engine: s.engine,
           arm: s.arm,
-          detail: s.engine + " · " + s.arm + (g.metrics.length > 1 ? " · " + m.name : ""),
+          detail: s.engine + " · " + armOf(s.arm) + (g.metrics.length > 1 ? " · " + m.name : ""),
           derived: (m.name === "AL" || m.unit === "ms" || m.name === "step/s")
             && s.points.some(function (p) { return p.derived; }),
           label: s.label + (g.metrics.length > 1 ? " · " + m.name : ""),
@@ -472,12 +571,11 @@ function renderMetricCharts(host, series, selectedKeys, metrics, view) {
     });
 
     var group = el("div", { class: "group" });
-    group.appendChild(el("h4", { text: g.metrics.map(function (m) { return m.name; }).join(" · ") }));
-    var note = g.metrics.map(function (m) { return m.note; }).join(" ");
-    if (dropped) note += dropped === 1 ? " One checked series cannot answer it, and draws no line."
-      : " " + dropped + " checked series cannot answer it, and draw no line.";
+    group.appendChild(el("h4", { text: g.metrics.map(function (m) { return labelOf(m.name); }).join(" · ") }));
+    var note = g.metrics.map(function (m) { return t(m.noteKey); }).join(" ");
+    if (dropped) note += t("benchmark.dropped", { count: dropped });
     if (lines.some(function (l) { return l.derived; })) {
-      note += " llama.cpp AL and step time are derived estimates.";
+      note += t("benchmark.derived");
     }
     group.appendChild(el("p", { class: "note", text: note }));
     var chart = el("div", { class: "chart" });
@@ -488,7 +586,7 @@ function renderMetricCharts(host, series, selectedKeys, metrics, view) {
     else mountLineChart(chart, lines, {
       log: g.metrics.some(function (m) { return m.log; }),
       tickFormat: g.metrics[0].tickFormat,
-      ariaLabel: g.section + " " + g.unit + " vs input context tokens",
+      ariaLabel: t("benchmark.chartLabel", { phase: labelOf(g.section), unit: g.unit }),
     });
   });
 }
@@ -499,7 +597,7 @@ function mountValueTable(container, lines) {
     return l.points.some(function (p) { return p.v != null && isFinite(p.v); });
   });
   if (!drawable.length) {
-    container.appendChild(el("p", { class: "empty", text: "No data at this selection." }));
+    container.appendChild(el("p", { class: "empty", text: t("common.empty") }));
     return;
   }
 
@@ -521,7 +619,7 @@ function mountValueTable(container, lines) {
   });
 
   var unit = oneMetric ? drawable[0].unitLabel : null;
-  var columns = [{ key: "series", label: "Series", sortable: false, className: function () {
+  var columns = [{ key: "series", label: t("benchmark.series"), sortable: false, className: function () {
       return "series-cell";
     },
     render: function (r) {
@@ -536,7 +634,7 @@ function mountValueTable(container, lines) {
       value: function (r) { return r[key]; },
       render: function (r) { return r[key] == null ? "—" : r.cell(r[key]); } });
   });
-  mountTable(container, rows, columns, { defaultSort: "isl" + order[0], defaultDir: "desc" });
+  mountTable(container, rows, columns, { defaultSort: "isl" + order[0], defaultDir: "desc", liveLocale: false });
 }
 
 function mountLineChart(container, lines, opts) {
@@ -546,7 +644,7 @@ function mountLineChart(container, lines, opts) {
     return l.points.some(function (p) { return p.v != null && isFinite(p.v); });
   });
   if (!drawable.length) {
-    container.appendChild(el("p", { class: "empty", text: "No data at this selection." }));
+    container.appendChild(el("p", { class: "empty", text: t("common.empty") }));
     return;
   }
 
@@ -580,7 +678,7 @@ function mountLineChart(container, lines, opts) {
   }
 
   var svg = svgEl("svg", { viewBox: "0 0 " + CHART_W + " " + CHART_H, role: "img",
-    "aria-label": opts.ariaLabel || "Line chart" });
+    "aria-label": opts.ariaLabel || t("benchmark.lineChart") });
 
   scale.ticks.forEach(function (t) {
     var y = Y(t);
@@ -691,15 +789,15 @@ function mountLineChart(container, lines, opts) {
     if (name) kids.push(el("b", { text: name }));
     var rest = [];
     if (!oneEngine) rest.push(l.engine);
-    if (!oneArm) rest.push(l.arm);
-    if (multi) rest.push(l.metric);
+    if (!oneArm) rest.push(armOf(l.arm));
+    if (multi) rest.push(labelOf(l.metric));
     if (rest.length) kids.push(el("span", { text: rest.join(" \u00b7 ") }));
     legend.appendChild(el("span", { class: "swatch" }, kids));
   });
 
-  var shared = [family, oneEngine, oneArm].filter(Boolean);
+  var shared = [family, oneEngine, oneArm ? armOf(oneArm) : null].filter(Boolean);
   var caption = el("p", { class: "axis-caption",
-    text: "Input context, tokens (linear scale; K = 1024)"
+    text: t("benchmark.axis")
       + (shared.length ? " \u00b7 " + shared.join(" \u00b7 ") : "") });
 
   function clearHover() { showRung(xs[xs.length - 1], false); }
@@ -728,7 +826,7 @@ function loadTable(id, build) {
   if (!container) return;
   var src = container.dataset.src;
   container.textContent = "";
-  container.appendChild(el("p", { class: "empty", html: container.dataset.empty || "Loading…" }));
+  container.appendChild(el("p", { class: "empty", text: t("common.loading") }));
   fetch(src, { cache: "no-cache" })
     .then(function (r) {
       if (!r.ok) throw new Error(src + ": " + r.status);
@@ -738,7 +836,7 @@ function loadTable(id, build) {
     .catch(function (err) {
       container.innerHTML = "";
       container.appendChild(el("p", { class: "empty",
-        text: "Could not load " + src + " (" + err.message + ")." }));
+        text: t("common.loadError", { src: src, error: err.message }) }));
     });
 }
 
@@ -778,7 +876,7 @@ loadTable("recipes-table", function (container, data) {
   var rows = data.recipes;
   var release = data.version;
   var columns = [
-    { key: "model", label: "Model", filter: true, className: function () { return "name-cell"; },
+    { key: "model", label: t("recipe.model"), labelKey: "recipe.model", filter: true, className: function () { return "name-cell"; },
       render: function (r) {
         var id = "rec-" + r.id.replace(/[^a-z0-9]+/gi, "-");
         var repos = [{ url: r.url, repo: r.repo }].concat(r.sources || []);
@@ -786,30 +884,30 @@ loadTable("recipes-table", function (container, data) {
           + esc(r.model) + "</button>"
           + '<div class="card" popover id="' + id + '">'
           + "<h4>" + esc(r.model) + " &middot; " + esc(r.precision) + "</h4>"
-          + (r.summary ? "<p>" + esc(r.summary) + "</p>" : "")
-          + "<dl><dt>Source</dt><dd>"
+          + (r.summary ? "<p>" + esc(t("recipe.summary." + r.id) === "recipe.summary." + r.id ? r.summary : t("recipe.summary." + r.id)) + "</p>" : "")
+          + "<dl><dt>" + t("recipe.source") + "</dt><dd>"
           + repos.map(function (x) {
               return '<a href="' + esc(x.url) + '">' + esc(x.repo) + "</a>";
             }).join("<br>")
-          + "</dd><dt>Pull</dt><dd><code>snowllm pull " + esc(r.id) + "</code></dd>"
-          + "<dt>Run</dt><dd><code>snowllm " + esc(r.id) + "</code></dd></dl>"
+          + "</dd><dt>" + t("recipe.pull") + "</dt><dd><code>snowllm pull " + esc(r.id) + "</code></dd>"
+          + "<dt>" + t("recipe.run") + "</dt><dd><code>snowllm " + esc(r.id) + "</code></dd></dl>"
           + "</div>";
       } },
-    { key: "precision", label: "Precision", filter: true },
-    { key: "spec", label: "Spec", filter: true,
-      render: function (r) { return r.spec === "none" ? '<span class="off">none</span>' : r.spec; } },
-    { key: "requires", label: "Status", filter: true,
+    { key: "precision", label: t("recipe.precision"), labelKey: "recipe.precision", filter: true },
+    { key: "spec", label: t("recipe.spec"), labelKey: "recipe.spec", filter: true,
+      render: function (r) { return r.spec === "none" ? '<span class="off">' + t('recipe.none') + '</span>' : r.spec; } },
+    { key: "requires", label: t("recipe.status"), labelKey: "recipe.status", filter: true,
       value: function (r) {
-        return needsNewer(r.requires, release) ? "Needs a newer snowllm" : "Supported";
+        return needsNewer(r.requires, release) ? t("recipe.newer") : t("recipe.supported");
       },
       render: function (r) {
         return needsNewer(r.requires, release)
-          ? 'Needs a newer snowllm<span class="sub">snowllm ' + esc(r.requires) + "+</span>"
-          : "Supported";
+          ? t('recipe.newer') + '<span class="sub">snowllm ' + esc(r.requires) + "+</span>"
+          : t("recipe.supported");
       } },
-    { key: "bytes", label: "Size", heat: false, value: function (r) { return r.bytes || 0; },
+    { key: "bytes", label: t("recipe.size"), labelKey: "recipe.size", heat: false, value: function (r) { return r.bytes || 0; },
       render: function (r) { return humanBytes(r.bytes) || "—"; } },
-    { key: "id", label: "Pull with", sortable: false,
+    { key: "id", label: t("recipe.pullWith"), labelKey: "recipe.pullWith", sortable: false,
       render: function (r) { return "<code>snowllm pull " + r.id + "</code>"; } },
   ];
   mountTable(container, rows, columns, { defaultSort: "model" });

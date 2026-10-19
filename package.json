@@ -4,8 +4,14 @@
   "scripts": {
     "docs:dev": "vitepress dev docs --host 127.0.0.1 --port 4173",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vite preview docs --outDir .vitepress/dist --base /docs/ --host 127.0.0.1 --port 4173"
+    "docs:preview": "vite preview docs --outDir .vitepress/dist --base /docs/ --host 127.0.0.1 --port 4173",
+    "site:build": "python scripts/build-recipes.py && python scripts/build-benchmarks.py && npm run docs:build && python -c \"import shutil; shutil.rmtree('web/docs', ignore_errors=True); shutil.copytree('docs/.vitepress/dist', 'web/docs'); shutil.copyfile('install.sh', 'web/install.sh')\"",
+    "site:preview": "python scripts/serve-site.py"
   },
-  "devDependencies": { "vitepress": "1.6.4" },
-  "overrides": { "vite": "6.4.4" }
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  },
+  "overrides": {
+    "vite": "6.4.4"
+  }
 }

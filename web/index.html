@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)</title>
-<meta name="description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="typography.css">
-<link rel="stylesheet" href="palette.css">
+<title data-i18n="home.title">SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)</title>
+<meta name="description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/typography.css">
+<link rel="stylesheet" href="/palette.css">
 <link rel="canonical" href="https://snowllm.dev/">
 <meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#f8f8fa" media="(prefers-color-scheme: light)">
@@ -15,8 +15,8 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SnowLLM">
-<meta property="og:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta property="og:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<meta property="og:title" data-i18n-content="home.title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
+<meta property="og:description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
 <meta property="og:url" content="https://snowllm.dev/">
 <meta property="og:image" content="https://snowllm.dev/og.png">
 <meta property="og:image:width" content="1200">
@@ -25,8 +25,8 @@
 <meta property="og:locale" content="en_US">
 
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta name="twitter:description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<meta name="twitter:title" data-i18n-content="home.title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
+<meta name="twitter:description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
 <meta name="twitter:image" content="https://snowllm.dev/og.png">
 
 <script type="application/ld+json">
@@ -48,850 +48,8 @@
 }
 </script>
 
-<style>
-  *, *::before, *::after { box-sizing: border-box; }
-
-  :root {
-    --ground: var(--palette-light-ground);
-    --panel: var(--palette-light-panel);
-    --ink: var(--palette-light-ink);
-    --muted: var(--palette-light-muted);
-    --faint: var(--palette-light-faint);
-    --line: var(--palette-light-line);
-    --hair: var(--palette-light-hair);
-    --accent: var(--palette-light-accent);
-    --accent-soft: var(--palette-light-accent-soft);
-    --c2: var(--palette-light-c2);
-    --c3: var(--palette-light-c3);
-    --core: var(--palette-light-core);
-
-    --measure: 100%;
-    --fs-ui: 1rem;
-    --fs-label: 0.875rem;
-    --fs-note: var(--fs-body);
-
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ground: var(--palette-dark-ground);
-      --panel: var(--palette-dark-panel);
-      --ink: var(--palette-dark-ink);
-      --muted: var(--palette-dark-muted);
-      --faint: var(--palette-dark-faint);
-      --line: var(--palette-dark-line);
-      --hair: var(--palette-dark-hair);
-      --accent: var(--palette-dark-accent);
-      --accent-soft: var(--palette-dark-accent-soft);
-      --c2: var(--palette-dark-c2);
-      --c3: var(--palette-dark-c3);
-      --core: var(--palette-dark-core);
-    }
-  }
-
-  :root[data-theme="dark"] {
-    --ground: var(--palette-dark-ground);
-    --panel: var(--palette-dark-panel);
-    --ink: var(--palette-dark-ink);
-    --muted: var(--palette-dark-muted);
-    --faint: var(--palette-dark-faint);
-    --line: var(--palette-dark-line);
-    --hair: var(--palette-dark-hair);
-    --accent: var(--palette-dark-accent);
-    --accent-soft: var(--palette-dark-accent-soft);
-    --c2: var(--palette-dark-c2);
-    --c3: var(--palette-dark-c3);
-    --core: var(--palette-dark-core);
-  }
-
-  :root[data-theme="light"] {
-    --ground: var(--palette-light-ground);
-    --panel: var(--palette-light-panel);
-    --ink: var(--palette-light-ink);
-    --muted: var(--palette-light-muted);
-    --faint: var(--palette-light-faint);
-    --line: var(--palette-light-line);
-    --hair: var(--palette-light-hair);
-    --accent: var(--palette-light-accent);
-    --accent-soft: var(--palette-light-accent-soft);
-    --c2: var(--palette-light-c2);
-    --c3: var(--palette-light-c3);
-    --core: var(--palette-light-core);
-  }
-
-  :root { color-scheme: light dark; }
-  :root[data-theme="light"] { color-scheme: light; }
-  :root[data-theme="dark"] { color-scheme: dark; }
-
-  html { -webkit-text-size-adjust: 100%; }
-
-  body {
-    background: var(--ground);
-    color: var(--ink);
-    font-family: var(--serif);
-    font-size: var(--fs-body);
-    line-height: 1.65;
-    margin: 0;
-
-    padding: 0 clamp(1.5rem, 4vw, 4rem) 6rem;
-  }
-
-  .wrap {
-    max-width: 78rem;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr);
-    gap: 3.5rem;
-  }
-
-  .main { padding-right: clamp(0.5rem, 3.5vw, 4.5rem); }
-
-  .side {
-    position: sticky;
-    top: 1.5rem;
-    align-self: start;
-    padding: 2.5rem 0 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.6rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    text-transform: none;
-  }
-
-  .side .mark {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5em;
-    font-size: var(--fs-rail);
-    color: var(--ink);
-    font-weight: 700;
-    letter-spacing: normal;
-    text-decoration: none;
-  }
-
-  .side-nav { display: flex; flex-direction: column; gap: 0.55rem; }
-
-  .side-nav a {
-    color: var(--faint);
-    text-decoration: none;
-    border-left: 2px solid transparent;
-    padding-left: 0.7rem;
-    margin-left: -0.7rem;
-  }
-
-  .side-nav a:hover { color: var(--accent); }
-
-  .side-nav a.on { color: var(--ink); border-left-color: var(--accent); }
-
-  .side-rule { height: 1px; background: var(--hair); margin: 0.35rem 0; }
-
-  .side .theme { align-self: start; }
-
-  .band {
-    padding: 2.75rem 0;
-    border-top: 1px solid var(--hair);
-  }
-
-  .band:first-of-type { border-top: 0; }
-
-  #pi { padding-top: 4.5rem; padding-bottom: 1rem; }
-
-  #benchmarks p { max-width: none; }
-
-  .rail {
-    font-family: var(--serif);
-    font-size: 1.375rem;
-    line-height: 1.4;
-    letter-spacing: normal;
-    text-transform: none;
-    margin: 0 0 1.4rem;
-  }
-
-  .rail b {
-    color: var(--ink);
-    font-weight: 600;
-  }
-
-  p { margin: 0 0 1rem; max-width: var(--measure); }
-  p:last-child { margin-bottom: 0; }
-
-  a {
-    color: var(--accent);
-    text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
-    text-underline-offset: 0.18em;
-  }
-
-  a:hover { text-decoration-color: var(--accent); }
-
-  :focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 2px;
-  }
-
-  code {
-    font-family: var(--mono);
-    font-size: 0.86em;
-    background: var(--accent-soft);
-    padding: 0.1em 0.34em;
-  }
-
-  .note {
-    font-size: var(--fs-note);
-    color: var(--muted);
-    max-width: var(--measure);
-  }
-
-  .rail.solo { margin: 2.75rem 0 1.4rem; }
-  .clip { margin: 0; }
-  .clip video { width: 100%; display: block; aspect-ratio: 1920 / 1080; border: 1px solid var(--line); background: #0d1117; }
-  .clip figcaption { font-size: var(--fs-note); color: var(--muted); margin-top: 0.75rem; }
-  .clip figcaption .claim { display: block; color: var(--ink); }
-  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--serif); font-size: var(--fs-label); line-height: 1.55; letter-spacing: normal; text-transform: none; color: var(--faint); }
-
-  .glyph { width: 1.6em; height: 1.6em; flex: none; }
-
-  .theme {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45em;
-    font: inherit;
-    letter-spacing: inherit;
-    text-transform: inherit;
-    color: var(--muted);
-    background: transparent;
-    border: 1px solid var(--line);
-    padding: 0.35em 0.6em;
-    cursor: pointer;
-  }
-
-  .theme:hover { color: var(--accent); border-color: var(--accent); }
-  .theme svg { width: 1.05em; height: 1.05em; }
-  .theme .pair { display: inline-flex; align-items: center; gap: 0.45em; }
-
-  .theme .sun { display: none; }
-  @media (prefers-color-scheme: dark) {
-    .theme .moon { display: none; }
-    .theme .sun { display: inline-flex; }
-  }
-  :root[data-theme="dark"] .theme .moon { display: none; }
-  :root[data-theme="dark"] .theme .sun { display: inline-flex; }
-  :root[data-theme="light"] .theme .moon { display: inline-flex; }
-  :root[data-theme="light"] .theme .sun { display: none; }
-  .top nav a { color: inherit; text-decoration: none; }
-  .top nav a:hover { color: var(--accent); }
-
-  .lede {
-    font-size: clamp(1.5rem, 3.2vw, 2.1rem);
-    line-height: 1.28;
-    letter-spacing: -0.015em;
-    max-width: 26ch;
-    margin: 2.75rem 0 0;
-    text-wrap: balance;
-  }
-
-  .lede em { font-style: normal; color: var(--muted); }
-
-  .readout {
-    display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-    align-items: end;
-    gap: clamp(1.5rem, 4cqw, 3rem);
-    margin: 0 0 1.75rem;
-    container-type: inline-size;
-  }
-
-  .figure {
-    font-family: var(--serif);
-    font-size: clamp(3.5rem, 15cqw, 8.5rem);
-    font-weight: 500;
-    line-height: 0.84;
-    letter-spacing: -0.055em;
-    font-variant-numeric: tabular-nums;
-    display: block;
-  }
-
-  .figure sup {
-    font-size: 0.2em;
-    letter-spacing: normal;
-    vertical-align: 0.9em;
-    color: var(--muted);
-    margin-left: 0.5em;
-  }
-
-  .caliper {
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--muted);
-    margin-top: 1.1rem;
-    border-top: 1px solid var(--line);
-    padding-top: 0.6rem;
-    max-width: 19rem;
-  }
-
-  .caliper dl {
-    display: grid;
-    grid-template-columns: 5.5rem minmax(0, 1fr);
-    gap: 0.15rem 0.75rem;
-    margin: 0;
-  }
-
-  .caliper dt { color: var(--faint); text-transform: none; letter-spacing: normal; }
-  .caliper dd { margin: 0; font-variant-numeric: tabular-nums; }
-
-  .decay { min-width: 0; }
-
-  .decay svg { display: block; width: 100%; height: auto; overflow: visible; }
-
-  .decay figcaption {
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    letter-spacing: normal;
-    color: var(--faint);
-    margin-top: 0.75rem;
-    text-transform: none;
-  }
-
-  .install { margin: 2.75rem 0 0; }
-
-  .selector {
-    display: grid;
-    grid-template-columns: 7rem minmax(0, 1fr);
-    gap: 1px;
-    width: 100%;
-    margin: 0 0 1rem;
-    background: var(--line);
-    border: 1px solid var(--line);
-  }
-
-  .axis { display: contents; }
-
-  .axis-label {
-    display: flex;
-    align-items: center;
-    padding: 0 0.9rem;
-    background: var(--ground);
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--faint);
-  }
-
-  .selector .opts {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 1px;
-    min-width: 0;
-  }
-
-  .opt {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2.5rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--muted);
-    background: var(--panel);
-    border: 0;
-    padding: 0.3rem 0.7rem;
-    cursor: pointer;
-  }
-
-  .opt:hover { color: var(--accent); }
-
-  .opt[aria-pressed="true"] {
-    background: var(--accent-soft);
-    color: var(--ink);
-    box-shadow: inset 0 -2px 0 var(--accent);
-  }
-
-  .opt[disabled] { color: var(--hair); cursor: not-allowed; }
-  .opt[disabled]:hover { color: var(--hair); }
-
-  .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 0.85rem;
-    width: 100%;
-    margin: 0 0 1rem;
-  }
-
-  .tool { display: flex; align-items: center; min-width: 0; }
-
-  .tool + .tool { border-left: 1px solid var(--hair); padding-left: 0.85rem; }
-
-  .tool-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .toolbar .opts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1px;
-    min-width: 0;
-    background: var(--hair);
-    border: 1px solid var(--hair);
-  }
-
-  .toolbar .opt { min-height: 0; }
-
-  .cmd {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.85rem;
-    background: var(--panel);
-    padding: 0.8rem 0.9rem;
-    min-width: 0;
-  }
-
-  .cmd pre {
-    font-family: var(--mono);
-    font-size: var(--fs-code);
-    line-height: 1.65;
-    margin: 0;
-    flex: 1;
-    min-width: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  .cmd .p {
-    color: var(--accent);
-    user-select: none;
-    margin-right: 0.55em;
-  }
-
-  .copy {
-    flex: none;
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--muted);
-    background: transparent;
-    border: 1px solid var(--line);
-    padding: 0.35rem 0.6rem;
-    cursor: pointer;
-  }
-
-  .copy:hover { color: var(--accent); border-color: var(--accent); }
-
-  pre.block {
-    font-family: var(--mono);
-    font-size: var(--fs-code);
-    line-height: 1.6;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    padding: 0.9rem 1rem;
-    margin: 0 0 1rem;
-    overflow-x: auto;
-  }
-
-  pre.block .c { color: var(--faint); }
-
-  ul.terse {
-    list-style: none;
-    margin: 0 0 1rem;
-    padding: 0;
-    max-width: var(--measure);
-  }
-
-  ul.terse li {
-    position: relative;
-    padding-left: 1.1rem;
-    margin-bottom: 0.35rem;
-  }
-
-  ul.terse li::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0.72em;
-    width: 0.45rem;
-    height: 1px;
-    background: var(--line);
-  }
-
-  .group { margin: 0 0 2rem; }
-  .group:last-child { margin-bottom: 0; }
-  .group h3, .group h4 {
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--muted);
-    margin: 0 0 0.9rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--hair);
-  }
-
-  .scroll { overflow-x: auto; margin: 0 0 1rem; }
-
-  td.series-cell {
-    white-space: normal;
-    min-width: 14rem;
-    max-width: 22rem;
-    padding-right: 1.5rem;
-  }
-
-  td.series-cell .sub {
-    display: block;
-    color: var(--faint);
-    padding-left: 1.15em;
-  }
-
-  table {
-    border-collapse: collapse;
-    width: 100%;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    font-variant-numeric: tabular-nums;
-  }
-
-  th, td {
-    text-align: left;
-    padding: 0.5rem 1rem 0.5rem 0;
-    border-bottom: 1px solid var(--hair);
-    vertical-align: top;
-  }
-
-  th {
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    font-size: var(--fs-label);
-    color: var(--faint);
-    white-space: nowrap;
-  }
-
-  td.desc {
-    font-family: var(--serif);
-    font-size: var(--fs-note);
-    line-height: 1.5;
-    color: var(--muted);
-    min-width: 20rem;
-  }
-
-  td.flag { font-family: var(--mono); font-size: var(--fs-code); white-space: nowrap; color: var(--ink); }
-
-  .jstable { margin: 0 0 1rem; }
-
-  .jstable .empty {
-    font-family: var(--serif);
-    font-size: var(--fs-note);
-    color: var(--muted);
-  }
-
-  .jstable .controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem 1.25rem;
-    margin: 0 0 0.75rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--faint);
-  }
-
-  .jstable .controls label { display: inline-flex; align-items: center; gap: 0.5em; }
-
-  .jstable select {
-    font: inherit;
-    color: var(--ink);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0.25em 0.5em;
-  }
-
-  .jstable th[data-key] { cursor: pointer; user-select: none; }
-  .jstable th[data-key]:hover { color: var(--ink); }
-
-  .jstable th .arrow {
-    display: inline-block;
-    width: 0.9em;
-    opacity: 0.35;
-  }
-
-  .jstable th[aria-sort="ascending"] .arrow,
-  .jstable th[aria-sort="descending"] .arrow {
-    opacity: 1;
-    color: var(--accent);
-  }
-
-  .jstable .off { color: var(--faint); }
-
-  .jstable .rowinfo {
-    font: inherit;
-    color: var(--ink);
-    background: none;
-    border: 0;
-    padding: 0;
-    text-align: left;
-    cursor: pointer;
-    text-decoration: underline dotted var(--line);
-    text-underline-offset: 0.2em;
-  }
-
-  .jstable .rowinfo:hover { color: var(--accent); text-decoration-color: var(--accent); }
-
-  [popover].card {
-    max-width: min(34rem, calc(100vw - 3rem));
-    margin: auto;
-    padding: 1.3rem 1.4rem;
-    background: var(--panel);
-    color: var(--ink);
-    border: 1px solid var(--line);
-    border-radius: 0.4rem;
-    box-shadow: 0 12px 40px #10182033;
-    font-family: var(--serif);
-    font-size: var(--fs-note);
-  }
-
-  [popover].card::backdrop { background: #10182047; }
-
-  [popover].card h4 {
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--faint);
-    margin: 0 0 0.75rem;
-  }
-
-  [popover].card p { margin: 0 0 1rem; max-width: none; }
-
-  [popover].card dl {
-    display: grid;
-    grid-template-columns: 4rem minmax(0, 1fr);
-    gap: 0.3rem 0.9rem;
-    margin: 0;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-  }
-
-  [popover].card dt { color: var(--faint); text-transform: none; letter-spacing: normal; }
-  [popover].card dd { margin: 0; }
-
-  @supports not selector(:popover-open) {
-    [popover].card { display: none; }
-    .jstable .rowinfo { text-decoration: none; cursor: default; }
-  }
-
-  .jstable .sub {
-    display: block;
-    color: var(--faint);
-    font-size: 0.94em;
-    margin-top: 0.15rem;
-  }
-
-  td.name-cell { white-space: normal; min-width: 10rem; }
-
-  .jstable td[data-heat] {
-    font-weight: 600;
-    border-radius: 3px;
-  }
-
-  .chart { margin: 0 0 1.5rem; }
-
-  .chart .chart-svg svg { display: block; width: 100%; height: auto; }
-
-  .chart .legend.chart-legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem 1.4rem;
-    margin: 0 0 0.7rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--muted);
-  }
-
-  .chart .swatch b { font-weight: 600; color: var(--ink); }
-  .chart .swatch b + span { color: var(--faint); }
-
-  .chart .axis-caption {
-    margin: 0.55rem 0 0;
-    max-width: none;
-    font-family: var(--serif);
-    font-size: var(--fs-label);
-    letter-spacing: normal;
-    text-transform: none;
-    color: var(--faint);
-  }
-
-  .chart .swatch { display: inline-flex; align-items: center; gap: 0.5em; }
-
-  .chart .swatch i {
-    display: inline-block;
-    width: 0.65em;
-    height: 0.65em;
-    border-radius: 50%;
-  }
-
-  .chart .controls {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin: 0 0 0.75rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--faint);
-  }
-
-  .chart .controls label { display: inline-flex; align-items: center; gap: 0.5em; }
-
-  .chart select {
-    font: inherit;
-    color: var(--ink);
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 0.25em 0.5em;
-  }
-
-  .picker {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.1rem;
-    margin: 0 0 0.75rem;
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-  }
-
-  .picker .pick {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5em;
-    cursor: pointer;
-    color: var(--faint);
-  }
-
-  .picker .pick.on { color: var(--ink); }
-
-  .picker .pick input { accent-color: var(--accent); }
-
-  .picker .pick i {
-    display: inline-block;
-    width: 0.65em;
-    height: 0.65em;
-    border-radius: 50%;
-    flex: none;
-  }
-
-  #benchmarks-picker {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: var(--ground);
-    padding: 0.7rem 0 0.55rem;
-    border-bottom: 1px solid var(--hair);
-    margin-bottom: 1.25rem;
-  }
-
-  .toolbar .opt { padding: 0.35rem 0.7rem; font-size: var(--fs-ui); }
-
-  .toolbar .dropdown {
-    padding: 0.3rem 0.6rem;
-    position: relative;
-    border-radius: 0;
-  }
-
-  .toolbar .dropdown[open] > .picker.stacked {
-    position: absolute;
-    top: calc(100% + 0.4rem);
-    left: 0;
-    z-index: 3;
-    min-width: 20rem;
-    max-height: 60vh;
-    overflow: auto;
-    margin: 0;
-    padding: 0.7rem 0.9rem;
-    background: var(--panel);
-    border: 1px solid var(--hair);
-    border-radius: 0.4rem;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  }
-
-  .picker.stacked { flex-direction: column; gap: 0.35rem; margin: 0.6rem 0 0.2rem; }
-
-  .picker .pick.group-head {
-    color: var(--ink);
-    font-weight: 600;
-    margin-top: 0.5rem;
-  }
-
-  .picker .pick.group-head:first-child { margin-top: 0; }
-
-  .picker .pick.group-item { padding-left: 1.1rem; }
-
-  .dropdown {
-    border: 1px solid var(--hair);
-    border-radius: 0.4rem;
-    padding: 0.35rem 0.6rem;
-    background: var(--panel);
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-  }
-
-  .dropdown summary { cursor: pointer; color: var(--ink); letter-spacing: normal; }
-
-  .dropdown[open] { padding-bottom: 0.55rem; }
-
-  .foot {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1.5rem;
-    justify-content: space-between;
-    padding: 2.5rem 0 0;
-    border-top: 1px solid var(--hair);
-    font-family: var(--serif);
-    font-size: var(--fs-ui);
-    letter-spacing: normal;
-    color: var(--faint);
-  }
-
-  @media (max-width: 860px) {
-
-    .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
-    .side {
-      position: static;
-      flex-direction: row;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.75rem 1.1rem;
-      padding: 1.5rem 0 1rem;
-      border-bottom: 1px solid var(--hair);
-    }
-    .side-nav { flex-direction: row; flex-wrap: wrap; gap: 0.5rem 1.1rem; }
-    .side-nav a { border-left: 0; padding-left: 0; margin-left: 0; }
-    .side-nav a.on { color: var(--accent); }
-    .side-rule { display: none; }
-    .band { padding: 2.25rem 0; }
-    #pi { padding-top: 3rem; padding-bottom: 0.75rem; }
-    .readout { grid-template-columns: minmax(0, 1fr); align-items: start; }
-    td.desc { min-width: 14rem; }
-  }
-</style>
+<link rel="stylesheet" href="/site.css?v=aligned-content">
+<link rel="stylesheet" href="/site-header.css">
 <script>
 (function () {
   try {
@@ -901,37 +59,21 @@
 })();
 </script>
 </head>
-<body>
+<body class="home">
+<div id="site-header"></div>
+<noscript><nav><a href="/">Home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/recipe/">Recipe</a> · <a href="/docs/">Docs</a> · <a href="/status/">Statistics</a></nav></noscript>
 <div class="wrap">
-
-  <aside class="side">
-    <a class="mark" href="#top"><svg class="glyph" viewBox="0 0 128 128" aria-hidden="true" focusable="false"><mask id="sl-head"><polygon points="64.00,6.00 13.77,35.00 13.77,93.00 64.00,122.00 114.23,93.00 114.23,35.00" fill="#fff"/><path d="M64 64L64.00 22.00M64.00 38.00L50.14 30.00M64.00 38.00L77.86 30.00M64 64L27.63 43.00M41.48 51.00L27.63 59.00M41.48 51.00L41.48 35.00M64 64L27.63 85.00M41.48 77.00L41.48 93.00M41.48 77.00L27.63 69.00M64 64L64.00 106.00M64.00 90.00L77.86 98.00M64.00 90.00L50.14 98.00M64 64L100.37 85.00M86.52 77.00L100.37 69.00M86.52 77.00L86.52 93.00M64 64L100.37 43.00M86.52 51.00L86.52 35.00M86.52 51.00L100.37 59.00" stroke="#000" stroke-width="11" stroke-linecap="round" fill="none"/></mask><rect width="128" height="128" fill="currentColor" mask="url(#sl-head)"/><rect x="55" y="55" width="18" height="18" fill="var(--core)"/></svg>SnowLLM</a>
-    <nav class="side-nav">
-      <a href="#install">Install</a>
-      <a href="#pi">Integrations</a>
-      <a href="#benchmarks">Benchmarks</a>
-      <a href="#run">Run</a>
-      <a href="#webui">Web UI</a>
-      <a href="#recipes">Models</a>
-      <a href="/docs/">Docs ↗</a>
-      <span class="side-rule"></span>
-      <a href="https://github.com/SnowLLM/SnowLLM">GitHub</a>
-      <a href="https://github.com/SnowLLM/SnowLLM/discussions">Discuss</a>
-    </nav>
-    <button class="theme" type="button" id="theme">
-        <span class="pair moon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>Dark</span>
-        <span class="pair sun"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.22 4.22l1.56 1.56M18.22 18.22l1.56 1.56M2.5 12h2.2M19.3 12h2.2M4.22 19.78l1.56-1.56M18.22 5.78l1.56-1.56"/></svg>Light</span>
-      </button>
-  </aside>
 
   <main class="main" id="top">
 
-  <h1 class="lede">Local LLM inference, hand-tuned for one chip. <em>The Ryzen AI Max+ 395.</em></h1>
+  <p class="eyebrow home-eyebrow" data-i18n="home.eyebrow">Local inference / Ryzen AI Max</p>
+  <h1 class="lede" data-i18n-html="home.headline">Local LLM inference, hand-tuned for one chip. <em>The Ryzen AI Max+ 395.</em></h1>
+
 
   <div class="install" id="install">
     <div class="selector" id="panel-install">
       <div class="axis">
-        <span class="axis-label">OS</span>
+        <span class="axis-label" data-i18n="home.os">OS</span>
         <div class="opts" data-axis="os">
           <button class="opt" type="button" data-value="linux" aria-pressed="true">Linux</button>
           <button class="opt" type="button" data-value="wsl2" aria-pressed="false">WSL2</button>
@@ -939,9 +81,9 @@
         </div>
       </div>
       <div class="axis">
-        <span class="axis-label">Install</span>
+        <span class="axis-label" data-i18n="home.install">Install</span>
         <div class="opts" data-axis="how">
-          <button class="opt" type="button" data-value="script" aria-pressed="true">installer</button>
+          <button class="opt" type="button" data-value="script" aria-pressed="true" data-i18n="home.installer">installer</button>
           <button class="opt" type="button" data-value="pip" aria-pressed="false">pip</button>
         </div>
       </div>
@@ -952,210 +94,72 @@
         </div>
       </div>
       <div class="axis">
-        <span class="axis-label">Run</span>
+        <span class="axis-label" data-i18n="home.run">Run</span>
         <div class="cmd">
           <pre id="install-cmd"></pre>
-          <button class="copy" type="button" data-copy="panel-install">Copy</button>
+          <button class="copy" type="button" data-copy="panel-install" data-i18n="common.copy">Copy</button>
         </div>
       </div>
     </div>
 
-    <p class="note" id="install-note"></p>
+    <p class="note" id="install-note" hidden></p>
   </div>
 
-  <div class="rail solo"><b>Demo</b></div>
+  <div class="destinations">
+    <a class="destination" href="/benchmark/"><span class="eyebrow" data-i18n="home.measure">01 / Measure</span><strong data-i18n="home.benchmarkLink">Benchmark ↗</strong><span data-i18n="home.benchmarkDesc">Explore results by model, engine and context length.</span></a>
+    <a class="destination" href="/recipe/"><span class="eyebrow" data-i18n="home.choose">02 / Choose</span><strong data-i18n="home.recipeLink">Recipe ↗</strong><span data-i18n="home.recipeDesc">Find your model and the configuration to run it.</span></a>
+    <a class="destination" href="/docs/"><span class="eyebrow" data-i18n="home.build">03 / Build</span><strong data-i18n="home.docsLink">Docs ↗</strong><span data-i18n="home.docsDesc">Installation, integrations and the full reference.</span></a>
+  </div>
+
+  <div class="rail solo"><b data-i18n="home.demo">Demo</b></div>
   <figure class="clip">
     <video src="https://github.com/user-attachments/assets/fa191709-bca4-4caa-a5ed-9a0ef290a76b"
            controls playsinline preload="metadata"></video>
-    <figcaption><strong>2.4× faster than llama.cpp</strong> on nginx log triage through <a href="https://pi.dev">Pi</a>.
-      <span class="fine">Same Ryzen AI Max+ 395, same <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B UD-Q4_K_XL</a>, one engine at a time.</span></figcaption>
+    <figcaption><span data-i18n-html="home.demoCaption"><strong>2.4× faster than llama.cpp</strong> on nginx log triage through <a href="https://pi.dev">Pi</a>.</span>
+      <span class="fine" data-i18n-html="home.demoDetail">Same Ryzen AI Max+ 395, same <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B UD-Q4_K_XL</a>, one engine at a time.</span></figcaption>
   </figure>
-
-  <section class="band" id="pi">
-    <div class="rail"><b>Integrations</b></div>
-    <div>
-      <pre class="block">snowllm pi --port 8000</pre>
-      <p>Supports OpenAI Chat Completions, OpenAI Responses and Anthropic Messages. <a href="/docs/guides/integrations">Client setup ↗</a></p>
-    </div>
-  </section>
-
-  <section class="band" id="benchmarks">
-    <div class="rail"><b>Benchmarks</b></div>
-    <div>
-      <p>Measured on Ryzen AI Max+ 395. <a href="/docs/development/benchmarks">Methodology ↗</a></p>
-
-      <div id="benchmarks-picker" data-src="benchmarks.json" data-empty="Loading&hellip;"></div>
-      <div id="benchmarks-charts"><p class="empty">Loading charts&hellip;</p></div>
-
-      <noscript><p class="note">These charts need JavaScript. The numbers are also in
-        <a href="benchmarks.json">benchmarks.json</a> directly.</p></noscript>
-
-    </div>
-  </section>
-
-  <section class="band" id="run">
-    <div class="rail"><b>Run</b></div>
-    <div>
-      <pre class="block">snowllm pull qwen3.8-flash-next-q3-k-xl
-snowllm qwen3.8-flash-next-q3-k-xl</pre>
-      <p>Choose a model that fits your memory. <a href="/docs/getting-started/quick-start">Quick start ↗</a> · <a href="/docs/reference/models">Supported models ↗</a></p>
-    </div>
-  </section>
 
   <section class="band" id="webui">
     <div class="rail"><b>Web UI</b></div>
     <div>
+      <h2 class="webui-tagline" data-i18n="home.webuiTagline">No commands to memorize.</h2>
       <pre class="block">snowllm webui</pre>
-      <p>Download models, chat and monitor inference in your browser. <a href="/docs/webui">Web UI guide ↗</a></p>
+      <p data-i18n-html="home.webuiDesc">Download models, chat and monitor inference in your browser. <a href="/docs/webui">Web UI guide ↗</a></p>
     </div>
   </section>
 
-  <section class="band" id="recipes">
-    <div class="rail"><b>Models</b></div>
+
+  <section class="band" id="pi">
+    <div class="rail"><b data-i18n="home.integrations">Integrations</b></div>
     <div>
-      <p><a href="/docs/guides/models">Download guide ↗</a></p>
-      <div class="jstable" id="recipes-table" data-src="recipe.json" data-empty="Loading models&hellip;"></div>
-      <noscript><p>Run <code>snowllm recipes</code> or read <a href="recipe.json">recipe.json</a>.</p></noscript>
+      <pre class="block">snowllm pi --port 8000</pre>
+      <p data-i18n-html="home.piDesc">Automatically generates <code>~/.pi/agent/models.json</code> for <a href="https://pi.dev">pi.dev</a>.</p>
+      <p data-i18n-html="home.integrationsDesc">Other tools connect through APIs compatible with OpenAI and Anthropic. <a href="/docs/guides/integrations">Integration guide ↗</a></p>
     </div>
   </section>
 
-  <section class="band" id="flags">
-    <div class="rail"><b>Documentation</b></div>
+
+  <section class="band" id="run">
+    <div class="rail"><b data-i18n="home.run">Run</b></div>
     <div>
-      <p><a href="/docs/">Read the documentation ↗</a></p>
+      <pre class="block">snowllm pull qwen3.8-flash-next-q3-k-xl
+snowllm qwen3.8-flash-next-q3-k-xl</pre>
+      <p data-i18n-html="home.runDesc">Choose a model that fits your memory. <a href="/docs/getting-started/quick-start">Quick start ↗</a> · <a href="/docs/reference/models">Supported models ↗</a> · <a href="/docs/faq#_1-how-do-i-run-a-custom-fine-tuned-model">Custom models (FAQ) ↗</a></p>
     </div>
   </section>
+
 
   </main>
 
   <footer class="foot">
-    <span>SnowLLM &mdash; Apache-2.0 &middot; SnowLLM-Kernels &mdash; all rights reserved</span>
-    <a href="https://github.com/SnowLLM/SnowLLM/discussions">Questions and hardware reports</a>
+    <span>SnowLLM</span>
+    <a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a>
     <a href="https://github.com/SnowLLM/SnowLLM">github.com/SnowLLM/SnowLLM</a>
   </footer>
 
 </div>
 
-<script>
-  var root = document.documentElement;
-  var toggle = document.getElementById("theme");
 
-  function label() {
-    var dark = root.dataset.theme
-      ? root.dataset.theme === "dark"
-      : matchMedia("(prefers-color-scheme: dark)").matches;
-    toggle.setAttribute("aria-label", dark ? "Switch to the light theme" : "Switch to the dark theme");
-    return dark;
-  }
-
-  toggle.addEventListener("click", function () {
-    var next = label() ? "light" : "dark";
-    root.dataset.theme = next;
-    try { localStorage.setItem("snowllm-theme", next); } catch (e) {}
-    label();
-  });
-
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
-    if (!root.dataset.theme) label();
-  });
-
-  label();
-
-  var TORCH_LINE = '<span class="p">$</span>python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ '
-    + '"torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"\n';
-  var SNOWLLM_LINE = '<span class="p">$</span>python -m pip install snowllm snowllm-kernels';
-  var CURL_LINE = '<span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh';
-
-  var INSTALL_GUIDE = '<a href="/docs/getting-started/installation">Installation guide ↗</a>';
-  var WSL_NOTE = ' Set up ROCm in WSL2 first. ';
-  var SCRIPT_NOTE = 'Re-run to upgrade. ';
-  var PIP_NOTE = 'Requires AMD builds of torch and torchvision. ';
-
-  var choice = { os: "linux", how: "script", gpu: "gfx1151" };
-  var cmdEl = document.getElementById("install-cmd");
-  var noteEl = document.getElementById("install-note");
-
-  function renderInstall() {
-    var scriptBtn = document.querySelector('.opts[data-axis="how"] .opt[data-value="script"]');
-    var windows = choice.os === "windows";
-    scriptBtn.disabled = windows;
-    if (windows && choice.how === "script") choice.how = "pip";
-
-    document.querySelectorAll(".opts[data-axis]").forEach(function (group) {
-      var axis = group.dataset.axis;
-      group.querySelectorAll(".opt").forEach(function (b) {
-        b.setAttribute("aria-pressed", choice[axis] === b.dataset.value ? "true" : "false");
-      });
-    });
-
-    if (choice.how === "script") {
-      cmdEl.innerHTML = CURL_LINE;
-      noteEl.innerHTML = SCRIPT_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "") + INSTALL_GUIDE;
-    } else {
-      cmdEl.innerHTML = TORCH_LINE + SNOWLLM_LINE;
-      noteEl.innerHTML = (windows ? "Windows: manual installation only. " : "")
-        + PIP_NOTE + (choice.os === "wsl2" ? WSL_NOTE : "") + INSTALL_GUIDE;
-    }
-  }
-
-  document.querySelectorAll(".opts[data-axis] .opt").forEach(function (button) {
-    button.addEventListener("click", function () {
-      if (button.disabled) return;
-      choice[button.parentNode.dataset.axis] = button.dataset.value;
-      renderInstall();
-    });
-  });
-
-  renderInstall();
-
-  var spied = Array.prototype.slice.call(document.querySelectorAll(".side-nav a[href^='#']"));
-  var targets = spied.map(function (a) {
-    return document.getElementById(a.getAttribute("href").slice(1));
-  }).filter(Boolean);
-
-  var navFrame = 0;
-  function updateNavigation() {
-    navFrame = 0;
-    if (!targets.length) return;
-    var current = targets[0].id;
-    targets.forEach(function (target) {
-      // Anchor positions can land just above or below zero after pixel rounding.
-      if (target.getBoundingClientRect().top <= 24) current = target.id;
-    });
-    spied.forEach(function (link) {
-      var active = link.getAttribute("href") === "#" + current;
-      link.classList.toggle("on", active);
-      if (active) link.setAttribute("aria-current", "location");
-      else link.removeAttribute("aria-current");
-    });
-  }
-  function scheduleNavigation() {
-    if (!navFrame) navFrame = requestAnimationFrame(updateNavigation);
-  }
-  window.addEventListener("scroll", scheduleNavigation, { passive: true });
-  window.addEventListener("resize", scheduleNavigation);
-  window.addEventListener("hashchange", scheduleNavigation);
-  if (window.ResizeObserver) {
-    new ResizeObserver(scheduleNavigation).observe(document.querySelector(".main"));
-  }
-  updateNavigation();
-
-  document.querySelectorAll(".copy").forEach(function (button) {
-    button.addEventListener("click", function () {
-      var pre = document.getElementById(button.dataset.copy).querySelector("pre");
-      var text = pre.textContent.replace(/^\$/gm, "").trim();
-      function done(label) {
-        button.textContent = label;
-        setTimeout(function () { button.textContent = "Copy"; }, 1600);
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () { done("Copied"); }, function () { done("Select it"); });
-      } else {
-        done("Select it");
-      }
-    });
-  });
-</script>
-<script src="site.js" defer></script>
+<script type="module" src="/site-shell.js?v=i18n"></script>
 </body>
 </html>

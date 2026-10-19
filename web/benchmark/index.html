@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title data-i18n="benchmark.title">Benchmark — SnowLLM</title>
+<meta name="description" data-i18n-content="benchmark.description" content="Measured performance on Ryzen AI Max+ 395. Compare engines, models and context lengths with the full results behind every chart.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/typography.css">
+<link rel="stylesheet" href="/palette.css">
+<link rel="canonical" href="https://snowllm.dev/benchmark/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#f8f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17181c" media="(prefers-color-scheme: dark)">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SnowLLM">
+<meta property="og:title" data-i18n-content="benchmark.title" content="Benchmark — SnowLLM">
+<meta property="og:description" data-i18n-content="benchmark.description" content="Measured performance on Ryzen AI Max+ 395. Compare engines, models and context lengths with the full results behind every chart.">
+<meta property="og:url" content="https://snowllm.dev/benchmark/">
+<meta property="og:image" content="https://snowllm.dev/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="SnowLLM — local LLM inference on Ryzen AI Max.">
+<meta property="og:locale" content="en_US">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" data-i18n-content="benchmark.title" content="Benchmark — SnowLLM">
+<meta name="twitter:description" data-i18n-content="benchmark.description" content="Measured performance on Ryzen AI Max+ 395. Compare engines, models and context lengths with the full results behind every chart.">
+<meta name="twitter:image" content="https://snowllm.dev/og.png">
+
+
+
+<link rel="stylesheet" href="/site.css?v=aligned-content">
+<link rel="stylesheet" href="/site-header.css">
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem("snowllm-theme");
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+<div id="site-header"></div>
+<noscript><nav><a href="/">Home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/recipe/">Recipe</a> · <a href="/docs/">Docs</a> · <a href="/status/">Statistics</a></nav></noscript>
+<div class="wrap">
+
+
+
+  <main class="main" id="top">
+  <header class="page-intro">
+    <div class="eyebrow" data-i18n="benchmark.eyebrow">SnowLLM / Benchmark</div>
+    <h1 data-i18n="nav.benchmark">Benchmark</h1>
+    <p data-i18n="benchmark.description">Measured performance on Ryzen AI Max+ 395. Compare engines, models and context lengths with the full results behind every chart.</p>
+  </header>
+  <section class="band" id="benchmarks">
+    <div class="rail"><b data-i18n="benchmark.heading">Benchmarks</b></div>
+    <div>
+      <p data-i18n-html="benchmark.methodology">Measured on Ryzen AI Max+ 395. <a href="/docs/development/benchmarks">Methodology ↗</a></p>
+
+      <div id="benchmarks-picker" data-src="/benchmarks.json" data-empty="Loading&hellip;"></div>
+      <div id="benchmarks-charts"><p class="empty">Loading charts&hellip;</p></div>
+
+      <noscript><p class="note">These charts need JavaScript. The numbers are also in
+        <a href="/benchmarks.json">benchmarks.json</a> directly.</p></noscript>
+
+    </div>
+  </section>
+  </main>
+
+  <footer class="foot">
+    <span>SnowLLM</span>
+    <a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a>
+    <a href="https://github.com/SnowLLM/SnowLLM">github.com/SnowLLM/SnowLLM</a>
+  </footer>
+
+</div>
+
+
+<script type="module" src="/site-shell.js?v=i18n"></script>
+</body>
+</html>

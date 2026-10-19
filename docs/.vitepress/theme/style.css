@@ -49,7 +49,7 @@
   --vp-c-brand-soft: var(--snow-accent-soft);
 }
 html { background: var(--snow-ground); }
-.VPSidebar { border-right: 1px solid var(--snow-hair); }
+.Layout aside.VPSidebar { top: var(--site-header-height); border-right: 1px solid var(--snow-hair); }
 .VPSidebar .group + .group { padding-top: 22px; }
 .VPSidebarItem.level-0 > .item > .text,
 .doc-eyebrow,
@@ -67,22 +67,11 @@ html { background: var(--snow-ground); }
 .VPSidebarItem.level-1 .text { font-family: var(--vp-font-family-base); font-size: var(--fs-ui); line-height: 1.65; letter-spacing: normal; font-weight: 400; }
 .VPSidebarItem.level-1.is-active .text { color: var(--snow-ink); }
 .docs-brand { padding: 0 0 28px; }
-.brand-link { display: flex; align-items: center; gap: 10px; color: var(--snow-ink); font: 700 var(--fs-rail) var(--vp-font-family-base); letter-spacing: normal; text-transform: none; }
-.brand-link img { width: 26px; height: 26px; }
-.brand-caption { display: block; margin: 9px 0 24px 36px; color: var(--snow-faint); font: var(--fs-label) var(--vp-font-family-base); letter-spacing: normal; text-transform: none; }
 .docs-search { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid var(--snow-line); border-radius: 2px; font: var(--fs-ui) var(--vp-font-family-base); color: var(--snow-muted); background: var(--snow-panel); }
 .docs-search:hover { border-color: var(--snow-accent); color: var(--snow-accent); }
 .docs-search > span { white-space: nowrap; }
 .docs-search kbd { white-space: nowrap; font-family: var(--mono); font-size: 11px; color: var(--snow-faint); }
 .docs-rail-footer { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--snow-hair); font: var(--fs-ui) var(--vp-font-family-base); color: var(--snow-faint); }
-.rail-links { display: flex; flex-wrap: wrap; gap: 12px; }
-.rail-links a:hover { color: var(--snow-accent); }
-.docs-theme { display: inline-flex; align-items: center; gap: .45em; font: var(--fs-ui) var(--vp-font-family-base); letter-spacing: normal; text-transform: none; color: var(--snow-muted); background: transparent; border: 1px solid var(--snow-line); padding: .35em .6em; cursor: pointer; }
-.docs-theme:hover { color: var(--snow-accent); border-color: var(--snow-accent); }
-.docs-theme svg { width: 1.05em; height: 1.05em; }
-.rail-theme { margin: 0 0 20px; }
-.mobile-theme { display: none; }
-.VPNavBarAppearance, .VPNavScreenAppearance { display: none !important; }
 .doc-eyebrow { margin-bottom: 24px; font-size: var(--fs-label); }
 .vp-doc { font-size: var(--fs-body); }
 .vp-doc p, .vp-doc li { line-height: 1.7; }
@@ -111,20 +100,21 @@ html { background: var(--snow-ground); }
 .start-number, .start-arrow { font: 13px var(--mono); color: var(--snow-faint); }
 .start-title { display: block; font-size: 23px; margin-bottom: 4px; }
 .start-description { display: block; font-size: var(--fs-note); color: var(--snow-muted); }
+/* The global header sits above both the document and its local navigation. */
+:root { --vp-nav-height: var(--site-header-height); }
+.VPNav { display: none !important; }
+.docs-caption { font-size: 18px; margin-bottom: 20px; color: var(--snow-ink); }
+.docs-mobile-search { display: none; }
+.VPLocalNav { top: var(--site-header-height) !important; }
 @media (min-width: 960px) {
-  .VPNav { display: none; }
-  .VPSidebar { padding-top: 42px; top: 0; }
+  .Layout aside.VPSidebar { padding-top: 32px; }
   .VPSidebar .curtain { display: none; }
-  .VPContent.has-sidebar { padding-top: 0; }
-  .VPDoc { padding-top: 64px !important; }
-  .VPDocAside .spacer { height: 0; }
-  .VPDocAside .content { padding-top: 66px; }
+  .VPDoc { padding-top: 42px !important; }
 }
 @media (max-width: 959px) {
-  .mobile-theme { display: inline-flex; margin-left: 12px; }
-  .rail-theme { display: none; }
+  .Layout { padding-top: var(--site-header-height); }
   .docs-brand { padding-top: 10px; }
-  .VPNavBarTitle, .VPLocalNav { font-family: var(--vp-font-family-base); }
+  .docs-mobile-search { display: flex; margin-bottom: 24px; }
   .VPDoc { padding-top: 32px !important; }
   .doc-eyebrow { margin-bottom: 18px; }
 }
