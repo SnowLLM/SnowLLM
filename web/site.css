@@ -665,6 +665,8 @@
     flex: none;
   }
 
+  #benchmarks-picker:empty, #benchmarks-charts:empty { display: none; }
+
   #benchmarks-picker {
     position: relative;
     z-index: 2;
