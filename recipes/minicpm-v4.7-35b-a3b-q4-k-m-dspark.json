@@ -1,0 +1,41 @@
+{
+  "id": "minicpm-v4.7-35b-a3b-q4-k-m-dspark",
+  "model": "MiniCPM-V-4.7-35B-A3B",
+  "precision": "Q4_K_M",
+  "dir": "MiniCPM-V-4.7-35B-A3B-Q4_K_M",
+  "bytes": 22710411025,
+  "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-gguf",
+  "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+  "include": [
+    "MiniCPM-V-4_7-35B-A3B-Q4_K_M.gguf",
+    "mmproj-model-f16.gguf"
+  ],
+  "priority": 56,
+  "requires": "0.3.10",
+  "summary": "MiniCPM-V 4.7 with its official Q8 DSpark drafter for text and image generation. Uses eight draft tokens per step.",
+  "serve_as": "MiniCPM-V-4.7-35B-A3B",
+  "sources": [
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B",
+      "revision": "896c2d454672476a7b45dcc5e3f0c700a0218577",
+      "include": [
+        "chat_template.jinja"
+      ]
+    },
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-DSpark-gguf",
+      "revision": "2c8f6931e5fba8a01bcc74b2964f330c62056b5e",
+      "subdir": "dspark",
+      "include": [
+        "dspark-MiniCPM-V-4_7-35B-A3B-Q8_0.gguf"
+      ]
+    }
+  ],
+  "defaults": {
+    "num_spec": 0,
+    "dflash": "@model/dspark",
+    "dflash_block": 8
+  },
+  "note": "Validated on gfx1151 with Q4_K_M target weights: text and images, batched HIP graphs, forced rejection, confidence truncation, and allocation plans. Block sizes 1, 4, 8 and 15 are supported; 0 uses the checkpoint default of 15. Block 8 is faster on the measured 1K/8K text prompts; block 4 is faster on the measured coding prompt.",
+  "spec": "DSpark"
+}

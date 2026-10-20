@@ -1,0 +1,31 @@
+{
+  "id": "qwen3.8-flash-next-q3-k-xl-no-mtp",
+  "model": "Qwen3.8-Flash-Next",
+  "precision": "UD-Q3_K_XL",
+  "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
+  "bytes": 90893897543,
+  "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+  "revision": "main",
+  "include": [
+    "UD-Q3_K_XL/*.gguf",
+    "mmproj-BF16.gguf"
+  ],
+  "spec": "none",
+  "summary": "Flash-Next UD-Q3_K_XL with autoregressive decoding; speculative decoding is disabled.",
+  "note": "Sets --num-spec 0 and shares the target directory with the MTP recipe. The embedded n-gram table remains on SSD and is read per batch. This recipe does not download the separate MTP head and does not use an external drafter.",
+  "defaults": {
+    "num_spec": 0
+  },
+  "serve_as": "Qwen3.8-Flash-Next",
+  "sources": [
+    {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ]
+    }
+  ],
+  "priority": 89,
+  "requires": "0.3.0"
+}

@@ -179,6 +179,7 @@
   "Download stopped or failed (exit {0}). View output for details; a new download resumes partial files.": "Download stopped or failed (exit {0}). View output for details; a new download resumes partial files.",
   "Catalog unavailable: {0}. You can still load a local checkpoint from Overview.": "Catalog unavailable: {0}. You can still load a local checkpoint from Overview.",
   "{0} recipes": "{0} recipes",
+  "Coming soon": "Coming soon",
   "Requires {0}": "Requires {0}",
   "{0} on disk": "{0} on disk",
   "Downloading {0}": "Downloading {0}",

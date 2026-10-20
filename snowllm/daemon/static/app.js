@@ -270,7 +270,7 @@ async function refreshCatalog(refresh) {
 function renderRecipeOptions(selected = $('load-recipe').value) {
       $('load-recipe').replaceChildren(new Option(t("Choose a recipe\u2026"), ''));
       for (const recipe of recipes) {
-        const option = new Option(`${recipe.id}${recipe.loadable ? t(" \u00b7 local") : ''}${!recipe.servable ? t(" \u00b7 upgrade required") : ''}`, recipe.id);
+        const option = new Option(`${recipe.id}${recipe.loadable ? t(" \u00b7 local") : ''}${recipe.status === 'coming soon' ? ` · ${t('Coming soon')}` : !recipe.servable ? t(" \u00b7 upgrade required") : ''}`, recipe.id);
         option.classList.toggle('local', Boolean(recipe.loadable));
         option.disabled = !recipe.servable; $('load-recipe').append(option);
       }
@@ -289,7 +289,7 @@ function renderRecipes() {
       element('span', '', t(recipe.loadable ? 'Available locally' : recipe.exists ? 'Partial copy' : 'Not downloaded')));
     top.append(element('span', 'pill', recipe.precision || t('Model')), availability);
     card.append(top, element('h3', '', recipe.model || recipe.id), element('div', 'recipe-id', recipe.id));
-    if (!recipe.servable) card.append(element('span', 'pill', t('Requires {0}', recipe.requires)));
+    if (!recipe.servable) card.append(element('span', 'pill', recipe.status === 'coming soon' ? t('Coming soon') : t('Requires {0}', recipe.requires)));
     const footer = element('div', 'recipe-footer');
     footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
     const buttons = element('div', 'download-actions');

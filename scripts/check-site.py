@@ -158,7 +158,7 @@ def check_catalogue() -> None:
         return tuple(int(x) for x in v.split("."))
 
     named = {r.get("id") for r in book}
-    served = {r["repo"] for r in book if r.get("repo")
+    served = {r["repo"] for r in book if r.get("repo") and r.get("status", "supported") == "supported"
               and not (r.get("requires") and parts(VERSION) < parts(str(r["requires"])))}
     for name, text in (("install.sh", INSTALL), ("README.md", README),
                        ("web/index.html", PAGE), ("web/recipe/index.html", RECIPE_PAGE)):

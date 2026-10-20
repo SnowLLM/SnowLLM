@@ -96,6 +96,7 @@
   "recipe.precision": "Precision",
   "recipe.spec": "Spec",
   "recipe.status": "Status",
+  "recipe.comingSoon": "Coming soon",
   "recipe.supported": "Supported",
   "recipe.newer": "Needs a newer snowllm",
   "recipe.size": "Size",

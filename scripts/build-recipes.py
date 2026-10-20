@@ -30,7 +30,7 @@ SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens
             "dflash", "dflash_block", "kv_cache_dtype", "gpu_memory_utilization",
             "prefix_memory_ratio", "mtp_window", "mtp_sinks")
 OPTIONAL = ("revision", "include", "exclude", "bytes", "priority", "requires", "summary", "note",
-            "files", "sources", "defaults", "serve_as", "spec")
+            "files", "sources", "defaults", "serve_as", "spec", "status")
 LISTS = ("include", "exclude")
 SOURCE_FIELDS = ("repo", "revision", "include", "exclude", "subdir")
 
@@ -68,6 +68,8 @@ def load(path: pathlib.Path) -> dict | None:
         if k not in SETTABLE:
             complain(path, f"sets {k!r} in defaults, which is not a recipe's to set. "
                            f"One of: {', '.join(SETTABLE)}")
+    if r.get("status", "supported") not in ("supported", "coming soon"):
+        complain(path, "status must be 'supported' or 'coming soon'")
     if "serve_as" in r and not (isinstance(r["serve_as"], str) and r["serve_as"].strip()
                                 and "/" not in r["serve_as"]):
         complain(path, f"has a serve_as that is not a plain model name: {r.get('serve_as')!r}")
@@ -124,7 +126,7 @@ def recipes() -> list[dict]:
     return [found[k] for k in sorted(found, key=lambda i: rank(found[i]))]
 
 
-NAMED_DRAFTER = {"dflash": "DFlash", "dflash2": "DFlash2"}
+NAMED_DRAFTER = {"dflash": "DFlash", "dflash2": "DFlash2", "dspark": "DSpark"}
 
 
 def spec_of(r: dict, path: pathlib.Path | None = None) -> str:
@@ -159,7 +161,8 @@ def url_of(repo: str, revision: str = "main") -> str:
 
 
 def rank(r: dict) -> tuple:
-    return (-r.get("priority", 0), needs_newer(r), r.get("bytes", 0), r["id"])
+    return (-r.get("priority", 0), r.get("status", "supported") != "supported" or needs_newer(r),
+            r.get("bytes", 0), r["id"])
 
 
 def updated() -> str:
@@ -235,7 +238,7 @@ def main() -> None:
     OUT.write_text(json.dumps({"schema": SCHEMA, "version": VERSION, "updated": updated(),
                                "recipes": book},
                               indent=2) + "\n")
-    served = sum(1 for r in book if not needs_newer(r))
+    served = sum(1 for r in book if r.get("status", "supported") == "supported" and not needs_newer(r))
     print(f"build-recipes.py: {OUT.relative_to(ROOT)} <- {len(book)} recipe(s), {served} servable")
 
 

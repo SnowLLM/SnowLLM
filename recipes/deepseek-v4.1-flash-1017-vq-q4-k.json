@@ -1,0 +1,26 @@
+{
+  "id": "deepseek-v4.1-flash-1017-vq-q4-k",
+  "model": "DeepSeek-V4.1-Flash-1017",
+  "precision": "VQ + Q4_K",
+  "dir": "DeepSeek-V4.1-Flash-1017-vq8sh14-q4k-mtpnative",
+  "repo": "Baekpica/DeepSeek-V4.1-Flash-1017-VQ-GGUF",
+  "revision": "f81ee2e9801fcc58fd51ae75dd827467ffc0b9e5",
+  "include": [
+    "DeepSeek-V4.1-Flash-vq8sh14-q4k-mtpnative.gguf.part??-of-40",
+    "DeepSeek-V4.1-Flash.vision.gguf",
+    "deepseek-engram/*.safetensors",
+    "SHA256SUMS",
+    "README.md",
+    "RECIPE.md",
+    "SOURCE.md",
+    "LICENSE",
+    "LICENSE-DeepSeek"
+  ],
+  "bytes": 317600818409,
+  "status": "coming soon",
+  "spec": "DSpark (embedded)",
+  "priority": 10,
+  "serve_as": "DeepSeek-V4.1-Flash-1017",
+  "summary": "Coming soon: the vq8sh14-q4k-mtpnative conversion of DeepSeek-V4.1-Flash-1017, with its embedded native drafter.",
+  "note": "SnowLLM integration is pending. The target uses VQ experts and Q4_K projections, not the existing V4-Flash-0731 quantization path. The 40 base files are byte-range parts that require assembly. This package also includes the matching 1017 Engram tables and vision sidecar; Engram, vision and native drafter support are not implemented for this model yet. Download size includes both Engram shards; allow extra disk space to assemble the base. No serving defaults or release date are promised."
+}

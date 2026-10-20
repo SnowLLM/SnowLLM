@@ -1,0 +1,30 @@
+{
+  "id": "minicpm-v4.7-35b-a3b-q4-k-m",
+  "model": "MiniCPM-V-4.7-35B-A3B",
+  "precision": "Q4_K_M",
+  "dir": "MiniCPM-V-4.7-35B-A3B-Q4_K_M",
+  "bytes": 22285838097,
+  "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-gguf",
+  "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+  "include": [
+    "MiniCPM-V-4_7-35B-A3B-Q4_K_M.gguf",
+    "mmproj-model-f16.gguf"
+  ],
+  "spec": "none",
+  "priority": 55,
+  "requires": "0.3.10",
+  "summary": "35B MoE vision-language model with 3B active parameters. Includes the 4x/16x image encoder; no speculative decoding head.",
+  "serve_as": "MiniCPM-V-4.7-35B-A3B",
+  "sources": [
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B",
+      "revision": "896c2d454672476a7b45dcc5e3f0c700a0218577",
+      "include": [
+        "chat_template.jinja"
+      ]
+    }
+  ],
+  "defaults": {
+    "num_spec": 0
+  }
+}
