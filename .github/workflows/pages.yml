@@ -18,6 +18,7 @@ on:
       - scripts/check-site.py
       - scripts/build-recipes.py
       - scripts/build-benchmarks.py
+      - tests/test_benchmark_page.py
       - .github/workflows/pages.yml
   pull_request:
     paths: *site
@@ -53,6 +54,9 @@ jobs:
 
       - name: Assemble the benchmark data the page draws
         run: scripts/build-benchmarks.py
+
+      - name: Benchmark HTML preserves every measurement
+        run: python -m unittest discover -s tests -p test_benchmark_page.py
 
       - name: The site agrees with the tree it is published from
         run: scripts/check-site.py

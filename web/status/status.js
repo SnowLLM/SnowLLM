@@ -1,6 +1,8 @@
 import { t, getLanguage, onLanguageChange } from '../i18n.js'
+import { localDate, localTimestamp, bucket, advance, selectedRange } from './time.js'
 
 const tr = key => t('status.' + key)
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const url = new URL(location.href)
 url.searchParams.delete('theme')
 const api = document.body.dataset.apiBase.replace(/\/$/, '')
@@ -8,6 +10,20 @@ const periods = ['hour', 'day', 'week', 'month'];
 let period = periods.includes(url.searchParams.get('period')) ? url.searchParams.get('period') : 'day';
 const form = document.querySelector('.date-filter');
 const startInput = form.elements.from, endInput = form.elements.to;
+const datePickers = Array.from(form.querySelectorAll('[data-date-input]'), picker => {
+  const input = document.getElementById(picker.dataset.dateInput);
+  input.addEventListener('input', () => { picker.value = input.value; });
+  picker.addEventListener('change', () => { input.value = picker.value; });
+  picker.addEventListener('click', event => {
+    if (typeof picker.showPicker === 'function') { event.preventDefault(); picker.showPicker(); }
+  });
+  return { input, picker };
+});
+function isDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + 'T00:00:00Z');
+  return Number.isFinite(+date) && date.toISOString().slice(0, 10) === value;
+}
 const windows = {hour: 48, day: 30, week: 12, month: 12};
 const iso = date => date.toISOString().replace('.000Z', 'Z');
 const compact = value => {
@@ -16,21 +32,6 @@ const compact = value => {
   }
   return String(value);
 };
-function bucket(date, unit) {
-  const result = new Date(date);
-  result.setUTCMinutes(0, 0, 0);
-  if (unit !== 'hour') result.setUTCHours(0);
-  if (unit === 'week') result.setUTCDate(result.getUTCDate() - (result.getUTCDay() + 6) % 7);
-  if (unit === 'month') result.setUTCDate(1);
-  return result;
-}
-function advance(date, unit, steps = 1) {
-  const result = new Date(date);
-  if (unit === 'month') result.setUTCMonth(result.getUTCMonth() + steps);
-  else if (unit === 'hour') result.setUTCHours(result.getUTCHours() + steps);
-  else result.setUTCDate(result.getUTCDate() + steps * (unit === 'week' ? 7 : 1));
-  return result;
-}
 function chart(points, width) {
   const left = 52, right = width - 10, top = 20, bottom = 256;
   const max = points.reduce((value, p) => Math.max(value, p.prefill_tokens + p.decode_tokens), 0);
@@ -46,10 +47,10 @@ function chart(points, width) {
   points.forEach((p, i) => {
     const x = left + step * i + (step - barWidth) / 2;
     const hp = p.prefill_tokens * scale, hd = p.decode_tokens * scale;
-    const caption = `${p.period_start}: prefill ${p.prefill_tokens.toLocaleString('en-US')}, decode ${p.decode_tokens.toLocaleString('en-US')}${p.partial ? ' · ' + tr('partial') : ''}`;
+    const caption = `${localTimestamp(p.period_start, { offset: true })}: prefill ${p.prefill_tokens.toLocaleString('en-US')}, decode ${p.decode_tokens.toLocaleString('en-US')}${p.partial ? ' · ' + tr('partial') : ''}`;
     svg += `<g class="bar" tabindex="0" role="img" aria-label="${caption}"><title>${caption}</title><rect class="prefill" x="${x}" y="${bottom - hp}" width="${barWidth}" height="${hp}"/><rect class="decode" x="${x}" y="${bottom - hp - hd}" width="${barWidth}" height="${hd}"/></g>`;
     if (i % every === 0) {
-      const label = period === 'hour' ? p.period_start.slice(5, 10) + ' ' + p.period_start.slice(11, 16) : period === 'month' ? p.period_start.slice(0, 7) : p.period_start.slice(5, 10);
+      const label = period === 'hour' ? localTimestamp(p.period_start).slice(5) : localDate(p.period_start).slice(5);
       svg += `<text class="plot-axis" text-anchor="middle" x="${x + barWidth / 2}" y="280">${label}</text>`;
     }
   });
@@ -84,14 +85,16 @@ loadSources().then(sources => {
   function updateBounds() {
     data = sources[period];
     now = new Date(data.generated_at);
-    firstDate = data.available_from.slice(0, 10);
-    lastDate = data.generated_at.slice(0, 10);
-    for (const input of [startInput, endInput]) { input.min = firstDate; input.max = lastDate; }
+    firstDate = localDate(data.available_from);
+    lastDate = localDate(data.generated_at);
+    for (const { input, picker } of datePickers) {
+      picker.min = firstDate; picker.max = lastDate; picker.value = input.value;
+    }
   }
   function covers(key, from, to) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)
-      && from <= to && from >= sources[key].available_from.slice(0, 10)
-      && to <= sources[key].generated_at.slice(0, 10);
+    return isDate(from) && isDate(to)
+      && from <= to && from >= localDate(sources[key].available_from)
+      && to <= localDate(sources[key].generated_at);
   }
   function validRange() { return covers(period, startInput.value, endInput.value); }
   function showError(key = '') {
@@ -114,9 +117,10 @@ loadSources().then(sources => {
     updateBounds();
     const custom = url.searchParams.has('from') && url.searchParams.has('to');
     const current = bucket(now, period);
-    let from = custom ? bucket(new Date(url.searchParams.get('from') + 'T00:00:00Z'), period === 'hour' ? 'day' : period) : advance(current, period, 1 - windows[period]);
-    let until = custom ? advance(bucket(new Date(url.searchParams.get('to') + 'T00:00:00Z'), period === 'hour' ? 'day' : period), period === 'hour' ? 'day' : period) : advance(current, period);
-    // The first retained hour may begin part-way through a UTC day.
+    const selected = custom ? selectedRange(url.searchParams.get('from'), url.searchParams.get('to'), period) : null;
+    let from = selected ? selected.from : advance(current, period, 1 - windows[period]);
+    let until = selected ? selected.until : advance(current, period);
+    // Snapshots contain whole UTC buckets, including those crossing local date boundaries.
     if (custom && from < new Date(data.available_from)) from = new Date(data.available_from);
     if (until > advance(current, period)) until = advance(current, period);
     const indexed = new Map(data.points.map(point => [point.period_start, point]));
@@ -131,9 +135,10 @@ loadSources().then(sources => {
       const value = [prefill + decode, prefill, decode][i];
       dd.textContent = compact(value); dd.title = value.toLocaleString('en-US');
     });
-    document.querySelector('.range').textContent = custom ? `${iso(from).slice(0, period === 'hour' ? 16 : 10).replace('T', ' ')} — ${new Date(until - 1).toISOString().slice(0, period === 'hour' ? 16 : 10).replace('T', ' ')} · UTC` : tr('range.' + period);
+    document.querySelector('.range').textContent = custom ? `${localTimestamp(from, { offset: true })} — ${localTimestamp(until - 1, { offset: true })}` : tr('range.' + period);
+    document.querySelector('.timezone').textContent = t('status.timezone', { timezone });
     const coverage = document.querySelector('.coverage');
-    coverage.textContent = `${tr('coverage')} ${data.available_from.slice(0, 16).replace('T', ' ')} — ${data.generated_at.slice(0, 16).replace('T', ' ')} UTC · ${tr('coarseHint')}`;
+    coverage.textContent = `${tr('coverage')} ${localTimestamp(data.available_from, { offset: true })} — ${localTimestamp(data.generated_at, { offset: true })} · ${tr('coarseHint')}`;
     coverage.hidden = false;
     document.querySelectorAll('.periods a').forEach(anchor => {
       const key = new URL(anchor.href).searchParams.get('period');
@@ -146,12 +151,12 @@ loadSources().then(sources => {
     document.querySelector('.plot-container').innerHTML = prefill || decode ? chart(points, 960) + chart(points, 400)
       : `<div class="empty"><h3>${tr('empty')}</h3><p>${tr('emptyDesc')}</p></div>`;
     document.querySelector('.usage-table tbody').innerHTML = points.slice().reverse().map(p => {
-      const moment = period === 'hour' ? p.period_start.slice(0, 16).replace('T', ' ') : p.period_start.slice(0, 10);
+      const moment = localTimestamp(p.period_start, { offset: true });
       return `<tr><th scope="row">${moment}${p.partial ? '<span class="partial">' + tr('partial') + '</span>' : ''}</th><td>${p.prefill_tokens.toLocaleString('en-US')}</td><td>${p.decode_tokens.toLocaleString('en-US')}</td><td>${(p.prefill_tokens + p.decode_tokens).toLocaleString('en-US')}</td></tr>`;
     }).join('');
     document.querySelectorAll('.freshness time').forEach((time, i) => {
       const value = i ? data.next_update_at : data.generated_at;
-      time.dateTime = value; time.textContent = i ? value.slice(11, 16) + ' UTC' : value.replace('T', ' ').replace('Z', ' UTC');
+      time.dateTime = value; time.textContent = localTimestamp(value, { seconds: !i, offset: true });
     });
     document.querySelector('.all-time strong').textContent = compact(data.all_time.prefill_tokens + data.all_time.decode_tokens);
     url.searchParams.set('period', period);
