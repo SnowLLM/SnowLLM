@@ -5,7 +5,7 @@ import torch
 
 from .. import ops
 from ..trace import span
-from ..ops.sampling import penalties, sample_workspace_bytes
+from ..ops.sampling import penalties, probabilities, sample_workspace_bytes
 from .host_io import HostArena, MappedBuffer
 from .request import Request
 
@@ -35,6 +35,14 @@ class Sampler:
             dtype=torch.uint8,device="cuda")
         self.output.reserve(rows)
 
+    def _parameters(self, rows, vocab):
+        ks = [r.params.kernel_top_k() for r in rows]
+        top_k = self.inputs.tensor("top_k", ks, torch.int32)
+        top_p = self.inputs.tensor("top_p", [r.params.top_p for r in rows], torch.float32)
+        temp = self.inputs.tensor("temperature", [r.params.kernel_temperature() for r in rows],
+                                  torch.float32)
+        return top_k, top_p, temp, min(max(ks), vocab)
+
     def sample(self, logits, rows, *, out=None):
         with span("sample"):
             self.inputs.begin()
@@ -43,16 +51,22 @@ class Sampler:
                     self._penalize(logits,rows,prepared=True)
                 if all(r.params.temperature<=0 for r in rows):
                     return ops.argmax(logits,out=out)
-                ks = [r.params.kernel_top_k() for r in rows]
-                top_p = self.inputs.tensor("top_p",[r.params.top_p for r in rows],torch.float32)
-                temp = self.inputs.tensor("temperature",[r.params.kernel_temperature() for r in rows],torch.float32)
-                k = self.inputs.tensor("top_k",ks,torch.int32)
+                k, top_p, temp, width = self._parameters(rows, logits.shape[1])
                 uniform = self._uniform(len(rows))
-                return ops.sample(logits,k,top_p,temp,max(ks),uniform=uniform,out=out,
+                return ops.sample(logits,k,top_p,temp,width,uniform=uniform,out=out,
                                   workspace=getattr(self,"workspace",None))
             finally:
                 self.inputs.used()
 
+    def probabilities(self, logits, rows, out, indices):
+        with self.inputs.reading(reuse=True):
+            if any(r.params.penalized() for r in rows):
+                self._penalize(logits, rows, prepared=True)
+            top_k, top_p, temp, width = self._parameters(rows, logits.shape[1])
+            n = len(rows) * width
+            values, ids = out[:n].view(-1, width), indices[:n].view(-1, width)
+            probabilities(logits, top_k, top_p, temp, width, values, ids, self.workspace)
+        return values, ids
 
     def _read_tokens(self, logits, rows=None):
         n = logits.shape[0]

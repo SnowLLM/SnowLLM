@@ -107,7 +107,14 @@ class QwenRunner(GraphRunner):
         )
 
     def _act_statics(self, rows: int) -> int:
-        return self.resources.outputs.bytes_for(max(rows, self.decode_rows))
+        return (self.resources.outputs.bytes_for(max(rows, self.decode_rows))
+                + self._draft_context_bytes(rows))
+
+    def _draft_context_bytes(self, rows: int) -> int:
+        if self.draft_geo is None:
+            return 0
+        from ..models.qwen3_5.dflash_draft import context_workspace_bytes
+        return context_workspace_bytes(self.draft_geo, max(rows, self.decode_rows))
 
     def fixed_bytes(self, chunk: int = 0) -> int:
         return (self.resources.states.bytes_for() + self.resources.statics.bytes_for()
@@ -132,13 +139,14 @@ class QwenRunner(GraphRunner):
             state_indices=[0]*(B if prefill or self.roll_forward else rows),
             has_state=[0]*B, num_accepted=None if prefill else [1]*B,
             last_row=[0] if prefill else None, total_q_blocks=total, q_block_map=qmap,
+            chunk_decode=not prefill and bool(self.num_spec),
             roll_forward=self.roll_forward and not prefill, is_prefill=prefill, need_logits=False)
 
     @contextlib.contextmanager
     def _activation_scope(self, rows):
         with self._probe_pools():
             yield ActivationReservation([ProbeGroup(self._activation_cases(rows, self.decode_rows))],
-                                        zero=True)
+                                        extra_bytes=self._draft_context_bytes(rows), zero=True)
 
     def _activation_cases(self, chunk, decode):
         modes = [(PLAN_MAIN, chunk, True, False), (PLAN_DECODE, decode, False, False)]

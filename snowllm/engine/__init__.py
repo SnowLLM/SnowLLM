@@ -142,6 +142,13 @@ def _check_dflash_target(model: "TargetModel", draft: DraftGeometry) -> None:
                                "layers; this model is not one.")
         dspark_gguf.taps_in(draft.tap_layers, geo.num_layers)
         return
+    if draft.dspark and draft.vocab_size != model.config["vocab_size"]:
+        raise SnowLLMError(f"DSpark vocabulary {draft.vocab_size} differs from the target's "
+                           f"{model.config['vocab_size']}")
+    if draft.hidden != geo.hidden:
+        raise SnowLLMError(
+            f"this DFlash draft reads target hidden states of width {draft.hidden}, "
+            f"but the loaded model has width {geo.hidden}.")
     if not draft.num_target_layers:
         bad = [i for i in draft.tap_layers if not 0 <= i < geo.num_layers]
         if bad:
@@ -166,6 +173,10 @@ def _dspark(geo: object) -> bool:
 def draft_block(geo: DraftGeometry, block: int) -> int:
     if _dspark(geo):
         return max(block or 0, geo.block_size)
+    if geo is not None and geo.dspark:
+        if block not in (0, 1, 4, 8, 15) or block > geo.block_size:
+            raise SnowLLMError("DSpark block must be 1, 4, 8 or 15 and fit the checkpoint")
+        return block or geo.block_size
     return block or 8
 
 
@@ -178,6 +189,14 @@ def draft_device_weight_bytes(path: str | None, geo: DraftGeometry = None) -> in
         return 0
     geo = _draft_geometry(path) if geo is None else geo
     return _dspark_weight_bytes(path) if _dspark(geo) else _dflash_weight_bytes(path, geo)
+
+
+def draft_load_peak_bytes(path: str | None, geo: DraftGeometry = None) -> int:
+    if not path:
+        return 0
+    geo = _draft_geometry(path) if geo is None else geo
+    return (_dspark_weight_bytes(path) if _dspark(geo)
+            else _dflash_weight_plan(path, geo)[1])
 
 
 def _dspark_weight_bytes(path: str) -> int:
@@ -199,9 +218,11 @@ def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
 
     from ..checkpoint.gguf import dflash as dflash_gguf
     from ..checkpoint.reader import Shard
+    from ..checkpoint.gguf.source import find_dspark_gguf
 
     p = pathlib.Path(path).expanduser()
-    gguf = dflash_gguf.find_gguf(p) if p.is_dir() else (p if p.suffix == ".gguf" else None)
+    gguf = ((find_dspark_gguf(p) or dflash_gguf.find_gguf(p)) if p.is_dir()
+            else (p if p.suffix == ".gguf" else None))
     if gguf is not None:
         return dflash_gguf.GGUFDraftSource(gguf)
     f = p / "model.safetensors" if p.is_dir() else p
@@ -219,17 +240,21 @@ def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
 
 
 def _dflash_weight_bytes(path: str, geo: DFlashGeometry) -> int:
+    return _dflash_weight_plan(path, geo)[0]
+
+
+def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int]:
     from .. import ops
     from ..models.qwen3_5 import dflash_draft
 
     src = _draft_source(path)
     if src is None:
-        return 0
+        return 0, 0
     none = torch.empty(0, dtype=torch.bfloat16, device="meta")
     with ops.dry_load() as d:
         draft = dflash_draft.load(src, geo, [(none, none)] * geo.num_layers,
                                   ops.Arena(), ops.KV_BLOCK_SIZES[0])
-        n = d.device
+        n = d.device, d.peak_device
     del draft
     src.close()
     return n
@@ -237,7 +262,7 @@ def _dflash_weight_bytes(path: str, geo: DFlashGeometry) -> int:
 
 def draft_num_spec(geo: DraftGeometry, block: int) -> int:
     b = draft_block(geo, block)
-    return b if _dspark(geo) else b - 1
+    return b if _dspark(geo) or geo.dspark else b - 1
 
 
 def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
@@ -245,7 +270,7 @@ def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
     if not path:
         return 0, (), 0, None
     geo = _draft_geometry(path)
-    return (draft_device_weight_bytes(path, geo), geo.tap_layers,
+    return (draft_load_peak_bytes(path, geo), geo.tap_layers,
             draft_num_spec(geo, block), geo)
 
 
@@ -339,9 +364,11 @@ class Engine:
                 self.dflash = self._build_dspark(dflash_path, dflash_block, max_model_len,
                                                  dflash_p_min)
             elif dflash_path:
-                self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len)
+                self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len,
+                                                dflash_p_min)
             if self.dflash is not None:
-                self.runner.reserve_bytes = 0
+                self.runner.reserve_bytes = (self.dflash.workspace_bytes()
+                                             if isinstance(self.dflash, DFlashDecoder) else 0)
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
                             num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks)
@@ -415,7 +442,7 @@ class Engine:
         return draft_num_spec(self.dflash_geo, self.dflash_block)
 
     def _draft_weight_bytes(self, path: str | None) -> int:
-        return draft_device_weight_bytes(path, self.dflash_geo)
+        return draft_load_peak_bytes(path, self.dflash_geo)
 
     def _dflash_pool_bytes(self, blocks: int) -> int:
         return draft_pool_bytes(self.dflash_geo, blocks, self.runner.block_size)
@@ -446,7 +473,8 @@ class Engine:
                                                                  self.runner.block_size),
                              block=block, p_min=p_min)
 
-    def _build_dflash(self, path: str, block: int, max_model_len: int) -> DFlashDecoder:
+    def _build_dflash(self, path: str, block: int, max_model_len: int,
+                      p_min: float = 0.0) -> DFlashDecoder:
         from ..models.qwen3_5 import dflash_draft
         from .block_manager import BlockAllocator
 
@@ -473,7 +501,7 @@ class Engine:
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              block=block,
-                             max_blocks_per_seq=per_seq)
+                             max_blocks_per_seq=per_seq, p_min=p_min)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,
             rope_factor: float = 1.0, mrope: torch.Tensor | None = None, pos_delta: int = 0,
