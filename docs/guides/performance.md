@@ -48,6 +48,8 @@ snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
 
 `--num-spec` has no effect when using DFlash or DSpark. DSpark clamps `--dflash-block` to at least the drafter's configured block size.
 
+Flash-Next offers `qwen3.8-flash-next-q3-k-xl-dflash2` and `qwen3.8-flash-next-iq4-xs-dflash2` recipes. With these quantized models, DFlash 2 may produce different output from plain decoding even at temperature 0.
+
 ## Power limits
 
 Power limits and thermal throttling affect throughput. Compare runs with the same power settings, model, context and drafter; check temperatures when results differ.

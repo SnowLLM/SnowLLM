@@ -36,6 +36,11 @@ class Qwen4ExpRunner(QwenRunner):
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
         super()._configure()
+        self.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
+        if self.tap_layers:
+            # PLE history and QSA carry select the snapshot after the accepted token.
+            self.roll_forward = False
+            self.slots_per_request = self.num_spec + 1
 
     trunk_streams: torch.Tensor | None = None
     mtp_streams: torch.Tensor | None = None
@@ -115,6 +120,7 @@ class Qwen4ExpRunner(QwenRunner):
             max_prefill_seqs=self.max_num_seqs,
             decode_plan=self.decode_plan, decode_ws=self.decode_ws, num_slots=self.num_slots,
             block_size=self.block_size, kv_int8=self.kv_int8, mscale=self.d_mscale,
+            tap_at=self.tap_at, taps=self.taps[:M] if self.taps is not None else None,
             ple_emb=self.ple_emb[:M], ple_has_state=self._has_state(b),
             stream_buf=self.mtp_streams if draft else self.trunk_streams,
             inv_freq=self.model.model.inv_freq,
