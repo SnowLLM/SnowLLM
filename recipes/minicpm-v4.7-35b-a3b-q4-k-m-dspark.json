@@ -11,7 +11,7 @@
     "mmproj-model-f16.gguf"
   ],
   "priority": 56,
-  "requires": "0.3.10",
+  "requires": "0.3.11",
   "summary": "MiniCPM-V 4.7 with vision support and a Q8 DSpark drafter.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",
   "sources": [
