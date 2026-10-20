@@ -48,6 +48,8 @@ snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
 
 使用 DFlash 或 DSpark 时，`--num-spec` 不生效。DSpark 会将 `--dflash-block` 限制为不小于草稿模型配置的分块大小。
 
+Flash-Next 提供 `qwen3.8-flash-next-q3-k-xl-dflash2` 和 `qwen3.8-flash-next-iq4-xs-dflash2` 方案。这两个量化模型启用 DFlash 2 后，即使 temperature 为 0，输出也可能与普通解码不同。
+
 ## 功耗限制 {#power-limits}
 
 功耗限制和温度降频会影响吞吐。比较时保持功耗设置、模型、上下文和草稿模型一致；结果有差异时也应检查温度。

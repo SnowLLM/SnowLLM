@@ -39,8 +39,13 @@ class Qwen4ExpModel(nn.Module):
             ops.dsv4_hc_broadcast(hidden, streams)
             ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True)
 
-        for layer in self.layers:
+        H = self.geo.hidden
+        for i, layer in enumerate(self.layers):
             layer(ctx, streams)
+            if ctx.tap_at is not None and i in ctx.tap_at:
+                j = ctx.tap_at[i]
+                # The drafter reads completed layer outputs averaged over the residual streams.
+                torch.mean(streams, dim=1, out=ctx.taps[:, j * H:(j + 1) * H])
 
         if b.last_row is not None:
             ctx.take_xn()
