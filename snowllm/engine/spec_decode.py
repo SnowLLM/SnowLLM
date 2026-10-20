@@ -13,6 +13,7 @@ from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
 from .forward_context import Batch, DecodeShape, i32, i64, positions
 from .request import Request
 from .host_io import HostArena
+from .dflash_sampling import DFlashSampling
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
@@ -251,9 +252,12 @@ class SpecDecoder:
 
 
 class DFlashDecoder:
+    _ngram_context = SpecDecoder._ngram_context
+
     def __init__(self, runner: "QwenRunner", sampler: "Sampler", slots: StateSlots,
                  draft: "DFlashDraft", draft_blocks: BlockAllocator, tables: TableMirror,
-                 stage: Staging, *, block: int, max_blocks_per_seq: int) -> None:
+                 stage: Staging, *, block: int, max_blocks_per_seq: int,
+                 p_min: float = 0.0) -> None:
         self.runner = runner
         self.blocks = draft_blocks
         self.sampler = sampler
@@ -264,29 +268,52 @@ class DFlashDecoder:
         self.max_blocks_per_seq = max_blocks_per_seq
         H = runner.model.geo.hidden
         self.geo = draft.geo
+        self.dspark = self.geo.dspark
+        self.p_min = p_min if self.dspark else 0.0
+        self.width = block + int(self.dspark)
         self.runner.tap_at = {layer: j for j, layer in enumerate(self.geo.tap_layers)}
         if self.runner.taps.shape[1] != self.geo.num_taps * H:
             raise SnowLLMError(f"the runner was built for {self.runner.num_taps} taps, this draft "
                                f"reads {self.geo.num_taps}")
 
         S = runner.max_num_seqs
-        M = S * block
+        M = S * self.width
         self.d_i64 = torch.zeros(3 * M, dtype=torch.int64, device="cuda")
         self.d_i32 = torch.zeros(4 * M, dtype=torch.int32, device="cuda")
         self.d_len = torch.zeros(S, dtype=torch.int32, device="cuda")
         self.draft_tables = TableMirror(S, max_blocks_per_seq)
         self.d_bt = self.draft_tables.dev
-        self.d_draft = torch.zeros(S, max(block - 1, 1), dtype=torch.int64, device="cuda")
+        self.d_draft = torch.zeros(S, block if self.dspark else max(block - 1, 1),
+                                   dtype=torch.int64, device="cuda")
+        self.d_conf = (torch.empty(S, block, dtype=torch.float32, device="cuda")
+                       if self.dspark else None)
         self.messages=HostArena()
         self.noise = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
         self.keep = i64([i * block + t for i in range(S) for t in range(1, block)])
-        self.draft.reserve(M)
+        self.draft_rows = i64([i * self.width + t for i in range(S) for t in range(block)])
+        self.draft.reserve(M, S * (block - 1))
+        self.sampling = (DFlashSampling(sampler, self.geo, S, block, runner.geo.vocab_size)
+                         if self.geo.dflash2 and block > 1 else None)
         self.graphs: dict[int, torch.cuda.CUDAGraph] = {}
+
+    def workspace_bytes(self) -> int:
+        noise = self.noise
+        try:
+            peak = 0
+            for batch in range(1, self.runner.max_num_seqs + 1):
+                with ops.dry_load() as dry:
+                    self.noise = torch.empty_like(noise, device="meta")
+                    held = dry.device
+                    self._blocks_dev(batch)
+                    peak = max(peak, dry.peak_device - held)
+            return peak
+        finally:
+            self.noise = noise
 
     chunk_decode = True
 
     def verify_rows(self, n: int) -> int:
-        return self.block if n * self.block <= SPEC_MAX_STEP_ROWS else 0
+        return self.width if n * self.width <= SPEC_MAX_STEP_ROWS else 0
 
     step_rows = SpecDecoder.step_rows
     decode_shapes = SpecDecoder.decode_shapes
@@ -323,11 +350,15 @@ class DFlashDecoder:
             cu_seqlens=cu, total_q_blocks=ops.prefill_q_plan([T] * B)[0],
             chunk_decode=True,
             roll_forward=roll,
+            prev_ids=self._ngram_context(batch, T),
             host_ids=ids,
         )
-        tv = self.sampler.sample(self.runner.forward(b),
-                                 [r for r in batch for _ in range(T)]).view(B, T)
-        nacc = ops.spec_accept(tv,drafted.view(B,T-1))
+        logits = self.runner.forward(b)
+        if self.sampling is not None:
+            tv, nacc = self.sampling.verify(logits, batch, drafted.view(B, T - 1))
+        else:
+            tv = self.sampler.sample(logits, [r for r in batch for _ in range(T)]).view(B, T)
+            nacc = ops.spec_accept(tv, drafted.view(B, T - 1))
 
         acc, got = nacc.tolist(), tv.tolist()
         keep = []
@@ -346,6 +377,8 @@ class DFlashDecoder:
     _note_accept = SpecDecoder._note_accept
 
     def release(self, r: Request) -> None:
+        if self.sampling is not None:
+            self.sampling.release(r)
         self.blocks.release(r.draft_blocks)
         r.draft_blocks = []
 
@@ -370,24 +403,30 @@ class DFlashDecoder:
                 +[accepted[i] if accepted is not None else 0 for i in range(B)]
                 +[r.last for r in batch]+[r.pos_delta for r in batch])
         self._stage_values(B,values)
+        if self.sampling is not None:
+            self.sampling.stage(batch)
 
     def _stage_values(self,B,values):
         with self.messages.reading(reuse=True):
             requests=self.messages.tensor('draft_requests',values,torch.int64).view(4,B)
-            m=B*self.block
+            m=B*self.width
             ops.draft_metadata(requests,self.d_i64[:3*m],self.d_i32[:4*m],self.d_len[:B],
-                               self.block,self.geo.mask_token_id)
+                               self.width,self.geo.mask_token_id)
 
     def _ctx_dev(self, B: int) -> None:
-        M = B * self.block
-        feat = self.draft.context_feature(self.runner.taps[:M])
-        self.draft.write_context(
-            feat, self.d_i64[:M],
-            ops.resolve_slots(self.d_bt[:B], self.d_i32[:M], self.d_i32[M:2 * M],
-                              self.runner.block_size))
+        M = B * self.width
+        with self.runner.arena.frame():
+            feat = self.draft.context_feature(self.runner.taps[:M])
+            self.draft.write_context(
+                feat, self.d_i64[:M],
+                ops.resolve_slots(self.d_bt[:B], self.d_i32[:M], self.d_i32[M:2 * M],
+                                  self.runner.block_size))
 
     def _blocks_dev(self, B: int) -> None:
         blk = self.block
+        if self.dspark:
+            self._dspark_blocks(B)
+            return
         M, n = B * blk, B * (blk - 1)
         self.runner.model.model.embed_tokens(self.d_i64[M:2 * M], self.noise[:M])
         hid = self.draft.forward(
@@ -400,9 +439,51 @@ class DFlashDecoder:
         if self.geo.dflash2:
             anchor=torch.empty(B,dtype=torch.int64,device="cuda")
             ops.copy_rows(anchor,self.d_i64[M:2*M].view(B,blk)[:,0])
-            self.draft.propose(kept, logits, anchor, self.d_draft[:B, :blk - 1])
+            path = self.d_draft[:B, :blk - 1]
+            if self.sampling is None:
+                self.draft.propose(kept, logits, anchor, path)
+            else:
+                self.sampling.propose(self.draft, kept, logits, anchor, path)
         else:
             ops.copy_rows(self.d_draft[:B,:blk-1],ops.argmax(logits).view(B,blk-1))
+
+    def _dspark_blocks(self, B: int) -> None:
+        blk, width = self.block, self.width
+        M, W = B * blk, B * width
+        rows = self.draft_rows[:M]
+        def gather(values):
+            return ops.gather_rows(values.view(W, 1), rows).view(M)
+        ids = gather(self.d_i64[W:2*W])
+        pos = gather(self.d_i64[2*W:3*W])
+        seq = gather(self.d_i32[2*W:3*W])
+        cache_pos = gather(self.d_i32[3*W:4*W])
+        lengths = torch.empty(B, dtype=torch.int32, device="cuda")
+        ops.copy_rows(lengths, self.d_len[:B])
+        lengths.sub_(1)
+        self.runner.model.model.embed_tokens(ids, self.noise[:M])
+        hidden = self.draft.forward(self.noise[:M], pos,
+            ops.resolve_slots(self.d_bt[:B], seq, cache_pos, self.runner.block_size),
+            self.d_bt[:B], lengths)
+        logits = self.runner.model.lm_head(hidden, self.runner.draft_logits[:M])
+        anchor = torch.empty(B, dtype=torch.int64, device="cuda")
+        ops.copy_rows(anchor, self.d_i64[W:2*W].view(B, width)[:, 0])
+        self.draft.propose(hidden, logits, anchor, self.d_draft[:B, :blk], self.d_conf[:B])
+
+    def _proposals(self, batch: list[Request]) -> None:
+        count = self.block if self.dspark else self.block - 1
+        drafts = self.d_draft[:len(batch), :count].tolist()
+        confidence = self.d_conf[:len(batch)].tolist() if self.p_min > 0 else None
+        for i, (r, row) in enumerate(zip(batch, drafts)):
+            if confidence is not None:
+                product = 1.0
+                for j, value in enumerate(confidence[i]):
+                    product *= value
+                    if product < self.p_min:
+                        row = row[:j]
+                        break
+            r.drafts = row
+        if self.sampling is not None:
+            self.sampling.remember(batch, drafts)
 
     def propose(self, batch: list[Request], accepted: list[int]) -> None:
         B = len(batch)
@@ -416,8 +497,7 @@ class DFlashDecoder:
             self._ctx_dev(B)
             self._blocks_dev(B)
             self.runner.n_draft_eager += 1
-        for r, dr in zip(batch, self.d_draft[:B, :self.block - 1].tolist()):
-            r.drafts = dr
+        self._proposals(batch)
 
     def _write_ctx(self, n: int, seqs: list[int], cache_pos: list[int],
                    rope_pos: list[int], bt: torch.Tensor) -> None:
@@ -435,19 +515,22 @@ class DFlashDecoder:
         if propose:
             self._stage_rows([r], None)
             self._blocks_dev(1)
-            r.drafts = self.d_draft[0, :self.block - 1].tolist()
+            self._proposals([r])
 
     def after_decode(self, batch: list[Request], pos: list[int]) -> None:
         bt = self._draft_table(batch)
         B = len(batch)
         self._write_ctx(B, list(range(B)), list(pos),
                         [p + r.pos_delta for p, r in zip(pos, batch)], bt)
+        if self.sampling is not None:
+            for r in batch:
+                self.sampling.release(r)
 
     def capture(self, runner: "GraphRunner") -> list[int]:
         blk, S = self.block, self.runner.max_num_seqs
         got = []
         for B in range(1, S + 1):
-            if self.verify_rows(B) != blk or not runner._graph_room():
+            if self.verify_rows(B) != self.width or not runner._graph_room():
                 continue
             M = B * blk
             self.d_bt[:B].zero_()

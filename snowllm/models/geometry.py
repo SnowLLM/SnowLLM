@@ -318,12 +318,24 @@ class DFlashGeometry:
     conv_group: int = 0
     selector_rank: int = 0
     selector_top_k: int = 0
+    markov_rank: int = 0
+    vocab_size: int = 0
+    is_causal: bool | None = None
 
     @classmethod
     def from_config(cls, cfg: dict) -> "DFlashGeometry":
         d = cfg["dflash_config"]
         types = cfg.get("layer_types") or []
+        if types and len(types) != cfg["num_hidden_layers"]:
+            raise ValueError("DFlash layer_types must describe every draft layer")
+        dspark = "Qwen3DSparkModel" in cfg.get("architectures", [])
+        if dspark and (d.get("markov_head_type") != "vanilla"
+                       or int(d.get("markov_rank", 0)) <= 0):
+            raise ValueError("DSpark currently requires a vanilla Markov head")
         return cls(
+            is_causal=cfg.get("is_causal"),
+            markov_rank=int(d.get("markov_rank", 0)) if dspark else 0,
+            vocab_size=int(cfg.get("draft_vocab_size", cfg.get("vocab_size", 0))),
             conv_taps=int(d.get("conv_kernel_size", 0)),
             conv_group=int(d.get("conv_group_size", 0)),
             selector_rank=int(d.get("selector_rank", 0)),
@@ -334,12 +346,12 @@ class DFlashGeometry:
             num_kv_heads=cfg["num_key_value_heads"],
             head_size=cfg.get("head_dim") or cfg["hidden_size"] // cfg["num_attention_heads"],
             intermediate=cfg["intermediate_size"],
-            sliding_window=cfg["sliding_window"],
+            sliding_window=cfg["sliding_window"] or 0,
             num_sliding_layers=sum(t == "sliding_attention" for t in types),
             tap_layers=tuple(d["target_layer_ids"]),
             mask_token_id=d["mask_token_id"],
             num_target_layers=cfg["num_target_layers"],
-            block_size=d["block_size"],
+            block_size=cfg["block_size"] if dspark else d["block_size"],
             rope_theta=float(cfg["rope_parameters"]["rope_theta"]),
             eps=float(cfg["rms_norm_eps"]),
         )
@@ -375,6 +387,13 @@ class DFlashGeometry:
     @property
     def dflash2(self) -> bool:
         return self.conv_taps > 0
+
+    def causal(self, layer: int) -> bool:
+        return self.is_causal if self.is_causal is not None else layer < self.num_sliding_layers
+
+    @property
+    def dspark(self) -> bool:
+        return self.markov_rank > 0
 
     @property
     def conv_groups(self) -> int:

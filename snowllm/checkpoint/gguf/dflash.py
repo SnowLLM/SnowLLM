@@ -20,6 +20,10 @@ TOP = {
     "candidate_selector.hidden_projection.weight": "selector_hidden.weight",
     "candidate_selector.predecessor_codebook": "selector_predecessor.weight",
     "candidate_selector.successor_codebook": "selector_successor.weight",
+    "markov_head.markov_w1.weight": "markov_w1.weight",
+    "markov_head.markov_w2.weight": "markov_w2.weight",
+    "confidence_head.proj.weight": "conf_proj.weight",
+    "confidence_head.proj.bias": "conf_proj.bias",
 }
 
 LAYER = {
@@ -62,18 +66,24 @@ def find_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
 
 
 def is_dflash(g: GGUF) -> bool:
-    """DSpark's GGUF also says architecture `dflash`; its weights are what tell them apart."""
-    return g.arch == ARCH and "fc.weight" in g and "markov_w1.weight" not in g
+    return g.arch == ARCH and "fc.weight" in g and "output_hc_base.weight" not in g
 
 
 def geometry(g: GGUF) -> DFlashGeometry:
+    if "markov_w1.weight" in g and not g.get("{arch}.sample_from_anchor"):
+        raise SnowLLMError("Qwen DSpark currently requires an anchor-first checkpoint")
     n_head = int(g.need("{arch}.attention.head_count"))
     head = int(g.get("{arch}.attention.key_length")
                or int(g.need("{arch}.embedding_length")) // n_head)
     layers = int(g.need("{arch}.block_count"))
     window = int(g.get("{arch}.attention.sliding_window") or 0)
     pattern = g.get("{arch}.attention.sliding_window_pattern") or []
+    if pattern and len(pattern) != layers:
+        raise SnowLLMError("DFlash sliding-window pattern must describe every draft layer")
     return DFlashGeometry(
+        is_causal=g.get("{arch}.attention.causal"),
+        markov_rank=int(g["markov_w1.weight"].shape[1]) if "markov_w1.weight" in g else 0,
+        vocab_size=int(g["markov_w1.weight"].shape[0]) if "markov_w1.weight" in g else 0,
         hidden=int(g.need("{arch}.embedding_length")),
         num_layers=layers,
         num_heads=n_head,
@@ -81,7 +91,7 @@ def geometry(g: GGUF) -> DFlashGeometry:
         head_size=head,
         intermediate=int(g.need("{arch}.feed_forward_length")),
         sliding_window=window,
-        num_sliding_layers=sum(bool(b) for b in pattern) if len(pattern) else layers,
+        num_sliding_layers=(sum(bool(b) for b in pattern) if len(pattern) else layers) if window else 0,
         tap_layers=taps_in(g.need("{arch}.target_layers")),
         mask_token_id=int(g.need("tokenizer.ggml.mask_token_id")),
         num_target_layers=0,

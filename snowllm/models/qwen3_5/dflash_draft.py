@@ -17,6 +17,31 @@ if TYPE_CHECKING:
 d = ops.dflash
 
 
+def _feature_buffers(arena, geo, rows):
+    out = arena.new(rows, geo.hidden)
+    with arena.frame():
+        scratch = arena.flat(d.projections_workspace_bytes(rows), torch.uint8)
+    return out, scratch
+
+
+def _context_buffers(arena, geo, rows):
+    kv = arena.new(rows, geo.ctx_kv_proj_n)
+    with arena.frame():
+        scratch = arena.flat(d.projections_workspace_bytes(rows), torch.uint8)
+    cos = arena.new(rows, geo.head_size // 2, dtype=torch.float32)
+    sin = arena.new(rows, geo.head_size // 2, dtype=torch.float32)
+    return kv, scratch, cos, sin
+
+
+def context_workspace_bytes(geo, rows):
+    with ops.dry_load():
+        arena = ops.Arena()
+        _feature_buffers(arena, geo, rows)
+        with arena.frame():
+            _context_buffers(arena, geo, rows)
+        return arena.high
+
+
 class DFlashDraft:
     def __init__(self, weights: dict, pools: list[tuple[torch.Tensor, torch.Tensor]],
                  geo: DFlashGeometry, arena: ops.Arena, block_size: int) -> None:
@@ -44,10 +69,8 @@ class DFlashDraft:
     def context_feature(self, taps: torch.Tensor) -> torch.Tensor:
         m = taps.shape[0]
         a = self.arena
-        out = a.new(m, d.proj_shape(d.Proj.FC)[0])
-        with a.frame():
-            d.proj(d.Proj.FC, taps, self.w["fc"], a.flat(self._scratch_bytes(m), torch.uint8),
-                   out)
+        out, scratch = _feature_buffers(a, self.geo, m)
+        d.proj(d.Proj.FC, taps, self.w["fc"], scratch, out)
         ops.rmsnorm(out, self.w["hidden_norm"], out, self.eps)
         return out
 
@@ -55,19 +78,18 @@ class DFlashDraft:
                       slots: torch.Tensor) -> None:
         m, a = ctx_feat.shape[0], self.arena
         with a.frame():
-            kv = a.new(m, d.proj_shape(d.Proj.CTX_KV)[0])
-            with a.frame():
-                d.proj(d.Proj.CTX_KV, ctx_feat, self.w["ctx_kv"],
-                       a.flat(self._scratch_bytes(m), torch.uint8), kv)
-            half = self.geo.head_size // 2
-            cos, sin = a.new(m, half, dtype=torch.float32), a.new(m, half, dtype=torch.float32)
+            kv, scratch, cos, sin = _context_buffers(a, self.geo, m)
+            d.proj(d.Proj.CTX_KV, ctx_feat, self.w["ctx_kv"], scratch, kv)
             d.rope_cos_sin(positions, self.inv_freq, cos, sin)
             for layer, (kc, vc) in enumerate(self.pools):
                 d.norm_rope_store(kv,None,self.w["layers"][layer]["k_norm"],cos,sin,
                                   None,kc,vc,slots,self.eps,self.block_size,layer=layer)
 
-    def reserve(self, m: int) -> None:
+    def reserve(self, m: int, selector_rows: int = 0) -> None:
         self.scratch(m)
+        if self.geo.dflash2 and selector_rows:
+            self._sel_ws = torch.empty(d.select_scratch_bytes(selector_rows), dtype=torch.uint8,
+                                       device="cuda")
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
                 block_tables: torch.Tensor, seq_lens: torch.Tensor) -> torch.Tensor:
@@ -83,11 +105,13 @@ class DFlashDraft:
         num_slots = d.paged_attn_num_slots(B)
         scale = g.head_size ** -0.5
 
-        views = {
-            False: (block_tables, seq_lens),
-            True: ops.paged_window_view(block_tables,seq_lens,0,
-                                        g.sliding_window,self.block_size,end_offset=-1),
-        }
+        # Keep every query's window, including the oldest partial page.
+        views = {False: (block_tables, seq_lens)} if g.num_sliding_layers < g.num_layers else {}
+        if g.num_sliding_layers:
+            views[True] = (ops.paged_window_view(block_tables, seq_lens, 0,
+                           g.sliding_window + blk + self.block_size - 2,
+                           self.block_size, end_offset=-1)
+                           if g.sliding_window else (block_tables, seq_lens))
         plans = {w: d.paged_attn_plan(v[1], num_slots, self.block_size)
                  for w, v in views.items()}
         ws = torch.empty(d.paged_attn_workspace_size(num_slots, blk), dtype=torch.uint8,
@@ -134,7 +158,8 @@ class DFlashDraft:
             windowed = layer < g.num_sliding_layers
             v_bt, v_len = views[windowed]
             d.paged_attn(q.view(M, g.num_heads, g.head_size), v_len, kc, vc, attn,
-                         v_bt, plans[windowed], num_slots, ws, scale, blk, self.block_size)
+                         v_bt, plans[windowed], num_slots, ws, scale, blk, self.block_size,
+                         window=g.sliding_window if windowed else 0, causal=g.causal(layer))
             d.proj(d.Proj.O, attn, w["o"], sc, o)
             sub = site1(o, w.get("attn_conv"))
             ops.rmsnorm_residual(sub, residual, w["post_norm"], x, self.eps)
@@ -148,7 +173,8 @@ class DFlashDraft:
         return out
 
     def propose(self, hidden: torch.Tensor, logits: torch.Tensor, anchor: torch.Tensor,
-                path: torch.Tensor) -> None:
+                path: torch.Tensor, *, temperature=None, uniform=None, slots=None,
+                candidate_ids=None, probabilities=None) -> None:
         n = hidden.shape[0]
         hp = torch.empty(n, d.proj_shape(d.Proj.SELECTOR_HIDDEN)[0], dtype=torch.bfloat16, device="cuda")
         d.proj(d.Proj.SELECTOR_HIDDEN, hidden, self.w["sel_hidden"], self.scratch(n), hp)
@@ -156,7 +182,8 @@ class DFlashDraft:
         if self._sel_ws is None or self._sel_ws.numel() < need:
             self._sel_ws = torch.empty(need, dtype=torch.uint8, device="cuda")
         d.select_path(hp, logits, self.w["sel_pred"], self.w["sel_succ"], anchor, path,
-                      self._sel_ws)
+                      self._sel_ws, temperature=temperature, uniform=uniform, slots=slots,
+                      candidate_ids=candidate_ids, probabilities=probabilities)
 
 
 def _packed(src: "DraftSource", which: int, names: Sequence[str]) -> object | None:
@@ -220,4 +247,8 @@ def load(src: "DraftSource", geo: DFlashGeometry,
                 "proj": _proj(src, d.Proj.CONV, [p + key + ".kernel_projection.weight"]),
                 "base": cu(p + key + ".base_kernel").contiguous(),
             }
+    if geo.dspark:
+        from .dspark_draft import DSparkDraft, load_heads
+        load_heads(src, geo, w)
+        return DSparkDraft(w, pools, geo, arena, block_size)
     return DFlashDraft(w, pools, geo, arena, block_size)
