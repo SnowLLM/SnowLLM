@@ -12,7 +12,7 @@
   ],
   "priority": 56,
   "requires": "0.3.10",
-  "summary": "MiniCPM-V 4.7 with its official Q8 DSpark drafter for text and image generation. Uses eight draft tokens per step.",
+  "summary": "MiniCPM-V 4.7 with vision support and a Q8 DSpark drafter.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",
   "sources": [
     {
@@ -36,6 +36,6 @@
     "dflash": "@model/dspark",
     "dflash_block": 8
   },
-  "note": "Validated on gfx1151 with Q4_K_M target weights: text and images, batched HIP graphs, forced rejection, confidence truncation, and allocation plans. Block sizes 1, 4, 8 and 15 are supported; 0 uses the checkpoint default of 15. Block 8 is faster on the measured 1K/8K text prompts; block 4 is faster on the measured coding prompt.",
+  "note": "Shares target weights and the vision projector with the recipe without DSpark.",
   "spec": "DSpark"
 }

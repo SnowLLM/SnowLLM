@@ -22,6 +22,6 @@
     "kv_cache_dtype": "bf16",
     "num_spec": 0
   },
-  "summary": "GLM-5.3-Flash UD-IQ2_XXS with hybrid linear/sparse attention and plain decoding.",
-  "note": "Text only; the GLM vision tower is not implemented. Downloads all four target shards; the NextN head is embedded in the same files. Uses automatic host expert placement, BF16 latent caches, one request slot and the tested 227328-token context capacity. Requires the GLM5-Next kernels included with the matching SnowLLM build. Speculative decoding is disabled."
+  "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
+  "note": "Vision is not supported. Defaults to one concurrent request and a 227328-token context limit."
 }

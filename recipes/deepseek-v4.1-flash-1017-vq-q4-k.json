@@ -21,6 +21,6 @@
   "spec": "DSpark (embedded)",
   "priority": 10,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
-  "summary": "Coming soon: the vq8sh14-q4k-mtpnative conversion of DeepSeek-V4.1-Flash-1017, with its embedded native drafter.",
-  "note": "SnowLLM integration is pending. The target uses VQ experts and Q4_K projections, not the existing V4-Flash-0731 quantization path. The 40 base files are byte-range parts that require assembly. This package also includes the matching 1017 Engram tables and vision sidecar; Engram, vision and native drafter support are not implemented for this model yet. Download size includes both Engram shards; allow extra disk space to assemble the base. No serving defaults or release date are promised."
+  "summary": "Coming soon: DeepSeek-V4.1-Flash-1017 in VQ + Q4_K precision.",
+  "note": "Inference is not supported yet. The base model files require assembly; allow additional disk space for assembly."
 }

@@ -186,7 +186,7 @@ Common flags (`snowllm --help` lists every option):
 | `--max-model-len`          | Context length, e.g. `32k`. A per-request ceiling, not a reservation: the KV pool is shared, and a request that outgrows it is preempted and re-prefilled. |
 | `--gpu-memory-utilization` | Fraction of the GPU the server may occupy, `0.9` by default. Weights, workspaces and any draft model are counted first; the KV pool is what is left. |
 | `--prefix-memory-ratio`    | The share of the memory budget that goes to remembering shared prompt prefixes, `0.08` by default, `0` to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s; the first one pays ~1%. |
-| `--max-num-batched-tokens` | Tokens per launch, i.e. the prefill chunk. `auto` keeps the widest of 32768 / 16384 / 8192 that still leaves the KV pool its room; wider prefills faster. |
+| `--max-num-batched-tokens` | Prefill chunk size, e.g. `8k`. The default `auto` selects a size based on available memory. |
 | `--num-spec`               | Speculative depth off the MTP head. The optimum is workload-dependent; 2 is a robust default. |
 | `--dflash`                 | Speculate with a separate draft model instead of the MTP head: it proposes a whole block in one forward. Point it at the draft checkpoint, or at the model directory when the drafter ships beside the weights — a recipe that ships one sets this for you. Replaces `--num-spec`. Its weights and KV pool come out of the budget first, so the ceiling holds either way. |
 | `--device-map`             | Move weight groups into host RAM to leave the GPU more room, e.g. `experts:20`. `auto` moves only what the pools are short of at your `--max-model-len`, cheapest group first. Costs a slightly slower decode step. |

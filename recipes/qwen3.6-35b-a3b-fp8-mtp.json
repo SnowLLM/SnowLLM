@@ -16,6 +16,6 @@
     "num_spec": 2
   },
   "priority": 59,
-  "summary": "The same FP8 weights, decoding through the MTP head the checkpoint already ships. No extra download.",
+  "summary": "Qwen3.6-35B-A3B in FP8 with MTP depth 2.",
   "serve_as": "Qwen3.6-35B-A3B"
 }
