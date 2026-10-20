@@ -1,0 +1,202 @@
+[
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm",
+  "isl_target": 1024,
+  "isl": 1024,
+  "osl": 256,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 0.7732344940013718,
+  "ttft_s_reps": [
+   0.7732344940013718,
+   0.7972404920001281,
+   0.7705740920064272
+  ],
+  "decode_tok_s": 43.290600750683375,
+  "decode_tok_s_reps": [
+   43.290600750683375,
+   42.05423180834439,
+   45.146977581628505
+  ],
+  "prefill_tok_s": 1324.3071900491072,
+  "prefill_tok_s_reps": [
+   1324.3071900491072,
+   1284.4304952837688,
+   1328.879351930585
+  ],
+  "accept_unit": "AL",
+  "accept_mean": 2.390625,
+  "step_s": 0.05500700571565176,
+  "measurement": "direct_engine",
+  "aggregation": "median; AL and step time pooled",
+  "prefix_cache": false,
+  "graphs": true,
+  "context": 262144,
+  "prefill_chunk": 32768,
+  "kv_cache_dtype": "bf16",
+  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
+  "source_mode": "MTP2",
+  "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm",
+  "isl_target": 8192,
+  "isl": 8192,
+  "osl": 256,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 4.520534316994599,
+  "ttft_s_reps": [
+   4.5471339960058685,
+   4.5104393390065525,
+   4.520534316994599
+  ],
+  "decode_tok_s": 42.93082936873488,
+  "decode_tok_s_reps": [
+   42.19966337809054,
+   42.93082936873488,
+   44.989588983009114
+  ],
+  "prefill_tok_s": 1812.175160180249,
+  "prefill_tok_s_reps": [
+   1801.5743558900451,
+   1816.2310551779487,
+   1812.175160180249
+  ],
+  "accept_unit": "AL",
+  "accept_mean": 2.4285714285714284,
+  "step_s": 0.05603323057778956,
+  "measurement": "direct_engine",
+  "aggregation": "median; AL and step time pooled",
+  "prefix_cache": false,
+  "graphs": true,
+  "context": 262144,
+  "prefill_chunk": 32768,
+  "kv_cache_dtype": "bf16",
+  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
+  "source_mode": "MTP2",
+  "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm",
+  "isl_target": 32768,
+  "isl": 32768,
+  "osl": 256,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 17.789083222000045,
+  "ttft_s_reps": [
+   17.70147096698929,
+   17.789083222000045,
+   17.80158148999908
+  ],
+  "decode_tok_s": 41.81018152898678,
+  "decode_tok_s_reps": [
+   42.06003991128531,
+   41.81018152898678,
+   41.56203443514844
+  ],
+  "prefill_tok_s": 1842.0285964751286,
+  "prefill_tok_s_reps": [
+   1851.145594685754,
+   1842.0285964751286,
+   1840.7353312068956
+  ],
+  "accept_unit": "AL",
+  "accept_mean": 2.361111111111111,
+  "step_s": 0.05647272125614468,
+  "measurement": "direct_engine",
+  "aggregation": "median; AL and step time pooled",
+  "prefix_cache": false,
+  "graphs": true,
+  "context": 262144,
+  "prefill_chunk": 32768,
+  "kv_cache_dtype": "bf16",
+  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
+  "source_mode": "MTP2",
+  "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm",
+  "isl_target": 131072,
+  "isl": 131072,
+  "osl": 256,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 73.84020102699287,
+  "ttft_s_reps": [
+   73.56404012000712,
+   73.93638841799111,
+   73.84020102699287
+  ],
+  "decode_tok_s": 39.84372292489119,
+  "decode_tok_s_reps": [
+   41.371576273540896,
+   39.84372292489119,
+   38.23897648124454
+  ],
+  "prefill_tok_s": 1775.076424183699,
+  "prefill_tok_s_reps": [
+   1781.7400972836524,
+   1772.7671421952489,
+   1775.076424183699
+  ],
+  "accept_unit": "AL",
+  "accept_mean": 2.3042168674698793,
+  "step_s": 0.05792844851810032,
+  "measurement": "direct_engine",
+  "aggregation": "median; AL and step time pooled",
+  "prefix_cache": false,
+  "graphs": true,
+  "context": 262144,
+  "prefill_chunk": 32768,
+  "kv_cache_dtype": "bf16",
+  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
+  "source_mode": "MTP2",
+  "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm",
+  "isl_target": 225280,
+  "isl": 225280,
+  "osl": 256,
+  "conc": 1,
+  "reps": 3,
+  "warm": 1,
+  "ttft_s": 130.6864486169943,
+  "ttft_s_reps": [
+   130.44313756001065,
+   130.7928357010096,
+   130.6864486169943
+  ],
+  "decode_tok_s": 38.560886770907096,
+  "decode_tok_s_reps": [
+   39.533547615753804,
+   37.818677203655184,
+   38.560886770907096
+  ],
+  "prefill_tok_s": 1723.8206591735698,
+  "prefill_tok_s_reps": [
+   1727.0360420176144,
+   1722.418500926049,
+   1723.8206591735698
+  ],
+  "accept_unit": "AL",
+  "accept_mean": 2.283582089552239,
+  "step_s": 0.059121900262682936,
+  "measurement": "direct_engine",
+  "aggregation": "median; AL and step time pooled",
+  "prefix_cache": false,
+  "graphs": true,
+  "context": 262144,
+  "prefill_chunk": 32768,
+  "kv_cache_dtype": "bf16",
+  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
+  "source_mode": "MTP2",
+  "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
+ }
+]

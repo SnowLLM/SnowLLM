@@ -45,6 +45,16 @@ Ms/step = 1000 × AL / Decode tok/s
 
 公开数据位于 [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs)。[性能测试页](https://snowllm.dev/benchmark/)读取 [benchmarks.json](https://snowllm.dev/benchmarks.json)。
 
+## Qwen3.8-Flash-Next MTP 对比（2026-10-20）
+
+Flash-Next UD-Q3_K_XL 中标记为 **Engine** 的数据直接测量 Engine 墙钟时间，精确聊天输入长度为 1K、8K、32K、128K 和 220K。解码耗时不含预填充和首 token；预填充速度、TTFT 和解码速度取三次样本的中位数。AL 和每步耗时根据三次样本汇总的 token 数、步数及解码耗时计算。原有 **HTTP** 数据保留原始测量值，使用上文的客户端测试方法；其计时和输入长度口径与 Engine 数据不同。
+
+两个 Engine 方案均常驻相同的模型和 MTP 权重，固定 KV 容量为 262,144 token，采用 BF16 KV、32,768 token 预填充分块，开启 HIP graph，关闭前缀缓存。测试使用 PG-19 提示词、贪心解码、关闭思考、单请求，最多输出 256 token 并遵循 EOS；每个 Engine 预热一次，长度为 64 token。各轮交替执行两种模式。
+
+MTP k=2 解码速度从 1K 的 43.29 tok/s 到 220K 的 38.56 tok/s，无 MTP 为 28.30 到 26.46 tok/s，加速约 1.46–1.53 倍。15 对样本的输入哈希均一致，但完整输出均不完全相同。已记录的 1K 诊断显示，顺序解码与三行验证路径中，接近并列的目标 logits 排序发生变化；其他分歧未逐一诊断。这些计时数据不能证明输出逐位一致。
+
+正式数据为 `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`。完整原始记录、CSV 和说明以 `qwen38_flash_next_mtp_20261020.*` 保存在 [`benchmarks/runs/archive/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs/archive)；网站构建只读取 `runs/` 直属的 JSON 文件。
+
 ## GLM-5.3-Flash 220K 补测（2026-10-16） {#glm-220k-completion}
 
 GLM-5.3-Flash UD-IQ2_XXS 对比现已补齐 1K、8K、32K、128K 和 220K 五档。220K 的目标输入为 225,280 tokens，总上下文容量为 227,328，双方均使用 MTP k=2，单客户端，输出上限 256 tokens，预热 1 次、正式测试 4 次。复用 `benchmarks/bench_context.py` 客户端，使用 PG-19 语料、temperature 0 和 `thinking:false`。

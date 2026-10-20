@@ -11,6 +11,8 @@ __pycache__/
 # no date -- is TRACKED and is the only thing the page's data is built from, one file per arm.
 # Moving a run up out of its date is the act of saying it counts, and it is done by hand.
 /benchmarks/runs/*/
+# Audited source records stay below archive/ and are excluded from the site's *.json glob.
+!/benchmarks/runs/archive/
 /benchmarks/results/*
 !/benchmarks/results/.gitkeep
 
