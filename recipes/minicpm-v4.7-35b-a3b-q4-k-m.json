@@ -13,7 +13,7 @@
   "spec": "none",
   "priority": 55,
   "requires": "0.3.10",
-  "summary": "35B MoE vision-language model with 3B active parameters. Includes the 4x/16x image encoder; no speculative decoding head.",
+  "summary": "MiniCPM-V 4.7 with vision support and speculative decoding disabled.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",
   "sources": [
     {
