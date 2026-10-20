@@ -67,7 +67,11 @@ ARMS = {
     "qwen3_8_27b_q4_k_xl_dflash2_snowllm":
         ("SnowLLM", "Qwen3.8-27B UD-Q4_K_XL", "DFlash2"),
     "qwen3_8_flash_next_q3_k_xl_snowllm":
-        ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "MTP k=2"),
+        ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "MTP k=2, HTTP"),
+    "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "MTP k=2, Engine"),
+    "qwen3_8_flash_next_q3_k_xl_nospec_engine_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "no spec, Engine"),
     "deepseek_v4_flash_iq2_xxs_snowllm":
         ("SnowLLM", "DeepSeek-V4-Flash IQ2_XXS", "DSpark, ctx 227328"),
     "deepseek_v4_flash_iq2_xxs_snowllm_128k":
@@ -94,7 +98,7 @@ def short_isl(isl_target: int) -> str:
 
 
 def featured_labels() -> set:
-    return {"qwen3_8_flash_next_q3_k_xl_snowllm"}
+    return {"qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm"}
 
 
 def point_of(r: dict, n_max: int | None) -> dict:

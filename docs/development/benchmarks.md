@@ -45,6 +45,16 @@ The chart and comparison data use AL for both engines. Raw llama.cpp runs store 
 
 Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs). The [Benchmark page](https://snowllm.dev/benchmark/) reads [benchmarks.json](https://snowllm.dev/benchmarks.json).
 
+## Qwen3.8-Flash-Next MTP comparison (2026-10-20)
+
+The Flash-Next UD-Q3_K_XL series marked **Engine** use direct Engine wall time, with exact chat input lengths of 1K, 8K, 32K, 128K and 220K. Decode excludes prefill and the first token; prefill rate, TTFT and decode rate are medians of three samples. AL and step time pool tokens, steps and elapsed decode time across those samples. The older **HTTP** series retains its original measurements and the client methodology above; its timing and input-length protocol differ from these Engine runs.
+
+Both Engine arms keep the same model and MTP weights resident, with a fixed 262,144-token KV capacity, BF16 KV, a 32,768-token prefill chunk, HIP graphs enabled and prefix cache disabled. They use greedy PG-19 prompts with thinking disabled, one request at a time, a 256-token output cap with EOS honored, and one 64-token warm-up per engine. Mode order alternates across rounds.
+
+MTP k=2 decode ranges from 43.29 tok/s at 1K to 38.56 tok/s at 220K, versus 28.30 to 26.46 tok/s without MTP (1.46–1.53× speedup). All 15 pairs have identical input hashes, but none have identical complete outputs. The recorded 1K diagnosis shows near-tied target logits changing order between sequential decoding and three-row verification; other divergences were not individually diagnosed. These timings do not establish bitwise output equivalence.
+
+The two published arms are `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`. The complete source record, CSV and notes are preserved under [`benchmarks/runs/archive/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs/archive) as `qwen38_flash_next_mtp_20261020.*`; the site builder reads only JSON files directly in `runs/`.
+
 ## GLM-5.3-Flash 220K completion (2026-10-16)
 
 The GLM-5.3-Flash UD-IQ2_XXS comparison now includes all five lengths: 1K, 8K, 32K, 128K and 220K. The 220K target is 225,280 tokens, with a shared context capacity of 227,328, MTP k=2, one client, a 256-token output cap, one warm-up and four retained requests. Requests use PG-19, temperature 0 and `thinking:false` through the existing `benchmarks/bench_context.py` client.
