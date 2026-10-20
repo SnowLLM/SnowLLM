@@ -155,7 +155,8 @@ def select_scratch_bytes(n: int) -> int:
 
 def select_path(hp: torch.Tensor, logits: torch.Tensor, pred_cb: torch.Tensor,
                 succ_cb: torch.Tensor, anchor: torch.Tensor, path: torch.Tensor,
-                scratch: torch.Tensor) -> None:
+                scratch: torch.Tensor, *, temperature=None, uniform=None, slots=None,
+                candidate_ids=None, probabilities=None) -> None:
     """The candidate walk -- what replaces ops.argmax on a DFlash 2 draft's logits."""
     g = selected()
     b, ell = path.shape
@@ -168,8 +169,44 @@ def select_path(hp: torch.Tensor, logits: torch.Tensor, pred_cb: torch.Tensor,
     _chk(succ_cb, "succ_cb", torch.bfloat16, v, g.selector_rank)
     _chk(anchor, "anchor", torch.int64, b)
     _chk(path, "path", torch.int64, b, ell)
-    check(lib.snowllm_draft_select(_p(hp), _p(logits), _p(pred_cb), _p(succ_cb), _p(anchor),
-                                   _p(path), _p(scratch), b, ell, v, _stream()), "draft_select")
+    _chk(scratch, "scratch", torch.uint8)
+    if scratch.numel() < select_scratch_bytes(n):
+        raise SnowLLMError("selector scratch is too small")
+    if temperature is None:
+        check(lib.snowllm_draft_select(_p(hp), _p(logits), _p(pred_cb), _p(succ_cb), _p(anchor),
+                                       _p(path), _p(scratch), b, ell, v, _stream()), "draft_select")
+        return
+    _chk(temperature, "temperature", torch.float32, b)
+    _chk(uniform, "uniform", torch.float32, b, ell)
+    _chk(slots, "slots", torch.int32, b)
+    _chk(candidate_ids, "candidate_ids", torch.int64)
+    _chk(probabilities, "probabilities", torch.float32, *candidate_ids.shape)
+    if tuple(candidate_ids.shape[1:]) != (ell, g.selector_top_k):
+        raise SnowLLMError("selector probability pool has the wrong block or candidate count")
+    check(lib.snowllm_draft_sample(
+        _p(hp), _p(logits), _p(pred_cb), _p(succ_cb), _p(anchor), _p(temperature),
+        _p(uniform), _p(slots), _p(path), _p(candidate_ids), _p(probabilities), _p(scratch),
+        b, ell, v, g.selector_top_k, _stream()), "draft_sample")
+
+
+def reject(probabilities, indices, drafts, candidate_ids, q, slots, valid, uniform, out, accepted):
+    b, length = drafts.shape
+    width = length + 1
+    p_width, q_width = probabilities.shape[1], q.shape[2]
+    _chk(probabilities, "target probabilities", torch.float32, b * width, p_width)
+    _chk(indices, "target indices", torch.int64, b * width, p_width)
+    _chk(drafts, "drafts", torch.int64, b, length)
+    _chk(candidate_ids, "candidate_ids", torch.int64, q.shape[0], length, q_width)
+    _chk(q, "draft probabilities", torch.float32, *candidate_ids.shape)
+    _chk(slots, "request slots", torch.int32, b)
+    _chk(valid, "valid proposals", torch.int32, b)
+    _chk(uniform, "uniform", torch.float32, b, width)
+    _chk(out, "verified tokens", torch.int64, b, width)
+    _chk(accepted, "accepted", torch.int64, b)
+    check(lib.snowllm_draft_reject(
+        _p(probabilities), _p(indices), _p(drafts), _p(candidate_ids), _p(q), _p(slots),
+        _p(valid), _p(uniform), _p(out), _p(accepted), b, width, p_width, q_width, _stream()),
+        "draft_reject")
 
 
 def rope_cos_sin(position_ids: torch.Tensor, inv_freq: torch.Tensor, cos: torch.Tensor,
@@ -258,7 +295,7 @@ def reshape_and_cache(new_k: torch.Tensor, new_v: torch.Tensor, k_cache: torch.T
 def paged_attn(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
                v_cache: torch.Tensor, out: torch.Tensor, block_tables: torch.Tensor,
                plan: torch.Tensor, num_slots: int, workspace: torch.Tensor, scale: float,
-               q_tokens: int, block_size: int) -> None:
+               q_tokens: int, block_size: int, window: int = 0, causal: bool = False) -> None:
     num_seqs = seq_lens.shape[0]
     _chk(seq_lens, "seq_lens", torch.int32, num_seqs)
     g = selected()
@@ -266,7 +303,7 @@ def paged_attn(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
     check(lib.snowllm_draft_paged_attn(_p(q), _p(seq_lens), _p(k_cache), _p(v_cache), _p(out),
                                        _p(block_tables), _p(plan), num_seqs,
                                        block_tables.shape[1], num_slots, _p(workspace), scale,
-                                       q_tokens, block_size, _stream()), "draft_paged_attn")
+                                       q_tokens, block_size, window, int(causal), _stream()), "draft_paged_attn")
 
 
 def paged_attn_plan(seq_lens: torch.Tensor, num_slots: int, block_size: int,

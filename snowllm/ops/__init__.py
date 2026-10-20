@@ -286,6 +286,7 @@ from .trace import (
 from .vision import (
     vision_attn,
     vision_attention,
+    vision_merge_norm,
     vision_pos_embed_add,
     vision_gemm_bias_act,
     vision_gemm_scratch_bytes,
