@@ -55,6 +55,7 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
+| `--version` | — | 显示当前版本后退出。 |
 | `--enforce-eager` | 关闭 | 禁用 GPU 图执行。 |
 | `--profile-dir` | `SNOWLLM_TORCH_PROFILER_DIR` 或未设置 | 通过 profiling 端点采集的 trace 目录。 |
 | `--stats-interval` | `10.0` | 吞吐日志间隔（秒）；`0` 禁用日志。 |

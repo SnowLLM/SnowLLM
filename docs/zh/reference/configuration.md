@@ -54,6 +54,7 @@ snowllm webui config --library-path ""
 | `SNOWLLM_MODELS` | 模型根目录。 |
 | `SNOWLLM_RECIPES_URL` | 方案目录 URL 或本地 JSON 文件。 |
 | `SNOWLLM_LIB` | 覆盖内核库。 |
+| `SNOWLLM_NO_UPDATE_CHECK` | 设为 `1`，关闭启动更新检查。 |
 | `SNOWLLM_NO_USAGE_STATS` | 启动服务前设为 `1`，关闭[使用统计遥测](./telemetry)。 |
 | `DO_NOT_TRACK` | 启动服务前设为 `1`，关闭使用统计遥测。 |
 | `HF_ENDPOINT` | Hugging Face 地址或镜像；下载凭据会发送到该主机。 |

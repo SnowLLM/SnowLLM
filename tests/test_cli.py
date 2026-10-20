@@ -80,6 +80,13 @@ main()
         self.assertIn('--gpu-memory-utilization', result.stdout)
         self.assertIn('--dflash', result.stdout)
 
+    def test_version_without_gpu(self):
+        from snowllm._version import __version__
+        result = self.run_cli('--version')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, '')
+        self.assertEqual(result.stdout, f'snowllm {__version__}\n')
+
     def test_invalid_options_without_gpu(self):
         result = self.run_cli('--unknown')
         self.assertEqual(result.returncode, 2)

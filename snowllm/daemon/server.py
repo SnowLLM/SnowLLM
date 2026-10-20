@@ -8,6 +8,7 @@ import threading
 import uvicorn
 
 from .api import create_app, create_inference_app
+from ..updates import session as update_session
 
 
 def local_url(host, port):
@@ -59,7 +60,8 @@ async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
         manager.start_telemetry()
         if browser:
             threading.Thread(target=browser, args=(local_url(admin_host, admin_port),), daemon=True).start()
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        async with update_session():
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for server in servers:
             server.should_exit = True

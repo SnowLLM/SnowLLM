@@ -10,6 +10,7 @@ import sys
 import time
 
 from . import term
+from ._version import __version__
 from .telemetry import enabled as telemetry_enabled
 
 SUBCOMMANDS = ("pull", "recipes", "pi")
@@ -209,6 +210,8 @@ def parser() -> argparse.ArgumentParser:
                     "  status            Show service status",
         epilog="Use snowllm COMMAND --help for that command's options.",
         formatter_class=_HelpFormatter)
+    p.add_argument("--version", action="version", version=f"snowllm {__version__}",
+                   help="Show the installed version and exit.")
 
     g = p.add_argument_group("serving")
     g.add_argument("model", nargs="?", metavar="PATH", default=argparse.SUPPRESS,

@@ -20,12 +20,13 @@ from .state import serving
 from .thinking import thinking_capabilities
 from ..metrics import gpu_sensors, prometheus
 from ..telemetry import model_session, model_snapshot
+from ..updates import session as update_session
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     serving().engine.start()
-    async with model_session(serving(), _app.state):
+    async with model_session(serving(), _app.state), update_session():
         try:
             yield
         finally:
