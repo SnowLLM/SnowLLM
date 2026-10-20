@@ -14,6 +14,7 @@ class ResultsParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.rows = {}
+        self.elements = {}
         self.current = None
         self.cells = None
         self.cell = None
@@ -22,6 +23,8 @@ class ResultsParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if "id" in attrs:
+            self.elements[attrs["id"]] = attrs
         if tag == "tr" and "data-series-key" in attrs:
             self.current = (attrs["data-series-key"], int(attrs["data-isl-target"]))
             self.cells = []
@@ -50,6 +53,12 @@ class ResultsParser(HTMLParser):
 
 
 class BenchmarkPageTests(unittest.TestCase):
+    def test_cached_scripts_can_render_charts_without_removing_hidden_attributes(self):
+        parser = ResultsParser()
+        parser.feed((ROOT / "web" / "benchmark" / "index.html").read_text())
+        for element in ["benchmarks-picker", "benchmarks-charts"]:
+            self.assertNotIn("hidden", parser.elements[element])
+
     def test_every_published_measurement_is_readable_without_javascript(self):
         series, _ = BUILDER["build_series"](BUILDER["merged_rows"]())
         data = {"schema": 2, "series": series, "rows": []}
