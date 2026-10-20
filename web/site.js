@@ -42,7 +42,9 @@ function mountTable(container, rows, columns, opts) {
   function visibleRows() {
     var out = rows.filter(function (r) {
       return Object.keys(state.filters).every(function (k) {
-        return !state.filters[k] || String(r[k]) === state.filters[k];
+        var col = columns.filter(function (c) { return c.key === k; })[0];
+        var value = col.value ? col.value(r) : r[k];
+        return !state.filters[k] || String(value) === state.filters[k];
       });
     });
     var col = columns.filter(function (c) { return c.key === state.sort; })[0];
@@ -64,11 +66,11 @@ function mountTable(container, rows, columns, opts) {
     if (filterKeys.length) {
       var controls = el("div", { class: "controls" });
       filterKeys.forEach(function (c) {
-        var values = Array.from(new Set(rows.map(function (r) { return r[c.key]; }))).sort();
+        var values = Array.from(new Set(rows.map(function (r) { return c.value ? c.value(r) : r[c.key]; }))).sort();
         var select = el("select", { "aria-label": t("common.filter", { label: c.label }) });
         select.appendChild(el("option", { value: "", text: t("common.all", { label: c.label.toLowerCase() }) }));
         values.forEach(function (v) {
-          select.appendChild(el("option", { value: v, text: c.key === "spec" && v === "none" ? t("recipe.none") : v }));
+          select.appendChild(el("option", { value: v, text: c.filterLabel ? c.filterLabel(v) : c.key === "spec" && v === "none" ? t("recipe.none") : v }));
         });
         select.value = state.filters[c.key] || "";
         select.addEventListener("change", function () {
@@ -898,10 +900,12 @@ loadTable("recipes-table", function (container, data) {
       render: function (r) { return r.spec === "none" ? '<span class="off">' + t('recipe.none') + '</span>' : r.spec; } },
     { key: "requires", label: t("recipe.status"), labelKey: "recipe.status", filter: true,
       value: function (r) {
-        return needsNewer(r.requires, release) ? t("recipe.newer") : t("recipe.supported");
+        return r.status === "coming soon" ? "recipe.comingSoon"
+          : needsNewer(r.requires, release) ? "recipe.newer" : "recipe.supported";
       },
+      filterLabel: function (value) { return t(value); },
       render: function (r) {
-        return needsNewer(r.requires, release)
+        return r.status === "coming soon" ? t("recipe.comingSoon") : needsNewer(r.requires, release)
           ? t('recipe.newer') + '<span class="sub">snowllm ' + esc(r.requires) + "+</span>"
           : t("recipe.supported");
       } },

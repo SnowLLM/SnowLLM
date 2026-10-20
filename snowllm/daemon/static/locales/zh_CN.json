@@ -179,6 +179,7 @@
   "Download stopped or failed (exit {0}). View output for details; a new download resumes partial files.": "下载已停止或失败（退出码 {0}）。请查看输出；重新下载可续传。",
   "Catalog unavailable: {0}. You can still load a local checkpoint from Overview.": "目录不可用：{0}。仍可在概览页面加载本地模型。",
   "{0} recipes": "{0} 个配方",
+  "Coming soon": "即将支持",
   "Requires {0}": "需要 {0}",
   "{0} on disk": "磁盘占用 {0}",
   "Downloading {0}": "正在下载 {0}",

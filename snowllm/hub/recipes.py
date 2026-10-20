@@ -36,6 +36,7 @@ SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens
             "prefix_memory_ratio", "mtp_window", "mtp_sinks")
 TIMEOUT = 30.0
 SUPPORTED = "supported"
+COMING_SOON = "coming soon"
 RECOMMENDED = (("simple tasks", ("qwen3.6-35b-a3b-fp8-dflash",
                                   "qwen3.6-35b-a3b-q4-k-xl-dflash")),
                ("complex tasks", ("qwen3.8-flash-next-iq4-xs",)))
@@ -102,6 +103,9 @@ class Recipe:
         self.dir = raw.get("dir", self.id)
         self.summary = raw.get("summary", "")
         self.spec = raw.get("spec", "")
+        self.status = raw.get("status", SUPPORTED)
+        if self.status not in (SUPPORTED, COMING_SOON):
+            raise SnowLLMError(f"recipe {self.id!r} has an unknown status: {self.status!r}")
         self.requires = str(raw.get("requires", ""))
         self.note = raw.get("note", "")
         self.bytes = int(raw.get("bytes", 0))
@@ -127,7 +131,7 @@ class Recipe:
 
     @property
     def servable(self) -> bool:
-        return not self.stale
+        return self.status == SUPPORTED and not self.stale
 
     @property
     def stale(self) -> bool:
@@ -135,6 +139,8 @@ class Recipe:
 
     @property
     def state(self) -> str:
+        if self.status == COMING_SOON:
+            return COMING_SOON
         return f"needs {self.requires}" if self.stale else SUPPORTED
 
     def path(self, root: pathlib.Path | None = None) -> pathlib.Path:
@@ -319,6 +325,8 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "repo": recipe.repo,
         "revision": recipe.revision,
         "defaults": recipe.defaults,
+        "status": recipe.status,
+        "requires": recipe.requires,
         "fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "bytes": sum(b.size for b in blobs),
         "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
@@ -364,6 +372,8 @@ def pull(recipe: Recipe, dest: pathlib.Path, jobs: int = DEFAULT_JOBS, verify: b
 
 
 def why(recipe: Recipe) -> str:
+    if recipe.status == COMING_SOON:
+        return f"{recipe.id}: coming soon; this model is not supported for serving yet"
     return (f"{recipe.id} wants snowllm {recipe.requires} or newer and this is "
             f"{__version__}: pip install --upgrade snowllm snowllm-kernels")
 
@@ -590,6 +600,8 @@ def locate(name: str) -> tuple[pathlib.Path, "Recipe | None"]:
 
     root = models_root()
     recipe = find(name, catalogue())
+    if not recipe.servable:
+        raise SnowLLMError(why(recipe))
     dest = installed(recipe, root)
     if dest is not None:
         if unfetched(recipe, dest):
@@ -599,7 +611,5 @@ def locate(name: str) -> tuple[pathlib.Path, "Recipe | None"]:
                   f"`snowllm pull {recipe.id}` fetches the rest", file=sys.stderr)
         return dest, recipe
     dest = recipe.path(root)
-    if not recipe.servable:
-        raise SnowLLMError(why(recipe))
     raise SnowLLMError(f"{recipe.id} is not in {dest}. "
                        f"Run `snowllm pull {recipe.id}` to download it.")

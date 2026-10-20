@@ -393,6 +393,34 @@ def main() -> int:
         check("and the one to recommend is first",
               book and book[0]["id"] == "qwen3.8-flash-next-q3-k-xl" and book[0].get("priority"),
               book[0]["id"] if book else "none")
+
+        print("\n=== coming soon ===")
+        pending = {"id": "tiny-soon", "model": "Tiny", "precision": "Q4",
+                   "dir": "Tiny-Soon", "repo": REPO, "status": "coming soon"}
+        soon = recipes.Recipe(pending)
+        check("coming soon is distinct from a version requirement",
+              not soon.servable and not soon.stale and soon.state == "coming soon")
+        check("coming soon explains pending support, not an upgrade",
+              "coming soon" in recipes.why(soon) and "pip install" not in recipes.why(soon))
+        check("unknown availability cannot silently become supported",
+              _raises(recipes.Recipe, {**pending, "status": "typo"}))
+        planned = tmp / "planned.json"
+        planned.write_text(json.dumps({"schema": recipes.SCHEMA, "recipes": [pending]}))
+        os.environ["SNOWLLM_RECIPES_URL"] = str(planned)
+        check("coming soon cannot be served before downloading",
+              _raises(recipes.checkpoint, soon.id))
+        directory = soon.path(root)
+        directory.mkdir()
+        (directory / "config.json").write_bytes(SMALL)
+        check("existing local weights do not bypass coming soon",
+              recipes.loadable(directory) and _raises(recipes.checkpoint, soon.id))
+        recipes.write_manifest(soon, directory, [])
+        offline = next(r for r in recipes.on_disk(root) if r.id == soon.id)
+        check("offline manifests preserve coming soon", not offline.servable
+              and offline.state == "coming soon")
+        check("the builder preserves the pending DeepSeek entry",
+              any(r["id"] == "deepseek-v4.1-flash-1017-vq-q4-k"
+                  and r.get("status") == "coming soon" for r in book))
     finally:
         httpd.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)

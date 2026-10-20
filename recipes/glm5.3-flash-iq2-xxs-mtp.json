@@ -1,0 +1,27 @@
+{
+  "id": "glm5.3-flash-iq2-xxs-mtp",
+  "model": "GLM-5.3-Flash",
+  "precision": "UD-IQ2_XXS",
+  "dir": "GLM-5.3-Flash-UD-IQ2_XXS",
+  "bytes": 101844951904,
+  "repo": "unsloth/GLM-5.3-Flash-GGUF",
+  "revision": "a38483c8cd5df544f53d70fb281afe97369d5ab6",
+  "include": [
+    "UD-IQ2_XXS/*.gguf"
+  ],
+  "priority": 60,
+  "requires": "0.3.10",
+  "serve_as": "GLM-5.3-Flash",
+  "spec": "MTP k=2",
+  "defaults": {
+    "device_map": "auto",
+    "gpu_memory_utilization": 0.95,
+    "max_model_len": 227328,
+    "max_num_seqs": 1,
+    "max_num_batched_tokens": 8192,
+    "kv_cache_dtype": "bf16",
+    "num_spec": 2
+  },
+  "summary": "GLM-5.3-Flash UD-IQ2_XXS with its embedded NextN head, using MTP k=2.",
+  "note": "Text only; the GLM vision tower is not implemented. Downloads all four target shards; the NextN head is embedded in the same files. Uses automatic host expert placement, BF16 latent caches, one request slot and the tested 227328-token context capacity. Requires the GLM5-Next kernels included with the matching SnowLLM build. MTP depths 1, 2 and 3 have been checked for greedy token parity, chunking and rejection; k=2 is used in the published long-context benchmarks."
+}
