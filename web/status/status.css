@@ -1,5 +1,9 @@
-/* Status-specific layout only. Palette, typography, page shell and header are shared. */
+/* Status layout and chart colors; typography, page shell and header are shared. */
 .usage { --prefill: var(--c2); --decode: var(--accent); }
+:root[data-theme="dark"] .usage { --prefill: #576cad; --decode: #f4c168; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .usage { --prefill: #576cad; --decode: #f4c168; }
+}
 .usage .demo { margin-top: 1.25rem; font-size: var(--fs-ui); color: var(--muted); }
 .demo strong { font: inherit; color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: .15rem .5rem; margin-right: .5rem; background: var(--accent-soft); }
 .usage-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.75rem 0 0; }
