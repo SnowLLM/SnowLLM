@@ -158,7 +158,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 62
+ABI_VERSION = 67
 
 
 def _check_abi() -> None:
@@ -254,6 +254,8 @@ _SIGS = [
     ("snowllm_draft_select_scratch_bytes", c_int64, [c_int64]),
     ("snowllm_draft_select", c_int,
      [P, P, P, P, P, P, P, c_int64, c_int64, c_int64, S]),
+    ("snowllm_draft_sample", c_int, [P]*12 + [c_int64]*4 + [S]),
+    ("snowllm_draft_reject", c_int, [P]*10 + [c_int64]*4 + [S]),
     ("snowllm_draft_rope_cos_sin", c_int, [P, P, P, P, c_int64, S]),
     ("snowllm_draft_qk_norm_rope", c_int, [P, c_int64, P, P, P, P, P, P, c_int64, c_float, S]),
     ("snowllm_draft_k_norm_rope", c_int, [P, c_int64, P, P, P, P, c_int64, c_float, S]),
@@ -262,7 +264,7 @@ _SIGS = [
     ("snowllm_draft_reshape_and_cache", c_int,
      [P, P, c_int64, c_int64, P, P, P, c_int64, c_int64, S]),
     ("snowllm_draft_paged_attn", c_int,
-     [P, P, P, P, P, P, P, c_int64, c_int64, c_int64, P, c_float, c_int64, c_int64, S]),
+     [P, P, P, P, P, P, P, c_int64, c_int64, c_int64, P, c_float, c_int64, c_int64, c_int64, c_int, S]),
     ("snowllm_draft_paged_attn_plan", c_int, [P, P, c_int64, c_int64, c_int64, c_int, S]),
     ("snowllm_draft_paged_attn_workspace_size", c_int64, [c_int64, c_int64]),
     ("snowllm_draft_paged_attn_num_slots", c_int64, [c_int64]),
@@ -622,6 +624,7 @@ _SIGS = [
     ("snowllm_vision_attn", c_int, [P, P, P, P, c_int64, c_int64, c_int64, c_int64, S]),
     ("snowllm_vision_pos_embed_add", c_int, [P, P, P, P, c_int64, c_int64, c_int64, S]),
     ("snowllm_vision_attention", c_int, [P, P, P, P, P, c_int64, c_int64, c_int64, c_int64, c_int64, S]),
+    ("snowllm_vision_merge_norm", c_int, [P, P, P, P, P, P, c_int64, c_int64, c_float, S]),
     ("snowllm_vision_supported_head_dims", c_int64, [P, c_int64]),
     ("snowllm_vision_supported_ln_hidden", c_int64, [P, c_int64]),
 

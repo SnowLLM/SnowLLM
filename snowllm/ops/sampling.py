@@ -4,7 +4,7 @@
 import functools
 import torch
 
-from .._capi import check, lib
+from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _p, _stream
 
 
@@ -50,6 +50,24 @@ def argmax(logits: torch.Tensor, *, out: torch.Tensor | None = None) -> torch.Te
     _chk(tok, "argmax output", torch.int64, B)
     check(lib.snowllm_sampling_argmax(_p(logits), _p(tok), B, V, _stream()), "argmax")
     return tok
+
+
+def probabilities(logits, top_k, top_p, temperature, width, out, indices, workspace):
+    rows, vocab = logits.shape
+    _chk(logits, "logits", torch.float32, rows, vocab)
+    _chk(top_k, "top_k", torch.int32, rows)
+    _chk(top_p, "top_p", torch.float32, rows)
+    _chk(temperature, "temperature", torch.float32, rows)
+    _chk(out, "probabilities", torch.float32, rows, width)
+    _chk(indices, "indices", torch.int64, rows, width)
+    _chk(workspace, "sampling workspace", torch.uint8)
+    if workspace.nbytes < sample_workspace_bytes(rows, vocab, width):
+        raise SnowLLMError("sampling probability workspace is too small")
+    dense = workspace.view(torch.float32)[:rows * vocab].view(rows, vocab)
+    check(lib.snowllm_sampling_softmax(_p(logits), _p(dense), rows, vocab, _p(temperature),
+                                      _stream()), "sampling_softmax")
+    check(lib.snowllm_sampling_topk_topp(_p(dense), _p(out), _p(indices), rows, vocab, width,
+                                        _p(top_k), _p(top_p), _stream()), "sampling_topk_topp")
 
 
 def penalties(logits, ids, counts, presence, frequency, repetition):

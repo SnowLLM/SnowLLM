@@ -44,7 +44,7 @@ def dspark_context(x,weight,out,workspace=None):
 def dspark_markov_workspace_bytes(b,v,rank,block):return lib.snowllm_dspark_markov_workspace_bytes(b,v,rank,block)
 
 
-def dspark_markov(base,w1,w2,anchor,block,*,pre_head=None,conf_weight=None,conf_bias=None,confidence=None,workspace=None):
+def dspark_markov(base,w1,w2,anchor,block,*,pre_head=None,conf_weight=None,conf_bias=None,confidence=None,workspace=None,out=None):
     b=anchor.numel();v,rank=w1.shape
     _chk_rows(base,'DSpark base logits',torch.float32)
     if base.shape!=(b*block,v):raise SnowLLMError('DSpark logits and block shapes differ')
@@ -63,7 +63,8 @@ def dspark_markov(base,w1,w2,anchor,block,*,pre_head=None,conf_weight=None,conf_
     if workspace is None:workspace=torch.empty(need,dtype=torch.uint8,device=base.device)
     _chk(workspace,'DSpark Markov workspace',torch.uint8)
     if workspace.numel()<need:raise SnowLLMError('DSpark Markov workspace too small')
-    out=torch.empty(b,block,dtype=torch.int64,device=base.device)
+    if out is None:out=torch.empty(b,block,dtype=torch.int64,device=base.device)
+    _chk(out,'DSpark output',torch.int64,b,block)
     check(lib.snowllm_dspark_markov(*[_p(t) for t in (base,w1,w2,anchor,pre_head,conf_weight,conf_bias,out,confidence,workspace)],
           b,v,rank,block,base.stride(0),h,ps,workspace.numel(),_stream()),'dspark_markov')
     return out

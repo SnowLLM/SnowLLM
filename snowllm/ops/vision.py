@@ -60,32 +60,60 @@ def vision_attn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, o: torch.Tens
 
 
 def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
-                         indices: torch.Tensor, weights: torch.Tensor) -> None:
+                         indices: torch.Tensor, weights: torch.Tensor | None = None) -> None:
     M, H = hidden.shape
     _chk(hidden, "hidden", torch.bfloat16, M, H)
     _chk(table, "position table", torch.bfloat16, table.shape[0], H)
-    _chk(indices, "position indices", torch.int32, 4, M)
-    _chk(weights, "position weights", torch.float32, 4, M)
-    if any(t.device != hidden.device for t in (table, indices, weights)):
+    _chk(indices, "position indices", torch.int32, *((4, M) if weights is not None else (M,)))
+    if weights is not None:
+        _chk(weights, "position weights", torch.float32, 4, M)
+    if any(t.device != hidden.device for t in (table, indices, weights) if t is not None):
         raise SnowLLMError("vision_pos_embed_add: all tensors must share a device")
     check(lib.snowllm_vision_pos_embed_add(_p(hidden), _p(table), _p(indices), _p(weights),
                                           M, H, table.shape[0], _stream()),
           "vision_pos_embed_add")
 
 
-def vision_attention(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                     cu: torch.Tensor, out: torch.Tensor, num_heads: int,
+def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Tensor | None,
+                     cu: torch.Tensor | None, out: torch.Tensor, num_heads: int,
                      head_dim: int) -> None:
     M, H = out.shape
     _chk(qkv, "qkv", torch.bfloat16, M, 3 * H)
     _chk(out, "attention output", torch.bfloat16, M, H)
-    _chk(cos, "cos", torch.float32, M, head_dim)
-    _chk(sin, "sin", torch.float32, M, head_dim)
-    _chk(cu, "image row offsets", torch.int32)
-    if cu.dim() != 1 or cu.numel() < 1:
-        raise SnowLLMError("vision_attention: expected cumulative image row offsets")
-    if any(t.device != qkv.device for t in (cos, sin, cu, out)):
+    if (cos is None) != (sin is None):
+        raise SnowLLMError("vision_attention: cos and sin must both be present or absent")
+    if cos is not None:
+        _chk(cos, "cos", torch.float32, M, head_dim)
+        _chk(sin, "sin", torch.float32, M, head_dim)
+    if cu is not None:
+        _chk(cu, "image row offsets", torch.int32)
+        if cu.dim() != 1 or cu.numel() < 1:
+            raise SnowLLMError("vision_attention: expected cumulative image row offsets")
+    elif M % 4 or cos is not None:
+        raise SnowLLMError("vision_attention: four-token windows require M%4=0 without RoPE")
+    if any(t.device != qkv.device for t in (cos, sin, cu, out) if t is not None):
         raise SnowLLMError("vision_attention: all tensors must share a device")
     check(lib.snowllm_vision_attention(_p(qkv), _p(cos), _p(sin), _p(cu), _p(out),
-                                      M, cu.numel() - 1, H, num_heads, head_dim, _stream()),
+                                      M, cu.numel() - 1 if cu is not None else M // 4,
+                                      H, num_heads, head_dim, _stream()),
           "vision_attention")
+
+
+def vision_merge_norm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
+                       out: torch.Tensor, eps: float, *, indices: torch.Tensor | None = None,
+                       mean: torch.Tensor | None = None) -> None:
+    m, h = x.shape
+    if m % 4 or h != 1152:
+        raise SnowLLMError("vision_merge_norm: expected groups of four 1152-wide rows")
+    _chk(x, "vision merge input", torch.bfloat16, m, h)
+    _chk(gamma, "vision merge gamma", torch.bfloat16, 4*h)
+    _chk(beta, "vision merge beta", torch.bfloat16, 4*h)
+    _chk(out, "vision merge output", torch.bfloat16, m//4, 4*h)
+    if indices is not None:
+        _chk(indices, "vision merge indices", torch.int64, m)
+    if mean is not None:
+        _chk(mean, "vision merge mean", torch.bfloat16, m//4, h)
+    if any(t.device != x.device for t in (gamma, beta, out, indices, mean) if t is not None):
+        raise SnowLLMError("vision_merge_norm: all tensors must share a device")
+    check(lib.snowllm_vision_merge_norm(_p(x), _p(indices), _p(gamma), _p(beta), _p(out),
+          _p(mean), m//4, h, eps, _stream()), "vision_merge_norm")
