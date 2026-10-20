@@ -54,6 +54,7 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | `SNOWLLM_MODELS` | Model root. |
 | `SNOWLLM_RECIPES_URL` | Catalogue URL or local JSON file. |
 | `SNOWLLM_LIB` | Kernel library override. |
+| `SNOWLLM_NO_UPDATE_CHECK` | Set to `1` to disable startup update checks. |
 | `SNOWLLM_NO_USAGE_STATS` | Set to `1` before service startup to disable [usage telemetry](./telemetry). |
 | `DO_NOT_TRACK` | Set to `1` before service startup to disable usage telemetry. |
 | `HF_ENDPOINT` | Hugging Face endpoint or mirror; download credentials are sent to this host. |

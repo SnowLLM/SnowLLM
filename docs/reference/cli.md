@@ -55,6 +55,7 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 
 | Option | Default | Description |
 | --- | --- | --- |
+| `--version` | — | Show the installed version and exit. |
 | `--enforce-eager` | Off | Disable GPU graph execution. |
 | `--profile-dir` | `SNOWLLM_TORCH_PROFILER_DIR` or unset | Directory for traces captured via profiling endpoints. |
 | `--stats-interval` | `10.0` | Seconds between throughput logs; 0 disables logs. |

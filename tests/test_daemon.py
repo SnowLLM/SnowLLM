@@ -205,6 +205,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             env = popen.call_args.kwargs["env"]
             self.assertEqual(env["SNOWLLM_CONFIG"], str(self.manager.config_path))
             self.assertEqual(env["SNOWLLM_MODELS"], self.manager.models_dir)
+            self.assertEqual(env["SNOWLLM_NO_UPDATE_CHECK"], "1")
 
     async def test_proxy_cleanup_before_stream_iteration(self):
         from starlette.requests import Request
@@ -259,6 +260,7 @@ class TerminalTests(unittest.TestCase):
             env = os.environ.copy()
             # This real daemon test must never send usage data to production.
             env["SNOWLLM_NO_USAGE_STATS"] = "1"
+            env["SNOWLLM_NO_UPDATE_CHECK"] = "1"
             env.pop("SNOWLLM_MODELS", None)
             marker = Path(tmp) / "browser-opened"
             browser = Path(tmp) / "fake-browser"

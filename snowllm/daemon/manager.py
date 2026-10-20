@@ -141,6 +141,7 @@ class DaemonManager:
         env["SNOWLLM_RECIPES_URL"] = recipes_source(self.config_path, self.config)[0]
         # Only the supervisor sends telemetry; workers expose local counters.
         env["SNOWLLM_TELEMETRY_CHILD"] = "1"
+        env["SNOWLLM_NO_UPDATE_CHECK"] = "1"
         configured_library, _ = library_path(self.config_path, self.config)
         if configured_library:
             env["SNOWLLM_LIB"] = configured_library
