@@ -12,6 +12,7 @@ import torch
 from .. import ops
 from .._capi import SnowLLMError
 from .geometry import pad_gemm_n
+from .vision_layers import VisionBlock, VisionLinear
 
 
 ROPE_THETA = 10000.0
@@ -142,29 +143,9 @@ def _bilinear_pos_inputs(grid_thw: torch.Tensor, side: int,
     return indices, weights
 
 
-@dataclass
-class _Block:
-    norm1_w: torch.Tensor
-    norm1_b: torch.Tensor
-    qkv_w: torch.Tensor
-    qkv_b: torch.Tensor
-    proj_w: torch.Tensor
-    proj_b: torch.Tensor
-    norm2_w: torch.Tensor
-    norm2_b: torch.Tensor
-    fc1_w: torch.Tensor
-    fc1_b: torch.Tensor
-    fc2_w: torch.Tensor
-    fc2_b: torch.Tensor
-
-
-def _shuffle(w: torch.Tensor, N: int, K: int) -> torch.Tensor:
-    return ops.gemm_bf16_shuffle_b(w.contiguous(), N, K)
-
-
 class VisionModel:
     def __init__(self, patch_w: torch.Tensor, patch_b: torch.Tensor, pos_embed: torch.Tensor,
-                 blocks: list["_Block"], merger: dict[str, torch.Tensor],
+                 blocks: list[VisionBlock], merger: dict[str, torch.Tensor],
                  geo: VisionGeometry) -> None:
         self.geo = geo
         self.patch_w = patch_w
@@ -195,46 +176,34 @@ class VisionModel:
                       prefix: str = "model.visual.") -> "VisionModel":
         geo = VisionGeometry.from_config(vision_config)
         HIDDEN, PATCH_IN = geo.hidden, geo.patch_in
-        INTERMEDIATE, INTERMEDIATE_PAD = geo.intermediate, geo.intermediate_pad
-        MERGE_IN, OUT_HIDDEN = geo.merge_in, geo.out_hidden
 
         def g(name: str) -> torch.Tensor:
             return sd[prefix + name].to(torch.bfloat16).cuda()
 
-        patch_w = _shuffle(g("patch_embed.proj.weight").reshape(HIDDEN, PATCH_IN), HIDDEN, PATCH_IN)
-        patch_b = g("patch_embed.proj.bias")
-        pos_embed = g("pos_embed.weight")
+        def linear(name):
+            return VisionLinear.pack(g(name + ".weight"), g(name + ".bias"))
 
+        def norm(name):
+            return g(name + ".weight"), g(name + ".bias")
+
+        patch = VisionLinear.pack(g("patch_embed.proj.weight").reshape(HIDDEN, PATCH_IN),
+                                  g("patch_embed.proj.bias"), pad=False)
+        patch_w, patch_b = patch.weight, patch.bias
+        pos_embed = g("pos_embed.weight")
         blocks = []
         for i in range(geo.depth):
             p = f"blocks.{i}."
-            fc1w = g(p + "mlp.linear_fc1.weight")
-            fc1w_pad = torch.zeros(INTERMEDIATE_PAD, HIDDEN, dtype=torch.bfloat16, device="cuda")
-            fc1w_pad[:INTERMEDIATE] = fc1w
-            fc1b = torch.zeros(INTERMEDIATE_PAD, dtype=torch.bfloat16, device="cuda")
-            fc1b[:INTERMEDIATE] = g(p + "mlp.linear_fc1.bias")
-            fc2w = g(p + "mlp.linear_fc2.weight")
-            fc2w_pad = torch.zeros(HIDDEN, INTERMEDIATE_PAD, dtype=torch.bfloat16, device="cuda")
-            fc2w_pad[:, :INTERMEDIATE] = fc2w
-            blocks.append(_Block(
-                norm1_w=g(p + "norm1.weight"), norm1_b=g(p + "norm1.bias"),
-                qkv_w=_shuffle(g(p + "attn.qkv.weight"), 3 * HIDDEN, HIDDEN),
-                qkv_b=g(p + "attn.qkv.bias"),
-                proj_w=_shuffle(g(p + "attn.proj.weight"), HIDDEN, HIDDEN),
-                proj_b=g(p + "attn.proj.bias"),
-                norm2_w=g(p + "norm2.weight"), norm2_b=g(p + "norm2.bias"),
-                fc1_w=_shuffle(fc1w_pad, INTERMEDIATE_PAD, HIDDEN), fc1_b=fc1b,
-                fc2_w=_shuffle(fc2w_pad, HIDDEN, INTERMEDIATE_PAD),
-                fc2_b=g(p + "mlp.linear_fc2.bias"),
-            ))
+            blocks.append(VisionBlock(
+                norm1=norm(p + "norm1"), norm2=norm(p + "norm2"),
+                qkv=linear(p + "attn.qkv"), proj=linear(p + "attn.proj"),
+                fc1=linear(p + "mlp.linear_fc1"), fc2=linear(p + "mlp.linear_fc2")))
 
         mp = "merger."
+        fc1, fc2 = linear(mp + "linear_fc1"), linear(mp + "linear_fc2")
         merger = {
             "norm_w": g(mp + "norm.weight"), "norm_b": g(mp + "norm.bias"),
-            "fc1_w": _shuffle(g(mp + "linear_fc1.weight"), MERGE_IN, MERGE_IN),
-            "fc1_b": g(mp + "linear_fc1.bias"),
-            "fc2_w": _shuffle(g(mp + "linear_fc2.weight"), OUT_HIDDEN, MERGE_IN),
-            "fc2_b": g(mp + "linear_fc2.bias"),
+            "fc1_w": fc1.weight, "fc1_b": fc1.bias,
+            "fc2_w": fc2.weight, "fc2_b": fc2.bias,
         }
         return cls(patch_w, patch_b, pos_embed, blocks, merger, geo)
 
@@ -243,16 +212,13 @@ class VisionModel:
               residual: torch.Tensor | None = None) -> torch.Tensor:
         m = a.shape[0]
         scratch = self._byte_buf("agemm", ops.vision_gemm_scratch_bytes(m, K))
-        ops.vision_gemm_bias_act(a, w_shuffled, scratch, out, bias, residual, m, N, K, act)
-        return out
+        return VisionLinear(w_shuffled, bias, N, K).forward(a, out, scratch, act, residual)
 
     @torch.no_grad()
     def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         g = self.geo
         HIDDEN, PATCH_IN, OUT_HIDDEN = g.hidden, g.patch_in, g.out_hidden
         INTERMEDIATE_PAD, MERGE_IN, MERGE_UNIT = g.intermediate_pad, g.merge_in, g.merge_unit
-        # Grid-derived metadata is CPU input preparation. Validate it before any
-        # GPU work so native offsets and position lookups are always in bounds.
         if grid_thw.dim() != 2 or grid_thw.shape[1] != 3:
             raise SnowLLMError("vision grid_thw must be an [images,3] tensor")
         grid_thw = grid_thw.cpu()
@@ -278,20 +244,12 @@ class VisionModel:
         for length in _seg_lengths(grid_thw):
             cu.append(cu[-1] + length)
         cu = torch.tensor(cu, dtype=torch.int32, device=x.device)
-        o = self._buf("o", M, HIDDEN)
-
+        scratch = max(ops.vision_gemm_scratch_bytes(M, k) for k in (HIDDEN, INTERMEDIATE_PAD))
+        buffers = dict(norm=self._buf("ln", M, HIDDEN), qkv=self._buf("qkv", M, 3 * HIDDEN),
+                       attention=self._buf("o", M, HIDDEN), ff=self._buf("h1", M, INTERMEDIATE_PAD),
+                       scratch=self._byte_buf("agemm", scratch))
         for blk in self.blocks:
-            ln = self._buf("ln", M, HIDDEN)
-            ops.vision_layernorm(hidden, blk.norm1_w, blk.norm1_b, ln, LN_EPS)
-            qkv = self._buf("qkv", M, 3 * HIDDEN)
-            self._gemm(ln, blk.qkv_w, blk.qkv_b, 3 * HIDDEN, HIDDEN, qkv, act=0)
-            ops.vision_attention(qkv, cos, sin, cu, o, g.num_heads, g.head_dim)
-            self._gemm(o, blk.proj_w, blk.proj_b, HIDDEN, HIDDEN, hidden, act=0, residual=hidden)
-            ops.vision_layernorm(hidden, blk.norm2_w, blk.norm2_b, ln, LN_EPS)
-            h1 = self._buf("h1", M, INTERMEDIATE_PAD)
-            self._gemm(ln, blk.fc1_w, blk.fc1_b, INTERMEDIATE_PAD, HIDDEN, h1, act=1)
-            self._gemm(h1, blk.fc2_w, blk.fc2_b, HIDDEN, INTERMEDIATE_PAD, hidden, act=0,
-                       residual=hidden)
+            blk.forward(hidden, cu, buffers, g.num_heads, g.head_dim, LN_EPS, cos, sin)
 
         mg = self.merger
         mnorm = self._buf("mnorm", M, HIDDEN)

@@ -35,6 +35,11 @@ def image_rows(input_ids: list[int], image_token_id: int) -> list[int]:
 
 def prepare(model: object, processor: object, messages: list[dict], images: list,
             **template_kwargs: object) -> dict:
+    if images and model.visual is None:
+        raise ValueError("this checkpoint carries no vision tower, so it cannot answer about an image")
+    if images and getattr(model, "multimodal_type", None) == "minicpmv4_7":
+        from .minicpmv.processing import prepare as mini_prepare
+        return mini_prepare(model, processor, messages, images, **template_kwargs)
     text = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False,
                                          **template_kwargs)
     enc = processor(text=[text], images=images or None, return_tensors="pt")
@@ -42,9 +47,6 @@ def prepare(model: object, processor: object, messages: list[dict], images: list
     if not images:
         return {"prompt": ids}
 
-    if model.visual is None:
-        raise ValueError("this checkpoint carries no vision tower (model.visual.*), so it cannot "
-                         "answer about an image")
     grid = enc["image_grid_thw"]
     embeds = model.visual.forward(enc["pixel_values"], grid).to(torch.bfloat16, copy=True)
     rows = image_rows(ids, model.image_token_id)

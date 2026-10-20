@@ -28,10 +28,8 @@ def config(g: GGUF) -> dict:
     if g.arch == qwen4exp.ARCH:
         return qwen4exp.config(g)
     if g.arch == dspark.ARCH:
-        raise SnowLLMError(f"{g.path.name} is the DeepSeek-V4-Flash DSpark drafter, not a model: "
-                           f"it carries three layers, no embedding and no output head, and runs "
-                           f"beside the checkpoint it drafts for. Point --model at the "
-                           f"checkpoint instead.")
+        raise SnowLLMError(f"{g.path.name} is a draft checkpoint. Point --model at its target "
+                           f"and --dflash at this file.")
     if g.arch not in (ARCH_MOE, ARCH_DENSE):
         raise SnowLLMError(f"{g.path.name} is a {g.arch!r} checkpoint; SnowLLM's GGUF support is "
                            f"for {ARCH_MOE!r} (Qwen3.6-35B-A3B), {ARCH_DENSE!r} (Qwen3.6-27B), "
@@ -85,13 +83,15 @@ def config(g: GGUF) -> dict:
         })
     else:
         text["intermediate_size"] = int(g.need("{arch}.feed_forward_length"))
-    return {
+    raw = {
         "architectures": ARCHITECTURES if moe else ARCHITECTURES_DENSE,
         "model_type": "qwen3_5_moe" if moe else "qwen3_5",
         "text_config": text,
         "bos_token_id": _opt_int(g, "tokenizer.ggml.bos_token_id"),
         "eos_token_id": _opt_int(g, "tokenizer.ggml.eos_token_id"),
     }
+    from . import minicpmv
+    return minicpmv.config(g, raw) if minicpmv.is_model(g) else raw
 
 
 def nextn_layers(g: GGUF) -> int:

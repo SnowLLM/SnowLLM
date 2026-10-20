@@ -105,6 +105,11 @@ def build(g: GGUF) -> "PreTrainedTokenizerFast":
         i = g.get(key)
         return None if i is None else tokens[int(i)]
 
+    from .minicpmv import is_model
+    extras = {}
+    if is_model(g):
+        from ...models.minicpmv.processing import SPECIAL_TOKENS
+        extras["extra_special_tokens"] = SPECIAL_TOKENS
     return PreTrainedTokenizerFast(
         tokenizer_object=Tokenizer.from_str(json.dumps(tokenizer_json(g))),
         chat_template=g.get("tokenizer.chat_template"),
@@ -114,6 +119,7 @@ def build(g: GGUF) -> "PreTrainedTokenizerFast":
         add_bos_token=bool(g.get("tokenizer.ggml.add_bos_token", False)),
         model_max_length=int(g.get("{arch}.context_length", 1 << 30)),
         clean_up_tokenization_spaces=False,
+        **extras,
     )
 
 

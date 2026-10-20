@@ -42,7 +42,8 @@ MiniCPM-V 4.7 supports text, single and multiple images, and high-resolution ima
 Its image processor needs `transformers>=5.18` and `torchvision`. The recipe includes the projector and the
 official chat template, which enables `enable_thinking`; the template embedded in the official
 GGUF forces instruct mode. Images use 16x compression by default; pass `downsample_mode: "4x"`
-in `chat_template_kwargs` for more visual detail. Keep the matching `mmproj-model-f16.gguf`
+in `chat_template_kwargs` for more visual detail, or `max_slice_nums: 1` to disable detail slices.
+Keep the matching `mmproj-model-f16.gguf`
 and `chat_template.jinja` beside the model. Video input and LES expert streaming are not implemented.
 
 The `minicpm-v4.7-35b-a3b-q4-k-m-dspark` recipe adds the official Q8 DSpark drafter (405 MiB

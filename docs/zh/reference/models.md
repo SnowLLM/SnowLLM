@@ -25,7 +25,7 @@ Flash-Next 默认使用 MTP k=2；选择 `qwen3.8-flash-next-q3-k-xl-no-mtp` 可
 
 GLM-5.3-Flash 提供普通版和 `glm5.3-flash-iq2-xxs-mtp` 两个方案，后者使用四个 GGUF 分片中内嵌的 NextN 头启用 MTP k=2。两者均使用自动主机专家放置、0.95 GPU 显存使用比例、BF16 KV、单请求槽位和已测过的 227328-token 上下文容量。目前未实现 GLM 图片输入，因此方案只下载文本权重。
 
-MiniCPM-V 4.7 支持文本、单图、多图和高分辨率图片切片，图像处理器需要 `transformers>=5.18` 和 `torchvision`。方案附带视觉投影文件和官方聊天模板，后者支持 `enable_thinking`；官方 GGUF 内嵌模板强制使用指令模式。图片默认使用 16x 压缩，可在 `chat_template_kwargs` 中传入 `downsample_mode: "4x"` 保留更多视觉细节。请将匹配的 `mmproj-model-f16.gguf` 和 `chat_template.jinja` 与模型放在同一目录。目前未接入该模型的视频输入和 LES 专家流式加载。
+MiniCPM-V 4.7 支持文本、单图、多图和高分辨率图片切片，图像处理器需要 `transformers>=5.18` 和 `torchvision`。方案附带视觉投影文件和官方聊天模板，后者支持 `enable_thinking`；官方 GGUF 内嵌模板强制使用指令模式。图片默认使用 16x 压缩，可在 `chat_template_kwargs` 中传入 `downsample_mode: "4x"` 保留更多视觉细节，或用 `max_slice_nums: 1` 关闭细节切片。请将匹配的 `mmproj-model-f16.gguf` 和 `chat_template.jinja` 与模型放在同一目录。目前未接入该模型的视频输入和 LES 专家流式加载。
 
 `minicpm-v4.7-35b-a3b-q4-k-m-dspark` 方案附带官方 Q8 DSpark 草稿模型（下载约 405 MiB，常驻权重约 519 MiB），支持文本、图片、批量 HIP graph 和置信度预测头。已有权重可通过 `--dflash /path/to/dspark` 指定对应草稿目录或 GGUF 文件，也支持 BF16 safetensors。方案使用 `--dflash-block 8`，可选 1、4、8、15；0 使用官方配置的 15。较小的块可能更快：本机测过的代码提示词使用 4 比 8 快。`--dflash-p-min` 可启用置信度截断，默认为 0（关闭）。
 
