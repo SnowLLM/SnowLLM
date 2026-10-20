@@ -82,7 +82,6 @@ def main():
     for i, (h, w) in enumerate(((6, 10), (6, 10), (4, 8))):
         m = h * w
         single = model.forward(x[start:start+m], torch.tensor([[1, h, w]])).clone()
-        # The underlying GEMM has the same contraction/rounding for any M tile.
         check.exact(f"complete tower frame/image isolation {i}",
                     batch[start // model.geo.merge_unit:(start+m) // model.geo.merge_unit], single)
         start += m

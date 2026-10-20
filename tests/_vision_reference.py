@@ -67,9 +67,9 @@ def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.T
 
     for blk in self.blocks:
         ln = self._buf("ln", M, HIDDEN)
-        ops.vision_layernorm(hidden, blk.norm1_w, blk.norm1_b, ln, LN_EPS)
+        ops.vision_layernorm(hidden, *blk.norm1, ln, LN_EPS)
         qkv = self._buf("qkv", M, 3 * HIDDEN)
-        self._gemm(ln, blk.qkv_w, blk.qkv_b, 3 * HIDDEN, HIDDEN, qkv, act=0)
+        self._gemm(ln, blk.qkv.weight, blk.qkv.bias, 3 * HIDDEN, HIDDEN, qkv, act=0)
         ops.vision_rope_qk(qkv[:M], cos, sin, HIDDEN, g.num_heads, g.head_dim)
         start = 0
         for S in segs:
@@ -79,11 +79,11 @@ def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.T
             ops.vision_attn(q, k, v, o[start:start + S], S, HIDDEN, g.num_heads,
                             g.head_dim)
             start += S
-        self._gemm(o, blk.proj_w, blk.proj_b, HIDDEN, HIDDEN, hidden, act=0, residual=hidden)
-        ops.vision_layernorm(hidden, blk.norm2_w, blk.norm2_b, ln, LN_EPS)
+        self._gemm(o, blk.proj.weight, blk.proj.bias, HIDDEN, HIDDEN, hidden, act=0, residual=hidden)
+        ops.vision_layernorm(hidden, *blk.norm2, ln, LN_EPS)
         h1 = self._buf("h1", M, INTERMEDIATE_PAD)
-        self._gemm(ln, blk.fc1_w, blk.fc1_b, INTERMEDIATE_PAD, HIDDEN, h1, act=1)
-        self._gemm(h1, blk.fc2_w, blk.fc2_b, HIDDEN, INTERMEDIATE_PAD, hidden, act=0,
+        self._gemm(ln, blk.fc1.weight, blk.fc1.bias, INTERMEDIATE_PAD, HIDDEN, h1, act=1)
+        self._gemm(h1, blk.fc2.weight, blk.fc2.bias, HIDDEN, INTERMEDIATE_PAD, hidden, act=0,
                    residual=hidden)
 
     mg = self.merger

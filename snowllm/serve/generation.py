@@ -298,8 +298,12 @@ def _load_image(url: str) -> "Image.Image":
     from PIL import Image
 
     if url.startswith("data:"):
+        import binascii
         _, _, payload = url.partition(",")
-        return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+        try:
+            return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+        except (binascii.Error, ValueError, OSError) as exc:
+            raise HTTPException(400, "could not decode image data") from exc
     if not serving().allow_image_urls:
         raise HTTPException(400, "fetching image URLs is disabled; send a data: URI, or start the "
                                  "server with --allow-image-urls")
@@ -342,7 +346,10 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
     if st.processor is None:
         raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
                                  "images")
-    mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
+    try:
+        mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return mm.pop("prompt"), mm
 
 

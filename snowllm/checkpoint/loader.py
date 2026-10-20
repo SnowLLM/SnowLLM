@@ -138,7 +138,11 @@ def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[
         from .gguf.source import find_gguf
         from .gguf.tokenizer import build, stop_token_ids
         container = GGUF(find_gguf(root))
-        return build(container), stop_token_ids(container)
+        tok = build(container)
+        template = root / "chat_template.jinja"
+        if template.is_file():
+            tok.chat_template = template.read_text(encoding="utf-8")
+        return tok, stop_token_ids(container)
 
     from transformers import AutoTokenizer, PreTrainedTokenizerFast
     if (root / "tokenizer.json").exists():
@@ -175,6 +179,15 @@ def load_processor(root: pathlib.Path, tok: "PreTrainedTokenizerBase") -> "Proce
 
     if not is_gguf(root):
         return AutoProcessor.from_pretrained(str(root))
+
+    from .gguf import GGUF, minicpmv
+    from .gguf.source import find_mmproj
+    tower = find_mmproj(root)
+    if tower is not None:
+        g = GGUF(tower)
+        if g.get("clip.projector_type") == "minicpmv4_7":
+            from ..models.minicpmv.processing import processor
+            return processor(tok, minicpmv.vision_config(g))
 
     missing = [n for n in PROCESSOR_CONFIGS if not (root / n).exists()]
     if missing:
@@ -219,14 +232,27 @@ def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int
     want = layers if layers is not None else range(cfg["num_hidden_layers"])
     fp8 = (raw.get("quantization_config") or cfg.get("quantization_config")
            or {}).get("quant_method") == "fp8"
+    if raw.get("model_type") == "minicpmv4_7" and (raw.get("quantization_config") or cfg.get("quantization_config")):
+        raise SnowLLMError("MiniCPM-V quantized safetensors are not supported; use BF16 or GGUF")
 
     if shard_cache is None:
         shard_cache = 6 if fp8 else 0
     with Reader(root, shard_cache=shard_cache) as rd:
         w = WeightSource(rd)
         model = load_weights(w, cfg, want, fp8, mtp)
+        model.multimodal_config = raw
         model.vision_config = raw.get("vision_config")
-        model.visual = load_vision(w, model.vision_config) if vision else None
+        if raw.get("model_type") == "minicpmv4_7" and vision:
+            from ..models.minicpmv.vision import MiniCPMVision
+            vc = {**model.vision_config, "downsample_mode": raw.get("downsample_mode", "16x"),
+                  "insert_layer_id": raw.get("insert_layer_id", 6), "out_hidden_size": cfg["hidden_size"],
+                  "scale_resolution": 448, "max_slice_nums": 9}
+            sd = {k: w.read_dequant(k) for k in rd.keys()
+                  if k.startswith(("model.vision_tower.", "model.merger."))}
+            model.vision_config = vc
+            model.visual = MiniCPMVision(sd, vc)
+        else:
+            model.visual = load_vision(w, model.vision_config) if vision else None
         model.image_token_id = raw.get("image_token_id")
     torch.cuda.empty_cache()
     return model
@@ -293,12 +319,19 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
                                  device_map=dmap)
             m.vision_config = None
             m.visual = None
+            m.multimodal_config = raw
             m.image_token_id = image_token_id(rd.gguf)
             if tower is not None:
                 from ..models.vision import VisionModel
                 with GGUFReader(tower) as vrd:
-                    m.vision_config = vision_config(vrd.gguf)
-                    m.visual = VisionModel.from_hf_state(vision_state(vrd), m.vision_config)
+                    if raw.get("model_type") == "minicpmv4_7":
+                        from .gguf import minicpmv
+                        from ..models.minicpmv.vision import MiniCPMVision
+                        m.vision_config = minicpmv.vision_config(vrd.gguf)
+                        m.visual = MiniCPMVision.from_gguf(vrd)
+                    else:
+                        m.vision_config = vision_config(vrd.gguf)
+                        m.visual = VisionModel.from_hf_state(vision_state(vrd), m.vision_config)
             return m
 
         from ..models import placement
