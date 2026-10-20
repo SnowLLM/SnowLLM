@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import html
 import json
 import pathlib
 import sys
@@ -7,6 +8,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RUNS = ROOT / "benchmarks" / "runs"
 OUT = ROOT / "web" / "benchmarks.json"
+PAGE = ROOT / "web" / "benchmark" / "index.html"
+START = "<!-- BEGIN GENERATED BENCHMARK DATA -->"
+END = "<!-- END GENERATED BENCHMARK DATA -->"
 
 
 def merged_rows() -> list[dict]:
@@ -204,6 +208,71 @@ def build_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
+def render_benchmark_content(data: dict, messages: dict) -> str:
+    def text(key: str) -> str:
+        return f'data-i18n="{key}">{html.escape(messages[key])}'
+
+    columns = [
+        ("engine", "benchmark.engine"), ("arm", "benchmark.variant"),
+        ("isl_target", "benchmark.targetInput"), ("isl", "benchmark.actualInput"),
+        ("decode", "metric.decode.label"), ("prefill", "metric.prefill.label"),
+        ("ttft", "metric.ttft.label"), ("step_ms", "metric.ms.label"),
+        ("al", "metric.al.label"),
+    ]
+    parts = [
+        '<details id="benchmark-results" class="benchmark-results" open>',
+        f'<summary {text("benchmark.allResults")}</summary>',
+        f'<p class="note" {text("benchmark.resultsNote")}</p>',
+    ]
+    models = dict.fromkeys(series["model"] for series in data["series"])
+    for model in models:
+        parts.extend([
+            '<div class="scroll"><table>',
+            f'<caption>{html.escape(model)}</caption>',
+            '<thead><tr>' + ''.join(f'<th scope="col" {text(key)}</th>' for _, key in columns) + '</tr></thead>',
+            '<tbody>',
+        ])
+        for series in data["series"]:
+            if series["model"] != model:
+                continue
+            for point in series["points"]:
+                values = {**point, "engine": series["engine"], "arm": series["arm"]}
+                cells = []
+                for column, _ in columns:
+                    value = values.get(column)
+                    if value is None:
+                        content = "—"
+                    elif column in ("isl_target", "isl"):
+                        content = f"{value:,}"
+                    elif isinstance(value, (int, float)):
+                        content = str(value)
+                    elif column == "arm" and "no spec" in value:
+                        content = html.escape(value).replace("no spec", f'<span {text("benchmark.noSpec")}</span>')
+                    else:
+                        content = html.escape(str(value))
+                    tag = 'th scope="row"' if column == "engine" else "td"
+                    cells.append(f'<{tag}>{content}</{tag.split()[0]}>')
+                parts.append(f'<tr data-series-key="{html.escape(series["key"], quote=True)}" data-isl-target="{point["isl_target"]}">' + ''.join(cells) + '</tr>')
+        parts.extend(['</tbody></table></div>'])
+    if any(point.get("derived") for series in data["series"] for point in series["points"]):
+        parts.append(f'<p class="note" {text("benchmark.derived")}</p>')
+    parts.extend([
+        '</details>',
+        '<script type="application/json" id="benchmarks-data">',
+        json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c'),
+        '</script>',
+    ])
+    return '\n'.join(parts)
+
+
+def render_benchmark_page(template: str, data: dict, messages: dict) -> str:
+    if template.count(START) != 1 or template.count(END) != 1:
+        raise ValueError("benchmark page must contain one generated data region")
+    before, rest = template.split(START)
+    _, after = rest.split(END)
+    return before + START + '\n' + render_benchmark_content(data, messages) + '\n' + END + after
+
+
 def main() -> int:
     argparse.ArgumentParser().parse_args()
 
@@ -211,7 +280,11 @@ def main() -> int:
     rows = build_rows(merged)
     series, skipped = build_series(merged)
 
-    OUT.write_text(json.dumps({"schema": 2, "rows": rows, "series": series}, indent=1) + "\n")
+    data = {"schema": 2, "rows": rows, "series": series}
+    messages = json.loads((ROOT / "web" / "locales" / "en.json").read_text())
+    page = render_benchmark_page(PAGE.read_text(), data, messages)
+    OUT.write_text(json.dumps(data, indent=1) + "\n")
+    PAGE.write_text(page)
     print(f"{len(merged)} row(s) from {RUNS.relative_to(ROOT)}/ -> "
           f"{len(rows)} comparison row(s) and {len(series)} series in {OUT.relative_to(ROOT)}")
     if skipped:

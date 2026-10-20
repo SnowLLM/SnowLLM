@@ -2,6 +2,7 @@
 import json
 import pathlib
 import re
+import runpy
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -114,13 +115,23 @@ def check_benchmark_view() -> None:
     if not path.exists():
         return
     try:
-        series = json.loads(path.read_text())["series"]
+        data = json.loads(path.read_text())
+        series = data["series"]
     except (ValueError, KeyError) as e:
         problems.append(f"benchmarks.json has no usable series: {e}")
         return
     featured = [s for s in series if s.get("featured")]
     if not featured or any(not s.get("points") for s in featured):
         problems.append("benchmarks.json must have a default series with measured points")
+    builder = runpy.run_path(str(ROOT / "scripts" / "build-benchmarks.py"))
+    messages = json.loads((ROOT / "web" / "locales" / "en.json").read_text())
+    try:
+        expected = builder["render_benchmark_page"](BENCHMARK_PAGE, data, messages)
+    except ValueError as error:
+        problems.append(str(error))
+        return
+    if expected != BENCHMARK_PAGE:
+        problems.append("benchmark HTML differs from benchmarks.json -- run scripts/build-benchmarks.py")
 
 
 def check_catalogue() -> None:

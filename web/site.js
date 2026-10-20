@@ -827,14 +827,16 @@ function loadTable(id, build) {
   var container = document.getElementById(id);
   if (!container) return;
   var src = container.dataset.src;
+  var inline = document.getElementById(container.dataset.inline);
+  container.hidden = false;
   container.textContent = "";
   container.appendChild(el("p", { class: "empty", text: t("common.loading") }));
-  fetch(src, { cache: "no-cache" })
+  var request = inline ? Promise.resolve().then(function () { return JSON.parse(inline.textContent); }) : fetch(src, { cache: "no-cache" })
     .then(function (r) {
       if (!r.ok) throw new Error(src + ": " + r.status);
       return r.json();
-    })
-    .then(function (data) { build(container, data); })
+    });
+  request.then(function (data) { build(container, data); })
     .catch(function (err) {
       container.innerHTML = "";
       container.appendChild(el("p", { class: "empty",
@@ -850,6 +852,9 @@ loadTable("benchmarks-picker", function (container, data) {
       renderMetricCharts(host, series, keys, metrics, view);
     },
   });
+  host.hidden = false;
+  var results = document.getElementById("benchmark-results");
+  if (results) results.open = false;
 });
 
 function humanBytes(n) {

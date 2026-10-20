@@ -674,6 +674,12 @@
     margin-bottom: 1.25rem;
   }
 
+  .benchmark-results { margin-top: 2rem; border-top: 1px solid var(--hair); padding-top: 1rem; }
+  .benchmark-results summary { cursor: pointer; font-weight: 600; }
+  .benchmark-results .scroll { margin-top: 1.5rem; }
+  .benchmark-results caption { text-align: left; font-weight: 600; color: var(--ink); padding-bottom: .75rem; }
+  .benchmark-results td { white-space: nowrap; }
+
   .toolbar .opt { padding: 0.35rem 0.7rem; font-size: var(--fs-ui); }
 
   .dropdown {
