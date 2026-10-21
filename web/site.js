@@ -879,45 +879,89 @@ function needsNewer(requires, have) {
   return false;
 }
 
-loadTable("recipes-table", function (container, data) {
-  var rows = data.recipes;
-  var release = data.version;
-  var columns = [
-    { key: "model", label: t("recipe.model"), labelKey: "recipe.model", filter: true, className: function () { return "name-cell"; },
-      render: function (r) {
-        var id = "rec-" + r.id.replace(/[^a-z0-9]+/gi, "-");
-        var repos = [{ url: r.url, repo: r.repo }].concat(r.sources || []);
-        return '<button class="rowinfo" type="button" popovertarget="' + id + '">'
-          + esc(r.model) + "</button>"
-          + '<div class="card" popover id="' + id + '">'
-          + "<h4>" + esc(r.model) + " &middot; " + esc(r.precision) + "</h4>"
-          + (r.summary ? "<p>" + esc(t("recipe.summary." + r.id) === "recipe.summary." + r.id ? r.summary : t("recipe.summary." + r.id)) + "</p>" : "")
-          + "<dl><dt>" + t("recipe.source") + "</dt><dd>"
-          + repos.map(function (x) {
-              return '<a href="' + esc(x.url) + '">' + esc(x.repo) + "</a>";
-            }).join("<br>")
-          + "</dd><dt>" + t("recipe.pull") + "</dt><dd><code>snowllm pull " + esc(r.id) + "</code></dd>"
-          + "<dt>" + t("recipe.run") + "</dt><dd><code>snowllm " + esc(r.id) + "</code></dd></dl>"
-          + "</div>";
-      } },
-    { key: "precision", label: t("recipe.precision"), labelKey: "recipe.precision", filter: true },
-    { key: "spec", label: t("recipe.spec"), labelKey: "recipe.spec", filter: true,
-      render: function (r) { return r.spec === "none" ? '<span class="off">' + t('recipe.none') + '</span>' : r.spec; } },
-    { key: "requires", label: t("recipe.status"), labelKey: "recipe.status", filter: true,
-      value: function (r) {
-        return r.status === "coming soon" ? "recipe.comingSoon"
-          : needsNewer(r.requires, release) ? "recipe.newer" : "recipe.supported";
-      },
-      filterLabel: function (value) { return t(value); },
-      render: function (r) {
-        return r.status === "coming soon" ? t("recipe.comingSoon") : needsNewer(r.requires, release)
-          ? t('recipe.newer') + '<span class="sub">snowllm ' + esc(r.requires) + "+</span>"
-          : t("recipe.supported");
-      } },
-    { key: "bytes", label: t("recipe.size"), labelKey: "recipe.size", heat: false, value: function (r) { return r.bytes || 0; },
-      render: function (r) { return humanBytes(r.bytes) || "—"; } },
-    { key: "id", label: t("recipe.pullWith"), labelKey: "recipe.pullWith", sortable: false,
-      render: function (r) { return "<code>snowllm pull " + r.id + "</code>"; } },
-  ];
-  mountTable(container, rows, columns, { defaultSort: "model" });
+loadTable("recipes-catalogue", function (container, data) {
+  var query = "", filters = {};
+  var fields = ["precision", "spec", "status"];
+  function statusKey(recipe) {
+    return recipe.status === "coming soon" ? "recipe.comingSoon"
+      : needsNewer(recipe.requires, data.version) ? "recipe.newer" : "recipe.supported";
+  }
+  function valueOf(recipe, field) {
+    return field === "status" ? statusKey(recipe) : recipe[field];
+  }
+  function filterLabel(field, value) {
+    return field === "status" ? t(value) : field === "spec" && value === "none" ? t("recipe.none") : value;
+  }
+  var search, count, grid;
+  function renderCards() {
+    var visible = data.recipes.filter(function (recipe) {
+      return [recipe.model, recipe.id, recipe.precision].join(" ").toLowerCase().includes(query)
+        && fields.every(function (field) { return !filters[field] || valueOf(recipe, field) === filters[field]; });
+    });
+    count.textContent = t("recipe.count", { count: visible.length });
+    grid.replaceChildren();
+    visible.forEach(function (recipe) {
+      var status = statusKey(recipe);
+      var badge = el("span", { class: "recipe-status" + (status === "recipe.supported" ? " supported" : ""), text: t(status) });
+      if (status === "recipe.newer") badge.appendChild(el("span", { text: "snowllm " + recipe.requires + "+" }));
+      var card = el("article", { class: "recipe-card" }, [
+        el("div", { class: "recipe-card-top" }, [
+          el("span", { class: "recipe-precision", text: recipe.precision }), badge,
+        ]),
+        el("h3", { text: recipe.model }),
+        el("div", { class: "recipe-id", text: recipe.id }),
+        el("p", { class: "recipe-spec", text: t("recipe.spec") + ": " + filterLabel("spec", recipe.spec) }),
+      ]);
+      if (recipe.summary) {
+        var summaryKey = "recipe.summary." + recipe.id;
+        card.appendChild(el("p", { class: "recipe-summary", text: t(summaryKey) === summaryKey ? recipe.summary : t(summaryKey) }));
+      }
+      var sources = el("details", { class: "recipe-sources" }, [el("summary", { text: t("recipe.source") })]);
+      [{ url: recipe.url, repo: recipe.repo }].concat(recipe.sources || []).forEach(function (source) {
+        sources.appendChild(el("a", { href: source.url, text: source.repo }));
+      });
+      card.appendChild(sources);
+      var commands = el("div", { class: "recipe-commands" });
+      [
+        { label: "recipe.pull", command: "snowllm pull " + recipe.id },
+        { label: "recipe.run", command: "snowllm " + recipe.id },
+      ].forEach(function (item) {
+        commands.appendChild(el("div", {}, [
+          el("span", { text: t(item.label) }), el("code", { text: item.command }),
+        ]));
+      });
+      card.appendChild(el("div", { class: "recipe-footer" }, [
+        el("span", { class: "recipe-size", text: t("recipe.size") + ": " + (humanBytes(recipe.bytes) || "—") }), commands,
+      ]));
+      grid.appendChild(card);
+    });
+    if (!visible.length) grid.appendChild(el("p", { class: "empty", text: t("recipe.noResults") }));
+  }
+  function render() {
+    container.replaceChildren();
+    search = el("input", { type: "search", placeholder: t("recipe.search"), "aria-label": t("recipe.search") });
+    search.value = query;
+    search.addEventListener("input", function () { query = search.value.trim().toLowerCase(); renderCards(); });
+    count = el("span", { class: "recipe-count", role: "status" });
+    var tools = el("div", { class: "recipe-tools" }, [search, count]);
+    var controls = el("div", { class: "recipe-filters" });
+    fields.forEach(function (field) {
+      var label = t("recipe." + field);
+      var select = el("select", { "aria-label": t("common.filter", { label: label }) });
+      select.appendChild(el("option", { value: "", text: t("common.all", { label: label.toLowerCase() }) }));
+      Array.from(new Set(data.recipes.map(function (recipe) { return valueOf(recipe, field); }))).sort().forEach(function (value) {
+        select.appendChild(el("option", { value: value, text: filterLabel(field, value) }));
+      });
+      select.value = filters[field] || "";
+      select.addEventListener("change", function () { filters[field] = select.value; renderCards(); });
+      controls.appendChild(el("label", {}, [document.createTextNode(label), select]));
+    });
+    grid = el("div", { class: "recipe-grid" });
+    container.appendChild(tools);
+    container.appendChild(controls);
+    container.appendChild(grid);
+    renderCards();
+  }
+  render();
+  onLanguageChange(render);
 });
