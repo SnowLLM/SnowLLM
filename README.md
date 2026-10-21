@@ -46,7 +46,7 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | Recipe                       | Model                                                                                | Format          | Resident | tok/s at batch 1               |
 | ---------------------------- | ------------------------------------------------------------------------------------ | --------------- | -------- | ------------------------------ |
 | `qwen3.8-flash-next-q3-k-xl` | [Qwen3.8-Flash-Next](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF)          | UD-Q3_K_XL GGUF | 62.1 GiB | 39.1 with MTP, at 8K           |
-| `deepseek-v4-flash-iq2-xxs`  | [DeepSeek-V4-Flash-0731](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF)  | UD-IQ2_XXS GGUF | 86.0 GiB | 17.5                           |
+| `deepseek-v4-flash-iq2-xxs-400k`  | [DeepSeek-V4-Flash-0731](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF)  | UD-IQ2_XXS GGUF | 86.0 GiB | 17.5                           |
 | `qwen3.8-27b-q4-k-xl`        | [Qwen3.8-27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF)                       | UD-Q4_K_XL GGUF | 19.9 GiB | 19.2 with MTP, 22.5 with DFlash 2 |
 | `qwen3.6-35b-a3b-fp8`        | [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8)                   | FP8             | 34.9 GiB | 62.4 with MTP, at 8K           |
 | `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB | 8.0, 14.7 with `--num-spec 2`  |

@@ -45,7 +45,7 @@ snowllm qwen3.6-35b-a3b-fp8-mtp --num-spec 3
 snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 
 # DSpark: adjust the block size {#dspark-adjust-the-block-size}
-snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
+snowllm deepseek-v4-flash-iq2-xxs-400k --dflash-block 8
 ```
 
 使用 DFlash 或 DSpark 时，`--num-spec` 不生效。DeepSeek V4 DSpark 会将 `--dflash-block` 限制为不小于草稿模型配置的分块大小。
