@@ -45,6 +45,21 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['device_map'],'auto')
         self.assertEqual(kw['prefix_memory_ratio'],.1)
 
+    def test_deepseek_400k_recipe_and_adaptive_override(self):
+        import json
+        from snowllm.hub.recipes import Recipe
+        recipe = Recipe(json.loads((Path(__file__).parents[1] / 'recipes' /
+                         'deepseek-v4-flash-iq2-xxs-400k.json').read_text()))
+        args, kw = self.launch_options(recipe=recipe)
+        self.assertEqual(args[1:3], (1, 409600))
+        self.assertEqual(kw['prefill_chunk'], 8192)
+        self.assertEqual(kw['device_map'], 'auto')
+        self.assertEqual(kw['gpu_memory_utilization'], .95)
+        self.assertEqual(kw['prefix_memory_ratio'], 0.)
+        self.assertTrue(kw['dspark_adaptive'])
+        _, kw = self.launch_options(('--no-dspark-adaptive',), recipe)
+        self.assertFalse(kw['dspark_adaptive'])
+
     def run_cli(self, *args):
         code = '''
 import importlib.abc

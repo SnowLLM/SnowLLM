@@ -41,7 +41,7 @@ snowllm qwen3.6-35b-a3b-fp8-mtp --num-spec 3
 snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 
 # DSpark: adjust the block size
-snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
+snowllm deepseek-v4-flash-iq2-xxs-400k --dflash-block 8
 ```
 
 `--num-spec` has no effect when using DFlash or DSpark. DSpark enforces its checkpoint's minimum draft block size.
