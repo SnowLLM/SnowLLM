@@ -14,6 +14,7 @@ from .forward_context import Batch, DecodeShape, i32, i64, positions
 from .request import Request
 from .host_io import HostArena
 from .dflash_sampling import DFlashSampling
+from .dspark_schedule import PrefixScheduler
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
@@ -24,6 +25,86 @@ if TYPE_CHECKING:
 
 def context_len(r: Request) -> int:
     return max(r.num_cached, r.num_prefilled) if r.prefilled else r.num_prefilled
+
+
+class DSparkScheduling:
+    def init_adaptive(self, adaptive, p_min, has_confidence):
+        if adaptive and not has_confidence:
+            raise ValueError('adaptive DSpark requires a confidence head')
+        if adaptive and p_min != 0:
+            raise ValueError('adaptive DSpark requires --dflash-p-min 0')
+        self.adaptive = adaptive
+        self.scheduler = PrefixScheduler(SPEC_MAX_STEP_ROWS)
+        self.confidence = {}
+        self.costs = {}
+
+    def decode_shapes(self, max_num_seqs: int) -> list[DecodeShape]:
+        if not self.adaptive:
+            return SpecDecoder.decode_shapes(self, max_num_seqs)
+        shapes = []
+        for n in range(1, max_num_seqs + 1):
+            maximum = min(n * (self.block + 1), max(n, SPEC_MAX_STEP_ROWS))
+            counts = {n, maximum}
+            counts.update(n * t for t in range(1, self.block + 2) if n * t <= maximum)
+            counts.update(1 << k for k in range(maximum.bit_length()) if n <= 1 << k <= maximum)
+            for total in sorted(counts):
+                q, rem = divmod(total, n)
+                lengths = (q+1,) * rem + (q,) * (n-rem)
+                shapes.append(DecodeShape(n, max(lengths), True, lengths))
+        return shapes
+
+    def select_lengths(self, batch: list[Request], max_model_len: int, *, remember=True) -> list[int]:
+        limits = [max(0, min(len(r.drafts), max_model_len - r.num_cached - 1,
+                             r.params.max_new_tokens - len(r.out) - 1)) for r in batch]
+        confidence = [self.confidence.get(r, []) for r in batch]
+        if not all(r in self.confidence for r in batch):
+            self.scheduler.reset()
+        lengths = self.scheduler.choose(batch, confidence, limits, self.costs[len(batch)],
+                                         remember=remember)
+        return [n + 1 for n in lengths]
+
+    def verify_prefixes(self, batch: list[Request], lengths: list[int]):
+        B, bs = len(batch), self.runner.block_size
+        if len(lengths) != B or sum(lengths) > SPEC_MAX_STEP_ROWS:
+            raise ValueError('invalid DSpark verification batch size')
+        cu, ids, at = [0], [], []
+        for r, n in zip(batch, lengths):
+            if not 1 <= n <= len(r.drafts) + 1:
+                raise ValueError('DSpark verification length exceeds the proposed prefix')
+            ids.extend([r.last] + r.drafts[:n-1])
+            at.extend((r, r.num_cached+t) for t in range(n))
+            cu.append(len(ids))
+        ends = [r.num_cached+n for r, n in zip(batch, lengths)]
+        d_ids, pos, drafted, slots, seq, sidx, ones, d_cu = self.stage(
+            (ids, [p + r.pos_delta for r, p in at] * 3,
+             [d for r, n in zip(batch, lengths) for d in r.drafts[:n-1]]),
+            ([r.blocks[p // bs] * bs + p % bs for r, p in at], ends,
+             [self.slots.name(r, 1)[0] for r in batch], [1]*B, cu))
+        total, qmap = ops.prefill_q_plan(lengths)
+        b = Batch(input_ids=d_ids, positions=pos.view(3, -1), slot_mapping=slots,
+                  block_tables=self.tables([r.blocks for r in batch]), seq_lens=seq,
+                  is_prefill=False, num_tokens=len(ids), state_indices=sidx,
+                  num_accepted=ones, cu_seqlens=d_cu,
+                  total_q_blocks=total, q_block_map=qmap, chunk_decode=True,
+                  roll_forward=self.runner.roll_forward,
+                  varlen_decode=self.adaptive and self.runner.roll_forward and B > 1,
+                  host_ids=ids, host_seq_lens=ends, host_cu_seqlens=cu)
+        tokens = self.sampler.sample(self.runner.forward(b),
+                                     [r for r, n in zip(batch, lengths) for _ in range(n)])
+        width = lengths[0]
+        acc = (ops.spec_accept(tokens.view(B, width), drafted.view(B, width-1)).tolist()
+               if all(n == width for n in lengths) else None)
+        got = tokens.tolist()
+        kept = []
+        for i, r in enumerate(batch):
+            row = got[cu[i]:cu[i+1]]
+            accepted = acc[i] if acc is not None else 1
+            if acc is None:
+                while accepted < lengths[i] and row[accepted-1] == r.drafts[accepted-1]:
+                    accepted += 1
+            kept.append(self._accept(r, row, accepted))
+            r.drafts = []
+        return b, kept
 
 
 class SpecDecoder:
@@ -251,13 +332,13 @@ class SpecDecoder:
                                      self.runner.block_size,end_offset=-1)
 
 
-class DFlashDecoder:
+class DFlashDecoder(DSparkScheduling):
     _ngram_context = SpecDecoder._ngram_context
 
     def __init__(self, runner: "QwenRunner", sampler: "Sampler", slots: StateSlots,
                  draft: "DFlashDraft", draft_blocks: BlockAllocator, tables: TableMirror,
                  stage: Staging, *, block: int, max_blocks_per_seq: int,
-                 p_min: float = 0.0) -> None:
+                 p_min: float = 0.0, adaptive: bool = False) -> None:
         self.runner = runner
         self.blocks = draft_blocks
         self.sampler = sampler
@@ -270,6 +351,7 @@ class DFlashDecoder:
         self.geo = draft.geo
         self.dspark = self.geo.dspark
         self.p_min = p_min if self.dspark else 0.0
+        self.init_adaptive(adaptive, p_min, self.dspark and "conf_weight" in draft.w)
         self.width = block + int(self.dspark)
         self.runner.tap_at = {layer: j for j, layer in enumerate(self.geo.tap_layers)}
         if self.runner.taps.shape[1] != self.geo.num_taps * H:
@@ -316,12 +398,16 @@ class DFlashDecoder:
         return self.width if n * self.width <= SPEC_MAX_STEP_ROWS else 0
 
     step_rows = SpecDecoder.step_rows
-    decode_shapes = SpecDecoder.decode_shapes
 
     def rows_needed(self, rows: int) -> int:
         return rows
 
-    def verify_step(self, batch: list[Request], T: int) -> None:
+    def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
+        if isinstance(T, list):
+            b, kept = self.verify_prefixes(batch, T)
+            self.runner.linear_advance(b.state_indices, i32(kept), len(batch), max(T), b.cu_seqlens)
+            self._propose_prefixes(batch, kept, T)
+            return
         B = len(batch)
         c = [r.num_cached for r in batch]
         bs = self.runner.block_size
@@ -381,6 +467,8 @@ class DFlashDecoder:
             self.sampling.release(r)
         self.blocks.release(r.draft_blocks)
         r.draft_blocks = []
+        self.confidence.pop(r, None)
+        self.scheduler.reset()
 
     def grow(self, r: Request, rows: int) -> bool:
         need = ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size)
@@ -472,9 +560,11 @@ class DFlashDecoder:
     def _proposals(self, batch: list[Request]) -> None:
         count = self.block if self.dspark else self.block - 1
         drafts = self.d_draft[:len(batch), :count].tolist()
-        confidence = self.d_conf[:len(batch)].tolist() if self.p_min > 0 else None
+        confidence = self.d_conf[:len(batch)].tolist() if self.p_min > 0 or self.adaptive else None
         for i, (r, row) in enumerate(zip(batch, drafts)):
-            if confidence is not None:
+            if self.adaptive:
+                self.confidence[r] = confidence[i]
+            elif confidence is not None:
                 product = 1.0
                 for j, value in enumerate(confidence[i]):
                     product *= value
@@ -484,6 +574,31 @@ class DFlashDecoder:
             r.drafts = row
         if self.sampling is not None:
             self.sampling.remember(batch, drafts)
+
+    def _propose_prefixes(self, batch, accepted, lengths):
+        bt = self._draft_table(batch)
+        rows, seqs, cache_pos, rope_pos = [], [], [], []
+        offset = 0
+        for i, (r, kept, width) in enumerate(zip(batch, accepted, lengths)):
+            first = r.num_cached - kept
+            rows.extend(range(offset, offset + kept))
+            seqs.extend([i]*kept)
+            cache_pos.extend(range(first, r.num_cached))
+            rope_pos.extend(p + r.pos_delta for p in range(first, r.num_cached))
+            offset += width
+        self._write_ctx(rows, seqs, cache_pos, rope_pos, bt)
+        self._draft_blocks(batch)
+
+    def _draft_blocks(self, batch):
+        self._stage_rows(batch, None)
+        graph = self.graphs.get(len(batch))
+        if graph is None:
+            self._blocks_dev(len(batch))
+            self.runner.n_draft_eager += 1
+        else:
+            graph.replay()
+            self.runner.n_draft_replays += 1
+        self._proposals(batch)
 
     def propose(self, batch: list[Request], accepted: list[int]) -> None:
         B = len(batch)
@@ -499,10 +614,12 @@ class DFlashDecoder:
             self.runner.n_draft_eager += 1
         self._proposals(batch)
 
-    def _write_ctx(self, n: int, seqs: list[int], cache_pos: list[int],
+    def _write_ctx(self, n: int | list[int], seqs: list[int], cache_pos: list[int],
                    rope_pos: list[int], bt: torch.Tensor) -> None:
         with self.runner.arena.frame():
-            feat = self.draft.context_feature(self.runner.taps[:n])
+            taps = self.runner.taps
+            feat = self.draft.context_feature(taps[:n] if isinstance(n, int)
+                else ops.gather_rows(taps, i64(n), out=self.runner.draft_taps[:len(n)]))
             self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
                                      ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
                                                        self.runner.block_size))
@@ -522,6 +639,9 @@ class DFlashDecoder:
         B = len(batch)
         self._write_ctx(B, list(range(B)), list(pos),
                         [p + r.pos_delta for p, r in zip(pos, batch)], bt)
+        for r in batch:
+            self.confidence.pop(r, None)
+        self.scheduler.reset()
         if self.sampling is not None:
             for r in batch:
                 self.sampling.release(r)
@@ -537,7 +657,8 @@ class DFlashDecoder:
             self._stage_values(B,[blk]*B+[blk]*B+[self.geo.mask_token_id]*B+[0]*B)
 
             def walk(B: int = B) -> None:
-                self._ctx_dev(B)
+                if not self.adaptive:
+                    self._ctx_dev(B)
                 self._blocks_dev(B)
 
             self.graphs[B] = runner._capture(f"draft graph B={B:2d} M={M:3d}", walk)[0]

@@ -48,7 +48,9 @@ snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
 ```
 
-`--num-spec` has no effect when using DFlash or DSpark. DSpark clamps `--dflash-block` to at least the drafter's configured block size.
+`--num-spec` has no effect when using DFlash or DSpark. DeepSeek V4 DSpark clamps `--dflash-block` to at least the drafter's configured block size.
+
+DeepSeek V4 and MiniCPM-V 4.7 support `--dspark-adaptive --dflash-p-min 0` to choose draft lengths automatically. It requires a confidence head and adds startup profiling time; compare throughput on your workload.
 
 Flash-Next offers `qwen3.8-flash-next-q3-k-xl-dflash2` and `qwen3.8-flash-next-iq4-xs-dflash2` recipes. With these quantized models, DFlash 2 may produce different output from plain decoding even at temperature 0.
 

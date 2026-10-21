@@ -10,9 +10,11 @@ import urllib.request
 from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from snowllm.hub.recipes import SCHEMA, SETTABLE
+
 SOURCE = ROOT / "recipes"
 OUT = ROOT / "web" / "recipe.json"
-SCHEMA = 1
 ENDPOINT = "https://huggingface.co"
 VERSION = re.search(r'__version__ = "([^"]+)"',
                     (ROOT / "snowllm/_version.py").read_text()).group(1)
@@ -26,9 +28,6 @@ def needs_newer(r: dict) -> bool:
     return bool(r.get("requires")) and parts(VERSION) < parts(str(r["requires"]))
 
 REQUIRED = ("id", "model", "precision", "dir", "repo")
-SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
-            "dflash", "dflash_block", "kv_cache_dtype", "gpu_memory_utilization",
-            "prefix_memory_ratio", "mtp_window", "mtp_sinks")
 OPTIONAL = ("revision", "include", "exclude", "bytes", "priority", "requires", "summary", "note",
             "files", "sources", "defaults", "serve_as", "spec", "status")
 LISTS = ("include", "exclude")

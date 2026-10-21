@@ -158,7 +158,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 67
+ABI_VERSION = 68
 
 
 def _check_abi() -> None:
@@ -513,7 +513,7 @@ _SIGS = [
       P, P, P]),
     ("snowllm_linear_attn_retain_bytes", c_int64, [c_int64, c_int]),
     ("snowllm_linear_attn_advance", c_int,
-     [P, P, P, P, P, P, P, P, P, c_int64, c_int64, S]),
+     [P, P, P, P, P, P, P, P, P, c_int64, c_int64, P, S]),
     ("snowllm_fused_moe", c_int, [P, P, P, P, P, P, c_int64, S]),
     ("snowllm_fused_moe_fp8", c_int, [P, P, P, P, P, P, P, P, c_int64, S]),
     ("snowllm_lm_head_gemm_decode", c_int, [P, P, P, c_int64, S]),

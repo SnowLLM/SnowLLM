@@ -211,7 +211,7 @@ class Dsv4Runner(GraphRunner):
         db.need_logits = b.need_logits
         if b.is_prefill:
             return db, None
-        return db, (len(lens), max(lens), db.total_q_blocks,
+        return db, (len(lens), n, db.total_q_blocks,
                     tuple((pl.n_new, int(pl.keep_dst is not None))
                           for _, pl in sorted(db.plans.items())))
 
@@ -252,7 +252,7 @@ class Dsv4Runner(GraphRunner):
             raise SnowLLMError(f"state slot {bad[0]} is outside [0, {self.max_num_seqs}); this "
                                f"runner keys the compressors' carries by it")
         ends = b.host_seq_lens if b.host_seq_lens is not None else b.seq_lens.tolist()
-        if b.is_prefill:
+        if b.is_prefill or b.host_cu_seqlens is not None:
             host = host_view(b.cu_seqlens)
             cu = b.host_cu_seqlens
             if cu is None:
@@ -266,19 +266,21 @@ class Dsv4Runner(GraphRunner):
         B, T = shape.B, shape.T
         c, ring = self.block_size, self.ring_blocks
         nb = ops.kv_blocks_for(c + T, self.block_size)
-        if nb > ring or B * ring > self.cache.plan.raw_blocks:
+        if nb > ring or B * nb > self.cache.plan.raw_blocks:
             return
-        bt = i32([[i * ring + j for j in range(nb)] for i in range(B)])
+        bt = i32([[i * nb + j for j in range(nb)] for i in range(B)])
         try:
             for i in range(B):
                 self.cache.reset(i)
                 if not self.cache.history.reserve(i, c + T):
                     return
-                self.forward(self._warm_prefill(i, c, bt[i:i + 1].contiguous()))
-            db, key = self._prepare_batch(self._warm_decode(B, T, c, bt))
+            for lo in range(0, B, max(1, self.max_prefill_tokens // c)):
+                hi = min(B, lo + max(1, self.max_prefill_tokens // c))
+                self.forward(self._warm_prefill(lo, c, bt[lo:hi].contiguous()))
+            db, key = self._prepare_batch(self._warm_decode(B, T, c, bt, shape.lengths))
             messages = self._freeze_graph_inputs(db)
             inputs = GraphInputs(self._graph_values(db), messages)
-            yield GraphCase(key, f'decode graph B={B:2d} T={T} M={B*T:3d}',
+            yield GraphCase(key, f'decode graph B={B:2d} T={T} M={db.num_tokens:3d}',
                             lambda: self._forward_eager(db), inputs)
         finally:
             for i in range(B):
@@ -286,18 +288,21 @@ class Dsv4Runner(GraphRunner):
             self.n_eager_forwards = 0
 
     def _warm_prefill(self, slot: int, c: int, bt: torch.Tensor) -> Batch:
-        rows = [(0, t) for t in range(c)]
-        return synthetic_batch([c], bt.shape[1],
+        B = bt.shape[0]
+        rows = [(i, t) for i in range(B) for t in range(c)]
+        return synthetic_batch([c]*B, bt.shape[1],
             positions=positions([p for _, p in rows]), slot_mapping=slot_mapping(bt, rows, self.block_size),
-            block_tables=bt, state_indices=[slot], last_row=[c-1], is_prefill=True, need_logits=False)
+            block_tables=bt, state_indices=list(range(slot, slot+B)),
+            last_row=[(i+1)*c-1 for i in range(B)], is_prefill=True, need_logits=False)
 
-    def _warm_decode(self, B, T, c, bt):
-        rows = [(i, c+t) for i in range(B) for t in range(T)]
-        return synthetic_batch([T]*B, bt.shape[1],
+    def _warm_decode(self, B, T, c, bt, lengths=()):
+        lengths = list(lengths) if lengths else [T]*B
+        rows = [(i, c+t) for i in range(B) for t in range(lengths[i])]
+        return synthetic_batch(lengths, bt.shape[1],
             positions=positions([p for _, p in rows]), slot_mapping=slot_mapping(bt, rows, self.block_size),
-            block_tables=bt, seq_lens=[c+T]*B, state_indices=list(range(B)),
-            num_accepted=[1]*B, host_seq_lens=[c+T]*B,
-            total_q_blocks=ops.prefill_q_plan([T]*B)[0])
+            block_tables=bt, seq_lens=[c+n for n in lengths], state_indices=list(range(B)),
+            num_accepted=[1]*B, host_seq_lens=[c+n for n in lengths],
+            total_q_blocks=ops.prefill_q_plan(lengths)[0])
 
     def _arm(self) -> None:
         self.cache.plan.arm()
