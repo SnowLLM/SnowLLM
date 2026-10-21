@@ -3,7 +3,7 @@
 
 import contextlib
 import dataclasses
-import re
+import weakref
 from typing import TYPE_CHECKING
 
 from .. import ops
@@ -13,8 +13,6 @@ from .._platform import host_available
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-    from ..checkpoint.gguf import GGUF
-
 # EMPIRICAL, not derived: (GiB moved to host, % added to a decode step), measured per group
 COST = {
     "experts": ((1.81, 0.77), (5.44, 1.41), (10.89, 1.75)),
@@ -22,62 +20,112 @@ COST = {
     "shared": ((0.74, 3.6),),
     "head": ((0.28, 3.6),),
 }
-GROUPS = tuple(COST)
-LAYERED = ("dense", "shared", "experts")
-PINNED = "embed"
-
+PROJECTIONS = {f'{group}.{part}': group for group in ('experts', 'shared')
+               for part in ('gate_up', 'down')}
+GROUPS = (*COST, *PROJECTIONS)
+LAYERED = ("dense", "shared", "experts", *PROJECTIONS)
 OS_RESERVE = 8 << 30
-BLK = re.compile(r"^blk\.(\d+)\.")
 GIB = 1 << 30
+_scope = None
 
 
-def group_of(name: str) -> str:
-    if "_exps." in name:
-        return "experts"
-    if "_shexp" in name:
-        return "shared"
-    if name.startswith("token_embd"):
-        return PINNED
-    if name.startswith("output.weight"):
-        return "head"
-    return "dense"
+@contextlib.contextmanager
+def capture_allocations():
+    from ..ops._common import observe_allocations
+    allocations = []
+    def observe(tensor):
+        if _scope is not None and not ops.host_mapped(tensor):
+            allocations.append((weakref.ref(tensor), *_scope))
+    with observe_allocations(observe):
+        yield allocations
 
 
-def layer_of(name: str) -> int | None:
-    m = BLK.match(name)
-    return int(m.group(1)) if m else None
+def apply_device_map(model, allocations, dmap):
+    import torch
+    moved = {}
+    for ref, group, layer in allocations:
+        tensor = ref()
+        if tensor is None or not dmap.on_host(group, layer):
+            continue
+        key = tensor.untyped_storage()._cdata
+        if key not in moved:
+            with ops.host_memory():
+                host = ops.empty_bytes(tensor.numel())
+            host.copy_(tensor)
+            moved[key] = host
+    memo = {}
+    def replace(obj):
+        if id(obj) in memo:
+            return memo[id(obj)]
+        if isinstance(obj, torch.Tensor):
+            host = moved.get(obj.untyped_storage()._cdata)
+            result = (obj if host is None else host.view(obj.dtype).as_strided(
+                      obj.shape, obj.stride(), obj.storage_offset()))
+            memo[id(obj)] = result
+            return result
+        memo[id(obj)] = obj
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                obj[key] = replace(value)
+        elif isinstance(obj, list):
+            obj[:] = [replace(value) for value in obj]
+        elif isinstance(obj, tuple):
+            values = tuple(replace(value) for value in obj)
+            if any(a is not b for a, b in zip(obj, values)):
+                memo[id(obj)] = type(obj)(*values) if hasattr(obj, '_fields') else values
+        elif isinstance(obj, torch.nn.Module) or type(obj).__module__.startswith('snowllm.'):
+            for key, value in vars(obj).items():
+                updated = replace(value)
+                if updated is not value:
+                    setattr(obj, key, updated)
+        return memo[id(obj)]
+    try:
+        replace(model)
+        torch.cuda.synchronize()
+    finally:
+        memo.clear()
+        moved.clear()
 
 
-def group_bytes(gguf: "GGUF") -> dict[str, int]:
-    out = dict.fromkeys(GROUPS, 0)
-    for t in gguf.tensors.values():
-        g = group_of(t.name)
-        if g in out:
-            out[g] += t.nbytes
-    return out
+def host_budget(model) -> int:
+    have = model.device_map.host_bytes
+    return max(have, auto_budget() + have - getattr(model, '_placement_host_reserve', 0))
 
 
-def layer_bytes(gguf: "GGUF") -> dict[str, dict[int, int]]:
-    out = {g: {} for g in LAYERED}
-    for t in gguf.tensors.values():
-        g, i = group_of(t.name), layer_of(t.name)
-        if g in out and i is not None:
-            out[g][i] = out[g].get(i, 0) + t.nbytes
-    return out
+def ensure_room(model, shortage: int, *, budget: int | None = None) -> bool:
+    if shortage <= 0 or not getattr(model, '_automatic_placement', False):
+        return False
+    current = model.device_map
+    budget = host_budget(model) if budget is None else budget
+    revised = plan(current.sizes, budget, current.host_bytes + shortage,
+                   current.per_layer, previous=current)
+    check_budget(revised, budget)
+    if revised.host_bytes <= current.host_bytes:
+        return False
+    apply_device_map(model, model._placement_allocations, revised)
+    model.device_map = revised
+    import torch
+    from .. import term
+    torch.cuda.empty_cache()
+    print(f'{term.stamp()} measured placement adjustment: {revised.describe()}', flush=True)
+    return True
 
 
 @contextlib.contextmanager
 def place(dmap: "DeviceMap | None", group: str,
           layer: int | None = None) -> "Iterator[None]":
+    global _scope
+    previous_scope, _scope = _scope, (group, layer)
     host = dmap is not None and dmap.on_host(group, layer)
     dry = ops.drying()
     previous = None if dry is None else dry.placement
     if dry is not None:
         dry.placement = (group, layer)
     try:
-        with ops.host_memory(host):
+        with contextlib.nullcontext() if dmap is None else ops.host_memory(host):
             yield
     finally:
+        _scope = previous_scope
         if dry is not None:
             dry.placement = previous
 
@@ -99,6 +147,7 @@ def measure_weights(build: "Callable[[DeviceMap], object]"
 
 
 def cost_of(group: str, nbytes: int) -> float:
+    group = PROJECTIONS.get(group, group)
     gib = nbytes / GIB
     if gib <= 0:
         return 0.0
@@ -110,11 +159,6 @@ def cost_of(group: str, nbytes: int) -> float:
         x0, y0 = x1, y1
     px, py = (pts[-2] if len(pts) > 1 else (0.0, 0.0))
     return y0 + (y0 - py) * (gib - x0) / (x0 - px)
-
-
-def rate_of(group: str) -> float:
-    x, y = COST[group][0]
-    return y / x
 
 
 def auto_budget(reserve: int = OS_RESERVE) -> int:
@@ -131,23 +175,23 @@ class DeviceMap:
     total_bytes: int | None = None
 
     def on_host(self, group: str, layer: int | None = None) -> bool:
-        if group not in self.host:
+        selected = group if group in self.host else PROJECTIONS.get(group, group)
+        if selected not in self.host:
             return False
-        pick = self.layers.get(group)
+        pick = self.layers.get(selected)
         return pick is None or layer is None or layer in pick
 
     def group_host_bytes(self, group: str) -> int:
-        if group not in self.host:
+        if not self.on_host(group):
             return 0
-        pick = self.layers.get(group)
-        if pick is None:
-            return self.sizes.get(group, 0)
         by = self.per_layer.get(group, {})
-        return sum(by.get(i, 0) for i in pick)
+        if not by:
+            return self.sizes.get(group, 0)
+        return sum(n for i, n in by.items() if self.on_host(group, i))
 
     @property
     def host_bytes(self) -> int:
-        return sum(self.group_host_bytes(g) for g in self.host)
+        return sum(self.group_host_bytes(g) for g in GROUPS)
 
     @property
     def device_bytes(self) -> int:
@@ -156,18 +200,18 @@ class DeviceMap:
 
     @property
     def slowdown(self) -> float:
-        return 1.0 + sum(cost_of(g, self.group_host_bytes(g)) for g in self.host) / 100.0
+        return 1.0 + sum(cost_of(parent, sum(self.group_host_bytes(g) for g in GROUPS
+            if PROJECTIONS.get(g, g) == parent)) for parent in COST) / 100.0
 
     def _row(self, g: str) -> str:
-        pick = self.layers.get(g)
+        pick = self.layers.get(g if g in self.host else PROJECTIONS.get(g, g))
         n = f" x{len(pick)}" if pick is not None else ""
         return f"{g}{n} {self.group_host_bytes(g) / GIB:.2f} GiB"
 
     def describe(self) -> str:
         if not self.host:
             return "device map: everything in the carve-out"
-        rows = ", ".join(self._row(g) for g in GROUPS if g in self.host
-                         and self.group_host_bytes(g))
+        rows = ", ".join(self._row(g) for g in GROUPS if self.group_host_bytes(g))
         out = (f"device map: {rows} in pinned host memory, freeing "
                f"{self.host_bytes / GIB:.2f} GiB of carve-out for "
                f"{(self.slowdown - 1) * 100:.1f}% a step")
@@ -195,9 +239,8 @@ def take(g: str, sizes: dict[str, int], per_layer: dict[str, dict[int, int]], ro
             continue
         pick.append(i)
         took += by[i]
-    if took < need <= room:
-        # Mixed native formats can leave an unusable gap after largest-first.
-        # Try byte sums before falling back to a more expensive weight group.
+    if took < need <= room or (g in PROJECTIONS and took >= need):
+        # Projection groups prefer the smallest sufficient byte sum.
         sums, best = {0: ()}, None
         for i in sorted(by, key=lambda i: (-by[i], i)):
             more = {}
@@ -219,26 +262,55 @@ def take(g: str, sizes: dict[str, int], per_layer: dict[str, dict[int, int]], ro
 
 
 def plan(sizes: dict[str, int], budget: int, need: int = 0,
-         per_layer: dict[str, dict[int, int]] | None = None) -> DeviceMap:
+         per_layer: dict[str, dict[int, int]] | None = None, *,
+         previous: DeviceMap | None = None) -> DeviceMap:
     per_layer = per_layer or {}
-    pool = [g for g in GROUPS if sizes.get(g)]
-    host, layers, used = [], {}, 0
+    host, layers, used = set(), {}, 0
+    available, remaining = {}, {}
+    family_bytes = dict.fromkeys(COST, 0)
+    for g in GROUPS:
+        by = per_layer.get(g, {})
+        picked = frozenset(i for i in by if previous is not None and previous.on_host(g, i))
+        placed = (sum(by[i] for i in picked) if by else
+                  sizes.get(g, 0) if previous is not None and previous.on_host(g) else 0)
+        if placed:
+            host.add(g)
+            if by:
+                layers[g] = picked
+        family_bytes[PROJECTIONS.get(g, g)] += placed
+        used += placed
+        available[g] = sizes.get(g, 0) - placed
+        remaining[g] = {i: n for i, n in by.items() if i not in picked}
+    pool = [g for g in GROUPS if available[g]]
     while used < need and pool:
         bids = []
         for g in pool:
-            pick, took = take(g, sizes, per_layer, budget - used, need - used)
+            pick, took = take(g, available, remaining, budget - used, need - used)
             if took:
-                bids.append((cost_of(g, took), took, g, pick))
+                already = family_bytes[PROJECTIONS.get(g, g)]
+                bids.append((cost_of(g, already+took)-cost_of(g, already), took, g, pick))
         if not bids:
             break
         enough = [b for b in bids if b[1] >= need - used]
         cost, took, g, pick = min(enough) if enough else min(bids, key=lambda b: b[0] / b[1])
-        host.append(g)
-        if pick is not None:
-            layers[g] = pick
+        host.add(g)
+        if remaining[g]:
+            picked = frozenset(remaining[g]) if pick is None else pick
+            layers[g] = layers.get(g, frozenset()) | picked
         used += took
+        family_bytes[PROJECTIONS.get(g, g)] += took
         pool.remove(g)
-    return DeviceMap(frozenset(host), dict(sizes), layers, per_layer, max(0, need - used))
+    return DeviceMap(frozenset(host), dict(sizes), layers, per_layer, max(0, need - used),
+                     previous.total_bytes if previous is not None else None)
+
+
+def _layer_sizes(group, per_layer):
+    by = dict(per_layer.get(group, {}))
+    for part, parent in PROJECTIONS.items():
+        if parent == group:
+            for layer, size in per_layer.get(part, {}).items():
+                by[layer] = by.get(layer, 0) + size
+    return by
 
 
 def fits_in(group: str, per_layer: dict[str, dict[int, int]], budget: int) -> int:
@@ -256,7 +328,7 @@ def check_budget(dmap: DeviceMap, budget: int) -> DeviceMap:
     want = dmap.host_bytes
     if want <= budget:
         return dmap
-    named = [g for g in GROUPS if g in dmap.host and dmap.group_host_bytes(g)]
+    named = [g for g in GROUPS if dmap.group_host_bytes(g)]
     hint = ""
     if len(named) == 1 and dmap.per_layer.get(named[0]):
         n = fits_in(named[0], dmap.per_layer, budget)
@@ -295,9 +367,9 @@ def parse(spec: str, sizes: dict[str, int], budget: int = 0, need: int = 0,
         if not n.strip().isdigit():
             raise SnowLLMError(f"--device-map {part}: the count after ':' must be a number of "
                                f"layers, so that {g} moves a layer at a time")
-        if g not in LAYERED or not per_layer.get(g):
+        by = _layer_sizes(g, per_layer)
+        if g not in LAYERED or not by:
             raise SnowLLMError(f"--device-map {part}: {g} is not split by layer, so it moves "
                                f"whole or not at all")
-        by = per_layer[g]
         layers[g] = frozenset(sorted(by, key=lambda i: (-by[i], i))[:int(n)])
     return DeviceMap(frozenset(host), dict(sizes), layers, per_layer)

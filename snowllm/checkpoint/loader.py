@@ -339,7 +339,17 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
         dmap = _device_map(device_map, cfg, kv, build, sizes, by)
         dmap = (placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
                 if dmap is None else dataclasses.replace(dmap, total_bytes=total))
-        model = build(dmap)
+        automatic = device_map.strip() == 'auto' and bool(kv)
+        with (placement.capture_allocations() if automatic else contextlib.nullcontext(())) as allocations:
+            model = build(dmap)
         model.device_map = dmap
+        model._automatic_placement = automatic
+        if automatic:
+            model._placement_allocations = tuple(allocations)
+            model._placement_host_reserve = int(kv.get('host_taken') or 0)
+            torch.cuda.empty_cache()
+            budget = placement.host_budget(model)
+            need = dry_need(build, cfg, dict(kv, loaded_weight_bytes=dmap.device_bytes), budget)
+            placement.ensure_room(model, need - dmap.host_bytes, budget=budget)
     torch.cuda.empty_cache()
     return model

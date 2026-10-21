@@ -108,7 +108,7 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
     bias = _f32(rd, bias_key) if bias_key in rd.gguf else None
     router_w = ops.moe_shuffle_router(router, bias)
     del router, bias
-    with placement.place(dmap, "experts", layer):
+    with placement.place(dmap, "experts.gate_up", layer):
         gate, up = rd.transient(p + "ffn_gate_exps.weight", p + "ffn_up_exps.weight")
         if kq:
             gate_up = ops.moe_kquant_shuffle_gate_up(gate, up,
@@ -116,16 +116,18 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
         else:
             gate_up = ops.moe_lowbit_shuffle_gate_up_split(
                 gate, up, ops.LOWBIT_FORMATS[fmt["ffn_gate_exps.weight"]], e)
+    with placement.place(dmap, "experts.down", layer):
         down_raw, = rd.transient(p + "ffn_down_exps.weight")
         if kq:
             down = ops.moe_kquant_shuffle_down(down_raw, KQUANT[fmt["ffn_down_exps.weight"]], e)
         else:
             down = ops.moe_lowbit_shuffle_down(
                 down_raw, ops.LOWBIT_FORMATS[fmt["ffn_down_exps.weight"]], e)
-    with placement.place(dmap, "shared", layer):
+    with placement.place(dmap, "shared.gate_up", layer):
         shared_gate_up = ops.moe_kquant_shuffle_gate_up(
             rd.raw(p + "ffn_gate_shexp.weight"), rd.raw(p + "ffn_up_shexp.weight"),
             KQUANT[fmt["ffn_gate_shexp.weight"]], 1)
+    with placement.place(dmap, "shared.down", layer):
         shared_down = ops.moe_kquant_shuffle_down(rd.raw(p + "ffn_down_shexp.weight"),
                                                   KQUANT[fmt["ffn_down_shexp.weight"]], 1)
     tid2eid = None

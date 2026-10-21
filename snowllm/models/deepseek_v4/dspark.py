@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
+from types import SimpleNamespace
 
 import torch
 
@@ -119,6 +120,18 @@ class DSparkDraft:
                                 conf_bias=self.conf_bias, confidence=conf,
                                 workspace=self._markov_ws)
 
+
+
+def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int]:
+    # The target's embedding and LM head are shared and own no storage in this plan.
+    shared = torch.empty(0, dtype=torch.bfloat16, device="meta")
+    target = SimpleNamespace(embed=SimpleNamespace(weight=shared), head=object(),
+                             geo=SimpleNamespace(num_layers=max(geo.tap_layers, default=0)))
+    with ops.dry_load() as dry:
+        draft = load(rd, geo, target, Dsv4Walker())
+        sizes = dry.device, dry.peak_device
+    del draft
+    return sizes
 
 
 def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,

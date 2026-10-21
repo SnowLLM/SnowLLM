@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Final allocations in existing loader scopes determine offload budgets."""
 import dataclasses
+import gc
 from types import SimpleNamespace
 import sys
+import weakref
 from unittest.mock import patch
 
 import torch
@@ -12,6 +14,7 @@ from snowllm import ops
 from snowllm.checkpoint.gguf.source import GGUFReader
 from snowllm.checkpoint.gguf import dequant
 from snowllm.engine import carve_out_need
+from snowllm.engine.runner import BaseRunner
 from snowllm.models import placement as P
 
 
@@ -48,6 +51,15 @@ def main():
         ck('mapped-host bytes do not inflate the device load peak',
            dry.host == 8192 and dry.device == dry.peak_device == 16)
     del host, resident
+    with ops.dry_load() as dry:
+        with ops.host_memory():
+            with P.place(None, 'experts', 0):
+                inherited = ops.empty_bytes(128)
+            with P.place(P.DeviceMap(frozenset(), {}), 'experts', 0):
+                device = ops.empty_bytes(64)
+        ck('an absent device map inherits the outer host placement', dry.host == 128)
+        ck('an explicit device map can override the outer placement', dry.device == 64)
+    del inherited, device
     with ops.dry_load() as dry:
         reader = object.__new__(GGUFReader)
         reader.gguf = {'a': SimpleNamespace(nbytes=16), 'b': SimpleNamespace(nbytes=8)}
@@ -98,7 +110,7 @@ def main():
             ck(f'Q8_0 chunk={chunk} blocks={blocks}: analytic peak', dry.peak_device == expected,
                f'{dry.peak_device} vs {expected}')
         del reader, result
-    runner = SimpleNamespace(candidates=lambda: [128], fixed_bytes=lambda rows: 64,
+    runner = SimpleNamespace(candidates=lambda: [128], minimum_bytes=lambda rows: 64,
                              act_bytes_for=lambda rows: 128)
     with patch('snowllm.engine.gpu_mem_info', return_value=(1024,1024)), \
          patch('snowllm.engine._runner_for', return_value=lambda *args, **kwargs: runner):
@@ -110,11 +122,65 @@ def main():
         ck('runtime shortage uses the explicit reserve once',
            carve_out_need(SimpleNamespace(), {}, dict(kv,reserve=256), 4096, 832,
                           load_peak=1024) == 256)
+    with patch('snowllm.engine.gpu_mem_info', return_value=(512,1024)), \
+         patch('snowllm.engine._runner_for', return_value=lambda *args, **kwargs: runner):
+        ck('loaded-weight preflight does not count weights or completed loading twice',
+           carve_out_need(SimpleNamespace(), {}, dict(ctx=128,util=1.,loaded_weight_bytes=512),
+                          4096,832,load_peak=4096) == 0)
+    with patch('snowllm.engine.gpu_mem_info', return_value=(384,1024)), \
+         patch('snowllm.engine._runner_for', return_value=lambda *args, **kwargs: runner):
+        ck('loaded-weight preflight includes the measured non-weight occupancy',
+           carve_out_need(SimpleNamespace(), {}, dict(ctx=128,util=1.,loaded_weight_bytes=512),
+                          4096,832,load_peak=4096) == 128)
+    phased = object.__new__(BaseRunner)
+    phased.candidates = lambda: [128]
+    phased.fixed_bytes = lambda rows: 640
+    phased._loading_cache_bytes = lambda rows: 64
+    phased.act_bytes_for = lambda rows: 128
+    phased.reserve_bytes, phased.load_peak_bytes = 64, 512
+    with patch('snowllm.engine.gpu_mem_info', return_value=(1024,1024)), \
+         patch('snowllm.engine._runner_for', return_value=lambda *args, **kwargs: phased):
+        kv = dict(ctx=128, util=1., reserve=512, draft_resident=64)
+        ck('draft load scratch does not overlap the full runtime cache',
+           carve_out_need(SimpleNamespace(), {}, kv, 4096, 192) == 0)
+        phased.fixed_bytes = lambda rows: 64
+        phased._loading_cache_bytes = lambda rows: 32
+        phased.load_peak_bytes = 768
+        ck('a larger draft loading phase still forces the required offload',
+           carve_out_need(SimpleNamespace(), {}, dict(kv,reserve=768), 4096,192) == 96)
+    module = torch.nn.Module()
+    with P.capture_allocations() as allocations:
+        with P.place(P.DeviceMap(frozenset(), {}), 'experts', 3):
+            base = ops.empty_bytes(128)
+            base.copy_(torch.arange(128, dtype=torch.uint8, device='cuda'))
+            module.weight = ops.KQuantExpertWeight(base.view(4,32), base[16:48], 4)
+            del base
+        with P.place(P.DeviceMap(frozenset(), {}), 'shared', 5):
+            module.shared = ops.empty_bytes(64)
+        module.router = torch.zeros(16, device='cuda')
+    router = module.router
+    P.apply_device_map(module, allocations, P.DeviceMap(frozenset({'experts'}), {}))
+    ck('measured adjustment moves packed weights while preserving values and aliasing',
+       ops.host_mapped(module.weight.quant) and ops.host_mapped(module.weight.meta)
+       and module.weight.quant.untyped_storage()._cdata == module.weight.meta.untyped_storage()._cdata
+       and module.weight.meta.cpu().tolist() == list(range(16,48)))
+    ck('measured adjustment leaves device-only router storage alone', module.router is router)
+    previous = weakref.ref(module.shared)
+    collecting = gc.isenabled()
+    gc.disable()
+    try:
+        P.apply_device_map(module, allocations, P.DeviceMap(frozenset({'experts', 'shared'}), {}))
+        ck('successive adjustments release old GPU tensors without waiting for GC',
+           previous() is None and ops.host_mapped(module.shared))
+    finally:
+        if collecting:
+            gc.enable()
     total, sizes, by = P.measure_weights(build)
     ck('total includes every final allocation, without scratch or duplicate views', total == 316)
     ck('eligible groups come from existing placement scopes',
-       sizes == dict(experts=128, dense=0, shared=64, head=32))
-    ck('layer selection uses the same scopes', by == dict(experts={3:128}, dense={}, shared={5:64}))
+       sizes == dict.fromkeys(P.GROUPS, 0) | dict(experts=128, shared=64, head=32))
+    ck('layer selection uses the same scopes',
+       by == {g: {} for g in P.LAYERED} | dict(experts={3:128}, shared={5:64}))
     for spec in ('off','experts','shared','head','experts:1,shared:1,head','auto'):
         dmap = dataclasses.replace(P.parse(spec,sizes,budget=1024,need=total,per_layer=by),
                                    total_bytes=total)

@@ -52,7 +52,7 @@ class BaseRunner:
                  max_num_seqs=DEFAULT_MAX_NUM_SEQS, max_prefill_tokens='auto', num_spec=0,
                  kv_int8=False, block_size=None, gpu_memory_utilization=DEFAULT_GPU_UTIL,
                  reserve_bytes=0, tap_layers=(), draft_geo=None, prefix_memory_ratio=0.,
-                 plan_activations=True):
+                 plan_activations=True, load_peak_bytes=0):
         self._check_seqs(max_num_seqs)
         if num_spec < 0:
             raise SnowLLMError('num_spec must be nonnegative')
@@ -63,6 +63,7 @@ class BaseRunner:
         self.num_spec = num_spec
         self.kv_int8, self.plan_activations = kv_int8, plan_activations
         self.gpu_util, self.reserve_bytes = gpu_memory_utilization, int(reserve_bytes)
+        self.load_peak_bytes = int(load_peak_bytes)
         self.prefix_memory_ratio, self.prefix_slots = prefix_memory_ratio, 0
         self.tap_layers, self.draft_geo = tuple(tap_layers), draft_geo
         self.num_taps = len(self.tap_layers)
@@ -111,6 +112,7 @@ class BaseRunner:
             else:
                 self.act_bytes = self.act_bytes_for(chunk)
             plan = self._pool_plan(0)
+            plan.future_bytes += self._loading_extra(chunk)
             if self._want_blocks is not None or ops.drying() is not None:
                 break
             try:
@@ -219,6 +221,12 @@ class BaseRunner:
 
     def _pool_capacity(self, plan, *, prefix_budget=0):
         torch.cuda.empty_cache()
+        from ..models.placement import ensure_room
+        floor = plan.minimum if plan.requested is None else plan.requested
+        while True:
+            shortage = plan.bytes_for(floor) + plan.future_bytes - self._allowance()
+            if shortage <= 0 or not ensure_room(self.model, shortage):
+                break
         try:
             units, snapshots = plan.choose(self._allowance(), prefix_budget)
         except ValueError as exc:
@@ -270,9 +278,21 @@ class BaseRunner:
     def _chunk_for(self, allowance: int) -> int:
         cands = self.candidates()
         for rows in cands:
-            if self.fixed_bytes(rows) + self.act_bytes_for(rows) <= allowance:
+            if self.minimum_bytes(rows) + self.act_bytes_for(rows) <= allowance:
                 return rows
         return cands[-1]
+
+    def _loading_cache_bytes(self, rows: int) -> int:
+        return self.fixed_bytes(rows)
+
+    def _loading_extra(self, rows: int) -> int:
+        if not self.load_peak_bytes:
+            return 0
+        return max(0, self._loading_cache_bytes(rows) + self.load_peak_bytes
+                   - self.reserve_bytes - self.fixed_bytes(rows))
+
+    def minimum_bytes(self, rows: int) -> int:
+        return self.fixed_bytes(rows) + self._loading_extra(rows)
 
     def act_bytes_for(self, rows: int) -> int:
         got = self._act.get(rows)

@@ -12,6 +12,8 @@ GPU memory covers:
 
 Resident sizes count weights only. Leave room for workspaces and caches. `--gpu-memory-utilization` sets the budget (CLI default: `0.9`); caches use the remainder after weights and workspaces. Recipes or model architectures may adjust defaults.
 
+Use `--device-map auto` to offload GGUF weights to system RAM when needed. DeepSeek V4 also accepts projection groups: for example, `--device-map experts.down:1` offloads the largest layer's routed down projection.
+
 ## Quantization
 
 Lower-bit weights use less memory but require dequantization. Decode may improve; prefill can become slower. Compare memory, accuracy and speed for your workload.
