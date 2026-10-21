@@ -1,21 +1,38 @@
-/* Shared typography for the homepage and documentation. */
 :root {
-  --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
-  --serif: "Iowan Old Style", "Charter", "Bitstream Charter", "Source Serif 4", "Noto Serif", Georgia, serif;
-  --fs-label: 0.75rem;
-  --fs-ui: 0.875rem;
-  --fs-code: 0.9375rem;
-  --fs-note: 1.0625rem;
-  --fs-rail: 1.125rem;
-  --fs-body: 1.125rem;
+  --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  --serif: Georgia, Cambria, "Times New Roman", "Songti SC", "Noto Serif CJK SC", serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Cascadia Mono", "Liberation Mono", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+  --fs-small: .75rem;
+  --fs-label: .8125rem;
+  --fs-ui: 1rem;
+  --fs-code: .875rem;
+  --fs-note: .9375rem;
+  --fs-rail: 1.25rem;
+  --fs-body: clamp(1rem, .95rem + .15vw, 1.0625rem);
+  --fs-h1: clamp(2rem, 1.5rem + 1.5vw, 2.5rem);
+  --fs-h2: clamp(1.375rem, 1.25rem + .5vw, 1.625rem);
+  --fs-h3: 1.125rem;
+  --fs-display: clamp(2rem, 1.5rem + 2vw, 3.25rem);
+  --lh-body: 1.75;
+  --lh-ui: 1.5;
+  --lh-heading: 1.25;
+  --heading-tracking: -.02em;
+}
+:root:lang(zh) { --heading-tracking: normal; }
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 body {
-  font-family: var(--serif);
+  font-family: var(--sans);
   font-size: var(--fs-body);
   font-weight: 400;
-  line-height: 1.65;
-  font-synthesis: weight style small-caps;
-  text-rendering: auto;
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
+  line-height: var(--lh-body);
+  font-kerning: normal;
 }
+button, input, select, textarea { font-family: inherit; }
+button, input, select { line-height: var(--lh-ui); }
+h1, h2, h3, h4 { font-weight: 600; line-height: var(--lh-heading); letter-spacing: var(--heading-tracking); overflow-wrap: anywhere; }
+p, li, dd, figcaption { overflow-wrap: break-word; }
+pre, code, kbd, samp { font-family: var(--mono); font-variant-ligatures: none; }

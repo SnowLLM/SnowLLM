@@ -1,6 +1,7 @@
 {
   "id": "deepseek-v4.1-flash-1017-vq-q4-k",
   "model": "DeepSeek-V4.1-Flash-1017",
+  "family": "DeepSeek",
   "precision": "VQ + Q4_K",
   "dir": "DeepSeek-V4.1-Flash-1017-vq8sh14-q4k-mtpnative",
   "repo": "Baekpica/DeepSeek-V4.1-Flash-1017-VQ-GGUF",

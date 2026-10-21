@@ -1,6 +1,8 @@
 {
   "id": "minicpm-v4.7-35b-a3b-q4-k-m",
   "model": "MiniCPM-V-4.7-35B-A3B",
+  "family": "MiniCPM",
+  "modalities": ["text", "image"],
   "precision": "Q4_K_M",
   "dir": "MiniCPM-V-4.7-35B-A3B-Q4_K_M",
   "bytes": 22285838097,

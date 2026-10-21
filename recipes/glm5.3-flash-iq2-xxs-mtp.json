@@ -1,6 +1,8 @@
 {
   "id": "glm5.3-flash-iq2-xxs-mtp",
   "model": "GLM-5.3-Flash",
+  "family": "GLM",
+  "modalities": ["text"],
   "precision": "UD-IQ2_XXS",
   "dir": "GLM-5.3-Flash-UD-IQ2_XXS",
   "bytes": 101844951904,

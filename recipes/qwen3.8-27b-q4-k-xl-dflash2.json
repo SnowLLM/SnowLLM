@@ -1,6 +1,8 @@
 {
   "id": "qwen3.8-27b-q4-k-xl-dflash2",
   "model": "Qwen3.8-27B",
+  "family": "Qwen",
+  "modalities": ["text", "image"],
   "precision": "UD-Q4_K_XL",
   "dir": "Qwen3.8-27B-UD-Q4_K_XL",
   "bytes": 20546740167,

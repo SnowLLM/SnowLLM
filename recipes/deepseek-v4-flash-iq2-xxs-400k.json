@@ -1,6 +1,8 @@
 {
   "id": "deepseek-v4-flash-iq2-xxs-400k",
   "model": "DeepSeek-V4-Flash-0731",
+  "family": "DeepSeek",
+  "modalities": ["text"],
   "precision": "IQ2_XXS",
   "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
   "bytes": 101756794368,
