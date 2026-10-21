@@ -21,7 +21,7 @@
     }
   ],
   "spec": "DSpark",
-  "requires": "0.3.11",
+  "requires": "0.3.12",
   "summary": "DeepSeek-V4-Flash with adaptive DSpark, one request, a 409600-token context and 8192-token prefill chunks.",
   "note": "Uses automatic weight offload at 95% GPU memory utilization, with no prefix-cache reservation.",
   "defaults": {
