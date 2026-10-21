@@ -1,12 +1,13 @@
-import { initI18n, applyTranslations } from './i18n.js'
+import { initI18n, applyTranslations, rememberLanguage } from './i18n.js'
 import { headerMarkup, setupHeader } from './site-header.js'
 const current = location.pathname.startsWith('/benchmark/') ? '/benchmark/'
   : location.pathname.startsWith('/recipe/') ? '/recipe/'
   : location.pathname.startsWith('/status/') ? '/status/' : '/'
-const params = current === '/status/' ? new URLSearchParams(location.search) : null
-const language = params?.get('lang')
+const params = new URLSearchParams(location.search)
+const language = params.get('lang')
 await initI18n(language === 'en' || language === 'zh_cn' ? language : undefined)
-const theme = params?.get('theme')
+if (language === 'en' || language === 'zh_cn') rememberLanguage(language)
+const theme = current === '/status/' ? params.get('theme') : null
 if (theme === 'light' || theme === 'dark') {
   document.documentElement.dataset.theme = theme
   try { localStorage.setItem('snowllm-theme', theme) } catch {}
