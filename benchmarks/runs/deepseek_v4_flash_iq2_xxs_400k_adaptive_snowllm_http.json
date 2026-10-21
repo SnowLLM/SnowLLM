@@ -1,0 +1,357 @@
+[
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http",
+  "isl_target": 1024,
+  "input_length_mode": "chat_template_exact",
+  "isl": 1024,
+  "osl": 209,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 1.8131975810101721,
+  "ttft_s_reps": [
+   1.8131975810101721,
+   1.8061225949786603,
+   1.8158571289968677,
+   1.814172165992204
+  ],
+  "decode_tok_s": 25.688792126638315,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 564.7481613280705,
+  "edge_before_c": 60,
+  "edge_after_c": 77,
+  "accept_unit": "AL",
+  "accept_mean": 2.435020218987184,
+  "accept_stdev": 0.22421920056867345,
+  "accept_reps": [
+   2.736842105263158,
+   2.44,
+   2.202127659574468,
+   2.361111111111111
+  ],
+  "step_s": 0.09334535736860466,
+  "step_s_reps": [
+   0.09314055826376197,
+   0.09345281982685025,
+   0.09324854124656144,
+   0.09344217349064787
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "own experiences, and she reflects on how life has disillusioned her, saying that \"life is a terrible thing\" and that we think we control it, but it controls us.",
+   ", arranged by a nurse named Miss Page, and declares she intends to live a straight life. Palmer approves, though his feelings are complicated by possessiveness.",
+   " to speak with her and reassure her that their mutual acquaintance, Mrs. McKee, doesn’t know about his situation. K. agrees and goes to find Tillie in the barn.",
+   "chwitter's.\n\nThe final part of the passage focuses on Max Wilson, who is driving with Carlotta. He feels happy and relieved that she is being agreeable, and his"
+  ],
+  "version": "0.3.11",
+  "commit": "5a0f3a1091ab77b1eba2ad0b67fd67a9fc074646",
+  "measured_on": "2026-10-21",
+  "measurement": "http_stream",
+  "recipe": "deepseek-v4-flash-iq2-xxs-400k",
+  "context": 409600,
+  "prefill_chunk": 8192,
+  "kv_cache_dtype": "bf16",
+  "gpu_memory_utilization": 0.95,
+  "prefix_memory_ratio": 0.0,
+  "graphs": true,
+  "dflash_block": 5,
+  "dspark_adaptive": true,
+  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
+  "source_arm": "deepseek_adaptive",
+  "device_map": "auto",
+  "offload": {
+   "group": "experts.down",
+   "count": 5,
+   "host_gib_rounded": 3.83
+  }
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http",
+  "isl_target": 8192,
+  "input_length_mode": "chat_template_exact",
+  "isl": 8192,
+  "osl": 205,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 9.497222832986154,
+  "ttft_s_reps": [
+   9.497222832986154,
+   9.513195459003327,
+   9.532986367994454,
+   9.53240328800166
+  ],
+  "decode_tok_s": 25.956371505594948,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 862.5679468683414,
+  "edge_before_c": 77,
+  "edge_after_c": 80,
+  "accept_unit": "AL",
+  "accept_mean": 2.3698647055657283,
+  "accept_stdev": 0.09857327461708089,
+  "accept_reps": [
+   2.4578313253012047,
+   2.4468085106382977,
+   2.256637168141593,
+   2.3181818181818183
+  ],
+  "step_s": 0.09198438146114021,
+  "step_s_reps": [
+   0.09257774437636664,
+   0.09228270334698535,
+   0.09168605957529509,
+   0.09127248771811455
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "\" They have a conversation about domestic life, K.'s habits of helping with household chores, and Sidney's disillusionment with the world after being out in it.",
+   "m illness, announces she has found a job and intends to live an honest life, while Palmer struggles with guilt and the complications of their past relationship.",
+   "er has now turned his home into a tavern and has furnished rooms upstairs, which caused Tillie to move out to the barn in protest. K. goes to see Tillie, who is",
+   " life. He is kind and sympathetic, and his encounter with Jennie leaves a lasting impression.\n\n- **Final section (from a different work):** A separate narrative"
+  ],
+  "version": "0.3.11",
+  "commit": "5a0f3a1091ab77b1eba2ad0b67fd67a9fc074646",
+  "measured_on": "2026-10-21",
+  "measurement": "http_stream",
+  "recipe": "deepseek-v4-flash-iq2-xxs-400k",
+  "context": 409600,
+  "prefill_chunk": 8192,
+  "kv_cache_dtype": "bf16",
+  "gpu_memory_utilization": 0.95,
+  "prefix_memory_ratio": 0.0,
+  "graphs": true,
+  "dflash_block": 5,
+  "dspark_adaptive": true,
+  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
+  "source_arm": "deepseek_adaptive",
+  "device_map": "auto",
+  "offload": {
+   "group": "experts.down",
+   "count": 5,
+   "host_gib_rounded": 3.83
+  }
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http",
+  "isl_target": 32768,
+  "input_length_mode": "chat_template_exact",
+  "isl": 32768,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 39.955683951004175,
+  "ttft_s_reps": [
+   39.955683951004175,
+   39.55669929200667,
+   39.95494846298243,
+   39.67639453598531
+  ],
+  "decode_tok_s": 24.40358329718846,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 820.1085993217359,
+  "edge_before_c": 80,
+  "edge_after_c": 81,
+  "accept_unit": "AL",
+  "accept_mean": 2.279638151831177,
+  "accept_stdev": 0.12720744860629252,
+  "accept_reps": [
+   2.3181818181818183,
+   2.29126213592233,
+   2.103448275862069,
+   2.4056603773584904
+  ],
+  "step_s": 0.09372744825775214,
+  "step_s_reps": [
+   0.0934809925910403,
+   0.09543451373669765,
+   0.0932170367260104,
+   0.09397390392446398
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "ed to as \"K.,\" discussing domestic life, bread-making, and philosophical reflections on life and illusions. This appears to be from a different story or a later",
+   "bout his marriage to another woman. She reveals that she has found a job and intends to live an honest life, signaling a break from their previous relationship.",
+   "love and intention to marry her. The chapter ends with Jennie’s hopeful uncertainty as Brander departs for Washington, leaving her to await his promised return.",
+   "lving a man named Joe, who overhears garage workers gossiping about his wife, Sidney, being seen with a surgeon named Max Wilson at a disreputable establishment"
+  ],
+  "version": "0.3.11",
+  "commit": "5a0f3a1091ab77b1eba2ad0b67fd67a9fc074646",
+  "measured_on": "2026-10-21",
+  "measurement": "http_stream",
+  "recipe": "deepseek-v4-flash-iq2-xxs-400k",
+  "context": 409600,
+  "prefill_chunk": 8192,
+  "kv_cache_dtype": "bf16",
+  "gpu_memory_utilization": 0.95,
+  "prefix_memory_ratio": 0.0,
+  "graphs": true,
+  "dflash_block": 5,
+  "dspark_adaptive": true,
+  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
+  "source_arm": "deepseek_adaptive",
+  "device_map": "auto",
+  "offload": {
+   "group": "experts.down",
+   "count": 5,
+   "host_gib_rounded": 3.83
+  }
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http",
+  "isl_target": 131072,
+  "input_length_mode": "chat_template_exact",
+  "isl": 131072,
+  "osl": 139,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 184.16175136799575,
+  "ttft_s_reps": [
+   184.16175136799575,
+   184.33846014499431,
+   184.9530785550014,
+   184.79316776499036
+  ],
+  "decode_tok_s": 21.28221742332225,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 711.7221628615448,
+  "edge_before_c": 81,
+  "edge_after_c": 83,
+  "accept_unit": "AL",
+  "accept_mean": 2.1198814292742187,
+  "accept_stdev": 0.11413027697194972,
+  "accept_reps": [
+   2.225806451612903,
+   2.1142857142857143,
+   1.962962962962963,
+   2.176470588235294
+  ],
+  "step_s": 0.09946793124162033,
+  "step_s_reps": [
+   0.09901319019184802,
+   0.09992267229139264,
+   0.09844610506277146,
+   0.1016794510356537
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "Letty Gerald, a wealthy widow who is interested in him, and details Lester's growing dissatisfaction with his life and his brother Robert's success in business.",
+   "uine approval of her decision. The passage captures the end of their romantic relationship, marked by resentment, regret, and a fragile new beginning for Grace.",
+   "cheme and has moved out to the barn. Schwitter asks K. to intercede with Tillie, hoping she will forgive him and return, but K. only promises to do what he can.",
+   "use it appears to be a collection of unrelated fragments from different texts, possibly from a novel or multiple novels, and does not form a coherent narrative."
+  ],
+  "version": "0.3.11",
+  "commit": "5a0f3a1091ab77b1eba2ad0b67fd67a9fc074646",
+  "measured_on": "2026-10-21",
+  "measurement": "http_stream",
+  "recipe": "deepseek-v4-flash-iq2-xxs-400k",
+  "context": 409600,
+  "prefill_chunk": 8192,
+  "kv_cache_dtype": "bf16",
+  "gpu_memory_utilization": 0.95,
+  "prefix_memory_ratio": 0.0,
+  "graphs": true,
+  "dflash_block": 5,
+  "dspark_adaptive": true,
+  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
+  "source_arm": "deepseek_adaptive",
+  "device_map": "auto",
+  "offload": {
+   "group": "experts.down",
+   "count": 5,
+   "host_gib_rounded": 3.83
+  }
+ },
+ {
+  "label": "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http",
+  "isl_target": 225280,
+  "input_length_mode": "chat_template_exact",
+  "isl": 225280,
+  "osl": 185,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 356.57846292000613,
+  "ttft_s_reps": [
+   356.57846292000613,
+   351.68698876400595,
+   351.68122326300363,
+   353.95048405299895
+  ],
+  "decode_tok_s": 22.282461774401888,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 631.7824081555333,
+  "edge_before_c": 81,
+  "edge_after_c": 84,
+  "accept_unit": "AL",
+  "accept_mean": 2.523076923076923,
+  "accept_stdev": 0.1290739789605458,
+  "accept_reps": [
+   2.358974358974359,
+   2.6666666666666665,
+   2.566666666666667,
+   2.5
+  ],
+  "step_s": 0.11241297154566449,
+  "step_s_reps": [
+   0.10985882653231949,
+   0.11692000527747291,
+   0.1099220159150846,
+   0.11490392717624436
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   ", and Carrie eventually leaves him to pursue a career on the stage. The novel ends with Hurstwood committing suicide, while Carrie becomes a successful actress.",
+   " to be a fragment of a novel, but it is incomplete and ends abruptly mid-sentence. Without the full context of the story, I cannot provide a meaningful summary.",
+   "sage is also quite long, and I am not sure which part you would like me to summarize. Could you please provide more information or specify a particular section?",
+   "t of a novel, but I cannot identify the title or author, and I do not have access to the full text. Therefore, I cannot provide a summary of its plot or themes."
+  ],
+  "version": "0.3.11",
+  "commit": "5a0f3a1091ab77b1eba2ad0b67fd67a9fc074646",
+  "measured_on": "2026-10-21",
+  "measurement": "http_stream",
+  "recipe": "deepseek-v4-flash-iq2-xxs-400k",
+  "context": 409600,
+  "prefill_chunk": 8192,
+  "kv_cache_dtype": "bf16",
+  "gpu_memory_utilization": 0.95,
+  "prefix_memory_ratio": 0.0,
+  "graphs": true,
+  "dflash_block": 5,
+  "dspark_adaptive": true,
+  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
+  "source_arm": "deepseek_adaptive",
+  "device_map": "auto",
+  "offload": {
+   "group": "experts.down",
+   "count": 5,
+   "host_gib_rounded": 3.83
+  }
+ }
+]
