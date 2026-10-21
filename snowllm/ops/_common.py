@@ -99,6 +99,23 @@ _host_alloc = False
 HOST_ALIGN = 1 << 16
 HOST_HUGE_PAGE = 2 << 20
 _host_pinned = 0
+_allocation_observer = None
+
+
+@contextlib.contextmanager
+def observe_allocations(observer):
+    global _allocation_observer
+    previous, _allocation_observer = _allocation_observer, observer
+    try:
+        yield
+    finally:
+        _allocation_observer = previous
+
+
+def _observe(tensor):
+    if _allocation_observer is not None:
+        _allocation_observer(tensor)
+    return tensor
 
 
 @contextlib.contextmanager
@@ -330,20 +347,20 @@ def zero_bytes(n: int) -> torch.Tensor:
     if _dry is not None:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
-        return _pinned(torch.zeros, n)
+        return _observe(_pinned(torch.zeros, n))
     if torch.version.hip:
         prepare_gpu_commit(n)
-    return torch.zeros(int(n), dtype=torch.uint8, device="cuda")
+    return _observe(torch.zeros(int(n), dtype=torch.uint8, device="cuda"))
 
 
 def empty_bytes(n: int) -> torch.Tensor:
     if _dry is not None:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
-        return _pinned(torch.empty, n)
+        return _observe(_pinned(torch.empty, n))
     if torch.version.hip:
         prepare_gpu_commit(n)
-    return torch.empty(int(n), dtype=torch.uint8, device="cuda")
+    return _observe(torch.empty(int(n), dtype=torch.uint8, device="cuda"))
 
 
 def empty_shaped(shape: Sequence[int], dtype: torch.dtype) -> torch.Tensor:

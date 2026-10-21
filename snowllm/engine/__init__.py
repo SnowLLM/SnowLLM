@@ -180,37 +180,41 @@ def draft_block(geo: DraftGeometry, block: int) -> int:
     return block or 8
 
 
-DSPARK_DEVICE_WEIGHTS = ("fc.weight", "enc.output_norm.weight",
-                         "markov_w1.weight", "markov_w2.weight")
+@dataclass(frozen=True)
+class DraftPlan:
+    geo: DraftGeometry
+    device_bytes: int = 0
+    load_peak_bytes: int = 0
+
+
+def plan_draft(path: str | None, geo: DraftGeometry = None) -> DraftPlan:
+    if not path:
+        return DraftPlan(None)
+    geo = _draft_geometry(path) if geo is None else geo
+    weights = _dspark_weight_plan(path, geo) if _dspark(geo) else _dflash_weight_plan(path, geo)
+    return DraftPlan(geo, *weights)
 
 
 def draft_device_weight_bytes(path: str | None, geo: DraftGeometry = None) -> int:
-    if not path:
-        return 0
-    geo = _draft_geometry(path) if geo is None else geo
-    return _dspark_weight_bytes(path) if _dspark(geo) else _dflash_weight_bytes(path, geo)
+    return plan_draft(path, geo).device_bytes
 
 
 def draft_load_peak_bytes(path: str | None, geo: DraftGeometry = None) -> int:
-    if not path:
-        return 0
-    geo = _draft_geometry(path) if geo is None else geo
-    return (_dspark_weight_bytes(path) if _dspark(geo)
-            else _dflash_weight_plan(path, geo)[1])
+    return plan_draft(path, geo).load_peak_bytes
 
 
-def _dspark_weight_bytes(path: str) -> int:
+def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int]:
     import pathlib
 
-    from ..checkpoint.gguf import GGUF
-    from ..checkpoint.gguf.source import find_dspark_gguf
+    from ..checkpoint.gguf.source import GGUFReader, find_dspark_gguf
+    from ..models.deepseek_v4 import dspark
 
     p = pathlib.Path(path).expanduser()
     side = find_dspark_gguf(p) if p.is_dir() else (p if p.suffix == ".gguf" else None)
     if side is None:
-        return 0
-    t = GGUF(side).tensors
-    return sum(t[n].numel * 2 for n in DSPARK_DEVICE_WEIGHTS if n in t)
+        return 0, 0
+    with GGUFReader(side) as rd:
+        return dspark.weight_plan(rd, geo)
 
 
 def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
@@ -239,10 +243,6 @@ def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
     return dflash_gguf.DictDraftSource(sd)
 
 
-def _dflash_weight_bytes(path: str, geo: DFlashGeometry) -> int:
-    return _dflash_weight_plan(path, geo)[0]
-
-
 def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int]:
     from .. import ops
     from ..models.qwen3_5 import dflash_draft
@@ -269,9 +269,9 @@ def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
                     max_model_len: int) -> tuple[int, tuple[int, ...], int, DraftGeometry]:
     if not path:
         return 0, (), 0, None
-    geo = _draft_geometry(path)
-    return (draft_load_peak_bytes(path, geo), geo.tap_layers,
-            draft_num_spec(geo, block), geo)
+    draft = plan_draft(path)
+    return (draft.load_peak_bytes, draft.geo.tap_layers,
+            draft_num_spec(draft.geo, block), draft.geo)
 
 
 def _runner_for(model: "TargetModel") -> type[BaseRunner]:
@@ -294,18 +294,20 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     if ctx <= 0:
         return 0
     free, total = gpu_mem_info()
+    resident = int(kv.get("draft_resident", kv.get("reserve")) or 0)
     room = (int(total * float(kv.get("util") or DEFAULT_GPU_UTIL)) - (total - free)
-            - int(kv.get("reserve") or 0))
+            - resident + int(kv.get("loaded_weight_bytes") or 0))
     r = _runner_for(model)(
         model, None, ops.kv_blocks_for(ctx, ops.KV_BLOCK_SIZES[0]), max(1, int(kv.get("slots") or 1)),
         max_prefill_tokens=kv.get("chunk", "auto"), num_spec=int(kv.get("num_spec") or 0),
-        kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=0,
+        kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=resident,
+        load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
         prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False)
-    loading = max(0, load_peak - free)
+    loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - free)
     got = loading
     for rows in r.candidates():
-        got = max(loading, weights + r.fixed_bytes(rows) + r.act_bytes_for(rows) - room)
+        got = max(loading, weights + r.minimum_bytes(rows) + r.act_bytes_for(rows) - room)
         if got <= budget:
             break
     return got
@@ -324,21 +326,27 @@ class Engine:
                  plan_activations: bool = True,
                  account: bool = True, exact_stats: bool = False,
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
-                 preempt: bool = True, prefix_memory_ratio: float = 0.0) -> None:
-        self.dflash_geo = _draft_geometry(dflash_path) if dflash_path else None
+                 preempt: bool = True, prefix_memory_ratio: float = 0.0,
+                 draft_plan: DraftPlan | None = None) -> None:
+        draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
+        self.dflash_geo = draft_plan.geo
         if dflash_path:
             _check_dflash_target(model, self.dflash_geo)
         self.max_blocks = ops.kv_blocks_for(max_model_len, ops.KV_BLOCK_SIZES[0])
         mpt = "auto" if prefill_chunk == "auto" else min(int(prefill_chunk), max_model_len)
         self.dflash_block = dflash_block = draft_block(self.dflash_geo, dflash_block)
         cls = _runner_for(model)
+        draft_peak = draft_plan.load_peak_bytes
+        draft_resident = (draft_plan.device_bytes
+                          if _dspark(self.dflash_geo) else draft_peak)
         self.runner = cls(
                              model, num_kv_blocks, self.max_blocks, max_num_seqs,
                              max_prefill_tokens=mpt,
                              num_spec=(self._draft_n() if dflash_path else num_spec),
                              kv_int8=kv_int8,
                              gpu_memory_utilization=gpu_memory_utilization,
-                             reserve_bytes=self._draft_weight_bytes(dflash_path),
+                             reserve_bytes=draft_resident,
+                             load_peak_bytes=draft_peak if _dspark(self.dflash_geo) else 0,
                              tap_layers=(self.dflash_geo.tap_layers if dflash_path
                                          else ()),
                              draft_geo=self.dflash_geo,
@@ -367,6 +375,8 @@ class Engine:
                 self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len,
                                                 dflash_p_min)
             if self.dflash is not None:
+                model._placement_host_reserve = 0
+                self.runner.load_peak_bytes = 0
                 self.runner.reserve_bytes = (self.dflash.workspace_bytes()
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
             self.spec = self.dflash or (
@@ -441,9 +451,6 @@ class Engine:
     def _draft_n(self) -> int:
         return draft_num_spec(self.dflash_geo, self.dflash_block)
 
-    def _draft_weight_bytes(self, path: str | None) -> int:
-        return draft_load_peak_bytes(path, self.dflash_geo)
-
     def _dflash_pool_bytes(self, blocks: int) -> int:
         return draft_pool_bytes(self.dflash_geo, blocks, self.runner.block_size)
 
@@ -460,6 +467,8 @@ class Engine:
         f = find_dspark_gguf(p) if p.is_dir() else p
         with GGUFReader(f) as rd:
             draft = dspark.load(rd, self.dflash_geo, self.runner.model, self.runner.walker)
+        draft._context_ws = self.runner.draft_context_ws
+        draft._markov_ws = self.runner.draft_markov_ws
         torch.cuda.empty_cache()
         need = self.dflash_blocks
         def allocate(slabs, blocks):

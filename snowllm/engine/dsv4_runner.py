@@ -119,6 +119,9 @@ class Dsv4Runner(GraphRunner):
         return (self.resources.cache.bytes_for(self.ctx_cap, chunk)
                 + draft_pool_bytes(self.draft_geo, self._draft_pool_blocks(self.max_blocks_per_seq), self.block_size))
 
+    def _loading_cache_bytes(self, rows: int) -> int:
+        return self.resources.cache.bytes_for(self._capture_tokens(), rows)
+
     @contextlib.contextmanager
     def _probe_cache(self, chunk: int, sweep: int = 1) -> Iterator["CacheStorage"]:
         was = self.walker.tap_at

@@ -77,17 +77,18 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
 
     _log(f"loading {root.name} ...")
     t0 = time.time()
-    from .engine import draft_carve_out
-    draft_res, draft_taps, draft_spec, draft_geo = draft_carve_out(dflash, dflash_block,
-                                                                   max_num_seqs, max_model_len)
+    from .engine import plan_draft, draft_num_spec, _dspark
+    draft = plan_draft(dflash)
+    draft_kv = dict(draft_resident=draft.device_bytes) if _dspark(draft.geo) else {}
     model = loader.load(root, device_map=device_map,
                         mtp=bool(num_spec) and not dflash,
                         kv=dict(ctx=max_model_len, slots=max_num_seqs,
                                 util=gpu_memory_utilization, chunk=prefill_chunk,
-                                reserve=draft_res, taps=draft_taps, draft_geo=draft_geo,
+                                reserve=draft.load_peak_bytes,
+                                taps=draft.geo.tap_layers if dflash else (), draft_geo=draft.geo,
                                 prefix_ratio=prefix_memory_ratio, kv_int8=kv_int8,
-                                num_spec=draft_spec if dflash else num_spec,
-                                host_taken=_draft_bytes(dflash, draft_geo)))
+                                num_spec=draft_num_spec(draft.geo, dflash_block) if dflash else num_spec,
+                                host_taken=_draft_bytes(dflash, draft.geo), **draft_kv))
     dt = time.time() - t0
     gib = read_bytes() / (1 << 30)
     _log(f"loaded in {dt:.1f}s"
@@ -114,7 +115,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                     prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
                     account=stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
                     gpu_memory_utilization=gpu_memory_utilization,
-                    prefix_memory_ratio=prefix_memory_ratio)
+                    prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft)
     engine.runtime_config = dict(model_path=str(root.resolve()), max_model_len=engine.max_model_len,
                                  max_num_seqs=engine.max_num_seqs, kv_cache_dtype="int8" if engine.runner.kv_int8 else "bf16",
                                  gpu_memory_utilization=gpu_memory_utilization,
@@ -233,7 +234,7 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_UTIL, metavar="F",
                    help='Fraction of GPU memory available to the server.')
     g.add_argument("--device-map", type=str, default="", metavar="SPEC",
-                   help='Offload GGUF weights to host RAM: off, auto, all, or groups.')
+                   help='Offload GGUF weights: off, auto, all, or groups such as experts.down:1.')
     g.add_argument("--prefix-memory-ratio", type=float, default=DEFAULT_PREFIX_MEMORY_RATIO,
                    metavar="R",
                    help='Memory share for prompt caching; 0 disables caching.')

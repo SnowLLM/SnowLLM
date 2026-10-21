@@ -110,12 +110,12 @@ def main():
     ck('chunk fallback also works without a persistent activation arena', runner.max_prefill_tokens==16)
     runner.resources.close()
 
-    from snowllm.engine import Engine
+    from snowllm.engine import DraftPlan, Engine
     model = SimpleNamespace(geo=SimpleNamespace(vocab_size=8), config={}, state=None, cache=None)
     with patch('snowllm.engine._runner_for', return_value=Phased), \
-         patch('snowllm.engine._draft_geometry', return_value=SimpleNamespace(tap_layers=())), \
+         patch('snowllm.engine.plan_draft', return_value=DraftPlan(
+             SimpleNamespace(tap_layers=(), dspark=False))), \
          patch('snowllm.engine._check_dflash_target'), \
-         patch.object(Engine, '_draft_weight_bytes', return_value=0), \
          patch.object(Engine, '_build_dflash', side_effect=RuntimeError('draft load failed')), \
          patch('snowllm.engine.runner.gpu_mem_info', return_value=(1<<20,1<<20)):
         try:

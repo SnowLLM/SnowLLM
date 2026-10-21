@@ -12,6 +12,8 @@ GPU 内存主要用于：
 
 常驻大小仅统计权重，仍需为工作区和缓存预留空间。`--gpu-memory-utilization` 设置预算，CLI 默认为 `0.9`。扣除权重和工作区后，剩余预算用于缓存。方案或模型架构可能调整默认值。
 
+使用 `--device-map auto` 可按需将 GGUF 权重卸载到系统内存。DeepSeek V4 也支持指定投影组，例如 `--device-map experts.down:1` 仅卸载 routed down 权重最大的一层。
+
 ## 量化 {#quantization}
 
 低比特权重减少内存占用，但需要反量化。生成可能更快，预填充可能更慢。请结合实际负载比较内存、准确率和速度。
