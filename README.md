@@ -2,6 +2,8 @@
 
 A local LLM inference framework, hand-tuned for the **Ryzen AI Max** APU.
 
+For more information, visit [snowllm.dev](https://snowllm.dev/) ([中文](https://snowllm.dev/?lang=zh_cn)).
+
 SnowLLM is fast with:
 
 - Kernels hand-tuned for the Ryzen AI Max series
