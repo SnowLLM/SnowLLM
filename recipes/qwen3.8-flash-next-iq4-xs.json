@@ -1,6 +1,8 @@
 {
   "id": "qwen3.8-flash-next-iq4-xs",
   "model": "Qwen3.8-Flash-Next",
+  "family": "Qwen",
+  "modalities": ["text", "image"],
   "precision": "UD-IQ4_XS",
   "dir": "Qwen3.8-Flash-Next-UD-IQ4_XS",
   "bytes": 97376695424,

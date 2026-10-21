@@ -1,6 +1,8 @@
 {
   "id": "qwen3.8-flash-next-q3-k-xl",
   "model": "Qwen3.8-Flash-Next",
+  "family": "Qwen",
+  "modalities": ["text", "image"],
   "precision": "UD-Q3_K_XL",
   "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
   "bytes": 93680465024,

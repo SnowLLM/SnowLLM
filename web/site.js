@@ -687,7 +687,7 @@ function mountLineChart(container, lines, opts) {
     svg.appendChild(svgEl("line", { x1: px0, x2: px1, y1: y, y2: y,
       style: "stroke:var(--hair);stroke-width:1" }));
     var label = svgEl("text", { x: px0 - 8, y: y + 3, "text-anchor": "end",
-      style: "font:600 9px var(--mono);fill:var(--faint)" });
+      style: "font:600 .75rem var(--mono);fill:var(--faint)" });
     label.textContent = tickFormat(t);
     svg.appendChild(label);
   });
@@ -697,7 +697,7 @@ function mountLineChart(container, lines, opts) {
   xScale.ticks.forEach(function (isl) {
     var label = svgEl("text", { x: X(isl), y: py1 + 18,
       "text-anchor": isl === 0 ? "start" : isl === xScale.top ? "end" : "middle",
-      style: "font:600 9px var(--mono);fill:var(--faint)" });
+      style: "font:600 .75rem var(--mono);fill:var(--faint)" });
     label.textContent = contextLabel(isl);
     svg.appendChild(label);
   });
@@ -754,7 +754,7 @@ function mountLineChart(container, lines, opts) {
       y = Math.min(py1 - 2, Math.max(py0 + 9, y));
       last = y;
       var t = svgEl("text", { x: X(isl) + dx, y: y, "text-anchor": anchor,
-        style: "font:600 10px var(--mono);fill:" + d.line.color
+        style: "font:600 .75rem var(--mono);fill:" + d.line.color
           + ";paint-order:stroke;stroke:var(--ground);stroke-width:3px;stroke-linejoin:round" });
       t.textContent = d.line.format(d.v) + " @ " + rungs[isl];
       labels.appendChild(t);
@@ -881,18 +881,82 @@ function needsNewer(requires, have) {
 
 loadTable("recipes-catalogue", function (container, data) {
   var query = "", filters = {};
-  var fields = ["precision", "spec", "status"];
+  var fields = ["family", "modality"];
   function statusKey(recipe) {
     return recipe.status === "coming soon" ? "recipe.comingSoon"
       : needsNewer(recipe.requires, data.version) ? "recipe.newer" : "recipe.supported";
   }
   function valueOf(recipe, field) {
-    return field === "status" ? statusKey(recipe) : recipe[field];
+    if (field === "family") return recipe.family;
+    var modalities = recipe.modalities || [];
+    if (modalities.some(function (input) { return input !== "text"; })) return "multimodal";
+    return modalities.length ? "text" : "";
   }
-  function filterLabel(field, value) {
-    return field === "status" ? t(value) : field === "spec" && value === "none" ? t("recipe.none") : value;
+  var search, count, grid, dialog;
+  function showDetails(recipe) {
+    dialog.replaceChildren();
+    var close = el("button", { type: "button", class: "recipe-dialog-close", text: "×", "aria-label": t("recipe.close") });
+    close.addEventListener("click", function () { dialog.close(); });
+    dialog.appendChild(el("div", { class: "recipe-dialog-heading" }, [
+      el("h2", { id: "recipe-detail-title", text: recipe.model }), close,
+    ]));
+    dialog.appendChild(el("p", { class: "recipe-id", text: recipe.id }));
+    if (recipe.summary) {
+      var summaryKey = "recipe.summary." + recipe.id;
+      dialog.appendChild(el("p", { class: "recipe-summary", text: t(summaryKey) === summaryKey ? recipe.summary : t(summaryKey) }));
+    }
+    var commands = el("div", { class: "recipe-commands" });
+    [
+      { label: "recipe.pull", command: "snowllm pull " + recipe.id },
+      { label: "recipe.run", command: "snowllm " + recipe.id },
+    ].forEach(function (item) {
+      var code = el("code", { text: item.command });
+      var copy = el("button", { type: "button", text: t("common.copy"), "aria-label": t("common.copy") + ": " + item.command });
+      copy.addEventListener("click", async function () {
+        try {
+          await navigator.clipboard.writeText(item.command);
+          copy.textContent = t("common.copied");
+        } catch (error) {
+          var selection = window.getSelection(), range = document.createRange();
+          range.selectNodeContents(code);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          copy.textContent = t("common.select");
+        }
+      });
+      commands.appendChild(el("div", {}, [
+        el("span", { text: t(item.label) }), el("div", { class: "recipe-command" }, [code, copy]),
+      ]));
+    });
+    dialog.appendChild(commands);
+    var sources = el("div", { class: "recipe-sources" }, [el("h3", { text: t("recipe.source") })]);
+    [{ url: recipe.url, repo: recipe.repo }].concat(recipe.sources || []).forEach(function (source) {
+      sources.appendChild(el("a", { href: source.url, text: source.repo + " ↗" }));
+    });
+    dialog.appendChild(sources);
+    dialog.showModal();
   }
-  var search, count, grid;
+  function recipeCard(recipe) {
+    var status = statusKey(recipe);
+    var badge = el("span", { class: "recipe-status" + (status === "recipe.supported" ? " supported" : ""), text: t(status) });
+    if (status === "recipe.newer") badge.title = "snowllm " + recipe.requires + "+";
+    var details = el("button", { type: "button", class: "recipe-open", text: t("recipe.actions"), "aria-label": recipe.model + " · " + recipe.precision + " · " + t("recipe.actions") });
+    details.addEventListener("click", function () { showDetails(recipe); });
+    return el("article", { class: "recipe-card", "data-recipe": recipe.id }, [
+      el("div", { class: "recipe-card-top" }, [
+        el("div", { class: "recipe-tags" }, [
+          el("span", { class: "recipe-precision", text: recipe.precision }),
+          el("span", { class: "recipe-spec", text: recipe.spec === "none" ? t("recipe.none") : recipe.spec, title: t("recipe.spec") }),
+          valueOf(recipe, "modality") === "multimodal" ? el("span", { class: "recipe-modality", text: t("recipe.multimodal") }) : null,
+        ]), status === "recipe.supported" ? null : badge,
+      ]),
+      el("h3", { text: recipe.model }),
+      el("div", { class: "recipe-id", text: recipe.id }),
+      el("div", { class: "recipe-footer" }, [
+        el("span", { class: "recipe-size", text: humanBytes(recipe.bytes) || "—", title: t("recipe.size") }), details,
+      ]),
+    ]);
+  }
   function renderCards() {
     var visible = data.recipes.filter(function (recipe) {
       return [recipe.model, recipe.id, recipe.precision].join(" ").toLowerCase().includes(query)
@@ -900,41 +964,7 @@ loadTable("recipes-catalogue", function (container, data) {
     });
     count.textContent = t("recipe.count", { count: visible.length });
     grid.replaceChildren();
-    visible.forEach(function (recipe) {
-      var status = statusKey(recipe);
-      var badge = el("span", { class: "recipe-status" + (status === "recipe.supported" ? " supported" : ""), text: t(status) });
-      if (status === "recipe.newer") badge.appendChild(el("span", { text: "snowllm " + recipe.requires + "+" }));
-      var card = el("article", { class: "recipe-card" }, [
-        el("div", { class: "recipe-card-top" }, [
-          el("span", { class: "recipe-precision", text: recipe.precision }), badge,
-        ]),
-        el("h3", { text: recipe.model }),
-        el("div", { class: "recipe-id", text: recipe.id }),
-        el("p", { class: "recipe-spec", text: t("recipe.spec") + ": " + filterLabel("spec", recipe.spec) }),
-      ]);
-      if (recipe.summary) {
-        var summaryKey = "recipe.summary." + recipe.id;
-        card.appendChild(el("p", { class: "recipe-summary", text: t(summaryKey) === summaryKey ? recipe.summary : t(summaryKey) }));
-      }
-      var sources = el("details", { class: "recipe-sources" }, [el("summary", { text: t("recipe.source") })]);
-      [{ url: recipe.url, repo: recipe.repo }].concat(recipe.sources || []).forEach(function (source) {
-        sources.appendChild(el("a", { href: source.url, text: source.repo }));
-      });
-      card.appendChild(sources);
-      var commands = el("div", { class: "recipe-commands" });
-      [
-        { label: "recipe.pull", command: "snowllm pull " + recipe.id },
-        { label: "recipe.run", command: "snowllm " + recipe.id },
-      ].forEach(function (item) {
-        commands.appendChild(el("div", {}, [
-          el("span", { text: t(item.label) }), el("code", { text: item.command }),
-        ]));
-      });
-      card.appendChild(el("div", { class: "recipe-footer" }, [
-        el("span", { class: "recipe-size", text: t("recipe.size") + ": " + (humanBytes(recipe.bytes) || "—") }), commands,
-      ]));
-      grid.appendChild(card);
-    });
+    visible.forEach(function (recipe) { grid.appendChild(recipeCard(recipe)); });
     if (!visible.length) grid.appendChild(el("p", { class: "empty", text: t("recipe.noResults") }));
   }
   function render() {
@@ -946,20 +976,41 @@ loadTable("recipes-catalogue", function (container, data) {
     var tools = el("div", { class: "recipe-tools" }, [search, count]);
     var controls = el("div", { class: "recipe-filters" });
     fields.forEach(function (field) {
-      var label = t("recipe." + field);
+      var label = t(field === "family" ? "recipe.family" : "recipe.modality");
       var select = el("select", { "aria-label": t("common.filter", { label: label }) });
-      select.appendChild(el("option", { value: "", text: t("common.all", { label: label.toLowerCase() }) }));
-      Array.from(new Set(data.recipes.map(function (recipe) { return valueOf(recipe, field); }))).sort().forEach(function (value) {
-        select.appendChild(el("option", { value: value, text: filterLabel(field, value) }));
+      select.appendChild(el("option", { value: "", text: t(field === "family" ? "recipe.allFamilies" : "recipe.allModalities") }));
+      var values = field === "family" ? Array.from(new Set(data.recipes.map(function (recipe) { return recipe.family; }).filter(Boolean))).sort()
+        : ["multimodal", "text"];
+      values.forEach(function (value) {
+        select.appendChild(el("option", { value: value, text: field === "family" ? value : t(value === "multimodal" ? "recipe.multimodal" : "recipe.textOnly") }));
       });
       select.value = filters[field] || "";
       select.addEventListener("change", function () { filters[field] = select.value; renderCards(); });
       controls.appendChild(el("label", {}, [document.createTextNode(label), select]));
     });
+    var featuredIds = [
+      "qwen3.8-flash-next-q3-k-xl-dflash2",
+      "minicpm-v4.7-35b-a3b-q4-k-m-dspark",
+      "deepseek-v4-flash-iq2-xxs-400k",
+    ];
+    var featuredGrid = el("div", { class: "recipe-grid recipe-featured-grid" });
+    featuredIds.forEach(function (id) {
+      var recipe = data.recipes.find(function (recipe) { return recipe.id === id; });
+      if (recipe) featuredGrid.appendChild(recipeCard(recipe));
+    });
+    if (featuredGrid.childElementCount) container.appendChild(el("section", { class: "recipe-featured", "aria-labelledby": "recipe-featured-title" }, [
+      el("h2", { class: "recipe-section-title", id: "recipe-featured-title", text: t("recipe.featured") }), featuredGrid,
+    ]));
     grid = el("div", { class: "recipe-grid" });
-    container.appendChild(tools);
-    container.appendChild(controls);
-    container.appendChild(grid);
+    container.appendChild(el("section", { class: "recipe-all", "aria-labelledby": "recipe-all-title" }, [
+      el("h2", { class: "recipe-section-title", id: "recipe-all-title", text: t("recipe.allModels") }), tools, controls, grid,
+    ]));
+    dialog = el("dialog", { class: "recipe-dialog", "aria-labelledby": "recipe-detail-title" });
+    dialog.addEventListener("click", function (event) { if (event.target === dialog) {
+      var bounds = dialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+    } });
+    container.appendChild(dialog);
     renderCards();
   }
   render();

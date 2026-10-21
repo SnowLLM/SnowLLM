@@ -29,7 +29,7 @@ def needs_newer(r: dict) -> bool:
 
 REQUIRED = ("id", "model", "precision", "dir", "repo")
 OPTIONAL = ("revision", "include", "exclude", "bytes", "priority", "requires", "summary", "note",
-            "files", "sources", "defaults", "serve_as", "spec", "status")
+            "files", "sources", "defaults", "serve_as", "spec", "status", "family", "modalities")
 LISTS = ("include", "exclude")
 SOURCE_FIELDS = ("repo", "revision", "include", "exclude", "subdir")
 
@@ -69,6 +69,12 @@ def load(path: pathlib.Path) -> dict | None:
                            f"One of: {', '.join(SETTABLE)}")
     if r.get("status", "supported") not in ("supported", "coming soon"):
         complain(path, "status must be 'supported' or 'coming soon'")
+    if "family" in r and not (isinstance(r["family"], str) and r["family"].strip()):
+        complain(path, "family must be a nonempty string")
+    if "modalities" in r and not (isinstance(r["modalities"], list) and r["modalities"]
+                                  and all(m in ("text", "image", "audio", "video") for m in r["modalities"])
+                                  and len(set(r["modalities"])) == len(r["modalities"])):
+        complain(path, "modalities must be a nonempty list of distinct text, image, audio or video inputs")
     if "serve_as" in r and not (isinstance(r["serve_as"], str) and r["serve_as"].strip()
                                 and "/" not in r["serve_as"]):
         complain(path, f"has a serve_as that is not a plain model name: {r.get('serve_as')!r}")

@@ -1,6 +1,8 @@
 {
   "id": "qwen3.6-27b-fp8",
   "model": "Qwen3.6-27B",
+  "family": "Qwen",
+  "modalities": ["text", "image"],
   "precision": "FP8",
   "dir": "Qwen3.6-27B-FP8",
   "bytes": 30890039330,

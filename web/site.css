@@ -15,9 +15,7 @@
     --core: var(--palette-light-core);
 
     --measure: 100%;
-    --fs-ui: 1rem;
-    --fs-label: 0.875rem;
-    --fs-note: var(--fs-body);
+    --content-width: 68rem;
 
   }
 
@@ -72,21 +70,22 @@
   :root[data-theme="light"] { color-scheme: light; }
   :root[data-theme="dark"] { color-scheme: dark; }
 
-  html { -webkit-text-size-adjust: 100%; }
+  html { scrollbar-gutter: stable; }
 
   body {
     background: var(--ground);
     color: var(--ink);
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-body);
-    line-height: 1.65;
+    line-height: var(--lh-body);
     margin: 0;
 
     padding: 0 clamp(1.5rem, 4vw, 4rem) 6rem;
   }
 
   .wrap { max-width: 78rem; margin: 0 auto; container-type: inline-size; }
-  .main { min-width: 0; max-width: 60rem; margin-inline: auto; padding: 0; }
+  .main { min-width: 0; max-width: var(--content-width); margin-inline: auto; padding: 0; }
+  .recipe-page .main { max-width: none; }
   .band {
     padding: 2.75rem 0;
     border-top: 1px solid var(--hair);
@@ -98,8 +97,8 @@
 
 
   .rail {
-    font-family: var(--serif);
-    font-size: 1.375rem;
+    font-family: var(--sans);
+    font-size: var(--fs-rail);
     line-height: 1.4;
     letter-spacing: normal;
     text-transform: none;
@@ -146,14 +145,15 @@
   .clip video { width: 100%; display: block; aspect-ratio: 1920 / 1080; border: 1px solid var(--line); background: #0d1117; }
   .clip figcaption { font-size: var(--fs-note); color: var(--muted); margin-top: 0.75rem; }
   .clip figcaption .claim { display: block; color: var(--ink); }
-  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--serif); font-size: var(--fs-label); line-height: 1.55; letter-spacing: normal; text-transform: none; color: var(--faint); }
+  .clip figcaption .fine { display: block; margin-top: 0.5rem; font-family: var(--sans); font-size: var(--fs-label); line-height: 1.55; letter-spacing: normal; text-transform: none; color: var(--faint); }
 
   .glyph { width: 1.6em; height: 1.6em; flex: none; }
 
   .lede {
-    font-size: clamp(2rem, 4.5vw, 3.75rem);
-    line-height: 1.28;
-    letter-spacing: -0.015em;
+    font-size: var(--fs-display);
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: var(--heading-tracking);
     max-width: 26ch;
     margin: 0 0 1.75rem;
     text-wrap: balance;
@@ -171,7 +171,7 @@
   }
 
   .figure {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: clamp(3.5rem, 15cqw, 8.5rem);
     font-weight: 500;
     line-height: 0.84;
@@ -189,7 +189,7 @@
   }
 
   .caliper {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--muted);
@@ -214,7 +214,7 @@
   .decay svg { display: block; width: 100%; height: auto; overflow: visible; }
 
   .decay figcaption {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     letter-spacing: normal;
     color: var(--faint);
@@ -241,7 +241,7 @@
     align-items: center;
     padding: 0 0.9rem;
     background: var(--ground);
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: normal;
@@ -262,7 +262,7 @@
     align-items: center;
     justify-content: center;
     min-height: 2.5rem;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--muted);
@@ -328,7 +328,7 @@
   .cmd pre {
     font-family: var(--mono);
     font-size: var(--fs-code);
-    line-height: 1.65;
+    line-height: var(--lh-body);
     margin: 0;
     flex: 1;
     min-width: 0;
@@ -344,7 +344,7 @@
 
   .copy {
     flex: none;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     letter-spacing: normal;
     text-transform: none;
@@ -396,7 +396,7 @@
   .group { margin: 0 0 2rem; }
   .group:last-child { margin-bottom: 0; }
   .group h3, .group h4 {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: normal;
@@ -425,7 +425,7 @@
   table {
     border-collapse: collapse;
     width: 100%;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     font-variant-numeric: tabular-nums;
   }
@@ -447,7 +447,7 @@
   }
 
   td.desc {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-note);
     line-height: 1.5;
     color: var(--muted);
@@ -458,60 +458,101 @@
 
   .jstable { margin: 0 0 1rem; }
 
+  .recipe-page { font-family: var(--sans); font-size: var(--fs-body); }
+  .recipe-page .foot { font-family: var(--sans); max-width: none; }
+  .recipe-page .catalogue-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: 2.5rem 0 1.75rem; border: 0; }
+  .recipe-page .catalogue-heading h1 { margin: 0 0 .65rem; font-size: 2rem; line-height: 1.2; font-weight: 600; letter-spacing: var(--heading-tracking); }
+  .recipe-page .catalogue-heading p { margin: 0; max-width: 46rem; font-size: var(--fs-note); }
+  .catalogue-heading > a { margin-top: .4rem; font-size: var(--fs-note); white-space: nowrap; }
+  .recipe-catalogue, .recipe-dialog { font-family: var(--sans); font-size: var(--fs-ui); line-height: var(--lh-ui); }
   .recipe-catalogue { margin-bottom: 1rem; }
-  .recipe-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+  .recipe-section-title { margin: 0 0 1rem; font-size: var(--fs-rail); }
+  .recipe-featured { margin-bottom: 2.5rem; }
+  .recipe-featured .recipe-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .recipe-featured .recipe-card { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+  .recipe-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: .75rem; }
   .recipe-tools input, .recipe-filters select {
     min-width: 0;
-    padding: .65rem .75rem;
+    padding: .7rem .85rem;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: var(--panel);
     color: var(--ink);
     font: inherit;
+    font-size: 1rem;
   }
   .recipe-tools input { flex: 1; max-width: 30rem; }
   .recipe-count { margin-left: auto; color: var(--muted); font-size: var(--fs-label); }
-  .recipe-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; margin-bottom: 1.5rem; }
-  .recipe-filters label { display: flex; align-items: center; gap: .5rem; font-size: var(--fs-label); }
+  .recipe-filters { display: flex; flex-wrap: wrap; gap: .75rem 1rem; margin: 0 0 1.25rem; }
+  .recipe-filters label { display: flex; align-items: center; gap: .5rem; font-size: var(--fs-code); }
   .recipe-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.125rem; }
   .recipe-card {
     display: flex;
     flex-direction: column;
     min-width: 0;
-    padding: 1.5rem;
+    padding: 1.4rem;
     border: 1px solid var(--line);
     border-radius: 14px;
     background: var(--panel);
+    transition: border-color .15s, box-shadow .15s;
   }
-  .recipe-card-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .5rem; margin-bottom: 1rem; }
-  .recipe-precision, .recipe-status { padding: .3rem .6rem; border: 1px solid var(--line); border-radius: 6px; font-size: var(--fs-label); }
-  .recipe-status { color: var(--muted); }
-  .recipe-status.supported { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
-  .recipe-status span { display: block; }
-  .recipe-card h3 { margin: 0 0 .4rem; font-size: 1.25rem; overflow-wrap: anywhere; }
-  .recipe-id { font-family: var(--mono); font-size: var(--fs-label); color: var(--muted); overflow-wrap: anywhere; }
-  .recipe-card p { margin: .85rem 0 0; font-size: var(--fs-label); color: var(--muted); }
-  .recipe-sources { margin: 1rem 0; font-size: var(--fs-label); }
-  .recipe-sources summary { cursor: pointer; color: var(--muted); }
-  .recipe-sources a { display: block; margin-top: .35rem; overflow-wrap: anywhere; }
-  .recipe-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--hair); }
+  .recipe-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); box-shadow: 0 4px 16px #00000006; }
+  .recipe-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: 1.25rem; }
+  .recipe-tags { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+  .recipe-precision, .recipe-spec, .recipe-modality { padding: .25rem .45rem; border-radius: 5px; font-size: var(--fs-small); line-height: 1.4; }
+  .recipe-modality { color: var(--accent); background: var(--accent-soft); }
+  .recipe-precision { border: 1px solid var(--line); color: var(--muted); }
+  .recipe-spec { background: var(--ground); color: var(--muted); }
+  .recipe-status { display: inline-flex; align-items: center; gap: .35rem; color: var(--muted); font-size: var(--fs-label); }
+  .recipe-status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .recipe-status.supported { color: var(--accent); }
+  .recipe-card h3 { margin: 0 0 .4rem; font-size: var(--fs-h3); font-weight: 600; letter-spacing: var(--heading-tracking); line-height: 1.4; overflow-wrap: anywhere; }
+  .recipe-id { font-family: var(--mono); font-size: var(--fs-small); color: var(--muted); overflow-wrap: anywhere; }
+  .recipe-card > .recipe-id { margin-bottom: 1.25rem; }
+  .recipe-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--hair); }
   .recipe-size { color: var(--muted); font-size: var(--fs-label); }
-  .recipe-commands { display: grid; gap: .75rem; margin-top: .75rem; }
-  .recipe-commands span { display: block; margin-bottom: .25rem; color: var(--muted); font-size: var(--fs-label); }
-  .recipe-commands code { display: block; padding: .5rem .65rem; background: var(--ground); border-radius: 6px; overflow-wrap: anywhere; white-space: normal; }
+  .recipe-open { min-height: 2.375rem; max-width: 100%; border: 1px solid transparent; border-radius: 7px; padding: .5rem .75rem; background: var(--accent); color: var(--panel); font: inherit; font-size: var(--fs-code); font-weight: 600; cursor: pointer; }
+  .recipe-open:hover { filter: brightness(.9); }
+  .recipe-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 3rem); padding: 1.75rem; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: 0 24px 80px #0003; }
+  .recipe-dialog::backdrop { background: #10182066; backdrop-filter: blur(4px); }
+  .recipe-dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .recipe-dialog-heading h2 { margin: 0 0 .5rem; font-size: 1.25rem; overflow-wrap: anywhere; }
+  .recipe-dialog-close { flex: none; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 1.5rem; cursor: pointer; }
+  .recipe-dialog p { font-size: var(--fs-note); color: var(--muted); }
+  .recipe-commands { display: grid; gap: 1rem; margin: 1.5rem 0; }
+  .recipe-commands span { display: block; margin-bottom: .4rem; color: var(--muted); font-size: var(--fs-label); }
+  .recipe-command { display: flex; align-items: flex-start; gap: .75rem; padding: .75rem; background: var(--ground); border: 1px solid var(--hair); border-radius: 8px; }
+  .recipe-command code { flex: 1; min-width: 0; padding: 0; background: transparent; font-size: var(--fs-label); overflow-wrap: anywhere; white-space: normal; }
+  .recipe-command button { flex: none; padding: .1rem .25rem; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: var(--fs-label); cursor: pointer; }
+  .recipe-sources { padding-top: 1rem; border-top: 1px solid var(--hair); font-size: var(--fs-label); }
+  .recipe-sources h3 { margin: 0 0 .5rem; font-size: inherit; font-weight: 500; color: var(--muted); }
+  .recipe-sources a { display: block; margin-top: .35rem; overflow-wrap: anywhere; }
   .recipe-grid > .empty { grid-column: 1 / -1; color: var(--muted); }
+  @media (min-width: 960px) {
+    .recipe-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1200px) {
+    .recipe-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
   @media (max-width: 640px) {
+    .recipe-featured .recipe-grid { grid-template-columns: 1fr; }
+    .recipe-page .catalogue-heading { flex-direction: column; gap: .75rem; padding: 1.75rem 0 1.5rem; }
+    .catalogue-heading > a { margin-top: 0; }
     .recipe-grid { grid-template-columns: 1fr; }
-    .recipe-card { padding: 1.125rem; }
+    .recipe-card { padding: 1.25rem; }
     .recipe-tools input { flex-basis: 100%; max-width: none; }
     .recipe-count { margin-left: 0; }
     .recipe-filters { flex-direction: column; }
     .recipe-filters label { justify-content: space-between; }
     .recipe-filters select { max-width: 70%; }
+    .recipe-dialog { padding: 1.25rem; }
+  }
+  @media (min-width: 641px) and (max-width: 959px) {
+    .recipe-featured .recipe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   .jstable .empty {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-note);
     color: var(--muted);
   }
@@ -522,7 +563,7 @@
     align-items: center;
     gap: 0.6rem 1.25rem;
     margin: 0 0 0.75rem;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--faint);
@@ -532,6 +573,7 @@
 
   .jstable select {
     font: inherit;
+    font-size: 1rem;
     color: var(--ink);
     background: var(--panel);
     border: 1px solid var(--line);
@@ -579,14 +621,14 @@
     border: 1px solid var(--line);
     border-radius: 0.4rem;
     box-shadow: 0 12px 40px #10182033;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-note);
   }
 
   [popover].card::backdrop { background: #10182047; }
 
   [popover].card h4 {
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     font-weight: 600;
     letter-spacing: normal;
@@ -602,7 +644,7 @@
     grid-template-columns: 4rem minmax(0, 1fr);
     gap: 0.3rem 0.9rem;
     margin: 0;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
   }
 
@@ -630,14 +672,15 @@
 
   .chart { margin: 0 0 1.5rem; }
 
-  .chart .chart-svg svg { display: block; width: 100%; height: auto; }
+  .chart .chart-svg { overflow-x: auto; }
+  .chart .chart-svg svg { display: block; width: 100%; min-width: 45rem; height: auto; }
 
   .chart .legend.chart-legend {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem 1.4rem;
     margin: 0 0 0.7rem;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--muted);
@@ -649,7 +692,7 @@
   .chart .axis-caption {
     margin: 0.55rem 0 0;
     max-width: none;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-label);
     letter-spacing: normal;
     text-transform: none;
@@ -670,7 +713,7 @@
     align-items: center;
     gap: 0.6rem;
     margin: 0 0 0.75rem;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--faint);
@@ -680,6 +723,7 @@
 
   .chart select {
     font: inherit;
+    font-size: 1rem;
     color: var(--ink);
     background: var(--panel);
     border: 1px solid var(--line);
@@ -692,7 +736,7 @@
     flex-wrap: wrap;
     gap: 0.5rem 1.1rem;
     margin: 0 0 0.75rem;
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
   }
@@ -741,7 +785,7 @@
     border-radius: 0.4rem;
     padding: 0.35rem 0.6rem;
     background: var(--panel);
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
   }
 
@@ -756,7 +800,7 @@
     justify-content: space-between;
     padding: 2.5rem 0 0;
     border-top: 1px solid var(--hair);
-    font-family: var(--serif);
+    font-family: var(--sans);
     font-size: var(--fs-ui);
     letter-spacing: normal;
     color: var(--faint);
@@ -774,9 +818,9 @@
   .main { padding-top: 1rem; }
   .foot { margin-top: 3rem; }
   .page-intro { padding: 3.5rem 0 2.5rem; border-bottom: 1px solid var(--hair); }
-  .page-intro h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); line-height: 1.1; margin: .6rem 0 1.2rem; letter-spacing: -.035em; }
+  .page-intro h1 { font-size: var(--fs-h1); line-height: var(--lh-heading); margin: .6rem 0 1.2rem; letter-spacing: var(--heading-tracking); }
   .page-intro p { color: var(--muted); }
-  .eyebrow { color: var(--faint); font: 13px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+  .eyebrow { color: var(--faint); font: var(--fs-label)/var(--lh-ui) var(--sans); letter-spacing: .08em; text-transform: uppercase; }
   .section-link { display: inline-block; margin-top: .8rem; color: var(--accent); }
   .destinations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--hair); margin: 3rem 0; }
   .destination { padding: 1.7rem 1.5rem 1.7rem 0; text-decoration: none; border-bottom: 1px solid var(--hair); }
@@ -792,9 +836,8 @@
 
   .home-eyebrow { margin-top: 3rem; margin-bottom: 1rem; }
 
-  .foot { max-width: 60rem; margin-inline: auto; }
+  .foot { max-width: var(--content-width); margin-inline: auto; }
 
-  /* Tables can extend to the wide site container; prose and charts stay centered. */
   .main .scroll {
     width: 100cqw;
     max-width: none;
@@ -838,8 +881,7 @@
     .toolbar .tool + .tool { border-left: 0; padding-left: 0; }
   }
 
-:lang(zh-CN) { --serif: "Noto Serif CJK SC", "Songti SC", "SimSun", serif; }
-html:lang(zh-CN) .lede { font-size: clamp(2rem, 4vw, 3.25rem); max-width: 24ch; }
+html:lang(zh-CN) .lede { max-width: 24ch; letter-spacing: normal; }
 html:lang(zh-CN) .lede em { display: block; }
 html:lang(zh-CN) .eyebrow { letter-spacing: .06em; }
 

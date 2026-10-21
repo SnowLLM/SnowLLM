@@ -1,6 +1,8 @@
 {
   "id": "qwen3.6-27b-q4-k-s",
   "model": "Qwen3.6-27B",
+  "family": "Qwen",
+  "modalities": ["text", "image"],
   "precision": "Q4_K_S",
   "dir": "Qwen3.6-27B-Q4_K_S",
   "repo": "unsloth/Qwen3.6-27B-MTP-GGUF",
