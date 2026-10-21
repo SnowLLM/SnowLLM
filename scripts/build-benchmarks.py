@@ -78,12 +78,18 @@ ARMS = {
         ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "no spec, Engine"),
     "deepseek_v4_flash_iq2_xxs_snowllm":
         ("SnowLLM", "DeepSeek-V4-Flash IQ2_XXS", "DSpark, ctx 227328"),
+    "deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http":
+        ("SnowLLM", "DeepSeek-V4-Flash IQ2_XXS", "DSpark adaptive, block 5, ctx 409600, HTTP"),
     "deepseek_v4_flash_iq2_xxs_snowllm_128k":
         ("SnowLLM", "DeepSeek-V4-Flash IQ2_XXS", "DSpark, ctx 132096"),
     "deepseek_v4_flash_iq2_xxs_nospec_snowllm_128k":
         ("SnowLLM", "DeepSeek-V4-Flash IQ2_XXS", "no spec, ctx 132096"),
     "deepseek_v4_flash_iq2_xxs_nospec_llama":
         ("llama.cpp", "DeepSeek-V4-Flash IQ2_XXS", "no spec, ctx 132096", 0),
+    "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_fixed_snowllm_http":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B Q4_K_M", "DSpark block 8, fixed, HTTP"),
+    "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_adaptive_snowllm_http":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B Q4_K_M", "DSpark block 8, adaptive, HTTP"),
 }
 
 
