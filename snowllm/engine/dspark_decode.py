@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from itertools import accumulate
 from typing import TYPE_CHECKING
 
 import torch
@@ -9,9 +10,9 @@ from ..defaults import DEFAULT_DSPARK_P_MIN
 
 from .. import ops
 from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
-from .forward_context import Batch, DecodeShape, i32, i64, positions
+from .forward_context import i32, i64, positions
 from .request import Request
-from .spec_decode import SPEC_MAX_STEP_ROWS, SpecDecoder, context_len
+from .spec_decode import SPEC_MAX_STEP_ROWS, DSparkScheduling, SpecDecoder, context_len
 
 if TYPE_CHECKING:
     from ..models.deepseek_v4.dspark import DSparkDraft
@@ -20,11 +21,12 @@ if TYPE_CHECKING:
     from .sampler import Sampler
 
 
-class DSparkDecoder:
+class DSparkDecoder(DSparkScheduling):
     def __init__(self, runner: "Dsv4Runner", sampler: "Sampler", slots: StateSlots,
                  draft: "DSparkDraft", draft_blocks: BlockAllocator, tables: TableMirror,
                  stage: Staging, *,
-                 max_blocks_per_seq: int, block: int = 0, p_min: float = 0.0) -> None:
+                 max_blocks_per_seq: int, block: int = 0, p_min: float = 0.0,
+                 adaptive: bool = False) -> None:
         self.runner, self.sampler, self.slots = runner, sampler, slots
         self.tables, self.stage = tables, stage
         self.blocks = draft_blocks
@@ -34,6 +36,7 @@ class DSparkDecoder:
         self.mask = self.geo.mask_token_id
         self.max_blocks_per_seq = max_blocks_per_seq
         self.p_min = p_min if draft.conf_proj is not None else 0.0
+        self.init_adaptive(adaptive, p_min, draft.conf_proj is not None)
 
         S, H = runner.max_num_seqs, self.geo.stack.hidden
         M = S * self.block
@@ -43,9 +46,9 @@ class DSparkDecoder:
         self.dlogits = torch.empty(M, self.geo.stack.vocab_size, dtype=torch.float32,
                                    device="cuda")
         self.pre = (torch.empty(M, H, dtype=torch.bfloat16, device="cuda")
-                    if self.p_min > 0 else None)
+                    if self.p_min > 0 or adaptive else None)
         self.dconf = (torch.empty(S, self.block, dtype=torch.float32, device="cuda")
-                      if self.p_min > 0 else None)
+                      if self.p_min > 0 or adaptive else None)
 
     chunk_decode = True
 
@@ -57,8 +60,6 @@ class DSparkDecoder:
         T = self.verify_rows(n)
         return (1, T) if T >= 2 else (1,)
 
-    decode_shapes = SpecDecoder.decode_shapes
-
     def rows_needed(self, rows: int) -> int:
         return rows
 
@@ -69,60 +70,32 @@ class DSparkDecoder:
     def release(self, r: Request) -> None:
         self.blocks.release(r.draft_blocks)
         r.draft_blocks = []
+        self.confidence.pop(r, None)
+        self.scheduler.reset()
 
     def capture(self, runner: "GraphRunner") -> list[int]:
         return []
 
-    def verify_step(self, batch: list[Request], T: int) -> None:
-        B = len(batch)
-        c = [r.num_cached for r in batch]
-        T = min(T, 1 + max(len(r.drafts) for r in batch))
-        bs = self.runner.block_size
-        for r in batch:
-            r.drafts += [r.last] * (T - 1 - len(r.drafts))
-
-        ids = [t for r in batch for t in [r.last] + r.drafts[:T - 1]]
-        at = [(r, c[i] + t) for i, r in enumerate(batch) for t in range(T)]
-        d_ids, pos, drafted, slots, seq, sidx, ones, cu = self.stage(
-            (ids, [q + r.pos_delta for r, q in at] * 3,
-             [d for r in batch for d in r.drafts[:T - 1]]),
-            ([r.blocks[q // bs] * bs + q % bs for r, q in at], [ci + T for ci in c],
-             [r.slot for r in batch], [1] * B, [i * T for i in range(B + 1)]))
-        b = Batch(
-            input_ids=d_ids,
-            positions=pos.view(3, -1),
-            slot_mapping=slots,
-            block_tables=self.tables([r.blocks for r in batch]),
-            seq_lens=seq,
-            is_prefill=False, num_tokens=B * T,
-            state_indices=sidx,
-            num_accepted=ones,
-            cu_seqlens=cu,
-            total_q_blocks=ops.prefill_q_plan([T] * B)[0],
-            chunk_decode=True,
-            host_ids=ids,
-        )
-        tv = self.sampler.sample(self.runner.forward(b),
-                                 [r for r in batch for _ in range(T)]).view(B, T)
-        nacc = ops.spec_accept(tv,drafted.view(B,T-1))
-
-        acc, got = nacc.tolist(), tv.tolist()
-        kept = []
-        for i, r in enumerate(batch):
-            kept.append(self._accept(r, got[i], acc[i]))
-            r.drafts = []
+    def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
+        if isinstance(T, int):
+            T = min(T, 1 + max(len(r.drafts) for r in batch))
+            for r in batch:
+                r.drafts += [r.last] * (T - 1 - len(r.drafts))
+            T = [T]*len(batch)
+        _, kept = self.verify_prefixes(batch, T)
         self.propose(batch, kept, T)
 
-    def propose(self, batch: list[Request], kept: list[int], T: int) -> None:
+    def propose(self, batch: list[Request], kept: list[int], lengths: list[int]) -> None:
         live = [i for i, r in enumerate(batch) if not r.done]
         if not live:
             return
         bt = self._draft_table(batch)
         rows, seqs, cpos, rpos = [], [], [], []
+        offsets = [0, *accumulate(lengths)]
         for i, r in enumerate(batch):
             first = r.num_cached - kept[i]
             for t in range(kept[i]):
-                rows.append(i * T + t)
+                rows.append(offsets[i] + t)
                 seqs.append(i)
                 cpos.append(first + t)
                 rpos.append(first + t + r.pos_delta)
@@ -142,6 +115,9 @@ class DSparkDecoder:
         B = len(batch)
         self._write_ctx(B, list(range(B)), list(pos),
                         [p + r.pos_delta for p, r in zip(pos, batch)], bt)
+        for r in batch:
+            self.confidence.pop(r, None)
+        self.scheduler.reset()
 
     def grow(self, r: Request, rows: int) -> bool:
         need = ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size)
@@ -193,6 +169,10 @@ class DSparkDecoder:
                 r.drafts = row
             return
         for r, row, cs in zip(batch, drafts.tolist(), conf.tolist()):
+            if self.adaptive:
+                self.confidence[r] = cs
+                r.drafts = row
+                continue
             n, acc = blk, 1.0
             for i, c in enumerate(cs):
                 acc *= c

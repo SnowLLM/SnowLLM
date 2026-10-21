@@ -145,10 +145,10 @@ def check_catalogue() -> None:
         problems.append("recipes/ holds no recipe")
         return
 
-    ours = need(r"^SCHEMA = (\d+)$", BUILDER, "SCHEMA in scripts/build-recipes.py")
+    ours = runpy.run_path(str(ROOT / "scripts" / "build-recipes.py"))["SCHEMA"]
     theirs = need(r"^SCHEMA = (\d+)$", RECIPES, "SCHEMA in snowllm/hub/recipes.py")
-    if ours and theirs and ours.group(1) != theirs.group(1):
-        problems.append(f"build-recipes.py writes schema {ours.group(1)}, "
+    if theirs and ours != int(theirs.group(1)):
+        problems.append(f"build-recipes.py writes schema {ours}, "
                         f"snowllm/hub/recipes.py reads schema {theirs.group(1)}")
 
     need(r'^CATALOGUE_URL = DEFAULT_RECIPES_URL$', RECIPES,

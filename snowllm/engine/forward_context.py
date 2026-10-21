@@ -34,6 +34,7 @@ class DecodeShape(NamedTuple):
     B: int
     T: int
     chunk: bool = False
+    lengths: tuple[int, ...] = ()
 
 
 def plain_decode_shapes(max_num_seqs: int) -> list[DecodeShape]:
@@ -63,6 +64,7 @@ class Batch:
     ckpt_slots: torch.Tensor | None = None
     ckpt_n: int = 0
     chunk_decode: bool = False
+    varlen_decode: bool = False
     roll_forward: bool = False
     seq_of_row: torch.Tensor | None = None
     prev_ids: list[list[int]] | None = None
@@ -85,7 +87,8 @@ class Batch:
 
     @property
     def varlen_attn(self) -> bool:
-        return ops.paged_attention_varlen(self.is_prefill,self.tokens_per_req,self.chunk_decode)
+        return self.varlen_decode or ops.paged_attention_varlen(
+            self.is_prefill,self.tokens_per_req,self.chunk_decode)
 
 
 @dataclass

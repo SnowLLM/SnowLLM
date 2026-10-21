@@ -52,7 +52,7 @@ class QwenResources(ResourceSet):
             + [(r, ('kv', 'kv_scale', 'cache'))])
         self.checkpoints = self.add(self.allocate_checkpoints,
             [(a, ('ckpt',)) for _, a in r.linear_mods] + [(a, ('ckpt',)) for a in r.ple_mods])
-        self.outputs = self.add(self.allocate_outputs, [(r, ('x', 'taps', 'ple_emb',
+        self.outputs = self.add(self.allocate_outputs, [(r, ('x', 'taps', 'draft_taps', 'ple_emb',
             'trunk_streams', 'mtp_streams'))])
         self.statics = self.add(self.allocate_statics, [(r, ('logits', 'draft_logits', 'mtp_h',
             'd_mscale', 'decode_ws', 'decode_plan')), (r.model.lm_head, ('scratch',))])

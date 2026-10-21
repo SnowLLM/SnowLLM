@@ -147,13 +147,16 @@ def linear_attn_retain_bytes(M: int) -> tuple[int, int, int]:
 
 def linear_attn_advance(retain: tuple, w: LinearAttnWeights, state_indices: torch.Tensor,
                         num_accepted: torch.Tensor, conv_state: torch.Tensor,
-                        recurrent_state: torch.Tensor, B: int, T: int) -> None:
+                        recurrent_state: torch.Tensor, B: int, T: int,
+                        cu_seqlens: torch.Tensor | None = None) -> None:
     _chk(state_indices, "state_indices", torch.int32, B)
     _chk(num_accepted, "num_accepted", torch.int32, B)
+    if cu_seqlens is not None:
+        _chk(cu_seqlens, "cu_seqlens", torch.int32, B+1)
     rq, rc, rb = retain
     check(lib.snowllm_linear_attn_advance(_p(rq), _p(rc), _p(rb), _p(w.t[2]), _p(w.t[3]),
                                           _p(state_indices), _p(num_accepted), _p(conv_state),
-                                          _p(recurrent_state), B, T, _stream()),
+                                          _p(recurrent_state), B, T, _p(cu_seqlens), _stream()),
           "linear_attn_advance")
 
 

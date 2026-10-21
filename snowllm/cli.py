@@ -44,6 +44,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           mtp_sinks: int = 64,
           dflash: str | None = None, dflash_block: int = 0,
           dflash_p_min: float | None = None,
+          dspark_adaptive: bool = False,
           prefill_chunk: int | str = "auto",
           served_names: list[str] | None = None, batch_prefill: bool = False,
           allow_image_urls: bool = False, limit_mm_per_prompt: int = 4,
@@ -112,6 +113,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                     dflash_path=dflash, dflash_block=dflash_block,
                     dflash_p_min=(DEFAULT_DSPARK_P_MIN if dflash_p_min is None
                                   else dflash_p_min),
+                    dspark_adaptive=dspark_adaptive,
                     prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
                     account=stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
                     gpu_memory_utilization=gpu_memory_utilization,
@@ -122,6 +124,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  num_spec=0 if engine.dflash else engine.num_spec,
                                  dflash_path=str(pathlib.Path(dflash).resolve()) if dflash else None,
                                  dflash_block=engine.dflash_block if engine.dflash else None,
+                                 dspark_adaptive=dspark_adaptive,
                                  enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
     _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
@@ -251,6 +254,8 @@ def parser() -> argparse.ArgumentParser:
                    help='Draft block size; 0 uses the checkpoint default.')
     g.add_argument("--dflash-p-min", type=float, default=DEFAULT_DSPARK_P_MIN, metavar="P",
                    help='DSpark confidence threshold; 0 disables early stopping.')
+    g.add_argument("--dspark-adaptive", action=argparse.BooleanOptionalAction, default=False,
+                   help='Profile DSpark step costs at startup and schedule confidence prefixes.')
     g.add_argument("--kv-cache-dtype", choices=("bf16", "auto", "int8"), default="bf16",
                    help='KV cache precision; auto uses bf16.')
     g.add_argument("--max-num-batched-tokens", default="auto", metavar="N",
@@ -344,6 +349,7 @@ def main() -> None:
           mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,
           dflash=a.dflash, dflash_block=a.dflash_block,
           dflash_p_min=a.dflash_p_min,
+          dspark_adaptive=a.dspark_adaptive,
           batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
           prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
           gpu_memory_utilization=a.gpu_memory_utilization,

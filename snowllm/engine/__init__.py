@@ -25,7 +25,7 @@ from .runner import (
 from .resources import allocate_draft_pool, draft_pool_bytes
 from .qwen_runner import QwenRunner
 from .sampler import Sampler
-from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, SpecDecoder
+from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, SpecDecoder
 
 if TYPE_CHECKING:
     from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
@@ -322,6 +322,7 @@ class Engine:
                  mtp_sinks: int = 64,
                  dflash_path: str | None = None, dflash_block: int = 0,
                  dflash_p_min: float = DEFAULT_DSPARK_P_MIN,
+                 dspark_adaptive: bool = False,
                  prefill_chunk: int | str = "auto", batch_prefill: bool = False,
                  plan_activations: bool = True,
                  account: bool = True, exact_stats: bool = False,
@@ -330,6 +331,11 @@ class Engine:
                  draft_plan: DraftPlan | None = None) -> None:
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
+        if dspark_adaptive and not (_dspark(self.dflash_geo)
+                                    or getattr(self.dflash_geo, 'dspark', False)):
+            raise ValueError('--dspark-adaptive requires a DSpark checkpoint')
+        if dspark_adaptive and dflash_p_min != 0:
+            raise ValueError('--dspark-adaptive requires --dflash-p-min 0')
         if dflash_path:
             _check_dflash_target(model, self.dflash_geo)
         self.max_blocks = ops.kv_blocks_for(max_model_len, ops.KV_BLOCK_SIZES[0])
@@ -370,10 +376,10 @@ class Engine:
             self.dflash = None
             if dflash_path and _dspark(self.dflash_geo):
                 self.dflash = self._build_dspark(dflash_path, dflash_block, max_model_len,
-                                                 dflash_p_min)
+                                                 dflash_p_min, dspark_adaptive)
             elif dflash_path:
                 self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len,
-                                                dflash_p_min)
+                                                dflash_p_min, dspark_adaptive)
             if self.dflash is not None:
                 model._placement_host_reserve = 0
                 self.runner.load_peak_bytes = 0
@@ -439,6 +445,9 @@ class Engine:
                 self.graph_sizes = self.runner.capture(shapes)
             if self.dflash and not enforce_eager:
                 self.dflash.capture(self.runner)
+            if dspark_adaptive:
+                from .dspark_profile import profile
+                profile(self.dflash)
 
         except BaseException:
             self.runner._discard_pools()
@@ -455,7 +464,7 @@ class Engine:
         return draft_pool_bytes(self.dflash_geo, blocks, self.runner.block_size)
 
     def _build_dspark(self, path: str, block: int, max_model_len: int,
-                      p_min: float = 0.0) -> DSparkDecoder:
+                      p_min: float = 0.0, adaptive: bool = False) -> DSparkDecoder:
         import pathlib
 
         from ..checkpoint.gguf.source import GGUFReader, find_dspark_gguf
@@ -480,10 +489,10 @@ class Engine:
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              max_blocks_per_seq=ops.kv_blocks_for(max_model_len + block,
                                                                  self.runner.block_size),
-                             block=block, p_min=p_min)
+                             block=block, p_min=p_min, adaptive=adaptive)
 
     def _build_dflash(self, path: str, block: int, max_model_len: int,
-                      p_min: float = 0.0) -> DFlashDecoder:
+                      p_min: float = 0.0, adaptive: bool = False) -> DFlashDecoder:
         from ..models.qwen3_5 import dflash_draft
         from .block_manager import BlockAllocator
 
@@ -510,7 +519,7 @@ class Engine:
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              block=block,
-                             max_blocks_per_seq=per_seq, p_min=p_min)
+                             max_blocks_per_seq=per_seq, p_min=p_min, adaptive=adaptive)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,
             rope_factor: float = 1.0, mrope: torch.Tensor | None = None, pos_delta: int = 0,
@@ -679,16 +688,17 @@ class Engine:
     def _pending_prefill(self) -> Request | None:
         return next((r for r in self.running if not r.prefilled and not r.done), None)
 
-    def _decodable_batch(self, rows: int) -> list[Request]:
+    def _decodable_batch(self, rows: int | dict[Request, int]) -> list[Request]:
         while True:
             decodable = [r for r in self.running if r.prefilled]
             batch, short = [], ""
             for r in decodable:
-                if not self.blocks.grow(r, rows):
+                n = rows[r] if isinstance(rows, dict) else rows
+                if not self.blocks.grow(r, n):
                     short = short or f"the KV pool, which has {self.blocks.total} blocks,"
-                elif not self.runner.grow(r, rows):
+                elif not self.runner.grow(r, n):
                     short = short or "the pools this model pages itself"
-                elif self.dflash is not None and not self.dflash.grow(r, rows):
+                elif self.dflash is not None and not self.dflash.grow(r, n):
                     short = short or "the drafter's own KV pool"
                 else:
                     batch.append(r)
@@ -834,12 +844,23 @@ class Engine:
         self._retire_finished()
 
     def _decode_or_verify(self, n: int) -> tuple[int, int]:
-        T = self.spec.verify_rows(n) if self.spec else 0
-        if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
-                     for r in self.running if r.prefilled):
-            T = 0
+        if isinstance(self.spec, DSparkScheduling) and self.spec.adaptive and n <= SPEC_MAX_STEP_ROWS:
+            while True:
+                batch = [r for r in self.running if r.prefilled]
+                if not batch:
+                    return 0, 0
+                lengths = self.spec.select_lengths(batch, self.max_model_len, remember=False)
+                if self._decodable_batch(dict(zip(batch, lengths))) == batch:
+                    break
+            T = self.spec.select_lengths(batch, self.max_model_len)
+        else:
+            T = self.spec.verify_rows(n) if self.spec else 0
+            if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
+                         for r in self.running if r.prefilled):
+                T = 0
+            if T:
+                batch = self._decodable_batch(self.spec.rows_needed(T))
         if T:
-            batch = self._decodable_batch(self.spec.rows_needed(T))
             self.spec.verify_step(batch, T)
             self.runner.commit(batch)
             emitted, rows = sum(r.n_accepted for r in batch), len(batch)

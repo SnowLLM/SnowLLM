@@ -48,7 +48,9 @@ snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 snowllm deepseek-v4-flash-iq2-xxs --dflash-block 8
 ```
 
-使用 DFlash 或 DSpark 时，`--num-spec` 不生效。DSpark 会将 `--dflash-block` 限制为不小于草稿模型配置的分块大小。
+使用 DFlash 或 DSpark 时，`--num-spec` 不生效。DeepSeek V4 DSpark 会将 `--dflash-block` 限制为不小于草稿模型配置的分块大小。
+
+DeepSeek V4 和 MiniCPM-V 4.7 可通过 `--dspark-adaptive --dflash-p-min 0` 自动选择草稿长度。需要草稿模型包含置信度头，并会增加启动测量时间；请结合实际负载比较吞吐。
 
 Flash-Next 提供 `qwen3.8-flash-next-q3-k-xl-dflash2` 和 `qwen3.8-flash-next-iq4-xs-dflash2` 方案。这两个量化模型启用 DFlash 2 后，即使 temperature 为 0，输出也可能与普通解码不同。
 

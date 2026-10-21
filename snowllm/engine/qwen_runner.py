@@ -26,6 +26,7 @@ PREFILL_CHUNK_CANDIDATES = (32768, 16384, 8192)
 
 class QwenRunner(GraphRunner):
     tunable_rope = True
+    GRAPH_FIELDS = (*GraphRunner.GRAPH_FIELDS, 'q_block_map')
 
     @property
     def host_messages(self) -> bool:
@@ -58,6 +59,9 @@ class QwenRunner(GraphRunner):
         self._alloc_hidden(rows)
         self.taps = (torch.zeros(rows, self.num_taps * self.geo.hidden,
                                  dtype=torch.bfloat16, device="cuda") if self.num_taps else None)
+        self.draft_taps = (torch.empty(self.decode_rows, self.draft_geo.fc_k,
+                                      dtype=torch.bfloat16, device='cuda')
+                           if getattr(self.draft_geo, 'dspark', False) else None)
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.zeros(rows, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
@@ -163,6 +167,8 @@ class QwenRunner(GraphRunner):
         if b.is_prefill or draft:
             return None
         B, M = b.batch_size, b.input_ids.numel()
+        if b.roll_forward and b.host_cu_seqlens is not None:
+            return (B, M, b.total_q_blocks, 'prefix')
         return (B, M // B) if M % B == 0 else None
 
     def _model_hidden(self, ctx):
@@ -194,10 +200,10 @@ class QwenRunner(GraphRunner):
             return self.model.lm_head(head, self.draft_logits), state
 
     def linear_advance(self, state_indices: torch.Tensor, num_accepted: torch.Tensor, B: int,
-                       T: int) -> None:
+                       T: int, cu_seqlens: torch.Tensor | None = None) -> None:
         for _, attn in self.linear_mods:
             ops.linear_attn_advance(attn.retain, attn.w, state_indices, num_accepted, *attn.state,
-                                    B, T)
+                                    B, T, cu_seqlens)
 
     def _plan_attn(self, ctx: ForwardContext) -> None:
         if not ctx.batch.varlen_attn:
@@ -207,6 +213,16 @@ class QwenRunner(GraphRunner):
 
     def _graph_cases(self, shape: DecodeShape):
         B, T = shape.B, shape.T
+        if shape.lengths:
+            total, qmap = ops.prefill_q_plan(list(shape.lengths))
+            b = synthetic_batch(shape.lengths, self.max_blocks_per_seq,
+                block_tables=self.d_bt[:B], state_indices=list(range(B)), num_accepted=[1]*B,
+                total_q_blocks=total, q_block_map=qmap, roll_forward=True, chunk_decode=True,
+                varlen_decode=B > 1)
+            inputs = GraphInputs(GraphInputs.batch_values(b, self.GRAPH_FIELDS))
+            yield GraphCase(self._graph_key(b), f'prefix graph B={B:2d} M={b.num_tokens:3d}',
+                            lambda: self._forward_eager(b), inputs)
+            return
         M = B * T
         if M not in self.d_pos:
             self.d_pos[M] = (torch.zeros(3,M,dtype=torch.int64,device="cuda")

@@ -32,7 +32,7 @@ DEFAULT_SLOTS = 16
 SCHEMA = 1
 MANIFEST = "snowllm-recipe.json"
 SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
-            "dflash", "dflash_block", "kv_cache_dtype", "gpu_memory_utilization",
+            "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "gpu_memory_utilization",
             "prefix_memory_ratio", "mtp_window", "mtp_sinks")
 TIMEOUT = 30.0
 SUPPORTED = "supported"
