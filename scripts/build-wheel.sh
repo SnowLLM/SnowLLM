@@ -35,8 +35,27 @@ trap 'rm -rf "$STAGE"' EXIT
 "$PY" - "$ROOT" "$STAGE/source" <<'EOF'
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 root, source = map(Path, sys.argv[1:])
+if (root / '.git').exists():
+    inputs = ('snowllm', 'pyproject.toml', 'README.md', 'LICENSE')
+    result = subprocess.run(['git', '-C', str(root), 'status', '--porcelain=v1',
+                             '-z', '--untracked-files=all', '--ignored=matching', '--', *inputs],
+                            capture_output=True, text=True)
+    if result.returncode:
+        sys.exit('build-wheel.sh: cannot verify committed wheel inputs')
+    pending = []
+    for entry in result.stdout.split('\0'):
+        if not entry:
+            continue
+        path = Path(entry[3:].rstrip('/'))
+        if entry.startswith('!! ') and ('__pycache__' in path.parts or path.suffix == '.pyc'):
+            continue
+        pending.append(entry)
+    if pending:
+        sys.exit('build-wheel.sh: wheel inputs contain uncommitted changes or untracked files; '
+                 'build from a clean checkout or a committed source snapshot')
 shutil.copytree(root / 'snowllm', source / 'snowllm',
                 ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
 for name in ('pyproject.toml', 'README.md', 'LICENSE'):
