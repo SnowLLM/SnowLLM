@@ -529,15 +529,19 @@ class Engine:
     def add(self, prompt: list[int], params: SamplingParams | None = None,
             rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
-            embed_rows: list[int] | None = None, queue: bool = True) -> Request:
+            embed_rows: list[int] | None = None, queue: bool = True,
+            system_prefix_len: int = 0) -> Request:
         p = params or SamplingParams()
         rope_factor = self.default_rope_factor if rope_factor is None else rope_factor
         cap = min(self.max_model_len, int(rope_factor * self._rope_orig_max))
         if len(prompt) + p.max_new_tokens > cap:
             raise SnowLLMError(f"prompt {len(prompt)} + {p.max_new_tokens} new > {cap} "
                                f"(factor {rope_factor}, max_model_len {self.max_model_len})")
+        if not 0 <= system_prefix_len <= len(prompt):
+            raise ValueError('system_prefix_len must be within the prompt')
         r = Request(prompt=list(prompt), params=p, rope_factor=rope_factor, mrope=mrope,
-                    pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []))
+                    pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []),
+                    system_prefix_len=system_prefix_len)
         if queue:
             self.waiting.append(r)
         return r
@@ -673,6 +677,8 @@ class Engine:
             return False
         if self.cache is not None and use_cache:
             self.cache.took(hit)
+            if hit is not None and len(hit.tokens) == self._system_cache_end(r):
+                hit.priority = True
         if hit is not None:
             self.cache.store.residue.load(hit.ckpt, self.slots.name(r, 1)[0], r.blocks,
                                          self.cache.pages.target(hit.blocks))
@@ -773,17 +779,35 @@ class Engine:
                 return False
         return True
 
+    def _system_cache_end(self, r: Request) -> int:
+        if self.cache is None or r.embeds is not None:
+            return 0
+        store = self.cache.store
+        # Keep shifted MTP dependencies inside the shared system prefix.
+        end = max(0, r.system_prefix_len - store.lookahead)
+        return end // store.pages.align * store.pages.align
+
     def _prefill_chunk(self, r: Request) -> None:
         lo = r.num_prefilled
         hi = min(lo + self.prefill_chunk, r.prefill_len)
+        system_end = self._system_cache_end(r)
+        if lo < system_end < hi:
+            hi = system_end
         if self.cache is not None and r.embeds is None:
             hi = self.cache.store.prefill_end(lo, hi)
         marks, idx = [], []
         backed = self.dflash is None or self._reserve_draft(r, hi - lo)
         if self.cache is not None and backed and r.embeds is None:
             marks = self.cache.store.marks(lo, hi)
+            priority = self.cache.reserve(1, priority=True) if lo < system_end == hi else []
+            if priority:
+                marks = [m for m in marks if m != system_end]
             idx = self.cache.reserve(len(marks))
-            marks = thin(marks, len(idx))
+            pairs = list(zip(thin(marks, len(idx)), idx))
+            if priority:
+                pairs.append((system_end, priority[0]))
+            pairs.sort()
+            marks, idx = [p[0] for p in pairs], [p[1] for p in pairs]
         b = self._prefill([(r, lo, hi)])
         if marks:
             self.cache.store.residue.arm(b, marks, idx, lo)
@@ -796,7 +820,8 @@ class Engine:
             # Draft caches must be complete before their shared pages are visible.
             for m, i in zip(marks, idx):
                 self.cache.insert(r.prefill_src[:m],
-                                  self.cache.store.took(r, m, i, self.slots.name(r, 1)[0]), i)
+                                  self.cache.store.took(r, m, i, self.slots.name(r, 1)[0]), i,
+                                  priority=m == system_end)
 
         if not b.need_logits:
             if self.dflash:
@@ -827,6 +852,7 @@ class Engine:
             return []
         cands = [r for r in self.waiting
                  if r.num_prefilled == 0 and not r.replay and len(r.prompt) <= self.prefill_chunk
+                 and not (self.cache is not None and r.system_prefix_len)
                  and (self._active_factor is None or r.rope_factor == self._active_factor)]
         if len(cands) < 2:
             return []

@@ -50,6 +50,7 @@ class Request:
 
     num_prefilled: int = 0
     cached_tokens: int = 0
+    system_prefix_len: int = 0
     replay: int = 0
     done: bool = False
     finish_reason: str | None = None

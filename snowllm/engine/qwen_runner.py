@@ -123,7 +123,8 @@ class QwenRunner(GraphRunner):
     def fixed_bytes(self, chunk: int = 0) -> int:
         return (self.resources.states.bytes_for() + self.resources.statics.bytes_for()
                 + self.resources.messages.bytes_for()
-                + self._cache_bytes(self.max_blocks_per_seq))
+                + self._cache_bytes(self.max_blocks_per_seq)
+                + (self._checkpoint_bytes() if self.prefix_memory_ratio else 0))
 
     @contextlib.contextmanager
     def _walk_scope(self, rows: int) -> Iterator[Callable[[], torch.Tensor]]:

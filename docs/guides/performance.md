@@ -83,4 +83,12 @@ Dense attention reads more KV history as context grows, which can slow decode. S
 
 Shorten unnecessary history. Repeated prompts can benefit from prefix caching when supported and enabled.
 
+Text chat requests give the leading system messages a dedicated prefix checkpoint near their end,
+aligned to the cache's page boundary. MTP dependencies stay inside the shared prefix, so a small
+tail is recomputed. Ordinary checkpoints cannot evict system checkpoints; different system
+prefixes share the same bounded cache and replace each other by LRU. KV allocation pressure and
+RoPE factor changes can still evict them. Image requests keep their existing cache behavior.
+When prefix caching is enabled, memory planning reserves at least one checkpoint; a context
+that cannot fit with that checkpoint is refused instead of silently disabling caching.
+
 `--kv-cache-dtype int8` is **experimental and model-dependent**. On supported paths it reduces KV memory traffic, but prefill may become slower. **Qwen3.8 Flash Next with sparse attention and DeepSeek V4 reject this option.** Keep `bf16` for these models; DeepSeek V4 uses its own MLA cache representation.

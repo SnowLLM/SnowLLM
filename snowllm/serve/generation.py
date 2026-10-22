@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from fastapi import HTTPException
 from fastapi import Request as HTTPRequest
+from jinja2 import TemplateError
 
 from ..engine import Request, SamplingParams
 from ..models import multimodal
@@ -291,6 +292,26 @@ def chat_prompt(messages: list[dict], kwargs: dict, tools: list[dict] | None = N
     return [int(i) for i in ids]
 
 
+def _system_prefix_length(messages: list[dict], kwargs: dict, tools: list[dict] | None,
+                          prompt: list[int]) -> int:
+    end = 0
+    while end < len(messages) and messages[end].get('role') == 'system':
+        end += 1
+    if not end:
+        return 0
+    try:
+        enc = serving().tokenizer.apply_chat_template(
+            messages[:end], add_generation_prompt=False, tokenize=True, return_dict=True,
+            tools=tools, **kwargs)
+    except (TemplateError, ValueError, TypeError):
+        return 0
+    ids = enc['input_ids']
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return next((i for i, (a, b) in enumerate(zip(prompt, ids)) if a != b),
+                min(len(prompt), len(ids)))
+
+
 def _load_image(url: str) -> "Image.Image":
     import base64
     import io
@@ -342,7 +363,9 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
                                  f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
     msgs, images = _split_images(messages)
     if not images:
-        return chat_prompt(msgs, kwargs, tools), None
+        prompt = chat_prompt(msgs, kwargs, tools)
+        system_len = _system_prefix_length(msgs, kwargs, tools, prompt)
+        return prompt, {'system_prefix_len': system_len} if system_len else None
     if st.processor is None:
         raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
                                  "images")
