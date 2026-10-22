@@ -37,7 +37,8 @@ class Qwen4ExpModel(nn.Module):
             if b.embeds is not None:
                 hidden[b.embed_rows] = b.embeds
             ops.dsv4_hc_broadcast(hidden, streams)
-            ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True)
+            ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True,
+                             mscale=ctx.mscale)
 
         H = self.geo.hidden
         for i, layer in enumerate(self.layers):

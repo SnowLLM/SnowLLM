@@ -164,7 +164,8 @@ class QsaIndexer(nn.Module):
         cu = b.cu_seqlens if b.is_prefill else ctx.qsa_cu_seqlens
         ops.qwen4exp_qsa_produce(qk[:, self.heads * self.dim:], self.carry, self.carry_pos,
                                  qs.resume, qs.snaps, cu, b.seq_lens, qs.pos, b.slot_mapping,
-                                 self.k_gamma, ctx.inv_freq, self.pool, self.ratio, ctx.eps)
+                                 self.k_gamma, ctx.inv_freq, self.pool, self.ratio, ctx.eps,
+                                 mscale=ctx.mscale)
         return q
 
     def sel_stride(self) -> int:

@@ -38,7 +38,8 @@ class Qwen4ExpMTP(nn.Module):
             self.eh_hidden(ctx, h.view(M * n_hc, E), M * n_hc, out=streams.view(M * n_hc, E))
             self.eh_embed(ctx, en, M, out=e)
             streams += e.unsqueeze(1)
-        ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True)
+        ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True,
+                         mscale=ctx.mscale)
         self.layer(ctx, streams)
 
         folded = streams

@@ -134,7 +134,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     aliases = {}
     for s in served_names or [serve_as or root.name]:
         name, _, fac = s.partition("=")
-        factor = float(fac) if fac else 1.0
+        factor = float(fac) if fac else engine.default_rope_factor
         if factor != 1.0 and not engine.runner.tunable_rope:
             raise SnowLLMError(
                 f"--served-model-name {s}: {root.name} cannot be served at a YaRN factor. Its rope "

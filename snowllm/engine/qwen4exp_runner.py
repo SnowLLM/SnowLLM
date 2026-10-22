@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from .. import ops
+from .._capi import lib
 from ..models.qwen4exp.layers import Ple
 from ..models.qwen4exp.ple import ngram_rows
 from ..trace import span
@@ -24,7 +25,13 @@ GATHER_CHUNK = 4096
 
 
 class Qwen4ExpRunner(QwenRunner):
-    tunable_rope = False
+    auto_yarn = True
+
+    def set_rope(self, inv_freq: torch.Tensor, mscale: float) -> None:
+        if mscale != 1.0 and not hasattr(lib, 'snowllm_qwen4exp_qsa_produce_snapshot_scaled'):
+            raise ops.SnowLLMError('Flash-Next YaRN needs kernels with scaled QSA key support; '
+                                  'rebuild SnowLLM-Kernels and set SNOWLLM_LIB to that library.')
+        super().set_rope(inv_freq, mscale)
 
     def _configure(self):
         if self.kv_int8 and self.geo.index_topk:

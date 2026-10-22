@@ -76,7 +76,7 @@ class AsyncEngine:
     def stats(self) -> EngineStats:
         return self.engine.stats()
 
-    def submit(self, prompt: list[int], params: SamplingParams, rope_factor: float = 1.0,
+    def submit(self, prompt: list[int], params: SamplingParams, rope_factor: float | None = None,
                **mm: object) -> Request:
         r = self.engine.add(prompt, params, rope_factor=rope_factor, queue=False, **mm)
         self._inbox.append(r)

@@ -113,7 +113,8 @@ def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: to
                          resume_slots: torch.Tensor, snap_slots: torch.Tensor,
                          cu_seqlens: torch.Tensor, seq_lens: torch.Tensor, positions: torch.Tensor,
                          slot_mapping: torch.Tensor, gamma: torch.Tensor, inv_freq: torch.Tensor,
-                         pool: torch.Tensor, ratio: int, eps: float) -> None:
+                         pool: torch.Tensor, ratio: int, eps: float,
+                         mscale: torch.Tensor | None = None) -> None:
     M, D = k_raw.shape
     B = resume_slots.numel()
     n_snap = snap_slots.numel() // B
@@ -132,10 +133,15 @@ def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: to
     _chk(pool, "pool", torch.bfloat16, pool.shape[0], D)
     need = _qsa_produce_workspace_bytes(B, D, ratio)
     workspace = torch.empty(need, dtype=torch.uint8, device=k_raw.device)
-    check(lib.snowllm_qwen4exp_qsa_produce_snapshot(
+    scaled = mscale is not None and hasattr(lib, 'snowllm_qwen4exp_qsa_produce_snapshot_scaled')
+    if scaled:
+        _chk(mscale, "RoPE scale", torch.float32, 1)
+    fn = (lib.snowllm_qwen4exp_qsa_produce_snapshot_scaled if scaled
+          else lib.snowllm_qwen4exp_qsa_produce_snapshot)
+    check(fn(
         _p(k_raw), k_raw.stride(0), _p(carry), _p(carry_pos), _p(resume_slots), _p(snap_slots),
         _p(cu_seqlens), _p(seq_lens), _p(positions), _p(slot_mapping), _p(gamma), _p(inv_freq),
-        _p(pool), B, n_snap, M, D, ratio, eps,
+        *([_p(mscale)] if scaled else []), _p(pool), B, n_snap, M, D, ratio, eps,
         _p(workspace), need, _stream()), "qwen4exp_qsa_produce")
 
 
