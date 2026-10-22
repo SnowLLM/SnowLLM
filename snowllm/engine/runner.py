@@ -14,7 +14,7 @@ from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import WINDOWS, gpu_mem_info, prepare_gpu_commit
+from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, gpu_mem_info, prepare_gpu_commit
 from ..ops._common import dry_alloc
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..trace import span
@@ -207,8 +207,8 @@ class BaseRunner:
             except MemoryError as e:
                 if blocks <= minimum or attempt == 7:
                     raise MemoryError(
-                        "Windows commit preflight cannot fit the KV pool; lower "
-                        "--max-model-len or --max-num-seqs, or increase the pagefile.") from e
+                        f"Windows commit preflight cannot fit the KV pool. {WINDOWS_PAGEFILE_HINT} "
+                        "If allocation still fails, lower --max-model-len or --max-num-seqs.") from e
                 blocks = minimum if attempt == 6 else max(minimum,blocks*3//4)
                 continue
             if blocks != requested:

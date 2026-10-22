@@ -9,9 +9,14 @@ import sys
 import uuid
 
 __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_runtimes",
-           "prefetch", "gpu_mem_info", "prepare_gpu_commit"]
+           "prefetch", "gpu_mem_info", "prepare_gpu_commit", "WINDOWS_PAGEFILE_HINT"]
 
 WINDOWS = sys.platform == "win32"
+WINDOWS_PAGEFILE_HINT = (
+    "On Windows, ensure the page file's allocated capacity and Initial size are at least the "
+    "GPU's total memory (VRAM), with Maximum size no smaller. Restart Windows after changing it. "
+    "See https://snowllm.dev/docs/guides/windows-pagefile."
+)
 
 HIP_RUNTIME_GLOBS = ((("_rocm_sdk_core", "bin/amdhip64*.dll"), ("torch", "lib/amdhip64*.dll"))
                      if WINDOWS else
@@ -106,7 +111,7 @@ def prepare_gpu_commit(nbytes: int) -> None:
     guard = K32.VirtualAlloc(None, needed, 0x3000, 0x04)  # RESERVE | COMMIT, READWRITE
     if not guard:
         raise MemoryError(f"Windows commit preflight failed for {nbytes} GPU bytes: "
-                          f"{ctypes.WinError(ctypes.get_last_error())}")
+                          f"{ctypes.WinError(ctypes.get_last_error())}\n{WINDOWS_PAGEFILE_HINT}")
     if not K32.VirtualFree(guard, 0, 0x8000):  # RELEASE; no physical pages were touched
         raise ctypes.WinError(ctypes.get_last_error())
 

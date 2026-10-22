@@ -8,7 +8,7 @@ import os
 import sys
 from ctypes import POINTER, c_char_p, c_float, c_int, c_int64, c_void_p
 
-from ._platform import HIP_RUNTIME_GLOBS, hip_runtimes
+from ._platform import HIP_RUNTIME_GLOBS, WINDOWS, WINDOWS_PAGEFILE_HINT, hip_runtimes
 from .errors import SnowLLMError
 
 if sys.platform == "win32":
@@ -698,6 +698,8 @@ LAUNCHES = frozenset(_n for _n, _, _a in _SIGS if _a and S in _a)
 def check(status: int, what: str) -> None:
     if status != 0:
         msg = lib.snowllm_error_string(status).decode()
+        if WINDOWS and status == 2:  # hipErrorOutOfMemory
+            msg += f"\n{WINDOWS_PAGEFILE_HINT}"
         raise SnowLLMError(f"{what}: hip status {status}: {msg}")
 
 
