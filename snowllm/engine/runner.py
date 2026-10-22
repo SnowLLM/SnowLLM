@@ -224,14 +224,16 @@ class BaseRunner:
         from ..models.placement import ensure_room
         floor = plan.minimum if plan.requested is None else plan.requested
         while True:
-            shortage = plan.bytes_for(floor) + plan.future_bytes - self._allowance()
+            shortage = (plan.bytes_for(floor) + plan.checkpoint_bytes + plan.future_bytes
+                        - self._allowance())
             if shortage <= 0 or not ensure_room(self.model, shortage):
                 break
         try:
             units, snapshots = plan.choose(self._allowance(), prefix_budget)
         except ValueError as exc:
+            checkpoint = ' and one prefix snapshot' if plan.checkpoint_bytes else ''
             raise SnowLLMError(
-                f'{type(self).__name__}: the KV pool cannot carry one sequence at '
+                f'{type(self).__name__}: the KV pool cannot carry one sequence{checkpoint} at '
                 f'max_model_len={self.ctx_cap}, or the requested pool exceeds the budget. '
                 'Lower --max-model-len/--max-num-seqs, offload more weights, or raise '
                 '--gpu-memory-utilization.') from exc

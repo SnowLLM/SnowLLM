@@ -165,9 +165,9 @@ class PoolPlan:
         room = available - self.future_bytes
         floor = self.minimum if self.requested is None else self.requested
         if (floor < self.minimum or (self.maximum is not None and floor > self.maximum)
-                or self.bytes_for(floor) > room):
+                or self.bytes_for(floor) + self.checkpoint_bytes > room):
             raise ValueError('the requested cache cannot hold one context within the budget')
-        snapshots = (max(0, min(prefix_budget, room - self.bytes_for(floor)))
+        snapshots = (max(self.checkpoint_bytes, min(prefix_budget, room - self.bytes_for(floor)))
                      // self.checkpoint_bytes) if self.checkpoint_bytes else 0
         room -= snapshots * self.checkpoint_bytes
         if self.requested is not None:

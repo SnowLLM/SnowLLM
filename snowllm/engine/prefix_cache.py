@@ -290,6 +290,7 @@ class Entry:
     ckpt: int = -1
     used: int = 0
     lookahead: tuple[int, ...] = ()
+    priority: bool = False
 
 
 class PrefixCache:
@@ -320,34 +321,38 @@ class PrefixCache:
         self.hits += 1
         self.saved_tokens += len(e.tokens)
 
-    def reserve(self, n: int) -> list[int]:
+    def reserve(self, n: int, *, priority: bool = False) -> list[int]:
         out = []
         for _ in range(n):
             i = self.store.take()
-            if i is None and self.evict():
+            if i is None and self.evict(allow_priority=priority):
                 i = self.store.take()
             if i is None:
                 break
             out.append(i)
         return out
 
-    def insert(self, tokens: list[int], blocks: object, i: int) -> bool:
+    def insert(self, tokens: list[int], blocks: object, i: int, *, priority: bool = False) -> bool:
         n = len(tokens)
         lookahead = self.store.next_tokens.get(i, ())
         kept = None if blocks is None else self.pages.prefix(blocks, n)
-        if kept is None or n % self.pages.align \
-                or any(e.tokens == tokens and e.lookahead == lookahead for e in self.entries):
+        duplicate = next((e for e in self.entries
+                          if e.tokens == tokens and e.lookahead == lookahead), None)
+        if duplicate is not None:
+            duplicate.priority |= priority
+        if kept is None or n % self.pages.align or duplicate is not None:
             self.store.give(i)
             return False
         self.clock += 1
-        self.entries.append(Entry(list(tokens), self.pages.retain(kept), i, self.clock, lookahead))
+        self.entries.append(Entry(list(tokens), self.pages.retain(kept), i, self.clock, lookahead,
+                                  priority))
         return True
 
-    def evict(self, keep: Entry | None = None) -> bool:
-        pool = [e for e in self.entries if e is not keep]
+    def evict(self, keep: Entry | None = None, *, allow_priority: bool = True) -> bool:
+        pool = [e for e in self.entries if e is not keep and (allow_priority or not e.priority)]
         if not pool:
             return False
-        e = min(pool, key=lambda x: x.used)
+        e = min(pool, key=lambda x: (x.priority, x.used))
         self.entries.remove(e)
         self.pages.release(e.blocks)
         self.store.give(e.ckpt)
