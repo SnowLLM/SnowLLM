@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 
 from .. import _capi
 from .._capi import SnowLLMError, check, lib
-from .._platform import prepare_gpu_commit
+from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, prepare_gpu_commit
 
 try:
     import torch
@@ -343,14 +343,23 @@ def dry_alloc() -> Iterator[DryLoad]:
         _dry = was
 
 
+def _device_bytes(allocate: Callable, n: int) -> torch.Tensor:
+    if torch.version.hip:
+        prepare_gpu_commit(n)
+    try:
+        return _observe(allocate(int(n), dtype=torch.uint8, device="cuda"))
+    except torch.OutOfMemoryError as exc:
+        if not WINDOWS:
+            raise
+        raise torch.OutOfMemoryError(f"{exc}\n{WINDOWS_PAGEFILE_HINT}") from exc
+
+
 def zero_bytes(n: int) -> torch.Tensor:
     if _dry is not None:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
         return _observe(_pinned(torch.zeros, n))
-    if torch.version.hip:
-        prepare_gpu_commit(n)
-    return _observe(torch.zeros(int(n), dtype=torch.uint8, device="cuda"))
+    return _device_bytes(torch.zeros, n)
 
 
 def empty_bytes(n: int) -> torch.Tensor:
@@ -358,9 +367,7 @@ def empty_bytes(n: int) -> torch.Tensor:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
         return _observe(_pinned(torch.empty, n))
-    if torch.version.hip:
-        prepare_gpu_commit(n)
-    return _observe(torch.empty(int(n), dtype=torch.uint8, device="cuda"))
+    return _device_bytes(torch.empty, n)
 
 
 def empty_shaped(shape: Sequence[int], dtype: torch.dtype) -> torch.Tensor:
