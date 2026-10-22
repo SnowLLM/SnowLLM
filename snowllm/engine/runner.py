@@ -392,6 +392,7 @@ class BaseRunner:
         raise BaseRunner.Absent(self._why(*hit))
 
     tunable_rope = False
+    auto_yarn = False
     prev_context = 0
     ring_blocks = 0
     tap_at: dict[int, int] | None = None

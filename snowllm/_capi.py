@@ -673,6 +673,11 @@ _SIGS += [
     ("snowllm_glm_sparse_attention", c_int, [P]*15+[c_int]*5+[c_float,c_int64,S]),
     ("snowllm_glm_hc_norm_proj", c_int, [P]*4+[c_int,c_float,S]),
 ]
+_SIGS += [sig for sig in (
+    ("snowllm_qwen4exp_qsa_produce_snapshot_scaled", c_int,
+     [P, c_int64] + [P]*12 + [c_int64]*5 + [c_float, P, c_int64, S]),
+) if hasattr(lib, sig[0])]
+
 _missing = []
 for _name, _res, _args in _SIGS:
     try:

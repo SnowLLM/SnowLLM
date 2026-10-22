@@ -28,6 +28,13 @@ head that checkpoint already carries.
 Flash-Next uses MTP k=2 by default. Choose `qwen3.8-flash-next-q3-k-xl-no-mtp`
 for plain decoding with `--num-spec 0`; both recipes share the same target directory.
 
+For Flash-Next, setting `--max-model-len` above 262144 automatically enables static YaRN
+with factor `max_model_len / 262144` (for example, `--max-model-len 512k` selects factor 2).
+This applies to every request on that default model name, including short prompts. An explicit
+`--served-model-name NAME=FACTOR` overrides the factor for that alias. Extended contexts require
+a kernel library with scaled QSA keys and support for block indices beyond 256K.
+See the [official YaRN guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices).
+
 Resident is weights only; the KV pool is what is left under `--gpu-memory-utilization`. The
 DeepSeek wants a 128 GiB machine with a large carve-out, and `--device-map auto` at long context.
 Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table

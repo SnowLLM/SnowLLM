@@ -21,6 +21,10 @@
 
 Flash-Next 默认使用 MTP k=2；选择 `qwen3.8-flash-next-q3-k-xl-no-mtp` 可通过 `--num-spec 0` 使用普通解码，两个方案共用主模型目录。
 
+Flash-Next 的 `--max-model-len` 超过 262144 时会自动启用静态 YaRN，缩放倍数为 `max_model_len / 262144`；例如 `--max-model-len 512k` 使用 2 倍缩放。该默认模型名下的所有请求都会使用这个倍数，包括短提示词。显式设置 `--served-model-name 名称=倍数` 可覆盖对应别名的倍数。扩展上下文需要支持 QSA key 缩放和 256K 以上块编号的内核库。
+
+YaRN 参数依据[官方长上下文说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)。
+
 常驻大小仅含权重；KV 池使用 `--gpu-memory-utilization` 预算下的剩余空间。DeepSeek 需要 128 GiB 内存的机器、较大的 GPU 内存划分，长上下文时还需 `--device-map auto`。Flash-Next 同样需要这类机器，但不使用 `--device-map`；另有 26.8 GiB 查找表按批次从磁盘读取，因此请将其保留在提供推理服务的 SSD 上。图片输入需要带视觉模块的模型；DeepSeek V4 仅支持文本。
 
 GLM-5.3-Flash 提供普通版和 `glm5.3-flash-iq2-xxs-mtp` 两个方案，后者使用四个 GGUF 分片中内嵌的 NextN 头启用 MTP k=2。两者均使用自动主机专家放置、0.95 GPU 显存使用比例、BF16 KV、单请求槽位和已测过的 227328-token 上下文容量。目前未实现 GLM 图片输入，因此方案只下载文本权重。

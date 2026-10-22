@@ -402,11 +402,16 @@ class Engine:
             self.exact_stats = exact_stats
 
             self._active_factor: float | None = None
+            self._loaded_rope_factor: float | None = None
             self._rope_cache: dict[float, tuple] = {}
             self._rope_orig_max = int(model.config.get("max_position_embeddings", 262144))
+            self.default_rope_factor = (max(1.0, max_model_len / self._rope_orig_max)
+                                        if self.runner.auto_yarn else 1.0)
 
             self.runner.resources.add(lambda slabs: None, [(self, ('dflash', 'spec', 'sampler',
                 'cache', 'tables', 'stage'))]).allocate()
+            if self.runner.auto_yarn:
+                self._activate_rope(self.default_rope_factor)
 
             shapes = (self.spec.decode_shapes(self.runner.max_num_seqs) if self.spec is not None
                       else plain_decode_shapes(self.runner.max_num_seqs))
@@ -522,10 +527,11 @@ class Engine:
                              max_blocks_per_seq=per_seq, p_min=p_min, adaptive=adaptive)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,
-            rope_factor: float = 1.0, mrope: torch.Tensor | None = None, pos_delta: int = 0,
+            rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
             embed_rows: list[int] | None = None, queue: bool = True) -> Request:
         p = params or SamplingParams()
+        rope_factor = self.default_rope_factor if rope_factor is None else rope_factor
         cap = min(self.max_model_len, int(rope_factor * self._rope_orig_max))
         if len(prompt) + p.max_new_tokens > cap:
             raise SnowLLMError(f"prompt {len(prompt)} + {p.max_new_tokens} new > {cap} "
@@ -636,6 +642,9 @@ class Engine:
         return True
 
     def _admit(self, r: Request, use_cache: bool = True) -> bool:
+        if self._active_factor != r.rope_factor:
+            self._activate_rope(r.rope_factor)
+            self._active_factor = r.rope_factor
         hit = (self.cache.lookup(r.prefill_src, r.prefill_len)
                if self.cache is not None and use_cache and r.embeds is None else None)
         r.cached_tokens = len(hit.tokens) if hit is not None else 0
@@ -667,9 +676,6 @@ class Engine:
         if hit is not None:
             self.cache.store.residue.load(hit.ckpt, self.slots.name(r, 1)[0], r.blocks,
                                          self.cache.pages.target(hit.blocks))
-        if self._active_factor != r.rope_factor:
-            self._active_factor = r.rope_factor
-            self._activate_rope(r.rope_factor)
         return True
 
     def _retire_finished(self) -> None:
@@ -753,6 +759,10 @@ class Engine:
                     f"at load and the engine has no handle on them. Serve it without a =FACTOR.")
             return
         self.runner.set_rope(*self._rope_table(factor))
+        if self._loaded_rope_factor != factor and self.cache is not None:
+            while self.cache.evict():
+                pass
+        self._loaded_rope_factor = factor
 
     def _prefill(self, spans: list[tuple[Request, int, int]]) -> Batch:
         return self.runner.prefill_batch(spans, self.slots)
