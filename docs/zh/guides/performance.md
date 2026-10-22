@@ -60,6 +60,17 @@ Flash-Next 提供 `qwen3.8-flash-next-q3-k-xl-dflash2` 和 `qwen3.8-flash-next-i
 
 ## 长上下文 {#long-contexts}
 
+Qwen3.8-Flash-Next 配置的上下文上限超过 262144 tokens 时，会在加载模型时自动启用静态 YaRN。以下两种启动方式均选择 524288-token 上限和 2 倍缩放：
+
+```sh
+snowllm qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+snowllm load qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+```
+
+Web UI 在加载前于 **推理设置 → 上下文长度** 中填写 `512k`。倍数由配置上限决定，短请求也使用相同倍数。每个请求的输入与输出总长须符合所选模型别名的上限。若希望同一服务同时提供两种上限，可追加 `--served-model-name native=1 --served-model-name extended`，客户端选择 `native` 使用 256K、1 倍缩放，选择 `extended` 使用 512K、2 倍缩放。显式别名遵循[模型说明](../reference/models)中的规则。
+
+[官方说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) 提醒，静态 YaRN 可能影响短文本效果。吞吐测试不能证明质量无变化，应按实际需要设置扩展上限。
+
 上下文越长，稠密注意力读取的历史 KV 越多，可能降低生成速度。稀疏注意力和循环注意力的开销不同。KV 池在模型加载时分配，更长的对话会消耗池内更多空间。
 
 缩短不必要的历史消息；受支持且已启用时，重复提示词可受益于前缀缓存。

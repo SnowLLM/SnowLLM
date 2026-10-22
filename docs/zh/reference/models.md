@@ -21,9 +21,11 @@
 
 Flash-Next 默认使用 MTP k=2；选择 `qwen3.8-flash-next-q3-k-xl-no-mtp` 可通过 `--num-spec 0` 使用普通解码，两个方案共用主模型目录。
 
-Flash-Next 的 `--max-model-len` 超过 262144 时会自动启用静态 YaRN，缩放倍数为 `max_model_len / 262144`；例如 `--max-model-len 512k` 使用 2 倍缩放。该默认模型名下的所有请求都会使用这个倍数，包括短提示词。显式设置 `--served-model-name 名称=倍数` 可覆盖对应别名的倍数。扩展上下文需要支持 QSA key 缩放和 256K 以上块编号的内核库。
+Flash-Next 配置的上下文上限超过 262144 tokens 时，SnowLLM 会在加载模型时自动启用静态 YaRN。直接启动服务或使用 `snowllm load` 时设置 `--max-model-len`，Web UI 则填写 **上下文长度**，无需额外的 YaRN 开关或修改模型配置文件。默认 256K 使用 1 倍；`--max-model-len 512k` 按 `max_model_len / 262144` 自动选择 2 倍。
 
-YaRN 参数依据[官方长上下文说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)。
+没有显式指定倍数的模型别名都会继承该设置，长短请求均使用相同倍数。修改配置的上下文上限后需重新加载模型。显式设置 `--served-model-name 名称=倍数` 可覆盖对应别名，其上下文上限为 `min(max_model_len, 倍数 * 262144)`；例如 `native=1` 在 512K 服务中仍限制为 256K。扩展上下文需要支持 QSA key 缩放和 256K 以上块编号的内核库，内核不兼容时加载会报错。
+
+[官方长上下文说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) 提醒，静态缩放可能影响短文本效果，因此应按实际需要设置扩展上限。配置示例见[长上下文](../guides/performance#long-contexts)。
 
 常驻大小仅含权重；KV 池使用 `--gpu-memory-utilization` 预算下的剩余空间。DeepSeek 需要 128 GiB 内存的机器、较大的 GPU 内存划分，长上下文时还需 `--device-map auto`。Flash-Next 同样需要这类机器，但不使用 `--device-map`；另有 26.8 GiB 查找表按批次从磁盘读取，因此请将其保留在提供推理服务的 SSD 上。图片输入需要带视觉模块的模型；DeepSeek V4 仅支持文本。
 

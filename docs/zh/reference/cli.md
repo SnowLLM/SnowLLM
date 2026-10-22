@@ -15,7 +15,7 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 | `PATH` | 未设置 | 模型目录或已下载的方案。 |
 | `--host` | `127.0.0.1` | API 监听地址。 |
 | `--port` | `8000` | API 监听端口。 |
-| `--served-model-name` | 未设置 | API 模型名和上下文倍率；可重复指定。 |
+| `--served-model-name` | 未设置 | `名称` 继承默认上下文倍率，`名称=倍率` 显式覆盖；可重复指定。 |
 | `--default-max-tokens` | 未设置 | 默认回复上限；未设置时使用剩余上下文。 |
 | `--seed` | 未设置 | 采样随机种子。 |
 
@@ -24,7 +24,7 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--max-num-seqs` | `16` | 最大并发请求数，最多 256；每个请求持有注意力状态。 |
-| `--max-model-len` | `262144` | 单请求上下文上限，如 `32k`。KV 内存共享。 |
+| `--max-model-len` | `262144` | 单请求上下文上限，如 `32k`。Flash-Next 超过 256K 时自动启用静态 YaRN，见[长上下文](../guides/performance#long-contexts)。KV 内存共享。 |
 | `--gpu-memory-utilization` | `0.9` | 权重、工作区和缓存的 GPU 内存预算。 |
 | `--device-map` | 不卸载 | 将 GGUF 权重卸载到主机内存：`off`、`auto`、`all` 或 `experts:20` 等分组。 |
 | `--prefix-memory-ratio` | `0.08` | 提示词前缀缓存的内存比例，`0` 表示禁用。 |

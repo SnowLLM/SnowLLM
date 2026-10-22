@@ -60,6 +60,25 @@ Power limits and thermal throttling affect throughput. Compare runs with the sam
 
 ## Long contexts
 
+For Qwen3.8-Flash-Next, a configured context limit above 262144 tokens automatically enables
+static YaRN at model load. For example, either command selects a 524288-token limit and factor 2:
+
+```sh
+snowllm qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+snowllm load qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+```
+
+In the Web UI, enter `512k` under **Inference settings → Context length** before loading.
+The factor is determined by the configured limit and applies to short requests too. Each request
+must fit its alias's limit, counting input and output together. To use both limits on one server,
+add `--served-model-name native=1 --served-model-name extended`; clients choose `native` for
+256K at factor 1 or `extended` for 512K at factor 2. Explicit aliases follow the
+[model-specific rules](../reference/models).
+
+The [official guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) notes
+that static YaRN may affect short-text quality. Throughput measurements do not establish quality;
+use an extended limit when the workload needs it.
+
 Dense attention reads more KV history as context grows, which can slow decode. Sparse and recurrent attention have different costs. KV pools are allocated when the model loads; a longer conversation consumes more of the existing pool.
 
 Shorten unnecessary history. Repeated prompts can benefit from prefix caching when supported and enabled.

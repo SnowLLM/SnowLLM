@@ -15,7 +15,7 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 | `PATH` | Unset | Checkpoint directory or downloaded recipe. |
 | `--host` | `127.0.0.1` | API listener address. |
 | `--port` | `8000` | API listener port. |
-| `--served-model-name` | Unset | API model name and context factor; repeatable. |
+| `--served-model-name` | Unset | `NAME` inherits the default context factor; `NAME=FACTOR` overrides it. Repeatable. |
 | `--default-max-tokens` | Unset | Default reply limit; unset uses remaining context. |
 | `--seed` | Unset | Random seed for sampling. |
 
@@ -24,7 +24,7 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 | Option | Default | Description |
 | --- | --- | --- |
 | `--max-num-seqs` | `16` | Maximum concurrent requests, up to 256; each request holds attention state. |
-| `--max-model-len` | `262144` | Per-request context limit, e.g. `32k`. KV memory is shared. |
+| `--max-model-len` | `262144` | Per-request context limit, e.g. `32k`. Flash-Next automatically enables static YaRN above 256K; see [long contexts](../guides/performance#long-contexts). KV memory is shared. |
 | `--gpu-memory-utilization` | `0.9` | GPU memory budget for weights, workspaces and caches. |
 | `--device-map` | No offload | Offload GGUF weights to host RAM: `off`, `auto`, `all` or groups such as `experts:20`. |
 | `--prefix-memory-ratio` | `0.08` | Memory share for prompt prefix caching; `0` disables it. |

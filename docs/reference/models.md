@@ -28,12 +28,22 @@ head that checkpoint already carries.
 Flash-Next uses MTP k=2 by default. Choose `qwen3.8-flash-next-q3-k-xl-no-mtp`
 for plain decoding with `--num-spec 0`; both recipes share the same target directory.
 
-For Flash-Next, setting `--max-model-len` above 262144 automatically enables static YaRN
-with factor `max_model_len / 262144` (for example, `--max-model-len 512k` selects factor 2).
-This applies to every request on that default model name, including short prompts. An explicit
-`--served-model-name NAME=FACTOR` overrides the factor for that alias. Extended contexts require
-a kernel library with scaled QSA keys and support for block indices beyond 256K.
-See the [official YaRN guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices).
+For Flash-Next, SnowLLM automatically enables static YaRN at model load when the configured
+context limit exceeds 262144 tokens. Set `--max-model-len` when serving or using `snowllm load`,
+or set **Context length** in the Web UI. No separate YaRN flag or model configuration edit is
+needed. The default 256K limit keeps factor 1; `--max-model-len 512k` selects factor 2 using
+`max_model_len / 262144`.
+
+Every alias without an explicit factor inherits this setting. Its factor stays fixed for short
+and long requests; changing the configured context limit requires reloading the model. An explicit
+`--served-model-name NAME=FACTOR` overrides that alias, whose context limit is
+`min(max_model_len, FACTOR * 262144)`. For example, `native=1` keeps a 256K limit even in a 512K
+server. Extended contexts require a kernel library with scaled QSA keys and support for block
+indices beyond 256K; an incompatible library causes a load error.
+
+The [official YaRN guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)
+notes that static scaling may affect short-text quality. Choose an extended limit when your
+workload needs it. See [long-context configuration](../guides/performance#long-contexts) for examples.
 
 Resident is weights only; the KV pool is what is left under `--gpu-memory-utilization`. The
 DeepSeek wants a 128 GiB machine with a large carve-out, and `--device-map auto` at long context.
