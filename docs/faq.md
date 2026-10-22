@@ -91,3 +91,10 @@ export SNOWLLM_MODELS='D:\models'
 ```
 
 These settings only affect the current terminal session. On Linux, add the setting to `~/.bashrc` or `~/.zshrc`. On Windows, add a user environment variable with the same name and reopen your terminal for it to take effect. Changing the path does not automatically move files you have already downloaded.
+
+## 9. Why does Windows report malloc or GPU allocation failures?
+
+Check the page file first. For this failure, ensure its allocated capacity and initial size are
+at least the GPU's total memory size. For example, a 96 GiB GPU needs at least **98304 MB**.
+Restart Windows after changing the setting, then retry. See [Windows page file](./guides/windows-pagefile)
+for configuration steps and how to check the actual allocated capacity.
