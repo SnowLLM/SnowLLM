@@ -91,3 +91,7 @@ export SNOWLLM_MODELS='D:\models'
 ```
 
 上述设置只影响当前终端会话。Linux 可写入 `~/.bashrc` 或 `~/.zshrc`。Windows 可添加同名用户环境变量，再重新打开终端。修改路径不会自动移动已下载的文件。
+
+## 9. Windows 出现 malloc 或 GPU 内存分配失败怎么办？ {#_9-why-does-windows-report-malloc-or-gpu-allocation-failures}
+
+先检查分页文件：针对这类失败，要求已分配容量和初始大小至少等于 GPU 总显存。例如，96 GiB 显存对应至少 **98304 MB**。修改后重启 Windows，再重新加载模型。设置步骤和实际容量核对方法见 [Windows 分页文件指南](./guides/windows-pagefile)。
