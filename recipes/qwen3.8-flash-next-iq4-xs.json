@@ -30,5 +30,5 @@
     }
   ],
   "priority": 90,
-  "requires": "0.3.2"
+  "requires": "0.3.13"
 }
