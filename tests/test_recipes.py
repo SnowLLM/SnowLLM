@@ -418,9 +418,12 @@ def main() -> int:
         offline = next(r for r in recipes.on_disk(root) if r.id == soon.id)
         check("offline manifests preserve coming soon", not offline.servable
               and offline.state == "coming soon")
-        check("the builder preserves the pending DeepSeek entry",
+        check("the builder exposes DeepSeek V4.1 single-request text inference",
               any(r["id"] == "deepseek-v4.1-flash-1017-vq-q4-k"
-                  and r.get("status") == "coming soon" for r in book))
+                  and r.get("status") == "supported"
+                  and r["defaults"]["max_num_seqs"] == 1
+                  and r["defaults"]["num_spec"] == 0
+                  and r["defaults"]["prefix_memory_ratio"] == 0 for r in book))
     finally:
         httpd.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)

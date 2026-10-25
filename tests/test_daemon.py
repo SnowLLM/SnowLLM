@@ -175,6 +175,21 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("data: [DONE]", response.text)
             self.assertEqual(self.manager.active, 0)
 
+    async def test_update_notes_are_exposed_only_on_the_management_listener(self):
+        self.manager.update.latest = "99.0.0"
+        self.manager.update.changelog = "# Changelog\n\n- Example / 示例。"
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
+                                     base_url="http://127.0.0.1") as client:
+            update = (await client.get("/daemon/status")).json()["update"]
+            self.assertEqual(update["latest"], "99.0.0")
+            self.assertEqual(update["changelog"], self.manager.update.changelog)
+            self.assertFalse(update["checking"])
+            page = await client.get("/")
+            self.assertIn('id="update-notice"', page.text)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_inference_app(self.manager)),
+                                     base_url="http://127.0.0.1") as client:
+            self.assertEqual((await client.get("/daemon/status")).status_code, 404)
+
     async def test_public_inference_routes_are_isolated(self):
         seen = []
         async def upstream(request):

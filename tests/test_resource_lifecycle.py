@@ -97,7 +97,6 @@ def main():
                 ck(phase+': expected failure', False)
 
     class ArenaLess(Phased):
-        CHUNK_CANDIDATES = (64, 16)
         def _setup_resources(self):
             super()._setup_resources()
             self.arena = None
@@ -106,8 +105,8 @@ def main():
             return PoolPlan(lambda n: n*width, self.max_blocks_per_seq, maximum=64)
     model = SimpleNamespace(geo=object(), state=None, cache=None)
     with patch('snowllm.engine.runner.gpu_mem_info', return_value=(200,200)):
-        runner = ArenaLess(model, None, 4, 1, block_size=16)
-    ck('chunk fallback also works without a persistent activation arena', runner.max_prefill_tokens==16)
+        runner = ArenaLess(model, None, 4, 1, max_prefill_tokens=16, block_size=16)
+    ck('fixed chunk works without a persistent activation arena', runner.max_prefill_tokens==16)
     runner.resources.close()
 
     from snowllm.engine import DraftPlan, Engine

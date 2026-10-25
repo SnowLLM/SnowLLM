@@ -1,0 +1,76 @@
+[
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "你好"
+      }
+    ],
+    "thinking_mode": "chat",
+    "expected": "<｜begin▁of▁sentence｜><｜User｜>你好<｜Assistant｜></think>"
+  },
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "Be brief."
+      },
+      {
+        "role": "user",
+        "content": "2+2?"
+      }
+    ],
+    "thinking_mode": "thinking",
+    "reasoning_effort": 75,
+    "expected": "<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 75 (range 1-100, the higher the value, the more thorough the reasoning)\n\nBe brief.<｜User｜>2+2?<｜Assistant｜><think>"
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "One"
+      },
+      {
+        "role": "assistant",
+        "content": "Two",
+        "reasoning_content": "A thought"
+      },
+      {
+        "role": "system",
+        "content": "Switch language"
+      },
+      {
+        "role": "user",
+        "content": "Three"
+      }
+    ],
+    "thinking_mode": "thinking",
+    "reasoning_effort": "low",
+    "expected": "<｜begin▁of▁sentence｜><｜System｜>Reasoning Effort: 50 (range 1-100, the higher the value, the more thorough the reasoning)\n\n<｜User｜>One<｜Assistant｜></think>Two<｜end▁of▁sentence｜><｜System｜>Switch language<｜User｜>Three<｜Assistant｜><think>"
+  },
+  {
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call1",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"杭州\",\"days\":2}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "sunny",
+        "tool_call_id": "call1"
+      }
+    ],
+    "thinking_mode": "chat",
+    "expected": "<｜begin▁of▁sentence｜>\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"get_weather\">\n<｜DSML｜ parameter name=\"city\" string=\"true\">杭州</｜DSML｜ parameter>\n<｜DSML｜ parameter name=\"days\" string=\"false\">2</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls><｜end▁of▁sentence｜><｜User｜><tool_result>sunny</tool_result><｜Assistant｜></think>"
+  }
+]

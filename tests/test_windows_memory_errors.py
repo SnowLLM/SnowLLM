@@ -15,8 +15,10 @@ from snowllm.ops import _common
 class WindowsMemoryErrorTests(unittest.TestCase):
     def guidance(self, error):
         text = str(error)
-        self.assertIn("page file's allocated capacity and Initial size are at least", text)
-        self.assertIn("GPU's total memory (VRAM)", text)
+        self.assertIn("SnowLLM recommends", text)
+        self.assertIn("physical RAM capacity", text)
+        self.assertIn("page file's Initial size and Maximum size", text)
+        self.assertNotIn("GPU's total memory (VRAM)", text)
         self.assertIn('https://snowllm.dev/docs/guides/windows-pagefile', text)
 
     def test_commit_failure_retains_windows_cause_and_adds_guidance(self):
@@ -37,17 +39,20 @@ class WindowsMemoryErrorTests(unittest.TestCase):
         self.assertIn('paging file too small', str(error.exception))
         kernel.VirtualFree.assert_not_called()
 
-    def test_kv_retry_exhaustion_keeps_guidance_and_original_cause(self):
+    def test_kv_commit_failure_preserves_the_budget_and_cause(self):
+        from snowllm.engine.resources import PoolPlan
         model_runner = object.__new__(runner.BaseRunner)
-        model_runner.max_blocks_per_seq, model_runner.block_size = 10, 16
+        model_runner.model = SimpleNamespace()
+        model_runner.gpu_util = .8
+        model_runner._allowance = lambda: 4096
+        plan = PoolPlan(lambda n: n*100, minimum=10, requested=20)
         cause = MemoryError('commit exhausted')
-        with patch.object(runner, 'WINDOWS', True), patch.object(torch.version, 'hip', 'test'), \
-             patch.object(runner, 'prepare_gpu_commit', side_effect=cause) as prepare:
+        with patch.object(runner, 'prepare_gpu_commit', side_effect=cause) as prepare:
             with self.assertRaises(MemoryError) as error:
-                model_runner._fit_pool_commit(20, 100)
-        self.guidance(error.exception)
-        self.assertIs(error.exception.__cause__, cause)
-        self.assertEqual([call.args[0] for call in prepare.call_args_list], [2000, 1500, 1100, 1000])
+                model_runner._pool_capacity(plan)
+        self.assertIs(error.exception, cause)
+        self.assertEqual(model_runner.gpu_util, .8)
+        prepare.assert_called_once_with(2000)
 
     def test_both_torch_allocators_preserve_oom_type_and_cause(self):
         for function, name in ((_common.empty_bytes, 'empty'), (_common.zero_bytes, 'zeros')):

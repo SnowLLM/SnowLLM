@@ -15,6 +15,7 @@ __pycache__/
 !/benchmarks/runs/archive/
 /benchmarks/results/*
 !/benchmarks/results/.gitkeep
+/tests/results/
 
 # Brand rasters for GitHub. render-brand.py is tracked; the avatar and social preview it draws are
 # not -- nothing here reads them, they are uploaded by hand in a settings page and that is the whole

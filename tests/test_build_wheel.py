@@ -102,10 +102,12 @@ class PublicWheelInputTests(unittest.TestCase):
         (self.root / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/build-wheel.sh', self.root / 'scripts/build-wheel.sh')
         (self.root / 'README.md').write_text('# Test package\n')
+        shutil.copy2(ROOT / 'CHANGELOG.md', self.root / 'CHANGELOG.md')
         (self.root / 'LICENSE').write_text('Test license\n')
         (self.root / 'pyproject.toml').write_text(
             '[build-system]\nrequires = ["setuptools>=64"]\nbuild-backend = "setuptools.build_meta"\n'
-            '[project]\nname = "snowllm"\nversion = "1.0.0"\n'
+            '[project]\nname = "snowllm"\nversion = "1.0.0"\ndynamic = ["readme"]\n'
+            '[tool.setuptools.dynamic]\nreadme = {file = ["README.md", "CHANGELOG.md"], content-type = "text/markdown"}\n'
             '[tool.setuptools.packages.find]\ninclude = ["snowllm*"]\n')
         subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
         subprocess.run(['git', '-C', str(self.root), 'add', '.'], check=True)
@@ -150,6 +152,16 @@ class PublicWheelInputTests(unittest.TestCase):
         with zipfile.ZipFile(wheel) as archive:
             self.assertEqual(archive.read('snowllm/__init__.py'), b'VALUE = 1\n')
             self.assertFalse(any(name.endswith('.pyc') for name in archive.namelist()))
+            metadata = archive.read('snowllm-1.0.0.dist-info/METADATA').decode('utf-8')
+            self.assertIn('Description-Content-Type: text/markdown', metadata)
+            self.assertIn('# Test package', metadata)
+            self.assertIn((self.root / 'CHANGELOG.md').read_text().strip(), metadata)
+
+    def test_modified_changelog_blocks_build(self):
+        (self.root / 'CHANGELOG.md').write_text('# Uncommitted release notes\n')
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('uncommitted changes or untracked files', result.stderr)
 
 
 if __name__ == '__main__':
