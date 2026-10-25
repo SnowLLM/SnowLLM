@@ -1,65 +1,34 @@
-# Windows page file
+# Windows page file {#windows-page-file}
 
-If SnowLLM fails to allocate memory on native Windows, first **ensure the page file is at least
-as large as the GPU's total memory (VRAM)**, then restart Windows and retry. This is SnowLLM's
-troubleshooting baseline; some workloads and other running applications may need more.
-
-This applies to allocation failures such as `malloc failed`, `hipMalloc` / `HIP out of memory`,
-`Windows commit preflight failed`, or a message that the paging file is too small.
-
-## Why allocations can fail
-
-Windows limits system committed memory using RAM and page files. Reaching that limit can cause
-allocations to fail even when GPU memory is still available. See Microsoft's
-[page file introduction](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/introduction-to-the-page-file).
-
-An automatically managed page file can also grow too slowly for a large allocation. Microsoft
-documents this in [Memory allocation errors can be caused by slow page file growth](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors).
+If loading a model on Windows fails with a paging-file-too-small or memory allocation error, check the page file. Insufficient capacity can cause allocation failures even when GPU memory is still available.
 
 ## Choose the size
 
-Use the GPU memory capacity reported by the driver to SnowLLM. On a Ryzen AI Max APU, use the
-configured GPU memory allocation. Set the page file's **Initial size** to at least that capacity,
-and its **Maximum size** no smaller than the initial size. Setting both to the same value
-provides the full capacity before model loading.
+We recommend setting **virtual memory (the page file) to the same size as physical RAM**, with identical initial and maximum sizes. For example, with 128 GiB of physical RAM, enter `131072` MB for both.
 
-| GPU memory | Minimum initial size (MB) | Minimum maximum size (MB) |
-| --- | ---: | ---: |
-| 32 GiB | 32768 | 32768 |
-| 64 GiB | 65536 | 65536 |
-| 96 GiB | 98304 | 98304 |
-| 128 GiB | 131072 | 131072 |
-
-The values above use 1024 MB per GiB. If using multiple page files, their combined allocated
-capacity must meet the requirement. Leave enough free disk space for the configured page files
-and normal system operation.
+Choose a drive with enough free space for the file.
 
 ## Configure Windows 11
 
 1. Press **Win + R**, enter `sysdm.cpl`, and open **Advanced**.
-2. Under **Performance**, select **Settings**, then **Advanced**.
-3. Under **Virtual memory**, select **Change**.
-4. Clear **Automatically manage paging file size for all drives**.
-5. Select a drive with enough free space, choose **Custom size**, and enter the initial and
-   maximum sizes from the table or larger values.
-6. Select **Set**, confirm the dialogs, and **restart Windows**.
+2. Open **Performance → Settings → Advanced → Virtual memory → Change**.
+3. Clear **Automatically manage paging file size for all drives**, select a drive with enough space, and choose **Custom size**.
+4. Set both initial and maximum sizes to the physical RAM capacity and select **Set**.
+5. Confirm the dialogs, **restart Windows**, then load the model again.
 
 ## Verify after restarting
 
-Run this read-only command in PowerShell:
+While loading the model, open **Task Manager → Performance → Memory → Committed**. The left value is current usage; the right is the limit. If usage approaches the limit, increase the page file or close other applications. If commit capacity is still sufficient, check the [memory budget](./performance#memory-budget).
+
+<details>
+<summary>Optional: check the allocated page file capacity with PowerShell</summary>
 
 ```powershell
-Get-CimInstance Win32_PageFileUsage | Select-Object Name, AllocatedBaseSize, CurrentUsage
+Get-CimInstance Win32_PageFileUsage | Select-Object Name, AllocatedBaseSize
 ```
 
-`AllocatedBaseSize` is the allocated page file capacity in MB; add the values if multiple files
-are listed. `CurrentUsage` is the amount currently used, not the capacity to check. Microsoft
-documents these fields in [Win32_PageFileUsage](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-pagefileusage).
+`AllocatedBaseSize` is the allocated capacity in MB; add the values if multiple files are listed.
 
-For a 96 GiB GPU, the combined `AllocatedBaseSize` must be **at least 98304**. A large maximum
-setting alone does not establish that this capacity is already allocated.
+Page files extend system commit capacity, and automatic growth can be too slow for large allocations. See Microsoft's [page file introduction](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/introduction-to-the-page-file) and [allocation failure guidance](https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors).
 
-Retry model loading while watching **Task Manager → Performance → Memory → Committed**.
-If committed memory approaches its limit, increase the page file further or close other
-memory-intensive applications. If GPU memory itself is exhausted, reduce the context length,
-concurrent request count, or GPU memory budget; see [Performance tuning](./performance).
+</details>

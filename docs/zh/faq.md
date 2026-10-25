@@ -21,7 +21,7 @@ GPU 内存主要分为：
 - **工作区**：预填充、生成阶段的中间结果与临时缓冲。
 - **缓存与状态**：KV 缓存、线性注意力状态和用于复用提示词的前缀缓存。
 
-可用 GPU 内存必须超过常驻权重大小，并为工作区和缓存留出余量。README 的 Resident 列仅含权重内存。CLI 默认内存预算为 90%，方案或模型架构可能调整；先计算权重和工作区，再将剩余部分用于缓存。使用 `--gpu-memory-utilization` 调整预算。
+可用 GPU 内存必须超过常驻权重大小，并为工作区和缓存留出余量。README 的 Resident 列仅含权重内存。CLI 默认内存预算为 90%，方案或模型架构可能调整；缓存按 context 和并发配置分配。使用 `--max-gpu-mem` 调整上限。
 
 ## 3. 如何选择量化精度？比特越低一定越快吗？ {#_3-how-do-i-choose-a-quantization-precision-is-lower-bit-quantization-always-faster}
 
@@ -94,4 +94,4 @@ export SNOWLLM_MODELS='D:\models'
 
 ## 9. Windows 出现 malloc 或 GPU 内存分配失败怎么办？ {#_9-why-does-windows-report-malloc-or-gpu-allocation-failures}
 
-先检查分页文件：针对这类失败，要求已分配容量和初始大小至少等于 GPU 总显存。例如，96 GiB 显存对应至少 **98304 MB**。修改后重启 Windows，再重新加载模型。设置步骤和实际容量核对方法见 [Windows 分页文件指南](./guides/windows-pagefile)。
+先检查系统提交内存和分页文件容量，设置步骤见 [Windows 分页文件](./guides/windows-pagefile)。

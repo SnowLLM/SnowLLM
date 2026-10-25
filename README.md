@@ -59,8 +59,8 @@ hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash`
 recipe of its own, and `qwen3.6-35b-a3b-fp8-mtp` is the FP8 weights decoding through the MTP
 head that checkpoint already carries.
 
-Resident is weights only; the KV pool is what is left under `--gpu-memory-utilization`. The
-DeepSeek wants a 128 GiB machine with a large carve-out, and `--device-map auto` at long context.
+Resident is weights only; KV capacity follows the configured context and concurrency.
+DeepSeek wants a 128 GiB machine with a large carve-out, and an explicit host/disk offload budget at long context.
 Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table
 read off disk per batch, so keep it on the SSD you serve from. Only the Qwens take image input.
 
@@ -186,12 +186,14 @@ Common flags (`snowllm --help` lists every option):
 | `--host` `--port`          | Where the OpenAI-compatible API listens. `127.0.0.1:8000` by default — loopback, so reaching it from another machine takes `--host 0.0.0.0`. |
 | `--max-num-seqs`           | Concurrency ceiling, up to 256. A memory choice, not a kernel limit: each request pins linear-attention state for its whole life. |
 | `--max-model-len`          | Context length, e.g. `32k`. A per-request ceiling, not a reservation: the KV pool is shared, and a request that outgrows it is preempted and re-prefilled. |
-| `--gpu-memory-utilization` | Fraction of the GPU the server may occupy, `0.9` by default. Weights, workspaces and any draft model are counted first; the KV pool is what is left. |
+| `--max-gpu-mem` | GPU memory ceiling: a fraction (default `0.9`) or capacity (`20GB`, `20GiB`). Caches do not expand to fill unused memory. |
+| `--max-host-mem` | Host buffer ceiling as a RAM fraction or capacity; explicitly enables automatic host weight offload. |
+| `--max-disk-offload` | Maximum expert weights automatically offloaded to disk; no cache file quota. |
 | `--prefix-memory-ratio`    | The share of the memory budget that goes to remembering shared prompt prefixes, `0.08` by default, `0` to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s; the first one pays ~1%. |
-| `--max-num-batched-tokens` | Prefill chunk size, e.g. `8k`. The default `auto` selects a size based on available memory. |
+| `--max-num-batched-tokens` | Prefill chunk size, e.g. `8k`. The default is a fixed `2048` tokens. |
 | `--num-spec`               | Speculative depth off the MTP head. The optimum is workload-dependent; 2 is a robust default. |
 | `--dflash`                 | Speculate with a separate draft model instead of the MTP head: it proposes a whole block in one forward. Point it at the draft checkpoint, or at the model directory when the drafter ships beside the weights — a recipe that ships one sets this for you. Replaces `--num-spec`. Its weights and KV pool come out of the budget first, so the ceiling holds either way. |
-| `--device-map`             | Move weight groups into host RAM to leave the GPU more room, e.g. `experts:20`. `auto` moves only what the pools are short of at your `--max-model-len`, cheapest group first. Costs a slightly slower decode step. |
+| `--device-map`             | Move weight groups into host RAM to leave the GPU more room, e.g. `experts:20`. Automatic placement uses an explicit `--max-host-mem` budget for the configured context. Costs a slightly slower decode step. |
 | `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
 

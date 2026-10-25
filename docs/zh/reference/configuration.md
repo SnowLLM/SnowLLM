@@ -63,3 +63,11 @@ snowllm webui config --library-path ""
 | `SNOWLLM_HOME` | 安装目录，默认为 `$XDG_DATA_HOME/snowllm` 或 `~/.local/share/snowllm`。 |
 | `SNOWLLM_BIN_DIR` | 安装命令目录，默认为 `$XDG_BIN_HOME` 或 `~/.local/bin`。 |
 | `SNOWLLM_PYTHON` | 安装脚本使用的 Python 解释器。 |
+
+## 更新检查 {#update-checks}
+
+服务每次启动时在后台检查一次较新的稳定版本。查询版本和获取更新说明都调用当前 Python 环境的 pip CLI，沿用其源、镜像、代理和认证配置。更新说明通过 `pip install --dry-run --ignore-installed --no-deps --only-binary=:all: --report` 获取，不安装软件包；镜像未提供独立元数据时，pip 可能下载 Python wheel 读取描述。设置 `SNOWLLM_NO_UPDATE_CHECK=1` 可同时关闭两项请求。
+
+发现新版本后，终端打印更新说明，Web UI 显示可展开的更新提示。版本未包含说明、pip 太旧而不支持报告功能（pip 22.2 引入），或元数据请求失败，都不会影响新版本提醒。
+
+发版时编辑 `CHANGELOG.md`，保留 `<!-- snowllm-changelog:start -->` 和 `<!-- snowllm-changelog:end -->` 标记。打包会自动将 README 和 CHANGELOG 合并到包描述，客户端只展示标记之间的部分。初始 changelog 是占位示例，发布前请替换为真实内容。

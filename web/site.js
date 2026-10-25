@@ -901,6 +901,7 @@ loadTable("recipes-catalogue", function (container, data) {
       el("h2", { id: "recipe-detail-title", text: recipe.model }), close,
     ]));
     dialog.appendChild(el("p", { class: "recipe-id", text: recipe.id }));
+    dialog.appendChild(el("p", { class: "recipe-summary", text: t("recipe.autoContext") }));
     if (recipe.summary) {
       var summaryKey = "recipe.summary." + recipe.id;
       dialog.appendChild(el("p", { class: "recipe-summary", text: t(summaryKey) === summaryKey ? recipe.summary : t(summaryKey) }));

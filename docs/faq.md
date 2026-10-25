@@ -21,7 +21,7 @@ GPU memory is mainly divided into three parts:
 - **Workspaces**: intermediate results and temporary buffers for prefill and decode.
 - **Caches and state**: the KV cache, linear attention state, and the prefix cache for reusing prompts.
 
-Available GPU memory must exceed the resident weight size, with room left for workspaces and caches. The Resident column in the README lists weight memory only. The CLI memory budget defaults to 90%; recipes or model architectures may adjust it. Weights and workspaces are counted before caches. Adjust this limit with `--gpu-memory-utilization`.
+Available GPU memory must exceed the resident weight size, with room left for workspaces and caches. The Resident column in the README lists weight memory only. The CLI memory budget defaults to 90%; recipes or model architectures may adjust it. Caches follow the configured context and concurrency. Adjust the ceiling with `--max-gpu-mem`.
 
 ## 3. How do I choose a quantization precision? Is lower-bit quantization always faster?
 
@@ -94,7 +94,5 @@ These settings only affect the current terminal session. On Linux, add the setti
 
 ## 9. Why does Windows report malloc or GPU allocation failures?
 
-Check the page file first. For this failure, ensure its allocated capacity and initial size are
-at least the GPU's total memory size. For example, a 96 GiB GPU needs at least **98304 MB**.
-Restart Windows after changing the setting, then retry. See [Windows page file](./guides/windows-pagefile)
-for configuration steps and how to check the actual allocated capacity.
+Check system commit and page file capacity.
+See [Windows page file](./guides/windows-pagefile) for sizing, configuration and verification steps.

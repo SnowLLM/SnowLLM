@@ -10,9 +10,9 @@ GPU 内存主要用于：
 - **工作区**：预填充和生成阶段的中间结果及临时缓冲。
 - **缓存与状态**：KV 缓存、线性注意力状态，以及复用提示词的前缀缓存。
 
-常驻大小仅统计权重，仍需为工作区和缓存预留空间。`--gpu-memory-utilization` 设置预算，CLI 默认为 `0.9`。扣除权重和工作区后，剩余预算用于缓存。方案或模型架构可能调整默认值。
+常驻大小仅统计权重，仍需为工作区和缓存预留空间。`--max-gpu-mem` 设置上限，CLI 默认为 `0.9`。缓存按 context 和并发配置分配，不占满剩余显存。方案或模型架构可能调整默认值。
 
-使用 `--device-map auto` 可按需将 GGUF 权重卸载到系统内存。DeepSeek V4 也支持指定投影组，例如 `--device-map experts.down:1` 仅卸载 routed down 权重最大的一层。
+设置 `--max-host-mem` 后，GPU 预算不足时会自动卸载模型权重到主机内存。上下文、并发、内存上限及磁盘卸载的配置方法见[内存管理](./memory-management)。
 
 ## 量化 {#quantization}
 
@@ -20,39 +20,51 @@ GPU 内存主要用于：
 
 ## 预填充分块大小 {#prefill-chunk-size}
 
-`--max-num-batched-tokens` 设置每个预填充分块处理的 token 数。默认 `auto` 会根据可用内存从模型专用候选值中选择。上下文长度由 `--max-model-len` 控制。
+`--max-num-batched-tokens` 设置每个预填充分块处理的 token 数。默认使用固定的 2048 tokens。上下文长度由 `--max-model-len` 控制。
 
 ```sh
 snowllm qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 snowllm load qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 ```
 
-更大的分块可能提高预填充吞吐，但需要更多工作区内存，留给 KV 缓存的空间更少。较小分块可降低工作区占用。建议从 `auto` 开始，调优时同时比较预填充 tok/s 和首 token 延迟。
+更大的分块可能提高预填充吞吐，但需要更多工作区内存。较小分块可降低工作区占用。可以从默认值 `2048` 开始，调优时同时比较预填充 tok/s 和首 token 延迟。
 
 在 Web UI 加载模型前，于 **推理设置 → 额外选项** 中填写 `--max-num-batched-tokens 8k`。运行时设置会显示实际生效的 **预填充分块**。
 
 ## 推测解码 {#speculative-decoding}
 
-代码或固定格式输出可尝试更大的草稿长度，自由文本可尝试更小的长度。请实测吞吐，因为被拒绝的草稿也会产生开销。
+推测解码由草稿模型先生成候选 token，再由主模型批量验证，以加快生成速度。
 
-命令行选项优先于方案默认值：
+草稿长度决定每轮尝试的候选 token 数。
+
+一般来说，高熵文本（如诗歌）的平均接受长度（AL）较低，适合较短草稿；低熵文本（如代码、固定格式输出）的 AL 较高，可以尝试较长草稿。
+
+SnowLLM 支持三种推测解码方式：
+
+- **MTP**：使用主模型自带的预测头生成草稿，无需独立的草稿模型。
+- **DFlash**：使用独立的小型草稿模型，并行预测多个候选 token。
+- **DSpark**：使用配套的并行草稿模型，带置信度头的版本还能预测草稿被接受的可能性。
+
+命令行参数优先于方案默认值：
 
 ```sh
-# MTP: adjust the number of candidate tokens {#mtp-adjust-the-number-of-candidate-tokens}
+# MTP：设置草稿长度
 snowllm qwen3.6-35b-a3b-fp8-mtp --num-spec 3
 
-# DFlash / DFlash 2: adjust the block size {#dflash-dflash-2-adjust-the-block-size}
+# DFlash：设置草稿分块大小
 snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 
-# DSpark: adjust the block size {#dspark-adjust-the-block-size}
+# DSpark：设置草稿分块大小
 snowllm deepseek-v4-flash-iq2-xxs-400k --dflash-block 8
 ```
 
-使用 DFlash 或 DSpark 时，`--num-spec` 不生效。DeepSeek V4 DSpark 会将 `--dflash-block` 限制为不小于草稿模型配置的分块大小。
+SnowLLM 支持 DSpark **自适应草稿长度（adaptive length）**：根据草稿置信度和主模型验证耗时，自动选择每轮送去验证的草稿长度，减少无效验证。
 
-DeepSeek V4 和 MiniCPM-V 4.7 可通过 `--dspark-adaptive --dflash-p-min 0` 自动选择草稿长度。需要草稿模型包含置信度头，并会增加启动测量时间；请结合实际负载比较吞吐。
+使用带置信度头的 DeepSeek V4 或 MiniCPM-V 4.7 DSpark 方案时，可以这样开启：
 
-Flash-Next 提供 `qwen3.8-flash-next-q3-k-xl-dflash2` 和 `qwen3.8-flash-next-iq4-xs-dflash2` 方案。这两个量化模型启用 DFlash 2 后，即使 temperature 为 0，输出也可能与普通解码不同。
+```sh
+snowllm MODEL --dspark-adaptive --dflash-p-min 0
+```
 
 ## 功耗限制 {#power-limits}
 
@@ -60,23 +72,38 @@ Flash-Next 提供 `qwen3.8-flash-next-q3-k-xl-dflash2` 和 `qwen3.8-flash-next-i
 
 ## 长上下文 {#long-contexts}
 
-Qwen3.8-Flash-Next 配置的上下文上限超过 262144 tokens 时，会在加载模型时自动启用静态 YaRN。以下两种启动方式均选择 524288-token 上限和 2 倍缩放：
+### 混合稀疏注意力模型
+
+Qwen3.8-Flash-Next、DeepSeek V4 等模型目前不支持 INT8 KV Cache，请保留默认的 `bf16`。
+
+`--prefix-memory-ratio`（默认 `0.08`）控制前缀状态快照的预算：以基础缓存大小乘以这个比例，再按单份快照的大小换算数量。快照记录某个前缀位置的注意力状态，命中后可以从该位置继续计算。
+
+快照空间在加载时分配。SnowLLM 按 `--max-num-seqs` 为每个并发请求至少保留两份快照的容量；比例再小也保留这个下限，内存不足则报错。
+
+| 快照 | 保留方式与用途 |
+| --- | --- |
+| System Prompt | 优先保留；用户问题变化时，仍可复用相同的系统前缀。 |
+| 最新对话前缀 | 随输入推进更新，保留当前对话最近已处理的位置。 |
+| 额外历史快照 | 使用剩余预算保留较早位置，按最近使用情况淘汰。 |
+
+在同一模型配置和并发范围内，只沿同一对话追加消息，不分叉、撤销或修改历史，系统快照和最新对话快照会持续保留；首次建立快照后，下一轮会命中已有前缀，**不需要随着对话轮数增加这个比例**。快照按页边界保存，新消息及边界后的尾部仍需处理；不足一个可保存边界的短前缀仍需重新计算。
+
+增大比例主要适合以下场景：
+
+- **分叉或回退**：保留不同分支、较早轮次的快照。
+- **修改或重新生成历史消息**：从修改位置之前仍相同的前缀继续计算。
+- **多个会话或不同系统提示词交替使用**：保留更多暂时不活跃的对话快照。
+
+更多快照可以减少这些场景下的重复 prefill、降低首 token 延迟，代价是占用更多内存；普通顺序聊天通常保留默认值即可。
 
 ```sh
-snowllm qwen3.8-flash-next-q3-k-xl --max-model-len 512k
-snowllm load qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+snowllm MODEL --prefix-memory-ratio 0.16
 ```
 
-Web UI 在加载前于 **推理设置 → 上下文长度** 中填写 `512k`。倍数由配置上限决定，短请求也使用相同倍数。每个请求的输入与输出总长须符合所选模型别名的上限。若希望同一服务同时提供两种上限，可追加 `--served-model-name native=1 --served-model-name extended`，客户端选择 `native` 使用 256K、1 倍缩放，选择 `extended` 使用 512K、2 倍缩放。显式别名遵循[模型说明](../reference/models)中的规则。
+### 稠密注意力模型
 
-[官方说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) 提醒，静态 YaRN 可能影响短文本效果。吞吐测试不能证明质量无变化，应按实际需要设置扩展上限。
+稠密注意力在生成时需要读取历史 KV，上下文越长，读取开销越大。对支持的模型，实验性的 `--kv-cache-dtype int8` 可将 KV 数据的存储和读取量降至 BF16 的约一半，可能提高长上下文生成速度；但量化开销可能使 prefill 变慢，也需留意精度变化。
 
-上下文越长，稠密注意力读取的历史 KV 越多，可能降低生成速度。稀疏注意力和循环注意力的开销不同。KV 池在模型加载时分配，更长的对话会消耗池内更多空间。
-
-缩短不必要的历史消息；受支持且已启用时，重复提示词可受益于前缀缓存。
-
-纯文本聊天请求会在开头的 system 消息末尾附近，按缓存页边界保存专用前缀快照。MTP 的依赖 token 保留在共享前缀内，因此少量尾部仍需重算。普通快照不能淘汰 system 快照；不同 system 前缀共享有限的缓存槽位，彼此按 LRU 替换。KV 分配压力或 RoPE 倍数变化仍可回收这些快照。图片请求维持原有缓存行为。
-
-启用前缀缓存时，显存规划至少保留一份快照；若指定上下文无法与这份快照同时放下，会拒绝加载，不再静默关闭缓存。
-
-`--kv-cache-dtype int8` 是**实验性且依赖模型的功能**。在受支持路径上可减少 KV 内存流量，但预填充可能变慢。**Qwen3.8 Flash Next 的稀疏注意力和 DeepSeek V4 拒绝此选项。**这些模型请保留 `bf16`；DeepSeek V4 使用自身的 MLA 缓存格式。
+```sh
+snowllm MODEL --kv-cache-dtype int8
+```

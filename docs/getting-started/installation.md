@@ -51,9 +51,7 @@ python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "tor
 python -m pip install snowllm snowllm-kernels
 ```
 
-If model loading fails with a memory allocation error, ensure the Windows page file is at least
-as large as GPU memory, including its initial size. Follow the [Windows page file guide](../guides/windows-pagefile)
-to configure it and restart Windows before retrying.
+If memory allocation fails, check the [Windows page file](../guides/windows-pagefile) configuration.
 
 If you are using WSL2 on a Windows machine, follow the Linux / WSL2 instructions above inside WSL2 instead.
 

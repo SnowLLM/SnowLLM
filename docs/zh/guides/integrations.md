@@ -36,6 +36,6 @@ snowllm pi --port 8000
 snowllm pi --host 192.168.1.10 --port 8000
 ```
 
-命令会将方案模型写入 `~/.pi/agent/models.json`。`--host` 默认为 `localhost`，端口应使用推理服务端口。
+先加载 recipe 模型。命令会从 `/v1/models` 读取实际上下文，将运行中的 recipe 模型写入 `~/.pi/agent/models.json`，不会从 recipe 默认值猜测容量。`--host` 默认为 `localhost`，端口应使用推理服务端口。更换模型或容量配置后重新运行此命令。
 
 局域网访问可通过 `--host 0.0.0.0` 启动推理服务。模型管理使用独立监听端口，见 [Web UI](../webui)。

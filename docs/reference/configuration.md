@@ -63,3 +63,11 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | `SNOWLLM_HOME` | Installer directory; defaults to `$XDG_DATA_HOME/snowllm` or `~/.local/share/snowllm`. |
 | `SNOWLLM_BIN_DIR` | Installer command directory; defaults to `$XDG_BIN_HOME` or `~/.local/bin`. |
 | `SNOWLLM_PYTHON` | Interpreter used by the installer. |
+
+## Update checks
+
+Services check for newer stable versions once at startup, in the background. Both version lookup and release-note retrieval use the current Python's pip CLI and follow its index, mirror, proxy, and authentication settings. Release notes use `pip install --dry-run --ignore-installed --no-deps --only-binary=:all: --report`; no package is installed. If the mirror does not serve separate metadata, pip may download the Python wheel to inspect it. Set `SNOWLLM_NO_UPDATE_CHECK=1` to disable both requests.
+
+When a newer version is available, the terminal prints its release notes and the Web UI shows an expandable update notice. Missing notes, an older pip without report support (introduced in pip 22.2), or a failed metadata request leave the version reminder available.
+
+For releases, edit `CHANGELOG.md` and keep the `<!-- snowllm-changelog:start -->` and `<!-- snowllm-changelog:end -->` markers. Packaging combines README and CHANGELOG into the distribution description; clients display only the marked section. The initial changelog is an example and should be replaced before publishing.

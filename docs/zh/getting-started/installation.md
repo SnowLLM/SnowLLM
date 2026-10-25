@@ -47,7 +47,7 @@ python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "tor
 python -m pip install snowllm snowllm-kernels
 ```
 
-若加载模型时出现内存分配失败，请确保 Windows 分页文件容量至少等于 GPU 显存，初始大小也要满足此要求。按照 [Windows 分页文件指南](../guides/windows-pagefile)完成设置，重启 Windows 后再试。
+遇到内存分配失败时，先检查 [Windows 分页文件](../guides/windows-pagefile)配置。
 
 如果在 Windows 上使用 WSL2，请在 WSL2 内按照上面的 Linux / WSL2 步骤安装。
 

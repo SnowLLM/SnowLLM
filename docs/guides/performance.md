@@ -10,9 +10,9 @@ GPU memory covers:
 - **Workspaces**: intermediate results and temporary buffers for prefill and decode.
 - **Caches and state**: the KV cache, linear attention state, and the prefix cache for reusing prompts.
 
-Resident sizes count weights only. Leave room for workspaces and caches. `--gpu-memory-utilization` sets the budget (CLI default: `0.9`); caches use the remainder after weights and workspaces. Recipes or model architectures may adjust defaults.
+Resident sizes count weights only. Leave room for workspaces and caches. `--max-gpu-mem` sets a ceiling (CLI default: `0.9`); caches are sized for the configured context and concurrency. Recipes or model architectures may adjust defaults.
 
-Use `--device-map auto` to offload GGUF weights to system RAM when needed. DeepSeek V4 also accepts projection groups: for example, `--device-map experts.down:1` offloads the largest layer's routed down projection.
+Set `--max-host-mem` to allow automatic weight offload when the GPU budget is insufficient. DeepSeek V4 also accepts projection groups: for example, `--device-map experts.down:1` offloads the largest layer's routed down projection.
 
 ## Quantization
 
@@ -20,7 +20,7 @@ Lower-bit weights use less memory but require dequantization. Decode may improve
 
 ## Prefill chunk size
 
-Use `--max-num-batched-tokens` to set the tokens processed per prefill chunk. The default is `auto`, which selects from model-specific candidates based on available memory. Context length is controlled by `--max-model-len`.
+Use `--max-num-batched-tokens` to set the tokens processed per prefill chunk. The default is a fixed 2048 tokens. Context length is controlled by `--max-model-len`.
 
 ```sh
 snowllm qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
@@ -33,26 +33,38 @@ In the Web UI, enter `--max-num-batched-tokens 8k` under **Inference settings â†
 
 ## Speculative decoding
 
-Try larger draft sizes for code or fixed-format output, and smaller sizes for free-form prose. Measure throughput: rejected drafts add overhead.
+Speculative decoding uses a draft model to propose candidate tokens, then verifies them in batches with the main model to speed up generation.
+
+Draft length controls how many candidates are tried per round.
+
+Higher-entropy text, such as poetry, generally has a lower average acceptance length (AL) and benefits from shorter drafts; lower-entropy output, such as code or fixed formats, often has a higher AL and can benefit from longer drafts.
+
+SnowLLM supports three methods:
+
+- **MTP** uses prediction heads built into the main model, without a separate drafter.
+- **DFlash** uses a separate small draft model to predict multiple candidates in parallel.
+- **DSpark** uses a matching parallel drafter; versions with a confidence head can also estimate whether drafts will be accepted.
 
 Command-line options override recipe defaults:
 
 ```sh
-# MTP: adjust the number of candidate tokens
+# MTP: set the draft length
 snowllm qwen3.6-35b-a3b-fp8-mtp --num-spec 3
 
-# DFlash / DFlash 2: adjust the block size
+# DFlash: set the draft block size
 snowllm qwen3.6-35b-a3b-q4-k-xl-dflash --dflash-block 16
 
-# DSpark: adjust the block size
+# DSpark: set the draft block size
 snowllm deepseek-v4-flash-iq2-xxs-400k --dflash-block 8
 ```
 
-`--num-spec` has no effect when using DFlash or DSpark. DeepSeek V4 DSpark clamps `--dflash-block` to at least the drafter's configured block size.
+SnowLLM supports DSpark **adaptive draft length**, choosing how many draft tokens to verify each round based on confidence and main-model verification time to reduce wasted verification.
 
-DeepSeek V4 and MiniCPM-V 4.7 support `--dspark-adaptive --dflash-p-min 0` to choose draft lengths automatically. It requires a confidence head and adds startup profiling time; compare throughput on your workload.
+For DeepSeek V4 or MiniCPM-V 4.7 DSpark recipes with a confidence head, enable it with:
 
-Flash-Next offers `qwen3.8-flash-next-q3-k-xl-dflash2` and `qwen3.8-flash-next-iq4-xs-dflash2` recipes. With these quantized models, DFlash 2 may produce different output from plain decoding even at temperature 0.
+```sh
+snowllm MODEL --dspark-adaptive --dflash-p-min 0
+```
 
 ## Power limits
 
@@ -60,35 +72,38 @@ Power limits and thermal throttling affect throughput. Compare runs with the sam
 
 ## Long contexts
 
-For Qwen3.8-Flash-Next, a configured context limit above 262144 tokens automatically enables
-static YaRN at model load. For example, either command selects a 524288-token limit and factor 2:
+### Hybrid sparse attention models
+
+Models such as Qwen3.8-Flash-Next and DeepSeek V4 currently do not support INT8 KV caches. Keep the default `bf16`.
+
+`--prefix-memory-ratio` (default `0.08`) sets the prefix-state snapshot budget: multiply the base cache size by this ratio, then divide by the size of one snapshot to obtain the snapshot count. A snapshot records attention state at a prefix position so computation can resume there on a cache hit.
+
+Snapshot storage is allocated at model load. SnowLLM reserves capacity for at least two snapshots per concurrent request, based on `--max-num-seqs`. A smaller ratio preserves this minimum; insufficient memory causes a load error.
+
+| Snapshot | Retention and purpose |
+| --- | --- |
+| System prompt | Retained with priority so the same system prefix remains reusable when user questions change. |
+| Latest dialogue prefix | Updated as input progresses, retaining the dialogue's most recently processed position. |
+| Additional history | Uses the remaining budget to retain older positions, evicted by recency. |
+
+Within the same model configuration and configured concurrency, appending to a dialogue without forks, undo or history edits retains its system and latest dialogue snapshots. After the initial snapshots are created, the next turn will reuse an existing prefix; **the ratio does not need to grow with the number of turns**. Snapshots align to cache page boundaries: new messages and the tail after the boundary still need processing, and prefixes shorter than a usable boundary must be recomputed.
+
+Increase the ratio primarily for:
+
+- **Forks or rollback:** retain snapshots for different branches and earlier turns.
+- **Editing or regenerating history:** resume from an unchanged prefix before the edit.
+- **Alternating conversations or system prompts:** retain more inactive dialogue snapshots.
+
+More snapshots can reduce repeated prefill and time to first token in these cases, at the cost of more memory. Ordinary sequential chat can generally keep the default.
 
 ```sh
-snowllm qwen3.8-flash-next-q3-k-xl --max-model-len 512k
-snowllm load qwen3.8-flash-next-q3-k-xl --max-model-len 512k
+snowllm MODEL --prefix-memory-ratio 0.16
 ```
 
-In the Web UI, enter `512k` under **Inference settings â†’ Context length** before loading.
-The factor is determined by the configured limit and applies to short requests too. Each request
-must fit its alias's limit, counting input and output together. To use both limits on one server,
-add `--served-model-name native=1 --served-model-name extended`; clients choose `native` for
-256K at factor 1 or `extended` for 512K at factor 2. Explicit aliases follow the
-[model-specific rules](../reference/models).
+### Dense attention models
 
-The [official guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) notes
-that static YaRN may affect short-text quality. Throughput measurements do not establish quality;
-use an extended limit when the workload needs it.
+Dense attention reads historical KV during generation, so longer contexts increase read costs. On supported models, the experimental `--kv-cache-dtype int8` roughly halves KV data storage and read traffic compared with BF16 and may speed up long-context decode. Quantization overhead can slow prefill, and output accuracy should also be checked.
 
-Dense attention reads more KV history as context grows, which can slow decode. Sparse and recurrent attention have different costs. KV pools are allocated when the model loads; a longer conversation consumes more of the existing pool.
-
-Shorten unnecessary history. Repeated prompts can benefit from prefix caching when supported and enabled.
-
-Text chat requests give the leading system messages a dedicated prefix checkpoint near their end,
-aligned to the cache's page boundary. MTP dependencies stay inside the shared prefix, so a small
-tail is recomputed. Ordinary checkpoints cannot evict system checkpoints; different system
-prefixes share the same bounded cache and replace each other by LRU. KV allocation pressure and
-RoPE factor changes can still evict them. Image requests keep their existing cache behavior.
-When prefix caching is enabled, memory planning reserves at least one checkpoint; a context
-that cannot fit with that checkpoint is refused instead of silently disabling caching.
-
-`--kv-cache-dtype int8` is **experimental and model-dependent**. On supported paths it reduces KV memory traffic, but prefill may become slower. **Qwen3.8 Flash Next with sparse attention and DeepSeek V4 reject this option.** Keep `bf16` for these models; DeepSeek V4 uses its own MLA cache representation.
+```sh
+snowllm MODEL --kv-cache-dtype int8
+```

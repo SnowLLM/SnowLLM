@@ -17,8 +17,29 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB |
 | `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB |
 
-The catalogue also lists `deepseek-v4.1-flash-1017-vq-q4-k` as **Coming soon**.
-This is a planned VQ + Q4_K integration; it cannot be served through its recipe yet.
+`deepseek-v4.1-flash-1017-vq-q4-k` supports text inference with the 1017 VQ + Q4_K checkpoint.
+Its defaults are one active request, an 8192-token context and 64-token prefill chunks, with
+speculative decoding and prefix reuse disabled. It supports thinking mode, numeric reasoning
+effort from 1 to 100, and the V4.1 tool-call format. Add `--dflash MODEL_DIR` to use the three
+embedded DSpark towers with their native five-token block; no separate draft checkpoint is needed.
+The draft retains a 128-token target window. `--max-model-len 1m --max-num-batched-tokens 8192`
+keeps 1M context capacity and 8K prefill chunks; automatic placement accounts for the extra
+draft weights and may offload more target experts. Vision is not connected yet. The kernel
+library requires ABI 74.
+
+With updated kernels, V4.1 keeps token embeddings in their original Q4_K storage and restores
+only the requested rows directly into BF16 activations. The target and DSpark share this table.
+Older kernel builds retain the BF16 embedding fallback.
+
+V4.1 prefill uses CED: all prompt tokens run through the 20 encoder layers and populate the
+decoder's shared KV cache; only the final 128 prompt tokens run through the 20 decoder layers,
+once after the last prefill chunk. Each generated token runs through all 40 layers. The bounded
+decoder replay can produce different results from running every prompt token through all layers.
+
+The roughly 106 GiB of resident weights use automatic GPU/host placement. The 40 byte-range
+GGUF parts are read directly, so assembly needs no extra disk space. Keep the matching 1017
+Engram shards, about 203 GB together, under `deepseek-engram/` on a local SSD; only selected
+rows are read during inference.
 
 `qwen3.6-35b-a3b-q4-k-xl` is the 35B MoE as a GGUF, 24.2 GiB resident, for a machine that cannot
 hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash` or `-dflash2`
@@ -31,7 +52,8 @@ for plain decoding with `--num-spec 0`; both recipes share the same target direc
 For Flash-Next, SnowLLM automatically enables static YaRN at model load when the configured
 context limit exceeds 262144 tokens. Set `--max-model-len` when serving or using `snowllm load`,
 or set **Context length** in the Web UI. No separate YaRN flag or model configuration edit is
-needed. The default 256K limit keeps factor 1; `--max-model-len 512k` selects factor 2 using
+needed. The factor follows the final context printed after automatic capacity planning;
+`--max-model-len 512k` selects factor 2 using
 `max_model_len / 262144`.
 
 Every alias without an explicit factor inherits this setting. Its factor stays fixed for short
@@ -43,17 +65,19 @@ indices beyond 256K; an incompatible library causes a load error.
 
 The [official YaRN guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)
 notes that static scaling may affect short-text quality. Choose an extended limit when your
-workload needs it. See [long-context configuration](../guides/performance#long-contexts) for examples.
+workload needs it. For example, add `--max-model-len 512k` to select a 512K limit.
 
-Resident is weights only; the KV pool is what is left under `--gpu-memory-utilization`. The
-DeepSeek wants a 128 GiB machine with a large carve-out, and `--device-map auto` at long context.
+Resident is weights only. KV capacity follows the configured context and concurrency;
+`--max-gpu-mem` is a ceiling and does not cause caches to fill unused VRAM. DeepSeek wants a 128 GiB machine with a large carve-out, and
+`--device-map auto` at long context.
 Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table
 read off disk per batch, so keep it on the SSD you serve from. Image input requires a checkpoint with a vision tower; DeepSeek V4 is text-only.
 
 GLM-5.3-Flash has separate plain and `glm5.3-flash-iq2-xxs-mtp` recipes; the latter enables
 MTP k=2 using the NextN head embedded in the same four GGUF shards. Both use automatic host
-expert placement, GPU utilization 0.95, BF16 KV, one request slot and the tested 227328-token
-context capacity. GLM image input is not implemented, so these recipes download only text weights.
+expert placement, GPU utilization 0.95, BF16 KV and four request slots. Context is selected by
+the capacity planner and printed after loading. GLM image input is not implemented, so these
+recipes download only text weights.
 
 MiniCPM-V 4.7 supports text, single and multiple images, and high-resolution image slices.
 Its image processor needs `transformers>=5.18` and `torchvision`. The recipe includes the projector and the

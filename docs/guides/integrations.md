@@ -36,6 +36,6 @@ snowllm pi --port 8000
 snowllm pi --host 192.168.1.10 --port 8000
 ```
 
-This writes the recipe models to `~/.pi/agent/models.json`. `--host` defaults to `localhost`; use the inference server's port.
+Load a recipe model first. This reads its actual context from `/v1/models` and writes the running recipe model to `~/.pi/agent/models.json`; it does not guess context from recipe defaults. `--host` defaults to `localhost`; use the inference server's port. Run the command again after loading a different model or changing its capacity settings.
 
 For LAN access, serve with `--host 0.0.0.0`. Model management uses a separate listener; see [Web UI](../webui).
