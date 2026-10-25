@@ -28,11 +28,54 @@ def context_len(r: Request) -> int:
 
 
 class DSparkScheduling:
+    windowed = False
+
     def _draft_table(self, batch: list[Request]) -> torch.Tensor:
         for r in batch:
             if not self.grow(r, 0):
                 raise RuntimeError("draft KV pool exhausted")
         return self.draft_tables([r.draft_blocks for r in batch])
+
+    def _write_ctx(self, rows: int | list[int], seqs: list[int], cache_pos: list[int],
+                   rope_pos: list[int], bt: torch.Tensor) -> None:
+        if not rows:
+            return
+        if self.windowed:
+            capacity = self.max_blocks_per_seq * self.runner.block_size
+            cache_pos = [p % capacity for p in cache_pos]
+        with self.runner.arena.frame():
+            taps = self.runner.taps
+            if isinstance(rows, int):
+                selected = taps[:rows]
+            else:
+                selected = ops.gather_rows(taps, i64(rows),
+                                           out=self.runner.draft_taps[:len(rows)])
+            feat = self.draft.context_feature(selected)
+            self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
+                                     ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
+                                                       self.runner.block_size))
+
+    def _store_proposals(self, batch, drafts, confidence):
+        for i, (r, row) in enumerate(zip(batch, drafts)):
+            if self.adaptive:
+                self.confidence[r] = confidence[i]
+            elif confidence is not None:
+                product = 1.0
+                for j, value in enumerate(confidence[i]):
+                    product *= value
+                    if product < self.p_min:
+                        row = row[:j]
+                        break
+            r.drafts = row
+
+    def after_decode(self, batch: list[Request], pos: list[int]) -> None:
+        bt = self._draft_table(batch)
+        B = len(batch)
+        self._write_ctx(B, list(range(B)), list(pos),
+                        [p + r.pos_delta for p, r in zip(pos, batch)], bt)
+        for r in batch:
+            self.confidence.pop(r, None)
+        self.scheduler.reset()
 
     def init_adaptive(self, adaptive, p_min, has_confidence):
         if adaptive and not has_confidence:
@@ -561,17 +604,7 @@ class DFlashDecoder(DSparkScheduling):
         count = self.block if self.dspark else self.block - 1
         drafts = self.d_draft[:len(batch), :count].tolist()
         confidence = self.d_conf[:len(batch)].tolist() if self.p_min > 0 or self.adaptive else None
-        for i, (r, row) in enumerate(zip(batch, drafts)):
-            if self.adaptive:
-                self.confidence[r] = confidence[i]
-            elif confidence is not None:
-                product = 1.0
-                for j, value in enumerate(confidence[i]):
-                    product *= value
-                    if product < self.p_min:
-                        row = row[:j]
-                        break
-            r.drafts = row
+        self._store_proposals(batch, drafts, confidence)
         if self.sampling is not None:
             self.sampling.remember(batch, drafts)
 
@@ -614,16 +647,6 @@ class DFlashDecoder(DSparkScheduling):
             self.runner.n_draft_eager += 1
         self._proposals(batch)
 
-    def _write_ctx(self, n: int | list[int], seqs: list[int], cache_pos: list[int],
-                   rope_pos: list[int], bt: torch.Tensor) -> None:
-        with self.runner.arena.frame():
-            taps = self.runner.taps
-            feat = self.draft.context_feature(taps[:n] if isinstance(n, int)
-                else ops.gather_rows(taps, i64(n), out=self.runner.draft_taps[:len(n)]))
-            self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
-                                     ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
-                                                       self.runner.block_size))
-
     def after_prefill(self, r: Request, lo: int, hi: int, M: int, propose: bool) -> None:
         bt = self._draft_table([r])
         n = hi - lo
@@ -635,13 +658,7 @@ class DFlashDecoder(DSparkScheduling):
             self._proposals([r])
 
     def after_decode(self, batch: list[Request], pos: list[int]) -> None:
-        bt = self._draft_table(batch)
-        B = len(batch)
-        self._write_ctx(B, list(range(B)), list(pos),
-                        [p + r.pos_delta for p, r in zip(pos, batch)], bt)
-        for r in batch:
-            self.confidence.pop(r, None)
-        self.scheduler.reset()
+        super().after_decode(batch, pos)
         if self.sampling is not None:
             for r in batch:
                 self.sampling.release(r)

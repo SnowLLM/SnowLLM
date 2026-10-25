@@ -128,6 +128,10 @@ class Dsv4Runner(GraphRunner):
     def arena(self) -> ops.Arena:
         return self.walker.arena
 
+    @property
+    def taps(self):
+        return self.walker.taps
+
     def _act_statics(self, chunk: int) -> int:
         return self._arena_after() + self.resources.outputs.bytes_for(chunk)
 

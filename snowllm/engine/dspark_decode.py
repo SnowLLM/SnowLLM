@@ -115,15 +115,6 @@ class DSparkDecoder(DSparkScheduling):
         if propose and not r.done:
             self._block([r], bt)
 
-    def after_decode(self, batch: list[Request], pos: list[int]) -> None:
-        bt = self._draft_table(batch)
-        B = len(batch)
-        self._write_ctx(B, list(range(B)), list(pos),
-                        [p + r.pos_delta for p, r in zip(pos, batch)], bt)
-        for r in batch:
-            self.confidence.pop(r, None)
-        self.scheduler.reset()
-
     def grow(self, r: Request, rows: int) -> bool:
         need = (self.max_blocks_per_seq if self.windowed else
                 ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
@@ -133,21 +124,6 @@ class DSparkDecoder(DSparkScheduling):
                 return False
             r.draft_blocks += more
         return True
-
-    def _write_ctx(self, rows: int | list[int], seqs: list[int], cache_pos: list[int],
-                   rope_pos: list[int], bt: torch.Tensor) -> None:
-        if not rows:
-            return
-        taps = self.runner.walker.taps
-        if self.windowed:
-            capacity = self.max_blocks_per_seq * self.runner.block_size
-            cache_pos = [p % capacity for p in cache_pos]
-        with self.runner.arena.frame():
-            feat = self.draft.context_feature(
-                taps[:rows] if isinstance(rows, int) else ops.gather_rows(taps,i64(rows)))
-            self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
-                                     ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
-                                                       self.runner.block_size))
 
     def _block(self, batch: list[Request], bt: torch.Tensor) -> None:
         B, blk = len(batch), self.block
@@ -175,19 +151,4 @@ class DSparkDecoder(DSparkScheduling):
         base = self.draft.stack.lm_head(self.runner.arena, hid, self.dlogits)
         conf = None if self.dconf is None else self.dconf[:B]
         drafts = self.draft.markov(base, i64([r.last for r in batch]), blk, pre, conf)
-        if conf is None:
-            for r, row in zip(batch, drafts.tolist()):
-                r.drafts = row
-            return
-        for r, row, cs in zip(batch, drafts.tolist(), conf.tolist()):
-            if self.adaptive:
-                self.confidence[r] = cs
-                r.drafts = row
-                continue
-            n, acc = blk, 1.0
-            for i, c in enumerate(cs):
-                acc *= c
-                if acc < self.p_min:
-                    n = i
-                    break
-            r.drafts = row[:n]
+        self._store_proposals(batch, drafts.tolist(), None if conf is None else conf.tolist())

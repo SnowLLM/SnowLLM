@@ -216,7 +216,8 @@ class Dsv4Resources(ResourceSet):
         self.r = r = runner
         self.cache = self.add(self.allocate_cache, [(r, ('cache',))])
         self.outputs = self.add(self.allocate_outputs,
-            [(r, ('logits', 'draft_context_ws', 'draft_markov_ws')), (r.walker, ('taps',))])
+            [(r, ('logits', 'draft_taps', 'draft_context_ws', 'draft_markov_ws')),
+             (r.walker, ('taps',))])
         self.checkpoints = self.add(self.allocate_checkpoints, [(r, ('checkpoint_buffer',))])
         self.support = ()
 
@@ -251,9 +252,10 @@ class Dsv4Resources(ResourceSet):
         r.walker.taps = (tensor(slabs, (tap_rows, r.num_taps*r.geo.hidden), torch.bfloat16)
                          if r.num_taps else None)
         from ..models.geometry import DSparkGeometry
-        r.draft_context_ws = r.draft_markov_ws = None
+        r.draft_taps = r.draft_context_ws = r.draft_markov_ws = None
         if isinstance(r.draft_geo, DSparkGeometry):
             g = r.draft_geo
+            r.draft_taps = tensor(slabs, (r.max_num_seqs*r.T, g.fc_k), torch.bfloat16)
             context = (0 if g.stack.v41 else
                        ops.dspark_context_workspace_bytes(tap_rows, g.stack.hidden, g.fc_k))
             markov = ops.dspark_markov_workspace_bytes(r.max_num_seqs, g.stack.vocab_size,

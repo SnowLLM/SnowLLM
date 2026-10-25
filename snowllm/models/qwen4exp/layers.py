@@ -10,7 +10,7 @@ from ... import ops
 from ...engine.forward_context import ForwardContext, Qwen4ExpContext
 from ...trace import span
 from ..geometry import Qwen4ExpGeometry
-from ..projection import pack_bf16, project
+from ..projection import pack_bf16, pack_kquant, project
 from ..qwen3_5.layers import DecoderLayerBase, FullAttention, FusedMoE, GatedDeltaNet
 
 
@@ -32,7 +32,8 @@ class KQuantDense(nn.Module):
     def __init__(self, fmt: int, gguf: torch.Tensor, n: int, k: int) -> None:
         super().__init__()
         self.fmt, self.n, self.k = fmt, n, k
-        self.quant, self.meta = ops.gemm_kquant_shuffle_b(fmt, gguf, n, k)
+        weight = pack_kquant(gguf, fmt, n, k)
+        self.quant, self.meta = weight.quant, weight.meta
 
 
 class HcUp(nn.Module):

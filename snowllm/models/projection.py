@@ -16,6 +16,15 @@ def pack_bf16(weight):
     return ops.gemm_bf16_shuffle_b(weight, n, k), n, k, rows
 
 
+def pack_kquant(raw, fmt, n, k, row0=0):
+    size = ops.kquant_bytes(fmt, n, k)[2]
+    if row0 or raw.numel() != size:
+        stride = ops.kquant_bytes(fmt, 1, k)[2]
+        raw = raw[row0 * stride:row0 * stride + size].contiguous()
+    quant, meta = ops.gemm_kquant_shuffle_b(fmt, raw, n, k)
+    return ops.KQuantProjWeight(quant, meta, fmt)
+
+
 def project(ctx, x, weight, out, n, k, quant=None):
     m = x.shape[0]
     with ctx.arena.frame():

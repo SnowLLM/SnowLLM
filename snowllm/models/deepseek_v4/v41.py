@@ -7,7 +7,7 @@ from torch import nn
 
 from ... import _capi, ops
 from ...ops import deepseek41 as native
-from ..projection import pack_bf16, project
+from ..projection import pack_bf16, pack_kquant, project
 from .compression import mask_stride
 from .layers import Compressor, LMHead, RMSNorm, Rope, VocabEmbedding, _ws
 
@@ -53,8 +53,7 @@ def linear(rd, name, *, fp32=False, which=None):
     n, k = rd.gguf[name].shape
     fmt = rd.gguf[name].quant.name
     if fmt == "Q4_K":
-        quant, meta = ops.gemm_kquant_shuffle_b(4, rd.raw(name), n, k)
-        return Linear(None, n, k, fp32=fp32, quant=ops.KQuantProjWeight(quant, meta, 4), which=which)
+        return Linear(None, n, k, fp32=fp32, quant=pack_kquant(rd.raw(name), 4, n, k), which=which)
     weight, n, k, live = pack_bf16(rd.tensor(name, torch.bfloat16))
     return Linear(weight, n, k, fp32=fp32, fp8=fmt == "FP8_32X32", live=live, which=which)
 
@@ -327,10 +326,10 @@ def load(rd, geo, progress=None, device_map=None, *, target=None):
             name = p + "attn_output_a.weight"
             if rd.gguf[name].quant.name == "Q4_K":
                 raw = rd.raw(name)
-                for group in range(8):
-                    size = ops.kquant_bytes(4, 1024, 4096)[2]
-                    quant, meta = ops.gemm_kquant_shuffle_b(4, raw[group * size:(group + 1) * size], 1024, 4096)
-                    o_a.append(Linear(None, 1024, 4096, quant=ops.KQuantProjWeight(quant, meta, 4)))
+                group_k = geo.q_dim // geo.o_groups
+                for group in range(geo.o_groups):
+                    quant = pack_kquant(raw, 4, geo.o_lora_rank, group_k, group * geo.o_lora_rank)
+                    o_a.append(Linear(None, geo.o_lora_rank, group_k, quant=quant))
                 del raw
             else:
                 weight = rd.tensor(name, torch.bfloat16)

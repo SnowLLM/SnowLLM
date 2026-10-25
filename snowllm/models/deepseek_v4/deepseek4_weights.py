@@ -32,13 +32,10 @@ KQUANT = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8}
 
 def _kquant(rd: GGUFReader, which: ops.Dsv4Proj, name: str, n: int, k: int,
             row0: int = 0) -> ProjWeight:
+    from ..projection import pack_kquant
     fmt = KQUANT[rd.gguf[name].quant.name]
-    raw = rd.raw(name)
-    if row0 or raw.numel() != ops.kquant_bytes(fmt, n, k)[2]:
-        stride = ops.kquant_bytes(fmt, 1, k)[2]
-        raw = raw[row0 * stride:(row0 + n) * stride].contiguous()
-    quant, meta = ops.gemm_kquant_shuffle_b(fmt, raw, n, k)
-    return ProjWeight.kquant(which, fmt, quant, meta, n, k)
+    weight = pack_kquant(rd.raw(name), fmt, n, k, row0)
+    return ProjWeight.kquant(which, fmt, weight.quant, weight.meta, n, k)
 
 
 def _f32(rd: GGUFReader, name: str) -> torch.Tensor:
