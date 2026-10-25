@@ -21,6 +21,8 @@ from ._common import (
     zero_bytes,
     synchronize,
 )
+from .fp4_kv import dsv41_fp4_pack, dsv41_fp4_unpack, dsv41_fp4_row_bytes
+from .metadata import copy_tensor, copy_from_host, fill_ranges_
 from .attention_full import (
     paged_attention,
     paged_attention_scratch_bytes,
@@ -139,6 +141,7 @@ from .cache import (
 )
 from .embedding import (
     gather_embedding,
+    gather_embedding_q4_k,
     lm_head_kquant,
     lm_head_kquant_shuffle_weight,
     lm_head,
@@ -175,6 +178,7 @@ from .mlp import (
     mlp_up_shuffle_w_kquant,
     mlp_workspace_bytes,
 )
+from .vq_moe import VQExpertWeight, fused_moe_vq, vq_moe_workspace_bytes
 from .moe import (
     KQuantExpertWeight,
     KQUANT_FORMATS,

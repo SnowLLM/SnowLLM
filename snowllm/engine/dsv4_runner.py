@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
+import ctypes
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,7 @@ from .forward_context import (
 from .host_io import HostArena, host_view
 from .inputs import synthetic_batch
 from .graphs import GraphCase, GraphInputs
-from .resources import ActivationProbe, ActivationReservation, PoolPlan, ProbeGroup, draft_pool_bytes
+from .resources import ActivationProbe, ActivationReservation, PoolPlan, ProbeGroup, draft_pool_bytes, draft_table_blocks, plan_activations
 from .runner import (
     GraphRunner,
     ForwardResult,
@@ -32,15 +33,13 @@ if TYPE_CHECKING:
     from .prefix_cache import Pages, Residue
     from .request import Request
 
-# EMPIRICAL, widest first: 16384 is a measured knee, and 32768 was measured and refused. The
-# ladder and the numbers behind it are in 1c3a9c1.
-PREFILL_CHUNK_CANDIDATES = (16384, 8192, 4096, 2048, 1024, 512)
-
 BF16 = 2
 
 
 class Dsv4Runner(GraphRunner):
-    CHUNK_CANDIDATES = PREFILL_CHUNK_CANDIDATES
+    @property
+    def graphs_enabled(self):
+        return not self.geo.v41 and getattr(self.model, 'moe_cache_store', None) is None
 
     @property
     def host_messages(self) -> bool:
@@ -50,12 +49,24 @@ class Dsv4Runner(GraphRunner):
     def _input_scope(self):
         if self.inputs is not None and self.cache.plan.messages is None:
             self.cache.plan.messages = HostArena()
+            for ratio, width in self.cache.plan.table_cap.items():
+                self.cache.plan.messages.reserve(("compression_table", ratio),
+                                                 self.max_num_seqs * max(1, width), torch.int32)
         messages = self.cache.plan.messages
         with super()._input_scope(), (messages.reading() if messages is not None
                                      else contextlib.nullcontext()):
             yield
 
     def _configure(self):
+        if self.geo.v41:
+            if self.max_num_seqs != 1:
+                raise SnowLLMError("DeepSeek V4.1 currently requires --max-num-seqs 1")
+            if (self.num_spec or self.tap_layers) and not getattr(getattr(self.draft_geo, "stack", None), "v41", False):
+                raise SnowLLMError("DeepSeek V4.1 speculation requires its native DSpark towers")
+            if any(i < max(self.geo.kv_source_layers) or i >= self.geo.num_layers for i in self.tap_layers):
+                raise SnowLLMError("DeepSeek V4.1 DSpark taps must be decoder layer inputs")
+            if self.prefix_memory_ratio:
+                raise SnowLLMError("DeepSeek V4.1 currently requires --prefix-memory-ratio 0")
         if self.num_spec and not self.tap_layers:
             raise SnowLLMError(
                 f"num_spec={self.num_spec}: this checkpoint ships no MTP head of its own. Its drafter "
@@ -94,16 +105,24 @@ class Dsv4Runner(GraphRunner):
 
     def _pool_plan(self, graph_bytes):
         return PoolPlan(self._cache_bytes, self.ctx_cap,
-            requested=self._want_blocks*self.block_size if self._want_blocks is not None else None,
+            requested=self._cache_blocks()*self.block_size,
             maximum=self.max_num_seqs*self.ctx_cap if self._want_blocks is None else None,
             checkpoint_bytes=self.resources.checkpoint_bytes() if self.prefix_memory_ratio else 0,
-            future_bytes=graph_bytes)
+            future_bytes=graph_bytes, minimum_snapshots=2*self.max_num_seqs)
 
     def _allocate_pools(self, tokens):
         self.tokens = tokens
         self._take_cache()
         self.resources.checkpoints.allocate(self.prefix_slots)
         self.draft_blocks = ops.kv_blocks_for(tokens, self.block_size) if self.draft_geo else 0
+        if getattr(getattr(self.draft_geo, "stack", None), "v41", False):
+            self.draft_blocks = self._draft_pool_blocks(0)
+
+    def _draft_pool_blocks(self, blocks):
+        if getattr(getattr(self.draft_geo, "stack", None), "v41", False):
+            return self.max_num_seqs * draft_table_blocks(
+                self.draft_geo, self.ctx_cap, self.num_spec, self.block_size)
+        return super()._draft_pool_blocks(blocks)
 
     @property
     def arena(self) -> ops.Arena:
@@ -112,13 +131,31 @@ class Dsv4Runner(GraphRunner):
     def _act_statics(self, chunk: int) -> int:
         return self._arena_after() + self.resources.outputs.bytes_for(chunk)
 
+    def act_bytes_for(self, rows: int) -> int:
+        if not self.geo.v41:
+            return super().act_bytes_for(rows)
+        if rows not in self._act:
+            previous = self.walker.arena
+            arena = self.walker.arena = ops.Arena()
+            try:
+                with self._activation_scope(rows) as allocation:
+                    plan_activations(arena, allocation.groups)
+                self._act[rows] = (max(arena.high, arena.planner.high) + self._act_statics(rows)
+                                   + allocation.outside_bytes)
+            finally:
+                self.walker.arena = previous
+        return self._act[rows]
+
     def _arena_after(self) -> int:
         return self.lm_rows * self.geo.hidden * BF16
 
     def fixed_bytes(self, chunk: int) -> int:
-        return (self.resources.cache.bytes_for(self.ctx_cap, chunk)
-                + draft_pool_bytes(self.draft_geo, self._draft_pool_blocks(self.max_blocks_per_seq), self.block_size)
-                + (self.resources.checkpoint_bytes() if self.prefix_memory_ratio else 0))
+        tokens = self._cache_blocks()*self.block_size
+        return (self.resources.cache.bytes_for(tokens, chunk)
+                + draft_pool_bytes(self.draft_geo,
+                    self._draft_pool_blocks(ops.kv_blocks_for(tokens, self.block_size)), self.block_size)
+                + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
+                   if self.prefix_memory_ratio else 0))
 
     def _loading_cache_bytes(self, rows: int) -> int:
         return self.resources.cache.bytes_for(self._capture_tokens(), rows)
@@ -129,7 +166,8 @@ class Dsv4Runner(GraphRunner):
         if self.tap_layers:
             self.walker.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
         try:
-            with self.resources.cache.temporary(chunk+sweep, chunk, sweep, probe=True):
+            tokens = max(chunk + sweep, 3 * chunk, self.geo.sliding_window) if self.geo.v41 else chunk + sweep
+            with self.resources.cache.temporary(tokens, chunk, sweep, probe=True):
                 yield self.cache
         finally:
             self.walker.tap_at = was
@@ -158,12 +196,14 @@ class Dsv4Runner(GraphRunner):
 
     def _activation_groups(self, cache, chunk, widths):
         pos = 0
-        def probes(rows, steps, picked=None):
+        def probes(rows, steps, picked=None, stage="full"):
             nonlocal pos
             for _ in range(steps):
                 b = cache.plan.batch(torch.zeros(rows, dtype=torch.int64, device='cuda'),
                     torch.arange(pos, pos+rows, dtype=torch.int64, device='cuda'),
                     [pos], [rows], [0], last_row=picked)
+                b.ced_stage = stage
+                b.is_prefill = stage != "full" if self.geo.v41 else b.is_prefill
                 ctx = self.walker.context(self.model, b, cache)
                 pos += rows
                 yield ActivationProbe(ctx.plan_key, rows, lambda: self.model(ctx))
@@ -171,7 +211,23 @@ class Dsv4Runner(GraphRunner):
         for last in (None, picked):
             cache.reset(0)
             pos = 0
-            yield ProbeGroup(probes(chunk, 1, last))
+            yield ProbeGroup(probes(chunk, 3 if self.geo.v41 else 1, last,
+                                    "encoder" if self.geo.v41 else "full"))
+        if self.geo.v41:
+            cache.reset(0)
+            last = self.geo.sliding_window - 1
+            cache.plan.batch(torch.zeros(last, dtype=torch.int64, device="cuda"),
+                torch.arange(last, dtype=torch.int64, device="cuda"), [0], [last], [0])
+            pos = last
+            yield ProbeGroup(probes(1, 1, torch.zeros(1, dtype=torch.int32, device="cuda"), "encoder"))
+            for rows in (1, self.geo.sliding_window):
+                cache.reset(0)
+                pos = 0
+                selected = torch.full((1,), rows - 1, dtype=torch.int32, device="cuda")
+                yield ProbeGroup(probes(rows, 1, selected, "replay"))
+            cache.reset(0)
+            cache.plan.batch(torch.zeros(chunk, dtype=torch.int64, device="cuda"),
+                torch.arange(chunk, dtype=torch.int64, device="cuda"), [0], [chunk], [0])
         pos = chunk
         for rows in widths:
             yield ProbeGroup(probes(rows, self.DECODE_PHASE_STEPS if self.plan_activations else 1),
@@ -210,6 +266,9 @@ class Dsv4Runner(GraphRunner):
                               b.block_tables, b.slot_mapping[:n], b.last_row, spec=spec,
                               is_prefill=b.is_prefill)
         db.need_logits = b.need_logits
+        db.host_ids = b.host_ids
+        if self.geo.v41 and b.is_prefill:
+            db.ced_stage = "encoder"
         if b.is_prefill:
             return db, None
         return db, (len(lens), n, db.total_q_blocks,
@@ -223,6 +282,12 @@ class Dsv4Runner(GraphRunner):
         if self.plan_activations:
             self.walker.plan_for(self.model, ctx, self.arena_after)
         hidden = self.model(ctx)
+        if ctx.batch.ced_stage == "encoder" and ctx.batch.need_logits:
+            batch = self.cache.plan.ced.batch(ctx.batch)
+            ctx = self.walker.context(self.model, batch, self.cache)
+            if self.plan_activations:
+                self.walker.plan_for(self.model, ctx, self.arena_after)
+            hidden = self.model(ctx)
         out = self.logits[:hidden.shape[0]]
         if ctx.batch.need_logits:
             with span("lm_head"):
@@ -247,7 +312,12 @@ class Dsv4Runner(GraphRunner):
     def _spans(self, b: Batch) -> tuple[list[int], list[int], list[int]]:
         state = b.state_indices[:b.batch_size]
         host = host_view(state)
-        slots = (state if host is None else host).tolist()
+        if host is None:
+            slots = state.tolist()
+        else:
+            scalar = {torch.int32: ctypes.c_int32, torch.int64: ctypes.c_int64}[host.dtype]
+            slots = [scalar.from_address(host.data_ptr()+i*host.stride(0)*host.element_size()).value
+                     for i in range(host.numel())]
         bad = [s for s in slots if not 0 <= s < self.max_num_seqs]
         if bad:
             raise SnowLLMError(f"state slot {bad[0]} is outside [0, {self.max_num_seqs}); this "
@@ -294,7 +364,7 @@ class Dsv4Runner(GraphRunner):
         return synthetic_batch([c]*B, bt.shape[1],
             positions=positions([p for _, p in rows]), slot_mapping=slot_mapping(bt, rows, self.block_size),
             block_tables=bt, state_indices=list(range(slot, slot+B)),
-            last_row=[(i+1)*c-1 for i in range(B)], is_prefill=True, need_logits=False)
+            last_row=[(i+1)*c-1 for i in range(B)], is_prefill=True, need_logits=self.geo.v41)
 
     def _warm_decode(self, B, T, c, bt, lengths=()):
         lengths = list(lengths) if lengths else [T]*B

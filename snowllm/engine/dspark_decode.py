@@ -35,6 +35,7 @@ class DSparkDecoder(DSparkScheduling):
         self.block = max(block or 0, self.geo.block_size)
         self.mask = self.geo.mask_token_id
         self.max_blocks_per_seq = max_blocks_per_seq
+        self.windowed = self.geo.stack.v41
         self.p_min = p_min if draft.conf_proj is not None else 0.0
         self.init_adaptive(adaptive, p_min, draft.conf_proj is not None)
 
@@ -103,6 +104,10 @@ class DSparkDecoder(DSparkScheduling):
         self._block([batch[i] for i in live], ops.gather_rows(bt,i64(live)) if len(live) < len(batch) else bt)
 
     def after_prefill(self, r: Request, lo: int, hi: int, M: int, propose: bool) -> None:
+        if self.windowed:
+            if not propose:
+                return
+            lo = max(0, hi - self.geo.stack.sliding_window)
         bt = self._draft_table([r])
         n = hi - lo
         self._write_ctx(n, [0] * n, list(range(lo, hi)),
@@ -120,7 +125,8 @@ class DSparkDecoder(DSparkScheduling):
         self.scheduler.reset()
 
     def grow(self, r: Request, rows: int) -> bool:
-        need = ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size)
+        need = (self.max_blocks_per_seq if self.windowed else
+                ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
         while need > len(r.draft_blocks):
             more = self.blocks.alloc(1)
             if more is None:
@@ -128,17 +134,14 @@ class DSparkDecoder(DSparkScheduling):
             r.draft_blocks += more
         return True
 
-    def _draft_table(self, batch: list[Request]) -> torch.Tensor:
-        for r in batch:
-            if not self.grow(r, 0):
-                raise RuntimeError("draft KV pool exhausted")
-        return self.draft_tables([r.draft_blocks for r in batch])
-
     def _write_ctx(self, rows: int | list[int], seqs: list[int], cache_pos: list[int],
                    rope_pos: list[int], bt: torch.Tensor) -> None:
         if not rows:
             return
         taps = self.runner.walker.taps
+        if self.windowed:
+            capacity = self.max_blocks_per_seq * self.runner.block_size
+            cache_pos = [p % capacity for p in cache_pos]
         with self.runner.arena.frame():
             feat = self.draft.context_feature(
                 taps[:rows] if isinstance(rows, int) else ops.gather_rows(taps,i64(rows)))
@@ -154,6 +157,14 @@ class DSparkDecoder(DSparkScheduling):
         self.runner.model.embed(ids, self.noise[:M])
         rope = positions([c[i] + t + batch[i].pos_delta
                           for i in range(B) for t in range(blk)])[0].contiguous()
+        if self.windowed:
+            page = self.runner.block_size
+            first = [max(0, (p - self.geo.stack.sliding_window) // page) for p in c]
+            bt = self.draft_tables([
+                [r.draft_blocks[(start + j) % len(r.draft_blocks)]
+                 for j in range(ops.kv_blocks_for(p - start * page + blk, page))]
+                for r, p, start in zip(batch, c, first)])
+            c = [p - start * page for p, start in zip(c, first)]
         slots = ops.resolve_slots(
             bt, i32([i for i in range(B) for _ in range(blk)]),
             i32([c[i] + t for i in range(B) for t in range(blk)]), self.runner.block_size)

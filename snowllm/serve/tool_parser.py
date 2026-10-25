@@ -12,15 +12,15 @@ DSML_OPEN = "<｜DSML｜tool_calls>"
 _BLOCK = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FUNC = re.compile(r"<function=(.*?)>", re.DOTALL)
 _PARAM = re.compile(r"<parameter=(?P<name>.*?)>\n(?P<value>.*?)\n</parameter>", re.DOTALL)
-_DSML_BLOCK = re.compile(r"(<｜DSML｜invoke name=.*?)</｜DSML｜invoke>", re.DOTALL)
+_DSML_BLOCK = re.compile(r"(<(?:｜DSML｜ ?)?invoke name=.*?)</(?:｜DSML｜ ?)?invoke>", re.DOTALL)
 _TAGGED_FUNC = re.compile(r"^\s*([A-Za-z_][\w.:-]*)\s*(?=<arg_key>|$)", re.DOTALL)
 _TAGGED_PARAM = re.compile(r"<arg_key>(?P<name>.*?)</arg_key>\s*"
                            r"<arg_value>(?P<value>.*?)</arg_value>", re.DOTALL)
-_DSML_FUNC = re.compile(r"<｜DSML｜invoke name=\"(.*?)\">", re.DOTALL)
-_DSML_PARAM = re.compile(r"<｜DSML｜parameter name=\"(?P<name>.*?)\" "
+_DSML_FUNC = re.compile(r"<(?:｜DSML｜ ?)?invoke name=\"(.*?)\">", re.DOTALL)
+_DSML_PARAM = re.compile(r"<(?:｜DSML｜ ?)?parameter name=\"(?P<name>.*?)\" "
                          r"string=\"(?P<string>true|false)\">(?P<value>.*?)"
-                         r"</｜DSML｜parameter>", re.DOTALL)
-_BLOCKS = {TOOL_OPEN: _BLOCK, DSML_OPEN: _DSML_BLOCK}
+                         r"</(?:｜DSML｜ ?)?parameter>", re.DOTALL)
+_BLOCKS = {TOOL_OPEN: _BLOCK, DSML_OPEN: _DSML_BLOCK, "<｜DSML｜ calls>": _DSML_BLOCK}
 _FORMATS = ((_DSML_FUNC, _DSML_PARAM), (_FUNC, _PARAM), (_TAGGED_FUNC, _TAGGED_PARAM))
 
 

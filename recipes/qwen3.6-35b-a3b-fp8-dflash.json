@@ -26,7 +26,8 @@
     }
   ],
   "defaults": {
-    "dflash": "@model/dflash"
+    "dflash": "@model/dflash",
+    "max_num_seqs": 4
   },
   "priority": 60,
   "summary": "Qwen3.6-35B-A3B in FP8 with an external DFlash drafter.",

@@ -259,10 +259,12 @@ def load_moe(w: "Weights", lp: str, stg: Staging, geo: ModelGeometry,
     w.read(p + "shared_expert.gate_proj.weight", out=stg.gate_up[E, :I])
     w.read(p + "shared_expert.up_proj.weight", out=stg.gate_up[E, I:])
     w.read(p + "shared_expert.down_proj.weight", out=stg.down[E])
-    with placement.place(dmap, "experts", layer):
-        return FusedMoE(router_w=ops.moe_shuffle_router(router(w, p)),
-                        gate_up_w=ops.moe_shuffle_gate_up_fused(stg.gate_up),
-                        down_w=ops.moe_shuffle_down(stg.down))
+    with placement.place(dmap, "experts.gate_up", layer):
+        gate_up = ops.moe_shuffle_gate_up_fused(stg.gate_up)
+    with placement.place(dmap, "experts.down", layer):
+        down = ops.moe_shuffle_down(stg.down)
+    return FusedMoE(router_w=ops.moe_shuffle_router(router(w, p)),
+                    gate_up_w=gate_up, down_w=down)
 
 
 def load_moe_fp8(w: "Weights", lp: str, stg: Staging, geo: ModelGeometry,
@@ -279,9 +281,10 @@ def load_moe_fp8(w: "Weights", lp: str, stg: Staging, geo: ModelGeometry,
         w.read(ep + "down_proj.weight", out=stg.down8[e])
         w.read(ep + "down_proj.weight_scale_inv", out=stg.down_s[e])
 
-    with placement.place(dmap, "experts", layer):
+    with placement.place(dmap, "experts.gate_up", layer):
         gate_up_w = ops.moe_shuffle_gate_up_fp8(stg.gate8, stg.up8)
         gu_scale = ops.moe_scale_shuffle_gate_up_fp8(stg.gate_s, stg.up_s)
+    with placement.place(dmap, "experts.down", layer):
         down_w = ops.moe_shuffle_down_fp8(stg.down8)
         dn_scale = ops.moe_scale_shuffle_down_fp8(stg.down_s)
     return FusedMoE(router_w=ops.moe_shuffle_router(router(w, p)), gate_up_w=gate_up_w,
@@ -306,10 +309,11 @@ def load_moe_kquant(w: "Weights", lp: str, stg: Staging, geo: ModelGeometry,
                     layer: int | None = None) -> FusedMoE:
     p = lp + "mlp."
     E, I = geo.moe_num_experts, geo.moe_inter
-    with placement.place(dmap, "experts", layer):
+    with placement.place(dmap, "experts.gate_up", layer):
         gate_blocks, up_blocks = w.blocks(p + "experts.gate_up_proj")
         gate_up = ops.moe_kquant_shuffle_gate_up(gate_blocks, up_blocks,
                                                  w.kquant_format(p + "experts.gate_up_proj"), E)
+    with placement.place(dmap, "experts.down", layer):
         down_blocks, = w.blocks(p + "experts.down_proj")
         down = ops.moe_kquant_shuffle_down(down_blocks,
                                            w.kquant_format(p + "experts.down_proj"), E)

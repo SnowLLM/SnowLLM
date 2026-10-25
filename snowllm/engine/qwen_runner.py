@@ -21,9 +21,6 @@ if TYPE_CHECKING:
     from .prefix_cache import Residue
 
 
-PREFILL_CHUNK_CANDIDATES = (32768, 16384, 8192)
-
-
 class QwenRunner(GraphRunner):
     tunable_rope = True
     GRAPH_FIELDS = (*GraphRunner.GRAPH_FIELDS, 'q_block_map')
@@ -37,7 +34,6 @@ class QwenRunner(GraphRunner):
         from .prefix_cache import LinearResidue, NoResidue
         return LinearResidue(self.linear_mods) if self.linear_mods else NoResidue()
 
-    CHUNK_CANDIDATES = PREFILL_CHUNK_CANDIDATES
 
     def _configure(self):
         self.drafting = self.model.mtp is not None or bool(self.tap_layers)
@@ -83,10 +79,10 @@ class QwenRunner(GraphRunner):
     def _pool_plan(self, graph_bytes):
         each = self._checkpoint_bytes() if self.prefix_memory_ratio else 0
         grows = self._cache_bytes(1) > self._cache_bytes(0)
-        return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._want_blocks,
+        return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._cache_blocks(),
                         maximum=None if grows else self.max_blocks_per_seq*self.max_num_seqs,
                         checkpoint_bytes=each, future_bytes=graph_bytes,
-                        unit_tokens=self.block_size)
+                        minimum_snapshots=2*self.max_num_seqs)
 
     def _allocate_pools(self, blocks):
         self.num_kv_blocks = blocks
@@ -123,8 +119,9 @@ class QwenRunner(GraphRunner):
     def fixed_bytes(self, chunk: int = 0) -> int:
         return (self.resources.states.bytes_for() + self.resources.statics.bytes_for()
                 + self.resources.messages.bytes_for()
-                + self._cache_bytes(self.max_blocks_per_seq)
-                + (self._checkpoint_bytes() if self.prefix_memory_ratio else 0))
+                + self._cache_bytes(self._cache_blocks())
+                + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
+                   if self.prefix_memory_ratio else 0))
 
     @contextlib.contextmanager
     def _walk_scope(self, rows: int) -> Iterator[Callable[[], torch.Tensor]]:

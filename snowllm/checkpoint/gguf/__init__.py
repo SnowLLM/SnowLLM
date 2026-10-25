@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import mmap
+import bisect
 import pathlib
 import re
 import struct
@@ -69,6 +70,8 @@ TYPES = {
     39: Quant("MXFP4", 32, 17),
     40: Quant("NVFP4", 64, 36),
     41: Quant("Q1_0", 128, 18),
+    42: Quant("VQ", 1, 1),
+    44: Quant("FP8_32X32", 1024, 1025),
 }
 
 
@@ -82,7 +85,12 @@ class Tensor:
         self.numel = 1
         for d in dims:
             self.numel *= d
-        self.nbytes = quant.nbytes(self.numel)
+        if quant.name == "FP8_32X32":
+            if len(dims) != 2:
+                raise SnowLLMError(f"{name}: FP8_32X32 requires a matrix")
+            self.nbytes = self.numel + -(-dims[0] // 32) * -(-dims[1] // 32)
+        else:
+            self.nbytes = quant.nbytes(self.numel)
 
     @property
     def rows(self) -> int:
@@ -136,14 +144,23 @@ class _Cursor:
 
 
 _SPLIT_RE = re.compile(r"^(?P<stem>.+)-(?P<no>\d{5})-of-(?P<total>\d{5})\.gguf$")
+_RANGE_RE = re.compile(r"^(?P<stem>.+\.gguf)\.part(?P<no>\d+)-of-(?P<total>\d+)$")
 
 
 def part_number(name: str) -> int | None:
-    m = _SPLIT_RE.match(name)
+    m = _SPLIT_RE.match(name) or _RANGE_RE.match(name)
     return int(m["no"]) if m else None
 
 
 def split_parts(path: pathlib.Path) -> list[pathlib.Path]:
+    if m := _RANGE_RE.match(path.name):
+        total, width = int(m["total"]), len(m["no"])
+        parts = [path.with_name(f"{m['stem']}.part{i:0{width}d}-of-{m['total']}")
+                 for i in range(1, total + 1)]
+        missing = [p.name for p in parts if not p.is_file()]
+        if missing:
+            raise SnowLLMError(f"{path.name}: missing byte-range parts: {', '.join(missing[:3])}")
+        return parts
     m = _SPLIT_RE.match(path.name)
     if not m:
         return [path]
@@ -162,11 +179,15 @@ class GGUF:
     def __init__(self, path: str | pathlib.Path) -> None:
         self.path = pathlib.Path(path)
         self.parts = split_parts(self.path)
+        self.byte_ranges = _RANGE_RE.match(self.path.name) is not None
+        self._ends = []
+        for p in self.parts:
+            self._ends.append((self._ends[-1] if self._ends else 0) + p.stat().st_size)
         self.kv: dict = {}
         self.tensors: dict[str, Tensor] = {}
         self.data_start: list[int] = []
         self._part: dict[str, int] = {}
-        for i, p in enumerate(self.parts):
+        for i, p in enumerate(self.parts[:1] if self.byte_ranges else self.parts):
             with open(p, "rb") as f:
                 mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
             buf = memoryview(mm)
@@ -218,6 +239,12 @@ class GGUF:
         self.data_start.append(c.at + (-c.at % alignment))
 
     def _check_split(self) -> None:
+        if self.byte_ranges:
+            end = max((self.data_start[0] + t.offset + t.nbytes for t in self.tensors.values()),
+                      default=self.data_start[0])
+            if end > self._ends[-1]:
+                raise SnowLLMError(f"{self.path.name}: byte-range GGUF is truncated")
+            return
         if len(self.parts) == 1:
             return
         want = int(self.kv.get("split.count", len(self.parts)))
@@ -238,6 +265,33 @@ class GGUF:
 
     def file_offset(self, name: str) -> int:
         return self.data_start[self._part[name]] + self[name].offset
+
+    def ranges(self, name: str, offset: int = 0, count: int | None = None):
+        t = self[name]
+        count = t.nbytes - offset if count is None else count
+        if offset < 0 or count < 0 or offset + count > t.nbytes:
+            raise SnowLLMError(f"{name}: read exceeds tensor payload")
+        at = self.file_offset(name) + offset
+        if not self.byte_ranges:
+            yield self.file_of(name), at, count
+            return
+        while count:
+            part = bisect.bisect_right(self._ends, at)
+            start = self._ends[part - 1] if part else 0
+            size = min(count, self._ends[part] - at)
+            yield self.parts[part], at - start, size
+            at, count = at + size, count - size
+
+    def read(self, name: str, offset: int = 0, count: int | None = None) -> bytes:
+        result = bytearray()
+        for path, at, size in self.ranges(name, offset, count):
+            with path.open("rb") as file:
+                file.seek(at)
+                data = file.read(size)
+            if len(data) != size:
+                raise SnowLLMError(f"{path.name}: truncated tensor {name}")
+            result.extend(data)
+        return bytes(result)
 
     def __contains__(self, name: str) -> bool:
         return name in self.tensors
@@ -266,6 +320,11 @@ class GGUF:
         split = f", {len(self.parts)} parts" if len(self.parts) > 1 else ""
         return (f"<GGUF {self.path.name} v{self.version} {self.arch} "
                 f"{len(self.tensors)} tensors, {len(self.kv)} kv{split}>")
+
+
+def optional_int(g: GGUF, key: str) -> int | None:
+    value = g.get(key)
+    return None if value is None else int(value)
 
 
 def summarize(g: GGUF) -> str:

@@ -13,6 +13,7 @@ import torch
 
 from .. import models, term
 from .._capi import SnowLLMError
+from ..capacity import placement_options
 from .reader import Reader
 
 if TYPE_CHECKING:
@@ -128,8 +129,8 @@ def load_vision(w: WeightSource, vision_config: dict | None) -> "VisionModel | N
 
 
 def is_gguf(root: pathlib.Path) -> bool:
-    from .gguf.source import gguf_dir
-    return not (root / "config.json").exists() and any(gguf_dir(root).glob("*.gguf"))
+    from .gguf.source import gguf_dir, models_in
+    return not (root / "config.json").exists() and bool(models_in(gguf_dir(root)))
 
 
 def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[int, ...]]":
@@ -210,14 +211,21 @@ def load_processor(root: pathlib.Path, tok: "PreTrainedTokenizerBase") -> "Proce
 
 def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int | None = None,
          mtp: bool = True, vision: bool = True, device_map: str = "",
-         kv: dict | None = None) -> "TargetModel":
+         kv: dict | None = None, moe_cache_experts: int = 0,
+         moe_cache_mode: str = 'all', disk_offload: int | str | None = None,
+         host_offload: int | str | None = None) -> "TargetModel":
     root = pathlib.Path(path)
     if is_gguf(root):
         return load_gguf(root, layers=layers, mtp=mtp, vision=vision, device_map=device_map,
-                         kv=kv)
-    if device_map:
-        raise SnowLLMError(f"--device-map is a GGUF-only placement today and {root} is a "
-                           f"safetensors tree")
+                         kv=kv, moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
+                         disk_offload=disk_offload, host_offload=host_offload)
+    from ..host_alloc import enabled
+    host_offload, disk_offload = placement_options(host_alloc=enabled(), device_map=device_map,
+        host_offload=host_offload, disk_offload=disk_offload,
+        offload_ratio=(kv or {}).get('offload_ratio'), max_disk_bytes=(kv or {}).get('max_disk_bytes'),
+        moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode)
+    if moe_cache_experts or disk_offload:
+        raise SnowLLMError('MoE LRU currently supports DeepSeek V4 Flash GGUF checkpoints')
     raw = json.loads((root / "config.json").read_text())
     cfg = raw.get("text_config", raw)
     arch = raw.get("architectures") or cfg.get("architectures")
@@ -239,27 +247,39 @@ def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int
         shard_cache = 6 if fp8 else 0
     with Reader(root, shard_cache=shard_cache) as rd:
         w = WeightSource(rd)
-        model = load_weights(w, cfg, want, fp8, mtp)
-        model.multimodal_config = raw
-        model.vision_config = raw.get("vision_config")
-        if raw.get("model_type") == "minicpmv4_7" and vision:
-            from ..models.minicpmv.vision import MiniCPMVision
-            vc = {**model.vision_config, "downsample_mode": raw.get("downsample_mode", "16x"),
-                  "insert_layer_id": raw.get("insert_layer_id", 6), "out_hidden_size": cfg["hidden_size"],
-                  "scale_resolution": 448, "max_slice_nums": 9}
-            sd = {k: w.read_dequant(k) for k in rd.keys()
-                  if k.startswith(("model.vision_tower.", "model.merger."))}
-            model.vision_config = vc
-            model.visual = MiniCPMVision(sd, vc)
+        def build(dmap=None, *, offload=None):
+            with rd.loading():
+                model = load_weights(w, cfg, want, fp8, mtp, device_map=dmap)
+                model.multimodal_config = raw
+                model.vision_config = raw.get("vision_config")
+                if raw.get("model_type") == "minicpmv4_7" and vision:
+                    from ..models.minicpmv.vision import MiniCPMVision
+                    vc = {**model.vision_config, "downsample_mode": raw.get("downsample_mode", "16x"),
+                          "insert_layer_id": raw.get("insert_layer_id", 6), "out_hidden_size": cfg["hidden_size"],
+                          "scale_resolution": 448, "max_slice_nums": 9}
+                    sd = {k: w.read_dequant(k) for k in rd.keys()
+                          if k.startswith(("model.vision_tower.", "model.merger."))}
+                    model.vision_config = vc
+                    model.visual = MiniCPMVision(sd, vc)
+                else:
+                    model.visual = load_vision(w, model.vision_config) if vision else None
+                model.image_token_id = raw.get("image_token_id")
+                return model
+
+        from ..models import placement
+        eligibility = None
+        total, sizes, by = placement.measure_weights(build)
+        if (kv or {}).get('memory_auto'):
+            dmap, _, eligibility = _memory_device_map(cfg, kv, build, sizes, by, total)
         else:
-            model.visual = load_vision(w, model.vision_config) if vision else None
-        model.image_token_id = raw.get("image_token_id")
+            dmap = _device_map(device_map, cfg, kv, build, sizes, by,
+                               total_bytes=total, host_offload=host_offload)
+        if dmap is None:
+            dmap = placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
+        model = _load_placed(build, cfg, kv, dmap, device_map,
+                             host_offload=host_offload, eligibility=eligibility)
     torch.cuda.empty_cache()
     return model
-
-
-def geo_context(cfg: dict) -> int:
-    return int(cfg.get("max_position_embeddings") or 1 << 62)
 
 
 def dry_need(build: "Callable[[], TargetModel]", cfg: dict, kv: dict | None,
@@ -275,21 +295,163 @@ def dry_need(build: "Callable[[], TargetModel]", cfg: dict, kv: dict | None,
 
 def _device_map(spec: str, cfg: dict, kv: dict | None,
                 build: "Callable[[], TargetModel]", sizes: dict[str, int],
-                per_layer: dict[str, dict[int, int]]) -> "DeviceMap | None":
-    if not spec:
+                per_layer: dict[str, dict[int, int]], *, total_bytes=None,
+                moe_plan=None, host_reserve=0, host_offload=None) -> "DeviceMap | None":
+    if not spec and host_offload is None:
         return None
     from ..models import placement
-    budget = max(0, placement.auto_budget() - int((kv or {}).get("host_taken") or 0))
-    need = dry_need(build, cfg, kv, budget)
-    dmap = placement.check_budget(
-        placement.parse(spec, sizes, budget=budget, need=need, per_layer=per_layer), budget)
+    budget = max(0, placement.auto_budget() - int((kv or {}).get("host_taken") or 0) - host_reserve)
+    if host_offload is not None:
+        planner = placement.plan_moe if moe_plan is not None else placement.plan
+        dmap = placement.check_budget(planner(sizes, budget, host_offload, per_layer), budget)
+        if dmap.short:
+            raise SnowLLMError('--host-offload exceeds movable weights or available host memory')
+        print(f'{term.stamp()} {dmap.describe()}', flush=True)
+        return dmap
+    if moe_plan is not None and spec == 'all':
+        dmap = placement.plan_moe(sizes, budget, budget, per_layer)
+        dmap = dataclasses.replace(dmap, short=0)
+        print(f'{term.stamp()} {dmap.describe()}', flush=True)
+        return dmap
+    if kv and kv.get('offload_ratio') is not None:
+        total = sum(sizes.values()) if total_bytes is None else total_bytes
+        need = math.ceil(total * float(kv['offload_ratio']))
+        dmap = placement.check_budget(placement.plan(sizes, budget, need, per_layer), budget)
+        if dmap.short:
+            raise SnowLLMError('the requested offload ratio exceeds movable weights or available host memory')
+        print(f'{term.stamp()} {dmap.describe()}', flush=True)
+        return dmap
+    need = dry_need(build, cfg, kv, budget) if spec in ('auto', 'all') else 0
+    dmap = (placement.plan_moe(sizes, budget, need, per_layer)
+            if moe_plan is not None and spec == 'auto' else
+            placement.parse(spec, sizes, budget=budget, need=need, per_layer=per_layer))
+    dmap = placement.check_budget(dmap, budget)
     print(f"{term.stamp()} {dmap.describe()}", flush=True)
     return dmap
 
 
+def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=()):
+    from .. import ops
+    from ..capacity import check_host, memory_shortage
+    from ..models import placement
+    eligible, by = dict(sizes), {g: dict(v) for g, v in per_layer.items()}
+    if cfg.get('model_type') == 'deepseek_v4':
+        for group in ('shared', 'shared.gate_up', 'shared.down'):
+            eligible[group], by[group] = 0, {}
+        for group in ('experts', 'experts.gate_up', 'experts.down'):
+            by[group] = {i: n for i, n in by.get(group, {}).items() if i not in hash_layers}
+            eligible[group] = sum(by[group].values())
+    empty = placement.DeviceMap(frozenset(), sizes, per_layer=per_layer, total_bytes=total)
+    needed = dry_need(lambda: build(empty, offload=None), cfg, kv, 0)
+    if needed <= 0:
+        return empty, None, (eligible, by)
+    allow_host = kv.get('host_offload_allowed', False)
+    disk_limit = kv.get('max_disk_bytes')
+    reserve, target = 0, 0
+    for _ in range(8):
+        host_room = max(0, placement.auto_budget() - int(kv.get('host_taken') or 0))
+        host_budget = max(0, host_room - reserve) if allow_host else 0
+        planner = placement.plan_moe if cfg.get('model_type') == 'deepseek_v4' else placement.plan
+        dmap = planner(eligible, host_budget, needed, by)
+        dmap = dataclasses.replace(dmap, sizes=sizes, per_layer=per_layer, total_bytes=total)
+        remaining = dry_need(lambda: build(dmap, offload=None), cfg, kv, 0)
+        padding = 0
+        if dmap.host_bytes:
+            with ops.dry_load() as layout:
+                probe = build(dmap, offload=None)
+                padding = max(0, layout.mapped_host_bytes - dmap.host_bytes)
+            del probe
+            if dmap.host_bytes + padding > host_room and padding > reserve:
+                reserve = padding
+                continue
+        if remaining <= 0:
+            return dmap, None, (eligible, by)
+        if disk_limit is None:
+            raise memory_shortage(remaining)
+        if cfg.get('model_type') != 'deepseek_v4':
+            raise SnowLLMError('this model does not have a disk expert cache backend')
+        target = max(target, remaining)
+        try:
+            with ops.dry_load():
+                probe = build(dmap, offload=target)
+                store = probe.moe_offload_plan
+                stage, weights = store.host_staging_bytes, store.disk_weight_bytes
+            del probe
+        except SnowLLMError as exc:
+            raise SnowLLMError(f'{memory_shortage(remaining)}; {exc}') from exc
+        if weights > disk_limit:
+            raise SnowLLMError(f'--max-disk-offload permits {disk_limit} bytes of offloaded expert '
+                               f'weights, but this layout needs {weights} bytes; {memory_shortage(remaining)}')
+        if dmap.host_bytes + padding + stage > host_room and allow_host and padding + stage > reserve:
+            reserve = padding + stage
+            continue
+        check_host(dmap.host_bytes + padding + stage + int(kv.get('host_taken') or 0), ops.host_pinned_bytes())
+        shortage = dry_need(lambda: build(dmap, offload=target), cfg, kv, 0)
+        if shortage <= 0:
+            return dmap, target, (eligible, by)
+        target += shortage
+    raise memory_shortage(max(needed, target))
+
+
+def _load_placed(build, cfg, kv, dmap, device_map, *, host_offload=None, eligibility=None):
+    from .. import ops
+    from ..host_alloc import enabled
+    from ..models import placement
+    memory_auto = bool((kv or {}).get('memory_auto'))
+    automatic = ((memory_auto and kv.get('host_offload_allowed', False)) or
+                 (not memory_auto and host_offload is None and device_map.strip() == 'auto'
+                  and bool(kv) and kv.get('offload_ratio') is None))
+    if enabled() or kv or dmap.host_bytes:
+        from .._platform import gpu_mem_info
+        from ..capacity import check_host
+        with ops.dry_load() as planned:
+            probe = build(dmap)
+            peak = planned.peak_device
+            host = planned.host + planned.mapped_host_bytes - sum(planned.placed_bytes().values())
+            host += getattr(getattr(probe, "moe_offload_plan", None), "host_staging_bytes", 0)
+        del probe
+        check_host(host, ops.host_pinned_bytes())
+        free, physical = gpu_mem_info()
+        room = (free if enabled() else
+                int(physical * float((kv or {}).get('util', 1.))) - (physical-free))
+        if peak > room:
+            if memory_auto:
+                from ..capacity import memory_shortage
+                raise memory_shortage(peak-room)
+            kind = '--host-alloc: loading' if enabled() else 'loading'
+            raise SnowLLMError(f'{kind} needs {peak} bytes, but only {max(0, room)} bytes '
+                               'remain within the memory budget')
+    with (placement.capture_allocations() if automatic else contextlib.nullcontext(())) as allocations:
+        model = build(dmap)
+    model.device_map = dmap
+    model._automatic_placement = automatic
+    if eligibility is not None:
+        model._placement_eligibility = eligibility
+    if automatic:
+        model._placement_allocations = tuple(allocations)
+        plan = getattr(model, 'moe_offload_plan', None)
+        # Allocated I/O staging is already reflected in MemAvailable.
+        model._placement_host_reserve = int(kv.get('host_taken') or 0)
+        if plan is not None:
+            model._placement_frozen_groups = ('experts', 'experts.gate_up', 'experts.down')
+        torch.cuda.empty_cache()
+        budget = placement.host_budget(model)
+        need = dry_need(lambda: build(dmap), cfg, dict(kv, loaded_weight_bytes=dmap.device_bytes),
+                        max(0, budget - dmap.host_bytes))
+        placement.ensure_room(model, need, budget=budget)
+    return model
+
+
 def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
               vision: bool = True, device_map: str = "",
-              kv: dict | None = None) -> "TargetModel":
+              kv: dict | None = None, moe_cache_experts: int = 0,
+              moe_cache_mode: str = 'all', disk_offload: int | str | None = None,
+              host_offload: int | str | None = None) -> "TargetModel":
+    from ..host_alloc import enabled
+    host_offload, disk_offload = placement_options(host_alloc=enabled(), device_map=device_map,
+        host_offload=host_offload, disk_offload=disk_offload,
+        offload_ratio=(kv or {}).get('offload_ratio'), max_disk_bytes=(kv or {}).get('max_disk_bytes'),
+        moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode)
     from .gguf.names import config, vision_config
     from .gguf.source import (
         GGUFReader,
@@ -307,13 +469,20 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
             (GGUFReader(side) if side else contextlib.nullcontext()) as mtp_rd:
         raw = config(rd.gguf)
         cfg = raw.get("text_config", raw)
+        if (moe_cache_experts or disk_offload) and cfg.get('model_type') != 'deepseek_v4':
+            raise SnowLLMError('MoE LRU currently supports DeepSeek V4 Flash GGUF checkpoints')
         mod, load_weights = models.resolve(raw["architectures"])
         mod.validate_config(cfg)
         want = layers if layers is not None else range(cfg["num_hidden_layers"])
-        def build(dmap: "DeviceMap | None" = None) -> "TargetModel":
+        unspecified = object()
+        def build(dmap: "DeviceMap | None" = None, *, cache_experts=moe_cache_experts,
+                  cache_mode=moe_cache_mode, offload=unspecified) -> "TargetModel":
+            offload = disk_offload if offload is unspecified else offload
             reads_raw = getattr(mod, "load_gguf_weights", None)
             if reads_raw is not None:
-                m = reads_raw(rd, cfg, want, device_map=dmap, mtp=mtp)
+                extra = (dict(moe_cache_experts=cache_experts, moe_cache_mode=cache_mode,
+                              disk_offload=offload) if cache_experts or offload else {})
+                m = reads_raw(rd, cfg, want, device_map=dmap, mtp=mtp, **extra)
             else:
                 m = load_weights(GGUFWeightSource(rd, cfg, mtp_rd), cfg, want, False, mtp,
                                  device_map=dmap)
@@ -335,21 +504,55 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
             return m
 
         from ..models import placement
-        total, sizes, by = placement.measure_weights(build)
-        dmap = _device_map(device_map, cfg, kv, build, sizes, by)
+        memory_auto = bool((kv or {}).get('memory_auto'))
+        eligibility = None
+        if memory_auto:
+            total, sizes, by = placement.measure_weights(lambda dm: build(dm, offload=None))
+            hashed = tuple(i for i in range(cfg['num_hidden_layers']) if
+                           i < int(cfg.get('num_hash_layers', 0)) or
+                           f'blk.{i}.ffn_gate_tid2eid.weight' in rd.gguf)
+            dmap, disk_offload, eligibility = _memory_device_map(
+                cfg, kv, build, sizes, by, total, hash_layers=hashed)
+        else:
+            total, sizes, by = placement.measure_weights(
+                (lambda dm: build(dm, cache_experts=1, cache_mode='all', offload=None))
+                if moe_cache_experts or disk_offload else build)
+        from .. import ops
+        moe_plan = None
+        if moe_cache_experts or disk_offload:
+            with ops.dry_load():
+                probe = build()
+                moe_plan = probe.moe_offload_plan
+            del probe
+        if not memory_auto:
+            dmap = _device_map(device_map, cfg, kv, build, sizes, by, total_bytes=total,
+                               moe_plan=moe_plan, host_offload=host_offload)
         dmap = (placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
                 if dmap is None else dataclasses.replace(dmap, total_bytes=total))
-        automatic = device_map.strip() == 'auto' and bool(kv)
-        with (placement.capture_allocations() if automatic else contextlib.nullcontext(())) as allocations:
-            model = build(dmap)
-        model.device_map = dmap
-        model._automatic_placement = automatic
-        if automatic:
-            model._placement_allocations = tuple(allocations)
-            model._placement_host_reserve = int(kv.get('host_taken') or 0)
-            torch.cuda.empty_cache()
-            budget = placement.host_budget(model)
-            need = dry_need(build, cfg, dict(kv, loaded_weight_bytes=dmap.device_bytes), budget)
-            placement.ensure_room(model, need - dmap.host_bytes, budget=budget)
+        if moe_plan is not None:
+            if device_map not in ('', 'auto', 'all', 'off', 'none', 'device') and any(
+                    group in dmap.host for group in ('shared', 'shared.gate_up', 'shared.down')):
+                raise SnowLLMError('shared experts must stay on GPU while MoE offload is enabled')
+            with ops.dry_load() as planned:
+                probe = build(dmap)
+                stage = probe.moe_offload_plan.host_staging_bytes
+                planned_device = planned.device
+            del probe
+            budget = max(0, placement.auto_budget() - int((kv or {}).get('host_taken') or 0) - stage)
+            if dmap.host_bytes > budget:
+                if device_map in ('auto', 'all') or host_offload is not None:
+                    dmap = _device_map(device_map, cfg, kv, build, sizes, by, total_bytes=total,
+                                       moe_plan=moe_plan, host_reserve=moe_plan.host_staging_bytes,
+                                       host_offload=host_offload)
+                    dmap = dataclasses.replace(dmap, total_bytes=total)
+                    with ops.dry_load() as planned:
+                        probe = build(dmap)
+                        planned_device = planned.device
+                    del probe
+                else:
+                    placement.check_budget(dmap, budget)
+            dmap = dataclasses.replace(dmap, disk_savings=total - dmap.host_bytes - planned_device)
+        model = _load_placed(build, cfg, kv, dmap, device_map,
+                             host_offload=host_offload, eligibility=eligibility)
     torch.cuda.empty_cache()
     return model

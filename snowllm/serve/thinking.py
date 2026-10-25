@@ -9,6 +9,9 @@ from jinja2 import Environment, TemplateError, nodes
 
 
 def thinking_capabilities(tokenizer) -> dict:
+    controls = getattr(tokenizer, "thinking_controls", None)
+    if controls is not None:
+        return dict(controls)
     result = {"switch": False, "levels": [], "source": "chat_template"}
     try:
         template = tokenizer.get_chat_template()

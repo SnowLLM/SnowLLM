@@ -28,10 +28,10 @@
     "device_map": "auto",
     "dflash": "@model",
     "dspark_adaptive": true,
-    "max_num_seqs": 1,
+    "max_num_seqs": 4,
     "max_model_len": 409600,
     "max_num_batched_tokens": 8192,
-    "gpu_memory_utilization": 0.95,
+    "max_gpu_mem_util": 0.95,
     "prefix_memory_ratio": 0.0
   },
   "serve_as": "DeepSeek-V4-Flash-0731",

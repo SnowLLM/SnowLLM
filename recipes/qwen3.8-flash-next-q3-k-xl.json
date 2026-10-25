@@ -17,7 +17,7 @@
   "summary": "Qwen3.8-Flash-Next in UD-Q3_K_XL with vision and MTP depth 2.",
   "defaults": {
     "num_spec": 2,
-    "max_model_len": 409600
+    "max_num_seqs": 4
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

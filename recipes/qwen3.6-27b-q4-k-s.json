@@ -25,5 +25,8 @@
   "requires": "0.3.0",
   "summary": "Qwen3.6-27B in Q4_K_S with vision and MTP.",
   "bytes": 17052504519,
-  "serve_as": "Qwen3.6-27B"
+  "serve_as": "Qwen3.6-27B",
+  "defaults": {
+    "max_num_seqs": 4
+  }
 }

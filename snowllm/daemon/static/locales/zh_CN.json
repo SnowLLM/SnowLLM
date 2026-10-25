@@ -225,5 +225,14 @@
   "{0} / {1} · {2}/s · ETA {3}": "{0} / {1} · {2}/s · 剩余 {3}",
   "Default settings": "默认设置",
   "Load settings restored": "已恢复加载设置",
-  "Storage size unavailable": "无法获取存储大小"
+  "Storage size unavailable": "无法获取存储大小",
+  "Recipe default · otherwise 400K": "方案默认值，否则为 400K",
+  "Offload ratio": "卸载比例",
+  "Host memory limit": "主机内存上限",
+  "GPU memory limit": "GPU 显存上限",
+  "Disk offload limit": "磁盘卸载上限",
+  "SnowLLM {0} is available (installed: {1}).": "SnowLLM {0} 已发布（当前版本：{1}）。",
+  "Loading release notes…": "正在获取更新说明…",
+  "Release notes are not available for this version.": "暂时无法获取此版本的更新说明。",
+  "Update instructions →": "升级说明 →"
 }

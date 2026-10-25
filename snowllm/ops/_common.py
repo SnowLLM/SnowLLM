@@ -129,7 +129,8 @@ def host_memory(on: bool = True) -> Iterator[None]:
 
 
 def host_pinned_bytes() -> int:
-    return _host_pinned
+    from .. import host_alloc
+    return _host_pinned + host_alloc.allocated_bytes()
 
 
 _mapped: list = []
@@ -172,6 +173,12 @@ class _THPBuffer:
             raise
 
 
+def _host_buffer_size(n: int) -> int:
+    return ((n + HOST_HUGE_PAGE - 1) // HOST_HUGE_PAGE * HOST_HUGE_PAGE
+            if os.environ.get('SNOWLLM_HOST_PAGES', 'default') == 'thp' and n >= HOST_HUGE_PAGE
+            else n + HOST_ALIGN)
+
+
 def _host_buffer(n: int) -> tuple[mmap.mmap | _THPBuffer, int, int]:
     pages = os.environ.get("SNOWLLM_HOST_PAGES", "default")
     if pages not in ("default", "thp"):
@@ -180,12 +187,12 @@ def _host_buffer(n: int) -> tuple[mmap.mmap | _THPBuffer, int, int]:
         if not hasattr(mmap, "MADV_HUGEPAGE"):
             raise SnowLLMError("SNOWLLM_HOST_PAGES=thp requires Linux transparent huge pages")
         # Request aligned memory directly; libc owns any allocation overhead.
-        size = (n + HOST_HUGE_PAGE - 1) // HOST_HUGE_PAGE * HOST_HUGE_PAGE
+        size = _host_buffer_size(n)
         buf = _THPBuffer(size)
         return buf, buf.address, size
-    buf = mmap.mmap(-1, n + HOST_ALIGN)
+    buf = mmap.mmap(-1, _host_buffer_size(n))
     base = ctypes.addressof(ctypes.c_char.from_buffer(buf))
-    return buf, base, n + HOST_ALIGN
+    return buf, base, _host_buffer_size(n)
 
 
 def _register(n: int) -> torch.Tensor:
@@ -200,13 +207,16 @@ def _register(n: int) -> torch.Tensor:
 
 
 def host_mapped(t: torch.Tensor) -> bool:
+    from .. import host_alloc
     p = t.data_ptr()
-    return any(lo <= p < hi for lo, hi in _ranges)
+    return any(lo <= p < hi for lo, hi in _ranges) or host_alloc.contains(p)
 
 
 def _pinned(fn: Callable[..., torch.Tensor], n: int) -> torch.Tensor:
     global _host_pinned
     n = int(n)
+    from ..capacity import check_host
+    check_host(_host_buffer_size(n), host_pinned_bytes())
     try:
         got = _register(n)
     except SnowLLMError:
@@ -217,7 +227,7 @@ def _pinned(fn: Callable[..., torch.Tensor], n: int) -> torch.Tensor:
             f"{_host_pinned / (1 << 30):.2f} GiB already pinned. The host is out of room. Lower "
             f"--max-model-len so less has to move, name fewer groups or layers on --device-map, "
             f"or free system RAM.") from e
-    _host_pinned += n
+    _host_pinned += _host_buffer_size(n)
     return got.zero_() if fn is torch.zeros else got
 
 
@@ -282,6 +292,11 @@ class DryLoad:
     @property
     def host(self) -> int:
         return sum(n for n, h in self._live.values() if h)
+
+    @property
+    def mapped_host_bytes(self) -> int:
+        return sum(_host_buffer_size(n) for tag, (n, host) in self._live.items()
+                   if host and tag in self._placements)
 
     def placed_bytes(self) -> dict[tuple[str, int | None], int]:
         out = {}

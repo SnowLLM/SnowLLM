@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from .. import ops
 from .._capi import SnowLLMError
-from .._platform import host_available
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -24,7 +23,6 @@ PROJECTIONS = {f'{group}.{part}': group for group in ('experts', 'shared')
                for part in ('gate_up', 'down')}
 GROUPS = (*COST, *PROJECTIONS)
 LAYERED = ("dense", "shared", "experts", *PROJECTIONS)
-OS_RESERVE = 8 << 30
 GIB = 1 << 30
 _scope = None
 
@@ -97,8 +95,11 @@ def ensure_room(model, shortage: int, *, budget: int | None = None) -> bool:
         return False
     current = model.device_map
     budget = host_budget(model) if budget is None else budget
-    revised = plan(current.sizes, budget, current.host_bytes + shortage,
-                   current.per_layer, previous=current)
+    sizes, by = getattr(model, '_placement_eligibility', (current.sizes, current.per_layer))
+    revised = plan(sizes, budget, current.host_bytes + shortage,
+                   by, previous=current,
+                   frozen=getattr(model, '_placement_frozen_groups', ()))
+    revised = dataclasses.replace(revised, sizes=current.sizes, per_layer=current.per_layer)
     check_budget(revised, budget)
     if revised.host_bytes <= current.host_bytes:
         return False
@@ -161,8 +162,9 @@ def cost_of(group: str, nbytes: int) -> float:
     return y0 + (y0 - py) * (gib - x0) / (x0 - px)
 
 
-def auto_budget(reserve: int = OS_RESERVE) -> int:
-    return max(0, host_available() - reserve)
+def auto_budget() -> int:
+    from ..capacity import host_room
+    return host_room(ops.host_pinned_bytes())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -173,6 +175,7 @@ class DeviceMap:
     per_layer: dict[str, dict[int, int]] = dataclasses.field(default_factory=dict)
     short: int = 0
     total_bytes: int | None = None
+    disk_savings: int = 0
 
     def on_host(self, group: str, layer: int | None = None) -> bool:
         selected = group if group in self.host else PROJECTIONS.get(group, group)
@@ -196,7 +199,7 @@ class DeviceMap:
     @property
     def device_bytes(self) -> int:
         total = sum(self.sizes.values()) if self.total_bytes is None else self.total_bytes
-        return total - self.host_bytes
+        return total - self.host_bytes - self.disk_savings
 
     @property
     def slowdown(self) -> float:
@@ -263,7 +266,7 @@ def take(g: str, sizes: dict[str, int], per_layer: dict[str, dict[int, int]], ro
 
 def plan(sizes: dict[str, int], budget: int, need: int = 0,
          per_layer: dict[str, dict[int, int]] | None = None, *,
-         previous: DeviceMap | None = None) -> DeviceMap:
+         previous: DeviceMap | None = None, frozen=()) -> DeviceMap:
     per_layer = per_layer or {}
     host, layers, used = set(), {}, 0
     available, remaining = {}, {}
@@ -281,7 +284,7 @@ def plan(sizes: dict[str, int], budget: int, need: int = 0,
         used += placed
         available[g] = sizes.get(g, 0) - placed
         remaining[g] = {i: n for i, n in by.items() if i not in picked}
-    pool = [g for g in GROUPS if available[g]]
+    pool = [g for g in GROUPS if available[g] and g not in frozen]
     while used < need and pool:
         bids = []
         for g in pool:
@@ -301,7 +304,20 @@ def plan(sizes: dict[str, int], budget: int, need: int = 0,
         family_bytes[PROJECTIONS.get(g, g)] += took
         pool.remove(g)
     return DeviceMap(frozenset(host), dict(sizes), layers, per_layer, max(0, need - used),
-                     previous.total_bytes if previous is not None else None)
+                     previous.total_bytes if previous is not None else None,
+                     previous.disk_savings if previous is not None else 0)
+
+
+def plan_moe(sizes, budget, need, per_layer):
+    folded = dict(sizes)
+    by = dict(per_layer)
+    by['experts'] = _layer_sizes('experts', per_layer)
+    folded['experts'] = sum(by['experts'].values())
+    for group, parent in PROJECTIONS.items():
+        if parent == 'experts':
+            folded[group], by[group] = 0, {}
+    result = plan(folded, budget, need, by)
+    return dataclasses.replace(result, sizes=dict(sizes), per_layer=per_layer)
 
 
 def _layer_sizes(group, per_layer):
@@ -336,20 +352,19 @@ def check_budget(dmap: DeviceMap, budget: int) -> DeviceMap:
             hint = f"`{named[0]}:{n}` is what fits, or "
     raise SnowLLMError(
         f"--device-map asks to pin {want / GIB:.2f} GiB of host memory and only "
-        f"{budget / GIB:.2f} GiB is free -- MemAvailable less {OS_RESERVE / GIB:.0f} GiB kept for "
-        f"the OS. Pinning past that does not fail cleanly, it thrashes the load. "
+        f"{budget / GIB:.2f} GiB remains within the host memory budget and available RAM. "
         f"{hint}`auto` sizes itself from what the KV pools and the prefill chunk are short of at "
         f"your --max-model-len.")
 
 
-def parse(spec: str, sizes: dict[str, int], budget: int = 0, need: int = 0,
+def parse(spec: str, sizes: dict[str, int], budget: int | None = None, need: int = 0,
           per_layer: dict[str, dict[int, int]] | None = None) -> DeviceMap:
     spec = (spec or "").strip()
     per_layer = per_layer or {}
     if not spec or spec in ("off", "none", "device"):
         return DeviceMap(frozenset(), dict(sizes), {}, per_layer)
     if spec in ("auto", "all"):
-        budget = budget or auto_budget()
+        budget = auto_budget() if budget is None else budget
         if spec == "auto":
             return plan(sizes, budget, need, per_layer)
         return dataclasses.replace(plan(sizes, budget, budget, per_layer), short=0)

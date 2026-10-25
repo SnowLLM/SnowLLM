@@ -10,7 +10,7 @@ from ..._capi import SnowLLMError
 from . import deepseek4
 from . import dspark
 from . import qwen4exp
-from . import GGUF
+from . import GGUF, optional_int
 from . import glm5_next
 
 ARCH_MOE = "qwen35moe"
@@ -87,8 +87,8 @@ def config(g: GGUF) -> dict:
         "architectures": ARCHITECTURES if moe else ARCHITECTURES_DENSE,
         "model_type": "qwen3_5_moe" if moe else "qwen3_5",
         "text_config": text,
-        "bos_token_id": _opt_int(g, "tokenizer.ggml.bos_token_id"),
-        "eos_token_id": _opt_int(g, "tokenizer.ggml.eos_token_id"),
+        "bos_token_id": optional_int(g, "tokenizer.ggml.bos_token_id"),
+        "eos_token_id": optional_int(g, "tokenizer.ggml.eos_token_id"),
     }
     from . import minicpmv
     return minicpmv.config(g, raw) if minicpmv.is_model(g) else raw
@@ -96,11 +96,6 @@ def config(g: GGUF) -> dict:
 
 def nextn_layers(g: GGUF) -> int:
     return int(g.get("{arch}.nextn_predict_layers", 0) or 0)
-
-
-def _opt_int(g: GGUF, key: str) -> int | None:
-    v = g.get(key)
-    return None if v is None else int(v)
 
 
 VISION_ARCH = "clip"

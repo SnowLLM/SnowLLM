@@ -225,5 +225,14 @@
   "{0} / {1} · {2}/s · ETA {3}": "{0} / {1} · {2}/s · ETA {3}",
   "Default settings": "Default settings",
   "Load settings restored": "Load settings restored",
-  "Storage size unavailable": "Storage size unavailable"
+  "Storage size unavailable": "Storage size unavailable",
+  "Recipe default · otherwise 400K": "Recipe default · otherwise 400K",
+  "Offload ratio": "Offload ratio",
+  "Host memory limit": "Host memory limit",
+  "GPU memory limit": "GPU memory limit",
+  "Disk offload limit": "Disk offload limit",
+  "SnowLLM {0} is available (installed: {1}).": "SnowLLM {0} is available (installed: {1}).",
+  "Loading release notes…": "Loading release notes…",
+  "Release notes are not available for this version.": "Release notes are not available for this version.",
+  "Update instructions →": "Update instructions →"
 }

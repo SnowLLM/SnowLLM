@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
+from dataclasses import asdict
 import json
 import shutil
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 
 import httpx
+from ..updates import Update
 from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
 from ..config import (models_directory, read_config, write_config, recipes_source,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
@@ -33,6 +35,7 @@ class DaemonManager:
         self.download_root = None
         self.last_load = None
         self.runtime_config = None
+        self.update = Update()
         self.progress_path = self.config_path.parent / "download-progress.json"
         self.task = None
         self.transition_stage = None
@@ -82,7 +85,7 @@ class DaemonManager:
                 progress = json.loads(self.progress_path.read_text())
             except (OSError, ValueError):
                 pass
-        return dict(last_load=self.last_load, runtime_config=self.runtime_config, state=self.state, model=self.model, error=self.error,
+        return dict(last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
                     config_file=str(self.config_path),

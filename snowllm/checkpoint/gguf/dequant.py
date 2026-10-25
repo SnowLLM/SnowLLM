@@ -259,6 +259,20 @@ _BLOCK = {
 DENSE = {"F32": torch.float32, "F16": torch.float16, "BF16": torch.bfloat16}
 
 
+def fp8_32x32(raw: torch.Tensor, shape: tuple[int, int], dtype: torch.dtype) -> torch.Tensor:
+    rows, cols = shape
+    elements = rows * cols
+    weights = raw[:elements].view(torch.float8_e4m3fn).view(rows, cols)
+    scales = raw[elements:].view(-(-rows // 32), -(-cols // 32))
+    out = torch.empty(shape, dtype=dtype, device=raw.device)
+    for lo in range(0, rows, 32):
+        hi = min(lo + 32, rows)
+        s = torch.ldexp(torch.ones_like(scales[lo // 32], dtype=torch.float32),
+                        scales[lo // 32].int() - 127).repeat_interleave(32)[:cols]
+        out[lo:hi] = (weights[lo:hi].float() * s).to(dtype)
+    return out
+
+
 def supported(quant_name: str) -> bool:
     return quant_name in _BLOCK or quant_name in DENSE
 

@@ -21,7 +21,6 @@ class Glm5NextRunner(GraphRunner):
     spec_decoder_type = Glm5NextSpecDecoder
     tunable_rope = False
     text_only = True
-    CHUNK_CANDIDATES = (8192, 4096, 2048, 1024, 512, 256, 128)
     slots_per_request = 1
 
     def _configure(self):
@@ -55,7 +54,9 @@ class Glm5NextRunner(GraphRunner):
         return self.resources.cache.bytes_for(0)
 
     def fixed_bytes(self, chunk):
-        return self.resources.states.bytes_for() + self._cache_bytes(self.max_blocks_per_seq)
+        return (self.resources.states.bytes_for() + self._cache_bytes(self._cache_blocks())
+                + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
+                   if self.prefix_memory_ratio else 0))
 
     def _cache_bytes(self, blocks):
         return self.resources.cache.bytes_for(blocks)
@@ -81,10 +82,10 @@ class Glm5NextRunner(GraphRunner):
         future = graph_bytes
         if not self.plan_activations:
             future += max(0, self.act_bytes_for(self.max_prefill_tokens) - self.ws.nbytes)
-        return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._want_blocks,
+        return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._cache_blocks(),
                         maximum=self.max_blocks_per_seq*self.max_num_seqs,
-                        checkpoint_bytes=self.resources.checkpoints.bytes_for(1), future_bytes=future,
-                        unit_tokens=self.block_size)
+                        checkpoint_bytes=self.resources.checkpoints.bytes_for(1) if self.prefix_memory_ratio else 0,
+                        future_bytes=future, minimum_snapshots=2*self.max_num_seqs)
 
     def _allocate_pools(self, blocks):
         self.num_kv_blocks = blocks

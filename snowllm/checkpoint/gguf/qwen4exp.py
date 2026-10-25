@@ -5,7 +5,7 @@ import math
 import re
 
 from ..._capi import SnowLLMError
-from . import GGUF
+from . import GGUF, optional_int
 
 ARCH = "qwen4exp"
 ARCHITECTURES = ["Qwen4ExpForConditionalGeneration"]
@@ -22,11 +22,6 @@ def layer_types(ratios: list[int]) -> list[str]:
 
 def _ints(g: GGUF, key: str) -> list[int]:
     return [int(v) for v in g.need(key)]
-
-
-def _opt_int(g: GGUF, key: str) -> int | None:
-    v = g.get(key)
-    return None if v is None else int(v)
 
 
 def _indexer_kv_heads(g: GGUF, types: list[str], head_dim: int) -> int:
@@ -126,9 +121,9 @@ def config(g: GGUF) -> dict:
         "architectures": ARCHITECTURES,
         "model_type": "qwen4_exp",
         "text_config": text,
-        "image_token_id": _opt_int(g, "{arch}.ple.image_token_id"),
-        "bos_token_id": _opt_int(g, "tokenizer.ggml.bos_token_id"),
-        "eos_token_id": _opt_int(g, "tokenizer.ggml.eos_token_id"),
+        "image_token_id": optional_int(g, "{arch}.ple.image_token_id"),
+        "bos_token_id": optional_int(g, "tokenizer.ggml.bos_token_id"),
+        "eos_token_id": optional_int(g, "tokenizer.ggml.eos_token_id"),
     }
 
 

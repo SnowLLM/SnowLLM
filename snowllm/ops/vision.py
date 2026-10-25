@@ -4,7 +4,7 @@
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import _chk, _p, _passthru, _stream
+from ._common import _chk, _p, _passthru, _stream, drying
 
 
 def _supported(sym: str) -> tuple[int, ...]:
@@ -67,7 +67,7 @@ def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
     _chk(indices, "position indices", torch.int32, *((4, M) if weights is not None else (M,)))
     if weights is not None:
         _chk(weights, "position weights", torch.float32, 4, M)
-    if any(t.device != hidden.device for t in (table, indices, weights) if t is not None):
+    if drying() is None and any(t.device != hidden.device for t in (table, indices, weights) if t is not None):
         raise SnowLLMError("vision_pos_embed_add: all tensors must share a device")
     check(lib.snowllm_vision_pos_embed_add(_p(hidden), _p(table), _p(indices), _p(weights),
                                           M, H, table.shape[0], _stream()),
@@ -91,7 +91,7 @@ def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Ten
             raise SnowLLMError("vision_attention: expected cumulative image row offsets")
     elif M % 4 or cos is not None:
         raise SnowLLMError("vision_attention: four-token windows require M%4=0 without RoPE")
-    if any(t.device != qkv.device for t in (cos, sin, cu, out) if t is not None):
+    if drying() is None and any(t.device != qkv.device for t in (cos, sin, cu, out) if t is not None):
         raise SnowLLMError("vision_attention: all tensors must share a device")
     check(lib.snowllm_vision_attention(_p(qkv), _p(cos), _p(sin), _p(cu), _p(out),
                                       M, cu.numel() - 1 if cu is not None else M // 4,
@@ -113,7 +113,7 @@ def vision_merge_norm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
         _chk(indices, "vision merge indices", torch.int64, m)
     if mean is not None:
         _chk(mean, "vision merge mean", torch.bfloat16, m//4, h)
-    if any(t.device != x.device for t in (gamma, beta, out, indices, mean) if t is not None):
+    if drying() is None and any(t.device != x.device for t in (gamma, beta, out, indices, mean) if t is not None):
         raise SnowLLMError("vision_merge_norm: all tensors must share a device")
     check(lib.snowllm_vision_merge_norm(_p(x), _p(indices), _p(gamma), _p(beta), _p(out),
           _p(mean), m//4, h, eps, _stream()), "vision_merge_norm")

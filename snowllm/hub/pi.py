@@ -5,6 +5,8 @@ import argparse
 import json
 import pathlib
 import sys
+import urllib.error
+import urllib.request
 
 from .. import term
 from ..errors import SnowLLMError
@@ -42,19 +44,27 @@ def main(cmd: str, argv: list[str]) -> int:
 
     try:
         known = recipes.catalogue(a.catalogue, a.refresh)
+        host = f'[{a.host}]' if ':' in a.host and not a.host.startswith('[') else a.host
+        with urllib.request.urlopen(f'http://{host}:{a.port}/v1/models', timeout=5) as response:
+            live = {m['id']: m['context_length'] for m in json.load(response)['data']
+                    if isinstance(m.get('context_length'), int)
+                    and not isinstance(m['context_length'], bool) and m['context_length'] > 0}
     except SnowLLMError as e:
         print(f"snowllm {cmd}: {e}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f'snowllm {cmd}: load a model first so its actual context can be read '
+              f'from /v1/models: {e}', file=sys.stderr)
         return 1
 
     models, seen = [], set()
     for r in known:
-        model_id = r.serve_as or r.dir
-        if not model_id or model_id in seen:
+        model_id = r.serve_as if r.serve_as in live else r.dir
+        if not model_id or model_id in seen or model_id not in live:
             continue
         seen.add(model_id)
         model = {"id": model_id, "reasoning": True,
-                 "contextWindow": int(r.defaults.get("max_model_len",
-                                                      recipes.DEFAULT_CONTEXT)),
+                 "contextWindow": live[model_id],
                  # Pi would send the system prompt as the developer role, which Qwen rejects.
                  "compat": {"supportsDeveloperRole": False}}
         if model_id.startswith("Qwen3.8"):
@@ -71,7 +81,7 @@ def main(cmd: str, argv: list[str]) -> int:
                 model["compat"]["supportsReasoningEffort"] = True
         models.append(model)
     if not models:
-        print(f"{term.stamp()} the catalogue names no model to serve", file=sys.stderr)
+        print(f"{term.stamp()} load a catalogue model first; its actual context is required", file=sys.stderr)
         return 1
     models.sort(key=lambda m: m["id"])
 

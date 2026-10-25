@@ -21,19 +21,21 @@ from .. import term
 from ..config import models_directory, recipes_source
 from ..errors import SnowLLMError
 from .._version import __version__
+from ..defaults import DEFAULT_CONTEXT_TARGET, DEFAULT_MAX_NUM_SEQS
 from .download import DEFAULT_JOBS, PART_SUFFIX, USER_AGENT, Blob, fetch, forget, held, human
 
 from ..config import DEFAULT_RECIPES_URL
 
 CATALOGUE_URL = DEFAULT_RECIPES_URL
 CATALOGUE_TTL = 3600.0
-DEFAULT_CONTEXT = 262144
-DEFAULT_SLOTS = 16
+DEFAULT_CONTEXT = DEFAULT_CONTEXT_TARGET
+DEFAULT_SLOTS = DEFAULT_MAX_NUM_SEQS
 SCHEMA = 1
 MANIFEST = "snowllm-recipe.json"
 SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
-            "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "gpu_memory_utilization",
-            "prefix_memory_ratio", "mtp_window", "mtp_sinks")
+            "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "max_gpu_mem_util", "max_gpu_mem_gib", "max_host_mem_util", "max_host_mem_gib", "max_disk_mem_gib",
+            "prefix_memory_ratio", "mtp_window", "mtp_sinks", "moe_cache_experts", "moe_cache_mode",
+            "offload_ratio", "host_offload", "host_alloc")
 TIMEOUT = 30.0
 SUPPORTED = "supported"
 COMING_SOON = "coming soon"
@@ -112,6 +114,14 @@ class Recipe:
         self.priority = int(raw.get("priority", 0))
         self.files = raw.get("files") or []
         self.defaults = dict(raw.get("defaults") or {})
+        from ..capacity import MemoryBudget, placement_options
+        limits = MemoryBudget(**{k: self.defaults[k] for k in
+                        ('max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib', 'max_disk_mem_gib') if k in self.defaults})
+        host_offload, _ = placement_options(max_disk_bytes=limits.disk_limit(), complete=False, **{
+            k: self.defaults[k] for k in ('host_alloc', 'device_map', 'host_offload', 'offload_ratio',
+                                         'moe_cache_experts', 'moe_cache_mode') if k in self.defaults})
+        if host_offload is not None:
+            self.defaults['host_offload'] = host_offload
         for k in self.defaults:
             if k not in SETTABLE:
                 raise SnowLLMError(
@@ -415,7 +425,8 @@ def shortfall(recipe: Recipe, dest: pathlib.Path) -> int:
 
 
 def loadable(path: pathlib.Path) -> bool:
-    return path.is_dir() and ((path / "config.json").exists() or any(path.glob("*.gguf")))
+    return path.is_dir() and ((path / "config.json").exists() or any(path.glob("*.gguf"))
+                              or any(path.glob("*.gguf.part*-of-*")))
 
 
 def installed(recipe: Recipe, root: pathlib.Path) -> pathlib.Path | None:
@@ -454,7 +465,7 @@ def _rows(recipes: list[Recipe], root: pathlib.Path) -> list[tuple[str, ...]]:
              "DIRECTORY")]
     for r in recipes:
         rows.append((r.id, r.precision, human(r.bytes) if r.bytes else "-",
-                     _tokens(int(r.defaults.get("max_model_len", DEFAULT_CONTEXT))),
+                     str(r.defaults.get("max_model_len", DEFAULT_CONTEXT)),
                      str(r.defaults.get("max_num_seqs", DEFAULT_SLOTS)), r.spec or "-",
                      r.state, _on_disk(r, root), _where(r, root)))
     return rows

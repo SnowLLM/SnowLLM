@@ -17,5 +17,8 @@
   "spec": "MTP k=2",
   "priority": 20,
   "summary": "Qwen3.6-27B in FP8 with vision and MTP.",
-  "serve_as": "Qwen3.6-27B"
+  "serve_as": "Qwen3.6-27B",
+  "defaults": {
+    "max_num_seqs": 4
+  }
 }

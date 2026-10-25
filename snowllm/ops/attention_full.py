@@ -128,7 +128,7 @@ def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,s
 class _Dsv4AttentionStep(ctypes.Structure):
     _fields_=[('inputs',ctypes.c_void_p*15)]+[(n,ctypes.c_int64) for n in
        ('batch','pages','q_blocks','page_size','window','comp_pages','mask_stride','sel_stride')]+[
-       ('scale',ctypes.c_float),('block_q',ctypes.c_int)]
+       ('scale',ctypes.c_float),('block_q',ctypes.c_int),('comp_fp4',ctypes.c_int)]
 
 
 def dsv4_attention_scratch_bytes(q_blocks: int,compressed: bool) -> int:
@@ -140,14 +140,21 @@ def dsv4_attention(q,k,out,cu,table,lens,qmap,q_blocks,scale,sinks,window,page,s
                     selection=None,counts=None):
     _chk(q,'DeepSeek Q',torch.bfloat16)
     _chk(out,'DeepSeek output',torch.bfloat16,*q.shape)
-    need=dsv4_attention_scratch_bytes(q_blocks,mask is not None)
+    fp4 = comp_k is not None and comp_k.dtype == torch.uint8
+    if comp_k is not None:
+        if mask is None and (selection is None or counts is None):
+            raise SnowLLMError('compressed attention needs a mask or selection list')
+        if fp4:
+            _chk(comp_k,'FP4 compressed cache',torch.uint8,comp_k.shape[0],
+                 lib.snowllm_dsv41_fp4_row_bytes(0))
+    need=dsv4_attention_scratch_bytes(q_blocks,comp_k is not None)
     if need and (scratch is None or scratch.nbytes<need):
         raise SnowLLMError(f'DeepSeek attention needs {need} scratch bytes')
     step=_Dsv4AttentionStep((ctypes.c_void_p*15)(*[_p(t) for t in
         (q,k,None,cu,table,lens,qmap,sinks,comp_k,None,comp_table,comp_lens,mask,selection,counts)]),
         lens.numel(),table.shape[1],q_blocks,page,window,
         0 if comp_table is None else comp_table.shape[1],0 if mask is None else mask.shape[1],
-        0 if selection is None else selection.shape[1],scale,int(block_q))
+        0 if selection is None else selection.shape[1],scale,int(block_q),int(fp4))
     check(lib.snowllm_dsv4_attention(ctypes.byref(step),_p(out),_p(scratch),
           scratch.nbytes if scratch is not None else 0,_stream()),'dsv4_attention')
 
@@ -736,9 +743,9 @@ def paged_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Te
           "paged_attn_prefill")
 
 
-def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor, ape: torch.Tensor,
-                         gamma: torch.Tensor, out: torch.Tensor, cur_row: torch.Tensor,
-                         prev_row: torch.Tensor, coff: int, ratio: int, eps: float,
+def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor | None, ape: torch.Tensor | None,
+                         gamma: torch.Tensor, out: torch.Tensor | None, cur_row: torch.Tensor,
+                         prev_row: torch.Tensor | None, coff: int, ratio: int, eps: float,
                          block_size: int, n_work_dev: torch.Tensor | None = None,
                          cos: torch.Tensor | None = None, sin: torch.Tensor | None = None,
                          n_rot: int = 0, pool: torch.Tensor | None = None,
@@ -747,10 +754,20 @@ def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor, ape: torch.Tenso
                          score_new: torch.Tensor | None = None,
                          src_row: torch.Tensor | None = None) -> None:
     n_work, D = (cur_row.numel(), gamma.numel()) if out is None else out.shape
+    if ape is None and (coff != 1 or ratio not in (1, 2)):
+        raise SnowLLMError("dsv4_compressor_pool: no APE requires coff=1 and ratio=1 or 2")
+    if ape is None and n_rot:
+        raise SnowLLMError("dsv4_compressor_pool: V4.1 does not use the FP8 tail")
+    if score is None and not (ape is None and ratio == 1):
+        raise SnowLLMError("dsv4_compressor_pool: pooling requires gate scores")
     for t, n in ((kv, "kv"), (score, "score"), (ape, "ape"), (gamma, "gamma")):
-        _chk(t, n, torch.float32)
+        if t is not None:
+            _chk(t, n, torch.float32)
     _chk(cur_row, "cur_row", torch.int32, n_work)
-    _chk(prev_row, "prev_row", torch.int32, n_work)
+    if prev_row is not None:
+        _chk(prev_row, "prev_row", torch.int32, n_work)
+    elif coff == 2:
+        raise SnowLLMError("dsv4_compressor_pool: overlapping pooling requires prev_row")
     if out is not None:
         _chk(out, "out", torch.bfloat16, n_work, D)
     if pool is not None:
@@ -765,9 +782,12 @@ def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor, ape: torch.Tenso
     if src_row is not None:
         _chk(src_row, "src_row", torch.int32, src_row.numel())
         for t, n in ((kv_new, "kv_new"), (score_new, "score_new")):
-            _chk_rows(t, n, torch.float32)
+            if t is not None:
+                _chk_rows(t, n, torch.float32)
+        if kv_new is None or (score_new is None and not (ape is None and ratio == 1)):
+            raise SnowLLMError("dsv4_compressor_pool: split pooling requires projected rows")
         stride = kv_new.stride(0)
-        if score_new.stride(0) != stride:
+        if score_new is not None and score_new.stride(0) != stride:
             raise SnowLLMError(f"dsv4_compressor_pool: the split source's two halves are strided "
                                f"{stride} and {score_new.stride(0)} apart")
     check(lib.snowllm_dsv4_compressor_pool(_p(kv), _p(score), _p(ape), _p(gamma), _p(out),

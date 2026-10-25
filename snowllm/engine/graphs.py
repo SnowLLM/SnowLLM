@@ -7,7 +7,7 @@ import torch
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info
+from .._platform import gpu_mem_info, device_mem_info
 from .host_io import HostArena, copy_message, host_view
 
 
@@ -16,6 +16,8 @@ class GraphBudget:
         self.measured = 0
         self.full = False
         self._used = 0
+        self.driver_measured = 0
+        self._driver_used = 0
 
     @staticmethod
     def _in_use() -> int:
@@ -26,18 +28,33 @@ class GraphBudget:
     def room(self, gpu_util: float, have: int) -> bool:
         self._used = self._in_use()
         total = gpu_mem_info()[1]
+        from ..host_alloc import enabled
+        if enabled():
+            free, physical = device_mem_info()
+            self._driver_used = physical - free
+            from ..capacity import budget
+            room = min(free, budget.gpu_limit(physical) - self._driver_used)
+            if room < self.driver_measured:
+                self.full = True
+                print(f'{term.stamp()} graphs stop at {have}: driver needs another '
+                      f'{self.driver_measured >> 20} MiB of VRAM; uncaptured shapes run eager.', flush=True)
+                return False
         if not self.measured or self._used + self.measured <= int(total * gpu_util):
             return True
         if not self.full:
             self.full = True
             print(f"{term.stamp()} {term.paint('graphs stop', term.YELLOW)} at {have}: "
                   f"another {self.measured >> 20} MiB would cross "
-                  f"the gpu_memory_utilization={gpu_util} ceiling. Steps on shapes that have "
+                  f"the memory ceiling ({gpu_util:.2%}). Steps on shapes that have "
                   f"no graph run eager.", flush=True)
         return False
 
     def charge(self) -> None:
         self.measured = max(self.measured, self._in_use() - self._used)
+        from ..host_alloc import enabled
+        if enabled():
+            free, total = device_mem_info()
+            self.driver_measured = max(self.driver_measured, total-free-self._driver_used)
 
 
 class GraphInputs:

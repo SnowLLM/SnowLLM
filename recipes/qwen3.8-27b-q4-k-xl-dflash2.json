@@ -30,7 +30,8 @@
     }
   ],
   "defaults": {
-    "dflash": "@model/dflash2"
+    "dflash": "@model/dflash2",
+    "max_num_seqs": 4
   },
   "priority": 70,
   "requires": "0.3.0",

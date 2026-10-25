@@ -51,6 +51,8 @@ class Request:
     num_prefilled: int = 0
     cached_tokens: int = 0
     system_prefix_len: int = 0
+    system_entry: object = field(default=None, repr=False)
+    prefix_entry: object = field(default=None, repr=False)
     replay: int = 0
     done: bool = False
     finish_reason: str | None = None

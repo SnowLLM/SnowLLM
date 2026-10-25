@@ -103,6 +103,14 @@ class ResourceSet:
         return sum(part.slabs.committed() for part in self.parts)
 
 
+def draft_table_blocks(geo, context, block, block_size):
+    from ..models.geometry import DSparkGeometry
+    if isinstance(geo, DSparkGeometry) and geo.stack.v41:
+        # A page-aligned history can start before the sliding window's first token.
+        context = geo.stack.sliding_window + block_size - 1
+    return ops.kv_blocks_for(context + block, block_size)
+
+
 def allocate_draft_pool(geo, blocks, block_size, slabs):
     from ..models.geometry import DSparkGeometry
     if isinstance(geo, DSparkGeometry):
@@ -159,28 +167,18 @@ class PoolPlan:
     maximum: int | None = None
     checkpoint_bytes: int = 0
     future_bytes: int = 0
-    unit_tokens: int = 1
+    minimum_snapshots: int = 1
+
+    @property
+    def snapshot_floor(self):
+        return self.checkpoint_bytes * self.minimum_snapshots
 
     def choose(self, available, prefix_budget):
         room = available - self.future_bytes
         floor = self.minimum if self.requested is None else self.requested
         if (floor < self.minimum or (self.maximum is not None and floor > self.maximum)
-                or self.bytes_for(floor) + self.checkpoint_bytes > room):
+                or self.bytes_for(floor) + self.snapshot_floor > room):
             raise ValueError('the requested cache cannot hold one context within the budget')
-        snapshots = (max(self.checkpoint_bytes, min(prefix_budget, room - self.bytes_for(floor)))
+        snapshots = (max(self.snapshot_floor, min(prefix_budget, room - self.bytes_for(floor)))
                      // self.checkpoint_bytes) if self.checkpoint_bytes else 0
-        room -= snapshots * self.checkpoint_bytes
-        if self.requested is not None:
-            return self.requested, snapshots
-        lo, hi = self.minimum, self.maximum
-        if hi is None:
-            hi = max(1, lo)
-            while self.bytes_for(hi) <= room:
-                lo, hi = hi, 2 * hi
-        while lo < hi:
-            mid = (lo + hi + 1) // 2
-            if self.bytes_for(mid) <= room:
-                lo = mid
-            else:
-                hi = mid - 1
-        return lo, snapshots
+        return floor, snapshots

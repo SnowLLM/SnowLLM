@@ -36,7 +36,8 @@
   "defaults": {
     "num_spec": 0,
     "dflash": "@model/dspark",
-    "dflash_block": 8
+    "dflash_block": 8,
+    "max_num_seqs": 4
   },
   "note": "Shares target weights and the vision projector with the recipe without DSpark.",
   "spec": "DSpark"

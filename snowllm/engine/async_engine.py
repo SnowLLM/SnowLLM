@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import term
+from ..host_alloc import enter_thread
 from . import Engine, EngineStats, Request, SamplingParams
 
 
@@ -22,7 +23,8 @@ class AsyncEngine:
         if self.profile_dir:
             self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._profiler = None
-        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snowllm-engine")
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snowllm-engine",
+                                          initializer=enter_thread)
         self._live: list[Request] = []
         self._queues: dict[int, asyncio.Queue] = {}
         self._sent: dict[int, int] = {}

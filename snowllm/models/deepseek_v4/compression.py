@@ -9,7 +9,7 @@ from ... import ops
 from ...engine.block_manager import pad_table
 from ...engine.inputs import history_batch
 from ...engine.forward_context import Batch
-from ..geometry import COFF
+from ..geometry import COFF, V41_MOE_CHUNK
 
 
 @dataclass
@@ -77,6 +77,15 @@ class Compression:
     def commit(self, slot, n_tokens):
         for r in self.ratios:
             self.n_comp[r][slot] = min(self.n_comp[r][slot], n_tokens//r)
+        pending = getattr(self, "engram_pending", None)
+        if pending is not None:
+            first, previous, tokens = pending
+            kept = n_tokens - first
+            if slot != 0 or not 0 <= kept <= len(tokens):
+                raise ops.SnowLLMError("Engram commit is outside the verified token prefix")
+            self.engram_next = n_tokens
+            self.engram_recent = list((*previous, *tokens[:kept])[-3:])
+            self.engram_pending = None
 
     def batch(self, tokens: torch.Tensor, positions: torch.Tensor, firsts: list[int],
               lens: list[int], slots: list[int], raw_table: torch.Tensor | None = None,
@@ -107,6 +116,7 @@ class Compression:
                        for r in self.ratios}
         batch.split = ops.dsv4_mla_split_worth(batch.total_q_blocks)
         batch.inplace = max(lens) <= self.spec_rows
+        batch.v41_microbatches = -(-tokens.numel() // V41_MOE_CHUNK) if getattr(self.geo, "v41", False) else 0
         return batch
 
     def _plan(self, ratio: int, firsts: list[int], lens: list[int], slots: list[int],
@@ -169,7 +179,12 @@ class Compression:
             self.n_comp[ratio][slot] = total
             comp_lens.append(total)
 
-        table = pad_table(tables, self.table_cap[ratio] if fixed else 0)
+        if self.messages is None:
+            table = pad_table(tables, self.table_cap[ratio] if fixed else 0)
+        else:
+            width = max(1, self.table_cap[ratio], max(map(len, tables), default=0))
+            values = [v for row in tables for v in row + [0] * (width - len(row))]
+            table = self.messages.tensor(("compression_table", ratio), values, torch.int32).view(len(tables), width)
         if fixed:
             wide = len(lens) * self.stride(ratio)
             kd, ks = _pad_pairs(kd, ks, wide, self.slots * 2 * bank, 0)

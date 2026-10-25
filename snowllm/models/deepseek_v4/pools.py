@@ -35,6 +35,18 @@ class IndexPool:
         ops.copy_rows(self.k,rows,dst_index=slots)
 
 
+class Fp4Pool:
+    paged = True
+
+    def __init__(self, slabs: ops.Slabs, blocks: int, block_size: int, *, index: bool = False) -> None:
+        self.blocks, self.block_size, self.index = blocks, block_size, index
+        self.dim = 128 if index else 512
+        self.k = tensor(slabs, (blocks * block_size, ops.dsv41_fp4_row_bytes(index)), torch.uint8)
+
+    def write(self, rows: torch.Tensor, slots: torch.Tensor, *, count=None, cos=None, sin=None) -> None:
+        ops.dsv41_fp4_pack(rows, self.k, slots, index=self.index, count=count, cos=cos, sin=sin)
+
+
 class CarryGroup:
     def __init__(self, layers: int, slots: int, window: int, width: int, spare: int = 0,
                  slabs=None) -> None:
@@ -71,6 +83,12 @@ class LayerPools:
         self.comp = self.index_k = self.carry = self.index_carry = None
         if not ratio:
             return
+        if getattr(geo, "v41", False):
+            if layer in geo.kv_source_layers:
+                self.comp = Fp4Pool(slabs, comp_blocks + 1, block_size)
+                self.index_k = Fp4Pool(slabs, comp_blocks + 1, block_size, index=True)
+                self.carry = carries[ratio, False].claim()
+            return
         self.comp = Pool(slabs, comp_blocks + 1, geo.kv_dim, block_size)
         self.carry = carries[ratio, False].claim()
         if geo.is_indexed(layer):
@@ -86,8 +104,9 @@ def create_cache(geo, raw_blocks, capacities, block_size, slots=1, spec_rows=1, 
     history = PagedHistory({r: capacities[r] for r in ratios}, block_size, slots)
     carries = {}
     for r in ratios:
-        layers = [i for i, x in enumerate(geo.compress_ratios) if x == r]
-        indexed = [i for i in layers if geo.is_indexed(i)]
+        layers = [i for i, x in enumerate(geo.compress_ratios) if x == r
+                  and (not getattr(geo, "v41", False) or i in geo.kv_source_layers)]
+        indexed = [] if getattr(geo, "v41", False) else [i for i in layers if geo.is_indexed(i)]
         carries[r, False] = CarryGroup(len(layers), slots, COFF[r]*r,
             COFF[r]*geo.kv_dim, max(0, spec_rows-1), slabs)
         if indexed:
@@ -95,6 +114,11 @@ def create_cache(geo, raw_blocks, capacities, block_size, slots=1, spec_rows=1, 
                 2*geo.index_head_dim, max(0, spec_rows-1), slabs)
     layers = [LayerPools(geo, i, raw_blocks, capacities.get(geo.compress_ratios[i], 1),
                          carries, slabs, block_size) for i in range(geo.num_layers)]
+    if getattr(geo, "v41", False):
+        for i, lp in enumerate(layers):
+            if lp.ratio:
+                source = layers[geo.kv_source(i)]
+                lp.comp, lp.index_k = source.comp, source.index_k
     parts = [StateRows(t, axis=1, width=2*g.bank)
              for g in sorted(carries.values(), key=id) for t in (g.kv, g.score)]
     state = RequestState(parts=parts)
@@ -103,6 +127,9 @@ def create_cache(geo, raw_blocks, capacities, block_size, slots=1, spec_rows=1, 
         [PageWindow(lp.raw.k.view(raw_blocks, -1), window, block_size) for lp in layers if window] + parts)
     plan = Compression(geo, raw_blocks, block_size, slots, spec_rows, ctx_cap,
                        history, state, carries)
+    if getattr(geo, "v41", False) and geo.kv_source_layers:
+        from .ced import EncoderTail
+        plan.ced = EncoderTail(geo, slots, slabs)
     return CacheStorage(layers, block_size, slabs=slabs, history=history,
                         state=state, snapshots=snapshots, plan=plan)
 

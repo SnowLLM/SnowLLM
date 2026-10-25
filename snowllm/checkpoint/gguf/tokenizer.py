@@ -57,7 +57,13 @@ def tokenizer_json(g: GGUF) -> dict:
             f"wrong, so it will not; known ones are {', '.join(sorted(PRE_TOKENIZER))}.")
 
     tokens = g.need("tokenizer.ggml.tokens")
-    types = g.get("tokenizer.ggml.token_type") or [NORMAL] * len(tokens)
+    types = g.get("tokenizer.ggml.token_type")
+    if types is None and g.get("{arch}.variant") == "v41_flash":
+        # This converter omits token types; these ranges match V4.1's tokenizer.json.
+        types = [NORMAL] * len(tokens)
+        for i in (0, 1, 2, *range(128000, len(tokens))):
+            types[i] = USER_DEFINED if 128799 <= i <= 128845 or 129264 <= i <= 129270 else CONTROL
+    types = types or [NORMAL] * len(tokens)
     if len(types) != len(tokens):
         raise SnowLLMError(f"{g.path.name} has {len(tokens)} tokens but {len(types)} token types")
 
@@ -110,7 +116,11 @@ def build(g: GGUF) -> "PreTrainedTokenizerFast":
     if is_model(g):
         from ...models.minicpmv.processing import SPECIAL_TOKENS
         extras["extra_special_tokens"] = SPECIAL_TOKENS
-    return PreTrainedTokenizerFast(
+    cls = PreTrainedTokenizerFast
+    if g.get("{arch}.variant") == "v41_flash":
+        from ...models.deepseek_v4.processing import DeepSeekV41Tokenizer
+        cls = DeepSeekV41Tokenizer
+    return cls(
         tokenizer_object=Tokenizer.from_str(json.dumps(tokenizer_json(g))),
         chat_template=g.get("tokenizer.chat_template"),
         eos_token=named("tokenizer.ggml.eos_token_id"),

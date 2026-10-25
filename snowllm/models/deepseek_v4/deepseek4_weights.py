@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 from collections.abc import Callable
+import contextlib
 
 import torch
 
@@ -50,8 +51,10 @@ def _bf16(rd: GGUFReader, name: str) -> torch.Tensor:
 
 def _compressor(rd: GGUFReader, p: str, stem: str, head_dim: int, ratio: int) -> Compressor:
     width = (2 if ratio == 4 else 1) * head_dim
+    ape = (None if ratio in (1, 2) else
+           rd.tensor(f"{p}{stem}_ape.weight", torch.float32).reshape(ratio, width).cuda().contiguous())
     return Compressor(
-        rd.tensor(f"{p}{stem}_ape.weight", torch.float32).reshape(ratio, width).cuda().contiguous(),
+        ape,
         _f32(rd, f"{p}{stem}_norm.weight"), head_dim, ratio)
 
 
@@ -91,7 +94,19 @@ def _hyper(rd: GGUFReader, p: str, stem: str, geo: DeepSeekV4Geometry) -> HyperM
 
 
 def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RMSNorm,
-         dmap: placement.DeviceMap | None = None, layer: int | None = None) -> MoE:
+         dmap: placement.DeviceMap | None = None, layer: int | None = None, cache_store=None,
+         protect_resident=False) -> MoE:
+    hashed = hashed or p + 'ffn_gate_tid2eid.weight' in rd.gguf
+    offloading = cache_store is not None or protect_resident
+    if hashed and offloading:
+        dmap, cache_store = None, None
+    if cache_store is not None and layer not in cache_store.specs:
+        cache_store = None
+    if p + "ffn_exps_vq.blob" in rd.gguf:
+        if cache_store is not None:
+            raise SnowLLMError("VQ MoE does not support the expert LRU cache yet")
+        from .vq_moe import load
+        return load(rd, p, geo, norm, dmap, layer)
     fmt = {n: rd.gguf[p + n].quant.name for n in
            ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight",
             "ffn_gate_shexp.weight", "ffn_up_shexp.weight", "ffn_down_shexp.weight")}
@@ -108,14 +123,43 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
     bias = _f32(rd, bias_key) if bias_key in rd.gguf else None
     router_w = ops.moe_shuffle_router(router, bias)
     del router, bias
+    if cache_store is not None:
+        from ...ops.expert_cache import CachedExperts
+        with ops.host_memory(False):
+            resident_gu = _routed_gate_up(rd, p, fmt, kq, e) if cache_store.mode == 'down' else None
+        cached = CachedExperts(cache_store, layer, resident_gu)
+        gate_up, down = cached.gate_up, cached.down
+    else:
+        with ops.host_memory(False) if offloading else contextlib.nullcontext():
+            gate_up, down = _routed(rd, p, fmt, kq, e, dmap, layer)
+    with placement.place(dmap, "shared.gate_up", layer), (
+            ops.host_memory(False) if offloading else contextlib.nullcontext()):
+        shared_gate_up = ops.moe_kquant_shuffle_gate_up(
+            rd.raw(p + "ffn_gate_shexp.weight"), rd.raw(p + "ffn_up_shexp.weight"),
+            KQUANT[fmt["ffn_gate_shexp.weight"]], 1)
+    with placement.place(dmap, "shared.down", layer), (
+            ops.host_memory(False) if offloading else contextlib.nullcontext()):
+        shared_down = ops.moe_kquant_shuffle_down(rd.raw(p + "ffn_down_shexp.weight"),
+                                                  KQUANT[fmt["ffn_down_shexp.weight"]], 1)
+    tid2eid = None
+    if hashed:
+        tid2eid = rd.raw(p + "ffn_gate_tid2eid.weight").view(torch.int32).reshape(
+            -1, geo.moe_topk).contiguous()
+    result = MoE(router_w, gate_up, down, shared_gate_up, shared_down, norm, geo, tid2eid)
+    result.cache = cached if cache_store is not None else None
+    return result
+
+
+def _routed_gate_up(rd, p, fmt, kq, e):
+    gate, up = rd.transient(p + "ffn_gate_exps.weight", p + "ffn_up_exps.weight")
+    if kq:
+        return ops.moe_kquant_shuffle_gate_up(gate, up, KQUANT[fmt["ffn_gate_exps.weight"]], e)
+    return ops.moe_lowbit_shuffle_gate_up_split(gate, up, ops.LOWBIT_FORMATS[fmt["ffn_gate_exps.weight"]], e)
+
+
+def _routed(rd, p, fmt, kq, e, dmap, layer):
     with placement.place(dmap, "experts.gate_up", layer):
-        gate, up = rd.transient(p + "ffn_gate_exps.weight", p + "ffn_up_exps.weight")
-        if kq:
-            gate_up = ops.moe_kquant_shuffle_gate_up(gate, up,
-                                                     KQUANT[fmt["ffn_gate_exps.weight"]], e)
-        else:
-            gate_up = ops.moe_lowbit_shuffle_gate_up_split(
-                gate, up, ops.LOWBIT_FORMATS[fmt["ffn_gate_exps.weight"]], e)
+        gate_up = _routed_gate_up(rd, p, fmt, kq, e)
     with placement.place(dmap, "experts.down", layer):
         down_raw, = rd.transient(p + "ffn_down_exps.weight")
         if kq:
@@ -123,18 +167,7 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
         else:
             down = ops.moe_lowbit_shuffle_down(
                 down_raw, ops.LOWBIT_FORMATS[fmt["ffn_down_exps.weight"]], e)
-    with placement.place(dmap, "shared.gate_up", layer):
-        shared_gate_up = ops.moe_kquant_shuffle_gate_up(
-            rd.raw(p + "ffn_gate_shexp.weight"), rd.raw(p + "ffn_up_shexp.weight"),
-            KQUANT[fmt["ffn_gate_shexp.weight"]], 1)
-    with placement.place(dmap, "shared.down", layer):
-        shared_down = ops.moe_kquant_shuffle_down(rd.raw(p + "ffn_down_shexp.weight"),
-                                                  KQUANT[fmt["ffn_down_shexp.weight"]], 1)
-    tid2eid = None
-    if hashed:
-        tid2eid = rd.raw(p + "ffn_gate_tid2eid.weight").view(torch.int32).reshape(
-            -1, geo.moe_topk).contiguous()
-    return MoE(router_w, gate_up, down, shared_gate_up, shared_down, norm, geo, tid2eid)
+    return gate_up, down
 
 
 def _attention(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, layer: int,
@@ -173,7 +206,20 @@ def _attention(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, layer: int,
 
 def validate_config(cfg: dict) -> None:
     geo = DeepSeekV4Geometry.from_config(cfg)
-    _capi.select_geometry(_capi.GEO_DEEPSEEK_V4_FLASH)
+    if geo.v41:
+        expected = dict(q_lora_rank=1280, o_lora_rank=1024, o_groups=8, index_n_heads=32,
+                        index_head_dim=128, index_topk=512, hc_mult=4, moe_num_experts=384,
+                        moe_inter=2304, moe_topk=6, candidate_source_layer=20,
+                        candidate_topk_blocks=2048, candidate_block_size=8)
+        bad = [f"{key}={getattr(geo, key)} (expected {value})" for key, value in expected.items()
+               if getattr(geo, key) != value]
+        if (geo.compress_ratios != (0, 0) + (2,) * 18 + (1,) * 20
+                or geo.kv_source_layers != (2, 8, 14, 20)
+                or geo.index_source_layers != (2, 8, 14, 20, 24, 28, 32, 36)):
+            bad.append("unsupported compression or shared-layer layout")
+        if bad:
+            raise SnowLLMError("unsupported V4.1 Flash configuration: " + ", ".join(bad))
+    ops.select_geometry(_capi.GEO_DEEPSEEK_V41_FLASH if geo.v41 else _capi.GEO_DEEPSEEK_V4_FLASH)
     build = _capi.build_geometry()
     baked = (("hidden", geo.hidden), ("vocab_size", geo.vocab_size),
              ("num_heads", geo.num_heads), ("head_size", geo.head_size))
@@ -188,18 +234,22 @@ def validate_config(cfg: dict) -> None:
 
 
 def load_gguf_weights(rd: GGUFReader, cfg: dict, want: range, progress: Progress = None,
-                      device_map: placement.DeviceMap | None = None, mtp: bool = False
+                      device_map: placement.DeviceMap | None = None, mtp: bool = False,
+                      moe_cache_experts: int = 0, moe_cache_mode: str = 'all',
+                      disk_offload: int | None = None
                       ) -> DeepSeekV4ForCausalLM:
     geo = DeepSeekV4Geometry.from_config(cfg)
     if tuple(want) != tuple(range(geo.num_layers)):
         import dataclasses
         geo = dataclasses.replace(geo, num_layers=len(want))
-    model = load(rd, geo, progress=progress, device_map=device_map)
+    model = load(rd, geo, progress=progress, device_map=device_map,
+                 moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
+                 disk_offload=disk_offload)
     model.config = dict(cfg)
     return model
 
 
-def _transient_need(rd: GGUFReader, geo: DeepSeekV4Geometry) -> int:
+def _transient_need(rd: GGUFReader, geo: DeepSeekV4Geometry, cache_store=None) -> int:
     need = 0
     for i in range(geo.num_layers):
         p = f"blk.{i}."
@@ -207,20 +257,33 @@ def _transient_need(rd: GGUFReader, geo: DeepSeekV4Geometry) -> int:
                ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight")
                if p + n in rd.gguf}
         if len(got) == 3:
+            cached = cache_store is not None and i in cache_store.specs
+            if cached and cache_store.mode == 'all':
+                continue
             need = max(need, got["ffn_gate_exps.weight"] + got["ffn_up_exps.weight"],
-                       got["ffn_down_exps.weight"])
+                       0 if cached else got["ffn_down_exps.weight"])
     return need
 
 
 def load(rd: GGUFReader, geo: DeepSeekV4Geometry, progress: Progress = None,
          embed: torch.Tensor | None = None, head: ops.KQuantExpertWeight | None = None,
-         device_map: placement.DeviceMap | None = None
+         device_map: placement.DeviceMap | None = None, moe_cache_experts: int = 0,
+         moe_cache_mode: str = 'all', disk_offload: int | None = None
          ) -> DeepSeekV4ForCausalLM:
+    if geo.v41:
+        if moe_cache_experts or disk_offload:
+            raise SnowLLMError("V4.1 VQ weights do not support expert LRU or disk offload yet")
+        from .v41 import load as load_v41
+        return load_v41(rd, geo, progress, device_map)
     if geo.tie_word_embeddings:
         raise SnowLLMError("this checkpoint ties the LM head to the embedding, which the "
                            "DeepSeek-V4 path does not read yet")
     dmap = device_map
-    rd.reserve_transient(_transient_need(rd, geo))
+    from ...ops.expert_cache import ExpertStore
+    offload_plan = (ExpertStore(rd, geo, moe_cache_experts, moe_cache_mode, offload=disk_offload,
+                               device_map=dmap) if moe_cache_experts or disk_offload else None)
+    cache_store = offload_plan if offload_plan is not None and offload_plan.active else None
+    rd.reserve_transient(_transient_need(rd, geo, cache_store))
     rope = Rope(geo)
     layers = []
     for i in range(geo.num_layers):
@@ -229,7 +292,8 @@ def load(rd: GGUFReader, geo: DeepSeekV4Geometry, progress: Progress = None,
             attn = _attention(rd, p, geo, i, rope)
         layers.append(Layer(
             attn,
-            _moe(rd, p, geo, geo.is_hashed(i), RMSNorm(_bf16(rd, p + "ffn_norm.weight")), dmap, i),
+            _moe(rd, p, geo, geo.is_hashed(i), RMSNorm(_bf16(rd, p + "ffn_norm.weight")),
+                 dmap, i, cache_store, protect_resident=offload_plan is not None),
             _hyper(rd, p, "hc_attn", geo),
             _hyper(rd, p, "hc_ffn", geo), i))
         if progress is not None:
@@ -246,8 +310,11 @@ def load(rd: GGUFReader, geo: DeepSeekV4Geometry, progress: Progress = None,
     rd.drop_transient()
     hc_fn = rd.tensor("output_hc_fn.weight",
                       torch.float32).reshape(-1, geo.hc_mult * geo.hidden).cuda()
-    return DeepSeekV4ForCausalLM(geo, layers, embed, RMSNorm(_bf16(rd, "output_norm.weight")),
+    model = DeepSeekV4ForCausalLM(geo, layers, embed, RMSNorm(_bf16(rd, "output_norm.weight")),
                                  head,
                                  ProjWeight.dense(ops.Dsv4Proj.HC_FN, hc_fn),
                                  _f32(rd, "output_hc_scale.weight"),
                                  _f32(rd, "output_hc_base.weight"), rope=rope)
+    model.moe_cache_store = cache_store
+    model.moe_offload_plan = offload_plan
+    return model

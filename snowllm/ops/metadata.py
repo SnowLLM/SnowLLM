@@ -39,6 +39,17 @@ def metadata_ranges(groups,*,table=None,page=0):
     return outputs
 
 
+def fill_ranges_(groups):
+    jobs=[]
+    for out,first,step in groups:
+        if out.dtype not in (torch.int32,torch.int64):
+            raise SnowLLMError('metadata fills require int32 or int64 storage')
+        _chk(out,'metadata fill',out.dtype)
+        jobs.append(_Range(_p(out),first,step,out.numel(),_TYPES[out.dtype],0,0,0,-1))
+    array=(_Range*len(jobs))(*jobs)
+    check(lib.snowllm_metadata_ranges(array,len(jobs),_stream()),'metadata_ranges')
+
+
 class _RowCopy(ctypes.Structure):
     _fields_=[('src',ctypes.c_void_p*2),('dst',ctypes.c_void_p*2),
               ('src_index',ctypes.c_void_p),('dst_index',ctypes.c_void_p)]+[
@@ -95,6 +106,58 @@ def copy_batch(targets,sources):
     need=lib.snowllm_row_copies_workspace_bytes(jobs,len(jobs))
     ws=torch.empty(need,dtype=torch.uint8,device=targets[0].device) if need else None
     check(lib.snowllm_row_copies(jobs,len(jobs),_p(ws),need,_stream()),'row_copies')
+
+
+def copy_tensor(dst,src):
+    if dst.shape!=src.shape or dst.ndim>8:
+        raise SnowLLMError('tensor copy requires matching shapes with at most eight axes')
+    for t in (dst,src):
+        if t.dtype not in _TYPES:
+            raise SnowLLMError('unsupported tensor copy dtype')
+        if not t.is_cuda and t.device.type!='meta':
+            raise SnowLLMError('tensor copy requires device tensors')
+    if not dst.numel():return dst
+    reach=1
+    for stride,size in sorted(zip(dst.stride(),dst.shape)):
+        if size>1:
+            if stride<reach:raise SnowLLMError('tensor copy destination overlaps itself')
+            reach+=(size-1)*stride
+    if dst.device.type!='meta' and src.device.type!='meta':
+        sp,dp=_p(src),_p(dst)
+        if sp==dp and src.dtype==dst.dtype and src.stride()==dst.stride():return dst
+        sn=(1+sum((n-1)*s for n,s in zip(src.shape,src.stride())))*src.element_size()
+        dn=(1+sum((n-1)*s for n,s in zip(dst.shape,dst.stride())))*dst.element_size()
+        if sp<dp+dn and dp<sp+sn:
+            raise SnowLLMError('stage aliased tensor copies in the planned arena')
+    if src.ndim:
+        try:
+            a,b=_matrix(src),_matrix(dst)
+        except RuntimeError:
+            pass
+        else:
+            if (a.stride(1)==b.stride(1)==1 and a.stride(0)>=a.shape[1]
+                    and b.stride(0)>=b.shape[1]):
+                return copy_rows(dst,src)
+    shape=(ctypes.c_int64*src.ndim)(*src.shape)
+    ss=(ctypes.c_int64*src.ndim)(*src.stride())
+    ds=(ctypes.c_int64*dst.ndim)(*dst.stride())
+    check(lib.snowllm_tensor_copy(_p(src),_p(dst),shape,ss,ds,src.ndim,
+          _TYPES[src.dtype],_TYPES[dst.dtype],_stream()),'tensor_copy')
+    return dst
+
+
+def copy_from_host(dst,data):
+    _chk(dst,'host upload destination',dst.dtype)
+    payload=memoryview(data)
+    if not payload.c_contiguous or payload.nbytes!=dst.nbytes:
+        raise SnowLLMError('host upload byte count or layout does not match its destination')
+    if not payload.nbytes:return dst
+    if torch.cuda.is_current_stream_capturing():
+        raise SnowLLMError('pageable host uploads cannot be captured')
+    source=(ctypes.c_char_p(payload.tobytes()) if payload.readonly else
+            (ctypes.c_uint8*payload.nbytes).from_buffer(payload))
+    check(lib.snowllm_copy_from_host(_p(dst),source,payload.nbytes,_stream()),'copy_from_host')
+    return dst
 
 
 def gather_rows(src,ids,*,out=None):

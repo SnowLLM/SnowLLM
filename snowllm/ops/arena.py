@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 import torch
 
 from .._capi import SnowLLMError
+from ._common import dry_alloc
 from .trace import Planner, dummy_run, own, pack, tracing
 
 
@@ -51,8 +52,9 @@ class Arena:
         return self.new(*t.shape, dtype=dtype or t.dtype)
 
     def copy(self, t: torch.Tensor, dtype: torch.dtype | None = None) -> torch.Tensor:
+        from .metadata import copy_tensor
         out = self.like(t, dtype)
-        out.copy_(t)
+        copy_tensor(out, t)
         return out
 
     def dense(self, t: torch.Tensor, dtype: torch.dtype | None = None) -> torch.Tensor:
@@ -80,7 +82,8 @@ class Arena:
         have = planner.plans.get(key)
         if rows <= 0 or (have is not None and rows <= have.rows):
             return False
-        with dummy_run() as trace:
+        # Inference tensors do not retain view bases, which would end allocation lifetimes too early.
+        with torch.inference_mode(False), torch.no_grad(), dummy_run() as trace, dry_alloc():
             held = walk()
         plan = pack(trace, rows)
         del held

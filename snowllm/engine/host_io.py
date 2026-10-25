@@ -73,8 +73,16 @@ class MappedBuffer:
     def reserve(self, n):
         if n > self.capacity:
             capacity = max(n, 2*self.capacity)
-            host = torch.empty(capacity, dtype=self.dtype, pin_memory=True)
-            device = _mapped_view(host)
+            from ..capacity import reserve_host, release_host
+            nbytes = capacity * torch.empty((), dtype=self.dtype).element_size()
+            reserve_host(nbytes)
+            try:
+                host = torch.empty(capacity, dtype=self.dtype, pin_memory=True)
+                device = _mapped_view(host)
+            except BaseException:
+                release_host(nbytes)
+                raise
+            weakref.finalize(host.untyped_storage(), release_host, nbytes)
             self.capacity, self.host, self.device = capacity, host, device
             ptr = host.data_ptr()
             def retire(ref):
@@ -88,7 +96,7 @@ class MappedBuffer:
         n = len(flat)
         self.reserve(max(n, 1))
         if n:
-            self.host[:n].copy_(torch.frombuffer(flat, dtype=self.dtype))
+            ctypes.memmove(self.host.data_ptr(), flat.buffer_info()[0], n*flat.itemsize)
         return self.device[:n]
 
 
@@ -109,6 +117,12 @@ class HostArena:
         if key not in self.buffers:
             self.buffers[key] = MappedBuffer(dtype)
         return self.buffers[key].write(values)
+
+    def reserve(self, name, n, dtype=torch.int64):
+        key = (name, dtype)
+        if key not in self.buffers:
+            self.buffers[key] = MappedBuffer(dtype)
+        self.buffers[key].reserve(n)
 
     def q_plan(self, name, lengths):
         from .._capi import lib
@@ -177,7 +191,8 @@ class SchedulerInputs(HostArena):
         for i, blocks in enumerate(lists):
             lo = self.length[i] if self.owner[i] is blocks else 0
             if len(blocks) > lo:
-                host[i, lo:len(blocks)].copy_(torch.frombuffer(array.array("i", blocks[lo:]),
-                                                              dtype=torch.int32))
+                values = array.array("i", blocks[lo:])
+                ctypes.memmove(host.data_ptr()+(i*self.width+lo)*values.itemsize,
+                               values.buffer_info()[0], len(values)*values.itemsize)
             self.owner[i], self.length[i] = blocks, len(blocks)
         return self.table.device.view(self.rows, self.width)[:len(lists)]

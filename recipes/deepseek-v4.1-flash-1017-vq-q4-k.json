@@ -18,10 +18,20 @@
     "LICENSE-DeepSeek"
   ],
   "bytes": 317600818409,
-  "status": "coming soon",
-  "spec": "DSpark (embedded)",
+  "status": "supported",
+  "spec": "",
   "priority": 10,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
-  "summary": "Coming soon: DeepSeek-V4.1-Flash-1017 in VQ + Q4_K precision.",
-  "note": "Inference is not supported yet. The base model files require assembly; allow additional disk space for assembly."
+  "summary": "DeepSeek-V4.1-Flash-1017 text inference with VQ + Q4_K weights, one request and an 8192-token context.",
+  "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Vision and prefix reuse are not enabled.",
+  "defaults": {
+    "max_num_seqs": 1,
+    "num_spec": 0,
+    "prefix_memory_ratio": 0,
+    "max_model_len": 8192,
+    "max_num_batched_tokens": 64,
+    "device_map": "auto",
+    "max_gpu_mem_util": 0.94,
+    "max_host_mem_util": 0.9
+  }
 }

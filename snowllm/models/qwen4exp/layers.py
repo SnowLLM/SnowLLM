@@ -9,31 +9,23 @@ from torch import nn
 from ... import ops
 from ...engine.forward_context import ForwardContext, Qwen4ExpContext
 from ...trace import span
-from ..geometry import Qwen4ExpGeometry, pad_gemm_n
+from ..geometry import Qwen4ExpGeometry
+from ..projection import pack_bf16, project
 from ..qwen3_5.layers import DecoderLayerBase, FullAttention, FusedMoE, GatedDeltaNet
 
 
 class Dense(nn.Module):
     def __init__(self, w: torch.Tensor) -> None:
         super().__init__()
-        rows, self.k = w.shape
-        self.rows, self.n = rows, pad_gemm_n(rows)
-        padded = torch.zeros(self.n, self.k, dtype=torch.bfloat16, device="cuda")
-        padded[:rows] = w.to(torch.bfloat16)
-        self.w = ops.gemm_bf16_shuffle_b(padded, self.n, self.k)
-        del padded
+        self.w, self.n, self.k, self.rows = pack_bf16(w)
 
     def forward(self, ctx: ForwardContext, x: torch.Tensor, M: int,
                 dtype: torch.dtype = torch.bfloat16,
                 out: torch.Tensor | None = None) -> torch.Tensor:
         if out is None:
             out = ctx.arena.new(M, self.n, dtype=dtype)
-        with ctx.arena.frame():
-            ws = ctx.arena.flat(ops.gemm_bf16_a_ws_bytes(M, self.k), torch.uint8)
-            ops.gemm_bf16_a(x, self.w, out, M, self.n, self.k, ws)
+        project(ctx, x, self.w, out, self.n, self.k)
         return out
-
-
 
 
 class KQuantDense(nn.Module):

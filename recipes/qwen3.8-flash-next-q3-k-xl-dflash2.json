@@ -16,7 +16,8 @@
   "note": "Shares target weights with the MTP recipe. The BF16 DFlash 2 drafter is an additional download.",
   "defaults": {
     "dflash": "@model/dflash2",
-    "dflash_block": 4
+    "dflash_block": 4,
+    "max_num_seqs": 4
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

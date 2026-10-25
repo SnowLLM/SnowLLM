@@ -3,6 +3,8 @@
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
+import json
 import os
 import re
 import signal
@@ -13,6 +15,14 @@ from packaging.version import InvalidVersion, Version
 from ._version import __version__
 
 TIMEOUT = 10
+
+
+@dataclass
+class Update:
+    current: str = __version__
+    latest: str | None = None
+    changelog: str | None = None
+    checking: bool = False
 
 
 def _latest(output: str) -> Version | None:
@@ -30,17 +40,48 @@ def _latest(output: str) -> Version | None:
     return max(versions, default=None)
 
 
-async def check() -> None:
+def _changelog(output: str, expected: Version) -> str | None:
+    try:
+        report = json.loads(output)
+    except ValueError:
+        return None
+    if not isinstance(report, dict) or report.get("version") != "1":
+        return None
+    items = report.get("install")
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        metadata = item.get("metadata") if isinstance(item, dict) else None
+        if not isinstance(metadata, dict):
+            continue
+        name = metadata.get("name")
+        if not isinstance(name, str) or name.lower() != "snowllm":
+            continue
+        try:
+            if Version(metadata.get("version", "")) != expected:
+                continue
+        except (InvalidVersion, TypeError):
+            continue
+        description = metadata.get("description")
+        if isinstance(description, str):
+            match = re.search(r"<!-- snowllm-changelog:start -->\s*(.*?)\s*"
+                              r"<!-- snowllm-changelog:end -->", description, re.DOTALL)
+            if match:
+                return match.group(1).strip() or None
+    return None
+
+
+async def _pip(*args: str) -> str | None:
     proc = None
     try:
-        current = Version(__version__)
         # Let pip resolve indexes, proxies and credentials from its own configuration.
         launch = asyncio.create_task(asyncio.create_subprocess_exec(
-            sys.executable, "-m", "pip", "index", "versions", "snowllm",
+            sys.executable, "-m", "pip", *args,
             "--disable-pip-version-check", "--no-input", "--no-color",
             "--retries", "0", "--timeout", "3",
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, start_new_session=os.name != "nt"))
+            stderr=asyncio.subprocess.DEVNULL, start_new_session=os.name != "nt",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"}))
         try:
             proc = await asyncio.shield(launch)
         except asyncio.CancelledError:
@@ -49,11 +90,7 @@ async def check() -> None:
         output, _ = await asyncio.wait_for(proc.communicate(), TIMEOUT)
         if proc.returncode != 0:
             return
-        latest = _latest(output.decode("utf-8", errors="replace"))
-        if latest is not None and latest > current:
-            print(f"SnowLLM {latest} is available (installed: {__version__}). "
-                  "Update: https://snowllm.dev/docs/getting-started/installation",
-                  file=sys.stderr, flush=True)
+        return output.decode("utf-8", errors="replace")
     except (OSError, ValueError, asyncio.TimeoutError, NotImplementedError):
         pass
     finally:
@@ -67,11 +104,36 @@ async def check() -> None:
             await proc.wait()
 
 
+async def check(update: Update | None = None) -> None:
+    update = update if update is not None else Update(current=__version__)
+    update.checking = True
+    try:
+        current = Version(update.current)
+        output = await _pip("index", "versions", "snowllm")
+        latest = _latest(output) if output else None
+        if latest is None or latest <= current:
+            return
+        update.latest = str(latest)
+        print(f"SnowLLM {latest} is available (installed: {update.current}). "
+              "Update: https://snowllm.dev/docs/getting-started/installation",
+              file=sys.stderr, flush=True)
+        output = await _pip("install", f"snowllm=={latest}", "--dry-run",
+                            "--ignore-installed", "--no-deps", "--only-binary=:all:",
+                            "--quiet", "--report", "-")
+        update.changelog = _changelog(output, latest) if output else None
+        if update.changelog:
+            print(update.changelog, file=sys.stderr, flush=True)
+    except InvalidVersion:
+        pass
+    finally:
+        update.checking = False
+
+
 @asynccontextmanager
-async def session():
+async def session(update: Update | None = None):
     task = None
     if os.environ.get("SNOWLLM_NO_UPDATE_CHECK") != "1":
-        task = asyncio.create_task(check())
+        task = asyncio.create_task(check(update))
     try:
         yield
     finally:

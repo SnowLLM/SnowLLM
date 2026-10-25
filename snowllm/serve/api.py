@@ -82,7 +82,8 @@ async def models() -> dict:
     thinking = thinking_capabilities(st.tokenizer)
     return {"object": "list",
             "data": [{"id": name, "object": "model", "owned_by": "snowllm",
-                      "created": st.created, "thinking": thinking} for name in sorted(st.aliases)]}
+                      "created": st.created, "thinking": thinking,
+                      "context_length": st.aliases[name].ctx} for name in sorted(st.aliases)]}
 
 
 def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:

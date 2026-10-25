@@ -26,5 +26,8 @@
   "summary": "Qwen3.8-27B in UD-Q4_K_XL with vision and MTP.",
   "note": "For the separate DFlash 2 drafter, use qwen3.8-27b-q4-k-xl-dflash2.",
   "bytes": 18490325351,
-  "serve_as": "Qwen3.8-27B"
+  "serve_as": "Qwen3.8-27B",
+  "defaults": {
+    "max_num_seqs": 4
+  }
 }

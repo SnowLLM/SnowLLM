@@ -28,6 +28,12 @@ def context_len(r: Request) -> int:
 
 
 class DSparkScheduling:
+    def _draft_table(self, batch: list[Request]) -> torch.Tensor:
+        for r in batch:
+            if not self.grow(r, 0):
+                raise RuntimeError("draft KV pool exhausted")
+        return self.draft_tables([r.draft_blocks for r in batch])
+
     def init_adaptive(self, adaptive, p_min, has_confidence):
         if adaptive and not has_confidence:
             raise ValueError('adaptive DSpark requires a confidence head')
@@ -478,12 +484,6 @@ class DFlashDecoder(DSparkScheduling):
                 return False
             r.draft_blocks += more
         return True
-
-    def _draft_table(self, batch: list[Request]) -> torch.Tensor:
-        for r in batch:
-            if not self.grow(r, 0):
-                raise RuntimeError("draft KV pool exhausted")
-        return self.draft_tables([r.draft_blocks for r in batch])
 
     def _stage_rows(self, batch: list[Request], accepted: list[int] | None) -> None:
         B = len(batch)

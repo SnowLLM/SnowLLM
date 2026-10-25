@@ -27,6 +27,7 @@
     }
   ],
   "defaults": {
-    "num_spec": 0
+    "num_spec": 0,
+    "max_num_seqs": 4
   }
 }

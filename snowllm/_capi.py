@@ -28,13 +28,14 @@ os.environ.setdefault("ROCSHMEM_DEBUG_LEVEL", "NONE")
 __all__ = ["SnowLLMError", "build_geometry", "draft_count", "draft_name", "draft_shape", "lib",
            "select_draft", "select_geometry", "geometry_id", "geometry_name", "synchronize",
            "assert_single_hip_runtime", "GEO_QWEN36_35B_A3B", "GEO_QWEN36_27B",
-           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH"]
+           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH"]
 
 GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
 GEO_DEEPSEEK_V4_FLASH = 2
 GEO_QWEN38_FLASH_NEXT = 3
 GEO_GLM53_FLASH = 4
+GEO_DEEPSEEK_V41_FLASH = 5
 
 
 class BuildGeometry(ctypes.Structure):
@@ -93,7 +94,8 @@ def select_geometry(geo: int) -> None:
             f"this build has no geometry {geo}; it carries "
             + ", ".join(f"{i} ({geometry_name(i)})"
                         for i in (GEO_QWEN36_35B_A3B, GEO_QWEN36_27B,
-                                  GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH)
+                                  GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH,
+                                  GEO_DEEPSEEK_V41_FLASH)
                         if geometry_name(i))
         )
 
@@ -158,7 +160,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 68
+ABI_VERSION = 74
 
 
 def _check_abi() -> None:
@@ -182,8 +184,22 @@ class Stream:
 
 P, S = c_void_p, Stream
 _SIGS = [
+    ("snowllm_tensor_copy", c_int, [P]*5+[c_int]*3+[S]),
+    ("snowllm_copy_from_host", c_int, [P,P,c_int64,S]),
+    ("snowllm_sampling_uniform", c_int, [P]+[c_int64]*3+[c_int,S]),
+    ("snowllm_dsv41_hc_init", c_int, [P,P,c_int64,c_int64,S]),
     ("snowllm_dsv4_attention_scratch_bytes", c_int64, [c_int64,c_int]),
     ("snowllm_dsv4_attention", c_int, [P,P,P,c_int64,S]),
+    ("snowllm_dsv41_fp4_row_bytes", c_int64, [c_int]),
+    ("snowllm_dsv41_fp4_pack", c_int, [P,c_int64,P,P,c_int64,c_int64,c_int,P,P,P,S]),
+    ("snowllm_dsv41_fp4_unpack", c_int, [P,P,P,c_int64,c_int64,c_int,S]),
+    ("snowllm_dsv41_fp8_quant", c_int, [P,c_int64,S]),
+    ("snowllm_dsv41_attention", c_int, [P]*11+[c_int64]+[c_int]*5+[S]),
+    ("snowllm_dsv41_hc_mixes", c_int, [P]*3+[c_int64,c_int,c_float,S]),
+    ("snowllm_dsv41_index_scores", c_int, [P]*9+[c_int64]*3+[c_int,c_int64,c_int,S]),
+    ("snowllm_dsv41_candidate_scores", c_int, [P]*7+[c_int64]*3+[c_int,S]),
+    ("snowllm_dsv41_engram_unpack", c_int, [P,P,c_int64,S]),
+    ("snowllm_dsv41_engram_gate", c_int, [P]*4+[c_int64,c_int,c_float,S]),
     ("snowllm_paged_attention_scratch_bytes", c_int64, [c_int64,c_int64,c_int]),
     ("snowllm_paged_attention_varlen", c_int, [c_int,c_int64,c_int]),
     ("snowllm_paged_attention", c_int, [P,P,c_int64,S]),
@@ -674,9 +690,38 @@ _SIGS += [
     ("snowllm_glm_hc_norm_proj", c_int, [P]*4+[c_int,c_float,S]),
 ]
 _SIGS += [sig for sig in (
+    # Allocator callbacks accept stream pointers but are not kernel launches.
+    ("snowllm_host_alloc", P, [c_int64, c_int, P]),
+    ("snowllm_host_free", None, [P, c_int64, c_int, P]),
+    ("snowllm_host_allocated_bytes", c_int64, []),
+    ("snowllm_host_set_limit", c_int, [c_int64]),
+    ("snowllm_host_contains", c_int, [P]),
+    ("snowllm_use_host_alloc", None, [c_int]),
+    ("snowllm_gather_embedding_q4_k", c_int, [P]*3 + [c_int64]*3 + [S]),
     ("snowllm_qwen4exp_qsa_produce_snapshot_scaled", c_int,
      [P, c_int64] + [P]*12 + [c_int64]*5 + [c_float, P, c_int64, S]),
+    ("snowllm_file_reader_readv", c_int, [P]*5 + [c_int64, S]),
+    ("snowllm_vq_moe_workspace_bytes", c_int64, [c_int64]*5),
+    ("snowllm_vq_moe_normalized_workspace_bytes", c_int64, [c_int64]*5),
+    ("snowllm_vq_moe_normalized", c_int, [P]*10 + [c_int64, P, S]),
+    ("snowllm_vq_moe_decode_force", None, [c_int]),
+    ("snowllm_vq_moe", c_int, [P]*10 + [c_int64, S]),
+    ("snowllm_moe_cache_route", c_int, [P]*6 + [c_int64, S]),
+    ("snowllm_moe_cache_gate_up", c_int, [P]*3 + [c_int64, S]),
+    ("snowllm_moe_cache_down", c_int, [P]*4 + [c_int64, c_int64, c_int, S]),
+    ("snowllm_moe_cache_copy", c_int, [P, P, c_int, c_int64, c_int64, S]),
+    ("snowllm_moe_cache_execute", c_int, [P]*5 + [c_int64, c_int64, c_int, S]),
+    ("snowllm_moe_cache_execute_phase", c_int, [P]*5 + [c_int64, c_int64, c_int, S]),
+    ("snowllm_moe_cache_workspace_bytes", c_int64, [c_int64]),
 ) if hasattr(lib, sig[0])]
+
+if hasattr(lib, "snowllm_dsv41_attention_reference"):
+    _SIGS.append(("snowllm_dsv41_attention_reference", c_int,
+                  [P]*11+[c_int64]+[c_int]*5+[S]))
+if hasattr(lib, "snowllm_dsv41_attention_split"):
+    _SIGS.extend((("snowllm_dsv41_attention_scratch_bytes", c_int64, [c_int64, c_int]),
+                  ("snowllm_dsv41_attention_split", c_int,
+                   [P]*11+[c_int64]+[c_int]*5+[P, c_int64, S])))
 
 _missing = []
 for _name, _res, _args in _SIGS:

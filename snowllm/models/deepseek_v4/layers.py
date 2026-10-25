@@ -13,9 +13,10 @@ from torch import nn
 from ... import ops
 from ...engine.forward_context import Dsv4Context
 from ...trace import span
-from ..geometry import COFF, DeepSeekV4Geometry, pad_gemm_n
+from ..geometry import COFF, DeepSeekV4Geometry
+from ..projection import pack_bf16
 from .compression import RatioPlan, mask_stride
-from .pools import Carry, IndexPool, LayerPools, Pool
+from .pools import Carry, Fp4Pool, IndexPool, LayerPools, Pool
 from . import rope as dsv4_rope
 
 ExpertWeight = ops.KQuantExpertWeight | ops.LowBitExpertWeight
@@ -48,12 +49,15 @@ class RMSNorm(nn.Module):
 
 
 class VocabEmbedding(nn.Module):
-    def __init__(self, weight: torch.Tensor) -> None:
+    def __init__(self, weight: torch.Tensor, quant: int = 0) -> None:
         super().__init__()
-        self.weight = weight
+        self.weight, self.quant = weight, quant
 
     def forward(self, input_ids: torch.Tensor, out: torch.Tensor) -> None:
-        ops.gather_embedding(input_ids, self.weight, out)
+        if self.quant == 4:
+            ops.gather_embedding_q4_k(input_ids, self.weight, out)
+        else:
+            ops.gather_embedding(input_ids, self.weight, out)
 
 
 class ProjWeight:
@@ -71,12 +75,9 @@ class ProjWeight:
 
     @classmethod
     def dense(cls, which: ops.Dsv4Proj, w: torch.Tensor, narrow: bool = False) -> "ProjWeight":
-        rows, k = w.shape
-        n = pad_gemm_n(rows)
+        packed, n, k, rows = pack_bf16(w)
         self = cls(which, n, k, rows)
-        padded = torch.zeros(n, k, dtype=torch.bfloat16, device="cuda")
-        padded[:rows] = w.to(torch.bfloat16)
-        self.w = ops.gemm_bf16_shuffle_b(padded, n, k)
+        self.w = packed
         if narrow and rows == ops.dsv4_narrow_proj_rows(which):
             self.narrow = ops.empty_shaped(w.shape, torch.bfloat16).copy_(w)
         return self
@@ -167,54 +168,69 @@ class Rope(nn.Module):
 
 
 class Compressor(nn.Module):
-    def __init__(self, ape: torch.Tensor, gamma: torch.Tensor, head_dim: int,
+    def __init__(self, ape: torch.Tensor | None, gamma: torch.Tensor, head_dim: int,
                  ratio: int) -> None:
         super().__init__()
         self.ape, self.gamma = ape, gamma
         self.head_dim, self.ratio, self.coff = head_dim, ratio, COFF[ratio]
 
-    def forward(self, ctx: Dsv4Context, carry: Carry, dest: "Pool | IndexPool",
-                slots: torch.Tensor, kv: torch.Tensor, score: torch.Tensor, plan: RatioPlan,
-                rot: tuple[torch.Tensor, torch.Tensor] | None, fp8: int) -> None:
+    def forward(self, ctx: Dsv4Context, carry: Carry, dest: "Pool | IndexPool | Fp4Pool | None",
+                slots: torch.Tensor, kv: torch.Tensor, score: torch.Tensor | None, plan: RatioPlan,
+                rot: tuple[torch.Tensor, torch.Tensor] | None, fp8: int,
+                out: torch.Tensor | None = None) -> None:
         with span("compressor"), ctx.arena.frame():
+            projected = (kv,) if score is None else (kv, score)
+            carried = (carry.kv,) if score is None else (carry.kv, carry.score)
             if plan.inplace:
                 # Row copy converts BF16 projections directly into the FP32 carry.
-                ops.copy_rows((carry.kv,carry.score),(kv,score),dst_index=plan.new_dst,count=plan.n_rows)
+                ops.copy_rows(carried, projected, dst_index=plan.new_dst, count=plan.n_rows)
                 if plan.n_new:
-                    self.pool(ctx, carry.kv, carry.score, plan.cur_row, plan.prev_row, ctx.eps,
-                              plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size)
+                    self.pool(ctx, carry.kv, None if score is None else carry.score,
+                              plan.cur_row, plan.prev_row, ctx.eps,
+                              plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size, out=out)
                 return
             if kv.dtype != torch.float32:
-                converted=(ctx.arena.like(kv,torch.float32),ctx.arena.like(score,torch.float32))
-                ops.copy_rows(converted,(kv,score))
-                kv,score=converted
+                converted = tuple(ctx.arena.like(t, torch.float32) for t in projected)
+                ops.copy_rows(converted, projected)
+                projected = converted
+                kv = converted[0]
+                score = None if score is None else converted[1]
             if plan.n_new:
-                self.pool(ctx, carry.kv, carry.score, plan.cur_row, plan.prev_row, ctx.eps,
+                self.pool(ctx, carry.kv, None if score is None else carry.score,
+                          plan.cur_row, plan.prev_row, ctx.eps,
                           plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size,
-                          kv[:plan.n_rows], score[:plan.n_rows], plan.src_row)
+                          kv[:plan.n_rows], None if score is None else score[:plan.n_rows], plan.src_row,
+                          out=out)
             if ops.tracing() is not None:
                 return
             if plan.keep_carry is not None:
                 dst, src = plan.keep_carry
-                ops.copy_rows((carry.kv,carry.score),(carry.kv,carry.score),src_index=src,dst_index=dst)
+                ops.copy_rows(carried, carried, src_index=src, dst_index=dst)
             if plan.keep_new is not None:
                 dst, src = plan.keep_new
-                ops.copy_rows((carry.kv,carry.score),(kv,score),src_index=src,dst_index=dst)
+                ops.copy_rows(carried, projected, src_index=src, dst_index=dst)
 
-    def pool(self, ctx: Dsv4Context, kv: torch.Tensor, score: torch.Tensor,
-             cur_row: torch.Tensor, prev_row: torch.Tensor, eps: float,
+    def pool(self, ctx: Dsv4Context, kv: torch.Tensor, score: torch.Tensor | None,
+             cur_row: torch.Tensor, prev_row: torch.Tensor | None, eps: float,
              n_work_dev: torch.Tensor | None = None,
              rot: tuple[torch.Tensor, torch.Tensor] | None = None, n_rot: int = 0,
-             dest: "Pool | IndexPool | None" = None,
+             dest: "Pool | IndexPool | Fp4Pool | None" = None,
              slots: torch.Tensor | None = None, block_size: int = 0,
              kv_new: torch.Tensor | None = None, score_new: torch.Tensor | None = None,
-             src_row: torch.Tensor | None = None) -> torch.Tensor | None:
-        out = None if dest is not None else ctx.arena.new(cur_row.numel(), self.head_dim)
+             src_row: torch.Tensor | None = None,
+             out: torch.Tensor | None = None) -> torch.Tensor | None:
+        packed = isinstance(dest, Fp4Pool)
+        direct = dest is not None and not packed
+        out = None if direct else (ctx.arena.new(cur_row.numel(), self.head_dim) if out is None else out)
         cos, sin = rot if rot is not None else (None, None)
         ops.dsv4_compressor_pool(kv, score, self.ape, self.gamma, out, cur_row, prev_row,
-                                 self.coff, self.ratio, eps, block_size, n_work_dev, cos, sin,
-                                 n_rot, None if dest is None else dest.k, slots,
-                                 dest is not None and dest.paged, kv_new, score_new, src_row)
+                                 self.coff, self.ratio, eps, block_size, n_work_dev,
+                                 None if packed else cos, None if packed else sin,
+                                 0 if packed else n_rot, dest.k if direct else None,
+                                 slots if direct else None, direct and dest.paged,
+                                 kv_new, score_new, src_row)
+        if packed:
+            dest.write(out, slots, count=n_work_dev, cos=cos, sin=sin)
         return out
 
 
@@ -363,16 +379,22 @@ class MoE(nn.Module):
         self.router_w, self.gate_up, self.down = router_w, gate_up, down
         self.shared_gate_up, self.shared_down, self.norm = shared_gate_up, shared_down, norm
         self.tid2eid, self.hidden = tid2eid, geo.hidden
+        self.cache = None
 
     def forward(self, ctx: Dsv4Context, folded: torch.Tensor) -> torch.Tensor:
         cur = self.norm(ctx, folded, folded)
         t = cur.shape[0]
         out = ctx.arena.new(t, self.hidden)
         with span("moe"), ctx.arena.frame():
-            ws = ctx.arena.flat(ops.moe_workspace_bytes(t), torch.uint8)
-            ops.inference_moe(cur,self.router_w,self.gate_up,self.down,self.shared_gate_up,
-                              self.shared_down,out,ws,token_ids=ctx.batch.input_ids,
-                              tid2eid=self.tid2eid)
+            need = self.cache.workspace_bytes(t) if self.cache is not None else ops.moe_workspace_bytes(t)
+            ws = ctx.arena.flat(need, torch.uint8)
+            if self.cache is not None:
+                self.cache.forward(cur, self.router_w, self.shared_gate_up, self.shared_down,
+                                   out, ws, ctx.batch.input_ids, self.tid2eid)
+            else:
+                ops.inference_moe(cur,self.router_w,self.gate_up,self.down,self.shared_gate_up,
+                                  self.shared_down,out,ws,token_ids=ctx.batch.input_ids,
+                                  tid2eid=self.tid2eid)
         return out
 
 

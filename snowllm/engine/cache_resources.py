@@ -237,8 +237,8 @@ class Dsv4Resources(ResourceSet):
         chunk = r.max_prefill_tokens if chunk is None else chunk
         ring = ops.dsv4_mla_raw_ring_blocks(r.geo.sliding_window, chunk, r.block_size)
         r.cache = make_cache(r.geo, tokens, r.block_size, r.max_num_seqs,
-            raw_blocks=(ops.kv_blocks_for(chunk+sweep, r.block_size) if probe else r.max_num_seqs*ring),
-            slabs=slabs, spec_rows=1 if probe else r.T, ctx_cap=max(r.ctx_cap, chunk+sweep) if probe else r.ctx_cap)
+            raw_blocks=(ops.kv_blocks_for(tokens, r.block_size) if probe else r.max_num_seqs*ring),
+            slabs=slabs, spec_rows=1 if probe else r.T, ctx_cap=max(r.ctx_cap, tokens) if probe else r.ctx_cap)
         return r.cache
 
     def allocate_checkpoints(self, slabs, rows):
@@ -247,13 +247,15 @@ class Dsv4Resources(ResourceSet):
     def allocate_outputs(self, slabs, chunk):
         r = self.r
         r.logits = tensor(slabs, (r.lm_rows, r.geo.vocab_size), torch.float32)
-        r.walker.taps = (tensor(slabs, (max(chunk, r.lm_rows), r.num_taps*r.geo.hidden), torch.bfloat16)
+        tap_rows = max(min(chunk, r.geo.sliding_window) if r.geo.v41 else chunk, r.lm_rows)
+        r.walker.taps = (tensor(slabs, (tap_rows, r.num_taps*r.geo.hidden), torch.bfloat16)
                          if r.num_taps else None)
         from ..models.geometry import DSparkGeometry
         r.draft_context_ws = r.draft_markov_ws = None
         if isinstance(r.draft_geo, DSparkGeometry):
             g = r.draft_geo
-            context = ops.dspark_context_workspace_bytes(max(chunk, r.lm_rows), g.stack.hidden, g.fc_k)
+            context = (0 if g.stack.v41 else
+                       ops.dspark_context_workspace_bytes(tap_rows, g.stack.hidden, g.fc_k))
             markov = ops.dspark_markov_workspace_bytes(r.max_num_seqs, g.stack.vocab_size,
                                                        g.markov_rank, r.num_spec)
             r.draft_context_ws = tensor(slabs, (context,), torch.uint8)

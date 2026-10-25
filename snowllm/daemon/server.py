@@ -60,7 +60,7 @@ async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
         manager.start_telemetry()
         if browser:
             threading.Thread(target=browser, args=(local_url(admin_host, admin_port),), daemon=True).start()
-        async with update_session():
+        async with update_session(manager.update):
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for server in servers:

@@ -6,8 +6,9 @@ from dataclasses import dataclass, replace
 from ..checkpoint.gguf.deepseek4 import CSA, HCA, INDEXED_RATIO, SWA
 
 GEMM_N_QUANTUM = 128
+V41_MOE_CHUNK = 8192
 
-COFF = {4: 2, 128: 1}
+COFF = {1: 1, 2: 1, 4: 2, 128: 1}
 
 
 def pad_gemm_n(n: int) -> int:
@@ -221,6 +222,13 @@ class DeepSeekV4Geometry:
     rope_parameters: tuple
     eps: float
     tie_word_embeddings: bool
+    variant: str = ""
+    kv_source_layers: tuple = ()
+    index_source_layers: tuple = ()
+    candidate_source_layer: int = -1
+    candidate_topk_blocks: int = 0
+    candidate_block_size: int = 0
+    engram_layer_ids: tuple = ()
 
     @classmethod
     def from_config(cls, cfg: dict) -> "DeepSeekV4Geometry":
@@ -259,6 +267,13 @@ class DeepSeekV4Geometry:
             rope_parameters=tuple(sorted(cfg["rope_parameters"].items())),
             eps=float(cfg["rms_norm_eps"]),
             tie_word_embeddings=bool(cfg.get("tie_word_embeddings", False)),
+            variant=cfg.get("variant", ""),
+            kv_source_layers=tuple(cfg.get("kv_source_layers", ())),
+            index_source_layers=tuple(cfg.get("index_source_layers", ())),
+            candidate_source_layer=int(cfg.get("candidate_source_layer", -1)),
+            candidate_topk_blocks=int(cfg.get("candidate_topk_blocks", 0)),
+            candidate_block_size=int(cfg.get("candidate_block_size", 0)),
+            engram_layer_ids=tuple(cfg.get("engram_layer_ids", ())),
         )
 
     @property
@@ -287,11 +302,18 @@ class DeepSeekV4Geometry:
 
     @property
     def layer_types(self) -> tuple:
-        return tuple(SWA if r == 0 else CSA if r == INDEXED_RATIO else HCA
+        return tuple(SWA if r == 0 else CSA if self.v41 or r == INDEXED_RATIO else HCA
                      for r in self.compress_ratios)
 
     def is_indexed(self, layer: int) -> bool:
-        return self.compress_ratios[layer] == INDEXED_RATIO
+        return bool(self.compress_ratios[layer]) if self.v41 else self.compress_ratios[layer] == INDEXED_RATIO
+
+    @property
+    def v41(self) -> bool:
+        return self.variant == "v41_flash"
+
+    def kv_source(self, layer: int) -> int:
+        return max(i for i in self.kv_source_layers if i <= layer) if self.v41 else layer
 
     def is_hashed(self, layer: int) -> bool:
         return layer < self.num_hash_layers

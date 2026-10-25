@@ -8,6 +8,21 @@ from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _p, _stream
 
 
+def uniform_(out, generator):
+    n = out.numel()
+    _chk(out, "uniform output", torch.float32, n)
+    if not n:
+        return out
+    props = torch.cuda.get_device_properties(out.device)
+    grid = min((n + 255) // 256, props.multi_processor_count * (props.max_threads_per_multi_processor // 256))
+    advance = -(-n // (grid * 256 * 4)) * 4
+    offset = generator.get_offset()
+    check(lib.snowllm_sampling_uniform(_p(out), n, generator.initial_seed(), offset, grid,
+                                      _stream()), "sampling_uniform")
+    generator.set_offset(offset + advance)
+    return out
+
+
 @functools.lru_cache(None)
 def sample_workspace_bytes(batch, vocab, width):
     return lib.snowllm_sampling_workspace_bytes(batch,vocab,width)

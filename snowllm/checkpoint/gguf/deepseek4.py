@@ -4,7 +4,7 @@
 import re
 
 from ..._capi import SnowLLMError
-from . import GGUF
+from . import GGUF, optional_int
 
 ARCH = "deepseek4"
 ARCHITECTURES = ["DeepseekV4ForCausalLM"]
@@ -41,6 +41,9 @@ def config(g: GGUF, arch: str = ARCH) -> dict:
         raise SnowLLMError(f"{g.path.name} has {n_layer} layers but names "
                            f"{len(ratios)} compress ratios")
 
+    v41 = g.get("{arch}.variant") == "v41_flash"
+    gating = g.get("{arch}.expert_gating_func", 0)
+    scoring = gating if isinstance(gating, str) else GATING.get(int(gating or 0), "unknown")
     cfg = {
         "model_type": "deepseek_v4",
         "architectures": ARCHITECTURES,
@@ -79,7 +82,7 @@ def config(g: GGUF, arch: str = ARCH) -> dict:
         "moe_intermediate_size": int(g.need("{arch}.expert_feed_forward_length")),
         "routed_scaling_factor": float(g.get("{arch}.expert_weights_scale", 1.0)),
         "norm_topk_prob": bool(g.get("{arch}.expert_weights_norm", False)),
-        "scoring_func": GATING.get(int(g.get("{arch}.expert_gating_func", 0) or 0), "unknown"),
+        "scoring_func": scoring,
 
         "rope_parameters": rope_parameters(g, head_dim, rope_dim),
     }
@@ -88,10 +91,22 @@ def config(g: GGUF, arch: str = ARCH) -> dict:
         clamp = _uniform(g.get("{arch}." + gguf_key), n_layer)
         if clamp is not None:
             cfg[key] = clamp
+    if v41:
+        cfg.update(variant="v41_flash", swiglu_limit_shexp=cfg.get("swiglu_limit", 0.0))
+        for key, source in (("kv_source_layers", "attention.kv_source_layers"),
+                            ("index_source_layers", "attention.index_source_layers"),
+                            ("engram_layer_ids", "engram.layer_ids")):
+            cfg[key] = [int(x) for x in g.need("{arch}." + source)]
+        for key, source in (("candidate_source_layer", "attention.candidate.source_layer"),
+                            ("candidate_topk_blocks", "attention.candidate.topk_blocks"),
+                            ("candidate_block_size", "attention.candidate.block_size")):
+            cfg[key] = int(g.need("{arch}." + source))
+        cfg["rope_parameters"]["rope_type"] = "yarn"
+        cfg["layer_types"] = [SWA if r == 0 else CSA for r in ratios]
     return {
         **cfg,
-        "bos_token_id": _opt_int(g, "tokenizer.ggml.bos_token_id"),
-        "eos_token_id": _opt_int(g, "tokenizer.ggml.eos_token_id"),
+        "bos_token_id": optional_int(g, "tokenizer.ggml.bos_token_id"),
+        "eos_token_id": optional_int(g, "tokenizer.ggml.eos_token_id"),
     }
 
 
@@ -109,11 +124,6 @@ def rope_parameters(g: GGUF, head_dim: int, rope_dim: int) -> dict:
         if (v := g.get("{arch}.rope.scaling." + key)) is not None:
             out[name] = float(v) if name.startswith("beta") else int(v)
     return out
-
-
-def _opt_int(g: GGUF, key: str) -> int | None:
-    v = g.get(key)
-    return None if v is None else int(v)
 
 
 TOP = {

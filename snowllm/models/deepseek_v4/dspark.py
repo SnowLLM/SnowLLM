@@ -32,7 +32,7 @@ class DSparkDraft:
         self.geo = geo
         self.tap_layers = tap_layers
         # Packed dense weights keep logical shapes; native owns the physical layout.
-        self.fc = ops.dspark_pack_weight(fc)
+        self.fc = fc if geo.stack.v41 else ops.dspark_pack_weight(fc)
         self.enc_norm = enc_norm
         self.markov_w1 = markov_w1
         self.markov_w2 = ops.dspark_pack_weight(markov_w2)
@@ -56,6 +56,11 @@ class DSparkDraft:
                                f"{self.geo.stack.hidden} ({self.geo.fc_k} in all), the runner "
                                f"offered {taps.shape[1]}")
         ctx = self.walker.bare_context(self.stack, taps.shape[0])
+        if self.geo.stack.v41:
+            out = ctx.arena.new(taps.shape[0], self.geo.stack.hidden)
+            with ctx.arena.frame():
+                self.fc(ctx, taps, out)
+                return self.enc_norm(ctx, out, out)
         out = ctx.arena.new(taps.shape[0], self.fc.shape[0])
         need = ops.dspark_context_workspace_bytes(taps.shape[0], *self.fc.shape)
         if self._context_ws is None or self._context_ws.numel() < need:
@@ -66,13 +71,16 @@ class DSparkDraft:
     def write_context(self, feat: torch.Tensor, positions: torch.Tensor,
                       slots: torch.Tensor) -> None:
         geo = self.geo.stack
-        t = feat.shape[0]
-        ctx = self.walker.bare_context(self.stack, t)
+        ctx = self.walker.bare_context(self.stack, feat.shape[0])
         cos, sin = self.stack.rope(ctx, positions, False)
         for i, layer in enumerate(self.stack.layers):
             attn = layer.attn
-            raw = attn.fanout.kv(ctx, feat, self.enc_norm.gamma, ctx.eps)
-            attn.store_kv(ctx,raw,cos,sin,self.cache.layers[i].raw,slots)
+            with ctx.arena.frame():
+                if geo.v41:
+                    attn.project_kv(ctx, feat, cos, sin, self.cache.layers[i].raw, slots)
+                else:
+                    raw = attn.fanout.kv(ctx, feat, self.enc_norm.gamma, ctx.eps)
+                    attn.store_kv(ctx,raw,cos,sin,self.cache.layers[i].raw,slots)
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
                 block_tables: torch.Tensor, seq_lens: torch.Tensor,
@@ -140,6 +148,17 @@ def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,
         raise SnowLLMError(
             f"this DSpark drafter has compressed layers ({geo.stack.compress_ratios}); the block "
             f"is denoised bidirectionally and only the windowed attention has that mode")
+    if geo.stack.v41:
+        from . import v41
+        ops.select_geometry(_capi.GEO_DEEPSEEK_V41_FLASH)
+        view = NativeReader(rd)
+        stack = v41.load(view, geo.stack, target=target)
+        return DSparkDraft(walker, stack, geo,
+            dspark_gguf.taps_in(geo.tap_layers, target.geo.num_layers),
+            v41.linear(rd, "mtp.main_proj.weight"),
+            RMSNorm(deepseek4_weights._bf16(rd, "mtp.main_norm.weight")),
+            rd.tensor("mtp.markov_embd.weight"), rd.tensor("mtp.markov_head.weight"),
+            rd.tensor("mtp.confidence.weight", torch.float32).flatten())
     _capi.select_geometry(_capi.GEO_DEEPSEEK_V4_FLASH)
     with ops.host_memory() if host else contextlib.nullcontext():
         stack = deepseek4_weights.load(rd, geo.stack, embed=target.embed.weight,
@@ -156,3 +175,28 @@ def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,
         rd.tensor("markov_w1.weight").reshape(-1, geo.markov_rank).cuda().contiguous(),
         rd.tensor("markov_w2.weight").reshape(-1, geo.markov_rank).cuda().contiguous(),
         conf_proj, conf_bias)
+
+
+class NativeReader:
+    def __init__(self, rd):
+        self.reader = rd
+        self.gguf = self
+
+    @staticmethod
+    def name(key):
+        return "mtp.out_norm.weight" if key == "output_norm.weight" else key.replace("blk.", "mtp.", 1)
+
+    def __contains__(self, key):
+        return self.name(key) in self.reader.gguf
+
+    def __getitem__(self, key):
+        return self.reader.gguf[self.name(key)]
+
+    def read(self, key, *args):
+        return self.reader.gguf.read(self.name(key), *args)
+
+    def raw(self, key, **kwargs):
+        return self.reader.raw(self.name(key), **kwargs)
+
+    def tensor(self, key, dtype=torch.bfloat16):
+        return self.reader.tensor(self.name(key), dtype)

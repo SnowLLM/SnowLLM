@@ -22,6 +22,21 @@ def gather_embedding(input_ids: torch.Tensor, weight: torch.Tensor, out: torch.T
           "gather_embedding")
 
 
+def gather_embedding_q4_k(input_ids: torch.Tensor, weight: torch.Tensor, out: torch.Tensor) -> None:
+    if out.ndim != 2 or weight.ndim != 2 or out.shape[1] == 0 or weight.shape[0] == 0:
+        raise SnowLLMError("Q4_K embedding needs matrix weights and a positive hidden size and vocabulary")
+    rows, hidden = out.shape
+    _chk(input_ids, "Q4_K embedding ids", torch.int64, rows)
+    _chk(out, "Q4_K embedding output", torch.bfloat16, rows, hidden)
+    if hidden % 256:
+        raise SnowLLMError("Q4_K embedding hidden size must be divisible by 256")
+    _chk(weight, "Q4_K embedding weight", torch.uint8, weight.shape[0], hidden // 256 * 144)
+    if weight.storage_offset() % 2 or out.storage_offset() % 2:
+        raise SnowLLMError("Q4_K embedding needs aligned weight blocks and BF16 output pairs")
+    check(lib.snowllm_gather_embedding_q4_k(_p(input_ids), _p(weight), _p(out), rows,
+          weight.shape[0], hidden, _stream()), "gather_embedding_q4_k")
+
+
 lm_head_scratch_bytes = _passthru("lm_head_scratch_bytes")
 
 

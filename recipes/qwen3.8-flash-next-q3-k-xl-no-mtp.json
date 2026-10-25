@@ -16,7 +16,8 @@
   "summary": "Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
   "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter.",
   "defaults": {
-    "num_spec": 0
+    "num_spec": 0,
+    "max_num_seqs": 4
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

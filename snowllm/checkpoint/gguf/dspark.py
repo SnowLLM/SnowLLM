@@ -11,6 +11,25 @@ ARCHITECTURES = ["DeepseekV4DSparkModel"]
 
 
 def config(g: GGUF) -> dict:
+    if (g.arch == deepseek4.ARCH and g.get("{arch}.variant") == "v41_flash"
+            and g.get("{arch}.mtp.tower_count")):
+        cfg = deepseek4.config(g)
+        towers = int(g.need("{arch}.mtp.tower_count"))
+        cfg.update(
+            model_type="deepseek_v4_dspark", architectures=ARCHITECTURES,
+            num_hidden_layers=towers, compress_ratios=[0] * towers,
+            layer_types=[deepseek4.SWA] * towers, num_hash_layers=0,
+            kv_source_layers=[], index_source_layers=[], engram_layer_ids=[],
+            candidate_source_layer=-1, candidate_topk_blocks=0, candidate_block_size=0,
+            n_routed_experts=int(g.need("{arch}.mtp.expert_count")),
+            num_experts_per_tok=int(g.need("{arch}.mtp.expert_used_count")),
+            sliding_window=int(g.get("{arch}.mtp.attention.sliding_window", cfg["sliding_window"])),
+            dspark_block_size=int(g.need("{arch}.mtp.block_size")),
+            dspark_target_layer_ids=[int(i) for i in g.need("{arch}.mtp.target_layers")],
+            dspark_markov_rank=int(g.need("{arch}.mtp.markov_rank")),
+            dspark_noise_token_id=int(g.need("{arch}.mtp.noise_token_id")),
+        )
+        return cfg
     cfg = deepseek4.config(g, ARCH)
     cfg.update({
         "model_type": "deepseek_v4_dspark",

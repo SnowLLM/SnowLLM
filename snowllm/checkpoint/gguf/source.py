@@ -8,10 +8,10 @@ import torch
 
 from ... import ops
 from ..._capi import SnowLLMError, check, lib
-from ..reader import note_bytes
+from ..reader import FileReader, note_bytes
 from . import GGUF, part_number
 from . import qwen4exp as qwen4exp_names
-from .dequant import dequantize, supported, supported_names
+from .dequant import dequantize, fp8_32x32, supported, supported_names
 from .names import (
     LAYER,
     MTP_PREFIX,
@@ -52,11 +52,19 @@ def find_dspark_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
         raise SnowLLMError(f"{root} holds {len(got)} DSpark drafters and picking one by name "
                            f"would be luck: {', '.join(p.name for p in got)}. Name the one you "
                            f"want instead of the directory.")
-    return got[0] if got else None
+    if got:
+        return got[0]
+    models = [p for p in models_in(pathlib.Path(root)) if part_number(p.name) in (None, 1)]
+    if len(models) == 1:
+        g = GGUF(models[0])
+        if g.get("{arch}.variant") == "v41_flash" and g.get("{arch}.mtp.tower_count"):
+            return models[0]
+    return None
 
 
 def models_in(d: pathlib.Path) -> list:
-    return [p for p in d.glob("*.gguf") if not p.name.startswith(SIDECARS)]
+    return [p for p in (*d.glob("*.gguf"), *d.glob("*.gguf.part*-of-*"))
+            if not p.name.startswith(SIDECARS) and not p.name.endswith(".vision.gguf")]
 
 
 def find_mmproj(root: str | pathlib.Path) -> pathlib.Path | None:
@@ -103,16 +111,14 @@ def find_gguf(root: str | pathlib.Path) -> pathlib.Path:
     return files[0]
 
 
-class GGUFReader:
+class GGUFReader(FileReader):
     def __init__(self, path: pathlib.Path, queue_depth: int = 8, chunk_bytes: int = 4 << 20,
                  num_buffers: int = 12) -> None:
         self.gguf = GGUF(path)
         self.path = str(path).encode()
         self._paths = [str(p).encode() for p in self.gguf.parts]
         self._slab: torch.Tensor | None = None
-        self._r = lib.snowllm_file_reader_create(queue_depth, chunk_bytes, num_buffers)
-        if not self._r:
-            raise SnowLLMError("io_uring_setup failed (is io_uring disabled on this kernel?)")
+        super().__init__(queue_depth, chunk_bytes, num_buffers)
 
     def raw(self, name: str, out: torch.Tensor | None = None) -> torch.Tensor:
         t = self.gguf[name]
@@ -128,11 +134,13 @@ class GGUFReader:
             buf = out
         if dry is not None:
             return buf
-        check(lib.snowllm_file_reader_read(self._r, self._paths[self.gguf.part_of(name)],
-                                           self.gguf.file_offset(name),
-                                           t.nbytes, buf.data_ptr(),
-                                           torch.cuda.current_stream().cuda_stream),
-              f"file_reader_read({name})")
+        dest = 0
+        for path, offset, size in self.gguf.ranges(name):
+            check(lib.snowllm_file_reader_read(self._r, str(path).encode(), offset, size,
+                                               buf.data_ptr() + dest,
+                                               torch.cuda.current_stream().cuda_stream),
+                  f"file_reader_read({name})")
+            dest += size
         note_bytes(t.nbytes)
         return buf
 
@@ -163,24 +171,15 @@ class GGUFReader:
 
     def tensor(self, name: str, dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
         t = self.gguf[name]
+        if t.quant.name == "FP8_32X32":
+            return fp8_32x32(self.raw(name), t.shape, dtype)
+        if t.quant.name in ("I32", "I64"):
+            return self.raw(name).view(getattr(torch, t.quant.torch_dtype)).view(t.shape).to(dtype)
         return dequantize(self.raw(name), t.quant.name, t.numel, dtype).view(t.shape)
 
     def keys(self) -> KeysView[str]:
         return self.gguf.tensors.keys()
 
-    def close(self) -> None:
-        if getattr(self, "_r", None):
-            lib.snowllm_file_reader_destroy(self._r)
-            self._r = None
-
-    def __del__(self) -> None:
-        self.close()
-
-    def __enter__(self) -> "GGUFReader":
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        self.close()
 
 
 def translator(g: GGUF,

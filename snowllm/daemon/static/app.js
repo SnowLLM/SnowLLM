@@ -75,9 +75,13 @@ function renderEffectiveSettings(next) {
   const config = next.runtime_config;
   if (!config) { $('effective-settings').append(element('div', 'muted', '—')); return; }
   const entries = [['Context length', config.max_model_len], ['Maximum concurrent requests', config.max_num_seqs],
-    ['GPU memory fraction', config.gpu_memory_utilization], ['KV cache precision', config.kv_cache_dtype],
+    ['GPU memory fraction', Number.isFinite(config.max_gpu_mem_util) ? config.max_gpu_mem_util.toFixed(4) : '—'], ['KV cache precision', config.kv_cache_dtype],
+    ['Offload ratio', Number.isFinite(config.offload_ratio) ? `${(config.offload_ratio * 100).toFixed(2)}%` : '—'],
     ['MTP depth', config.num_spec], ['DFlash drafter', config.dflash_path || '—'], ['DFlash block', config.dflash_block ?? '—'],
     ['Execution mode', t(config.enforce_eager ? 'Eager' : 'CUDA graphs')], ['Prefill chunk', config.prefill_chunk]];
+  if (Number.isFinite(config.max_gpu_mem_bytes)) entries.push(['GPU memory limit', bytes(config.max_gpu_mem_bytes)]);
+  if (Number.isFinite(config.max_disk_mem_gib)) entries.push(['Disk offload limit', bytes(config.max_disk_mem_gib * 2 ** 30)]);
+  if (Number.isFinite(config.max_host_mem_bytes)) entries.push(['Host memory limit', bytes(config.max_host_mem_bytes)]);
   for (const [label, value] of entries) { const row = element('div'); row.append(element('dt', '', t(label)), element('dd', '', String(value ?? '—'))); $('effective-settings').append(row); }
 }
 function element(tag, className = '', text = '') {
@@ -127,6 +131,11 @@ function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
   status = next;
+  $('update-notice').hidden = !next.update?.latest;
+  if (next.update?.latest) {
+    $('update-title').textContent = t('SnowLLM {0} is available (installed: {1}).', next.update.latest, next.update.current);
+    $('update-changelog').textContent = next.update.changelog || t(next.update.checking ? 'Loading release notes…' : 'Release notes are not available for this version.');
+  }
   renderEffectiveSettings(next);
   const inferenceUrl = `${next.inference_url}/v1`;
   $('api-address').textContent = inferenceUrl.replace(/^https?:\/\//, '');
@@ -501,7 +510,7 @@ $('load-form').addEventListener('submit', (event) => {
     const model = (source === 'recipe' ? $('load-recipe').value : $('load-path').value).trim();
     if (!model) throw new Error(t("Choose a recipe or enter a checkpoint directory."));
     const options = [];
-    for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--gpu-memory-utilization'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if ($(id).value.trim()) options.push(flag, $(id).value.trim());
+    for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if ($(id).value.trim()) options.push(flag, $(id).value.trim());
     options.push(...parseOptions($('extra-options').value));
     saveLoadSettings(false);
     const result = await post('/daemon/load', { model, options, force: $('force-switch').checked }); renderStatus(result);

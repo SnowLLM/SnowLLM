@@ -10,6 +10,7 @@ from typing import NamedTuple
 import torch
 
 from .. import ops
+from ..ops.deepseek41 import attention_scratch_bytes
 
 PLAN_MAIN = ("main",)
 PLAN_MTP = ("mtp",)
@@ -76,6 +77,10 @@ class Batch:
     inplace: bool = False
     split: bool = False
     block_q: bool = False
+    ced_stage: str = "full"
+    ced_keep: int = 0
+    swa_start: int = 0
+    v41_microbatches: int = 0
 
     @property
     def batch_size(self) -> int:
@@ -239,7 +244,8 @@ class Dsv4Context(ForwardContext):
         self.begin_plan()
         a, t, g = self.arena, self.M, self.geo
         self.banks = (a.new(t, g.hc_mult, g.hidden), a.new(t, g.hc_mult, g.hidden))
-        self.hidden = self.embedded if self.embedded is not None else a.new(t, g.hidden)
+        self.hidden = (None if self.batch.ced_stage == "replay" or getattr(g, "v41", False) else
+                       self.embedded if self.embedded is not None else a.new(t, g.hidden))
 
     def close(self) -> None:
         self.rot = self.banks = self.hidden = None
@@ -259,6 +265,8 @@ class Dsv4Walker:
     def context(self, stack: object, b: Batch, cache: object, tag: tuple = PLAN_MAIN,
                 embedded: torch.Tensor | None = None,
                 pre_head: torch.Tensor | None = None) -> Dsv4Context:
+        if b.ced_stage == "encoder":
+            b.ced_keep = cache.plan.ced.retained(b)
         return Dsv4Context(
             batch=b, M=b.input_ids.numel(), eps=stack.geo.eps,
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
@@ -273,10 +281,22 @@ class Dsv4Walker:
 
     def plan_key(self, b: Batch, tag: tuple = PLAN_MAIN,
                  embedded: torch.Tensor | None = None) -> tuple:
-        return (tag, b.inplace, b.last_row is not None, embedded is not None,
+        tiles = ()
+        if getattr(b, "v41_microbatches", 0):
+            from ..models.deepseek_v4.v41 import index_score_tile_rows
+            rows = b.input_ids.numel()
+            tiles = tuple(-(-rows // index_score_tile_rows(rows, pl.stride_cap))
+                          for _, pl in sorted(b.plans.items()))
+        return (tag, b.inplace, b.is_prefill, b.last_row is not None, embedded is not None,
                 b.split, tuple(sorted(self.tap_at)),
                 b.input_ids.numel() == 1,
+                b.input_ids.numel() <= 16,
+                0 if b.is_prefill else attention_scratch_bytes(b.input_ids.numel(), True),
                 ops.dsv4_projection_plan(b.input_ids.numel(),self.decode_max_m).path,
+                getattr(b, "v41_microbatches", 0),
+                b.ced_stage,
+                b.ced_keep,
+                tiles,
                 tuple((int(pl.keep_dst is not None), int(pl.n_new > 0), int(pl.max_n_comp > 0))
                       for _, pl in sorted(b.plans.items())))
 
@@ -296,7 +316,18 @@ class Dsv4Walker:
         self.arena.plan(ctx.plan_key, ctx.M, lambda: stack(ctx), after)
 
     def run(self, stack: object, tokens: torch.Tensor, positions: torch.Tensor,
-            cache: object) -> torch.Tensor:
+            cache: object, *, ced: bool = True, final: bool = True,
+            is_prefill: bool | None = None) -> torch.Tensor | None:
         first = int(positions[0].item())
         b = cache.plan.batch(tokens, positions, [first], [tokens.numel()], [0])
+        prefill = first == 0 or tokens.numel() > 1 if is_prefill is None else is_prefill
+        if getattr(stack.geo, "v41", False) and ced and not prefill:
+            b.is_prefill = False
+        elif getattr(stack.geo, "v41", False) and ced:
+            b.ced_stage = "encoder"
+            b.need_logits = final
+            stack(self.context(stack, b, cache))
+            if not final:
+                return None
+            b = cache.plan.ced.batch(b)
         return stack(self.context(stack, b, cache))

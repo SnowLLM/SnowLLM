@@ -15,7 +15,8 @@
     ".gitattributes"
   ],
   "defaults": {
-    "num_spec": 2
+    "num_spec": 2,
+    "max_num_seqs": 4
   },
   "priority": 59,
   "summary": "Qwen3.6-35B-A3B in FP8 with MTP depth 2.",

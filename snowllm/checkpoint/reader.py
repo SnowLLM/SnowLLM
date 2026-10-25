@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import collections
+import contextlib
 import json
 import pathlib
 import time
@@ -70,7 +71,40 @@ class Shard:
         return _DTYPE[m["dtype"]], tuple(m["shape"]), self.data_start + start, end - start
 
 
-class Reader:
+class FileReader:
+    def __init__(self, queue_depth, chunk_bytes, num_buffers):
+        from ..capacity import reserve_host
+        self._r, self._io_bytes = None, 0
+        reserve_host(chunk_bytes * num_buffers)
+        self._io_bytes = chunk_bytes * num_buffers
+        try:
+            self._r = lib.snowllm_file_reader_create(queue_depth, chunk_bytes, num_buffers)
+            if not self._r:
+                raise SnowLLMError('cannot create asynchronous file reader (io_uring_setup/IOCP)')
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        if getattr(self, '_r', None):
+            lib.snowllm_file_reader_destroy(self._r)
+            self._r = None
+        if getattr(self, '_io_bytes', 0):
+            from ..capacity import release_host
+            nbytes, self._io_bytes = self._io_bytes, 0
+            release_host(nbytes)
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
+class Reader(FileReader):
     def __init__(self, root: str | pathlib.Path, queue_depth: int = 8,
                  chunk_bytes: int = 4 << 20, num_buffers: int = 12,
                  shard_cache: int = 0) -> None:
@@ -85,12 +119,18 @@ class Reader:
                 self.weight_map[k] = only
         self._shards: dict[str, Shard] = {}
 
-        self._r = lib.snowllm_file_reader_create(queue_depth, chunk_bytes, num_buffers)
-        if not self._r:
-            raise SnowLLMError("io_uring_setup failed (is io_uring disabled on this kernel?)")
-
         self._cache_cap = shard_cache
         self._cache: collections.OrderedDict[str, tuple] = collections.OrderedDict()
+        super().__init__(queue_depth, chunk_bytes, num_buffers)
+
+    @contextlib.contextmanager
+    def loading(self):
+        previous, self._cache = self._cache, collections.OrderedDict()
+        try:
+            yield
+        finally:
+            self._cache.clear()
+            self._cache = previous
 
     def _shard(self, key: str) -> Shard:
         if key not in self.weight_map:
@@ -107,20 +147,19 @@ class Reader:
         return self._shard(key).spec(key)
 
     def to_device(self, key: str, out: torch.Tensor | None = None) -> torch.Tensor:
-        dry = ops.drying()
-        if dry is not None:
-            if out is not None:
-                return out
-            dtype, shape, _, _ = self._shard(key).spec(key)
-            return dry.meta(shape, dtype)
         if self._cache_cap > 0:
             return self._from_cache(key, out)
         s = self._shard(key)
         dtype, shape, offset, nbytes = s.spec(key)
+        if out is not None:
+            _chk_dst(key, out, nbytes, f"{shape} {dtype}")
+        dry = ops.drying()
+        if dry is not None:
+            if out is not None:
+                return out
+            return dry.meta(shape, dtype)
         if out is None:
             out = torch.empty(shape, dtype=dtype, device="cuda")
-        else:
-            _chk_dst(key, out, nbytes, f"{shape} {dtype}")
         check(
             lib.snowllm_file_reader_read(
                 self._r, s.path.encode(), offset, nbytes, out.data_ptr(),
@@ -162,14 +201,15 @@ class Reader:
         hi = max(v[2] + v[3] for v in specs.values())
 
         buf = torch.empty(hi - lo, dtype=torch.uint8, device="cuda")
-        check(
-            lib.snowllm_file_reader_read(
-                self._r, s.path.encode(), lo, hi - lo, buf.data_ptr(),
-                torch.cuda.current_stream().cuda_stream,
-            ),
-            f"file_reader_read({name})",
-        )
-        note_bytes(hi - lo)
+        if ops.drying() is None:
+            check(
+                lib.snowllm_file_reader_read(
+                    self._r, s.path.encode(), lo, hi - lo, buf.data_ptr(),
+                    torch.cuda.current_stream().cuda_stream,
+                ),
+                f"file_reader_read({name})",
+            )
+            note_bytes(hi - lo)
 
         views = {}
         for k, (dtype, shape, off, n) in specs.items():
@@ -186,15 +226,4 @@ class Reader:
     def close(self) -> None:
         if getattr(self, "_cache", None) is not None:
             self._cache.clear()
-        if getattr(self, "_r", None):
-            lib.snowllm_file_reader_destroy(self._r)
-            self._r = None
-
-    def __del__(self) -> None:
-        self.close()
-
-    def __enter__(self) -> "Reader":
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        self.close()
+        super().close()

@@ -13,8 +13,8 @@ __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_
 
 WINDOWS = sys.platform == "win32"
 WINDOWS_PAGEFILE_HINT = (
-    "On Windows, ensure the page file's allocated capacity and Initial size are at least the "
-    "GPU's total memory (VRAM), with Maximum size no smaller. Restart Windows after changing it. "
+    "On Windows, SnowLLM recommends setting the page file's Initial size and Maximum size "
+    "to the physical RAM capacity. Restart Windows after changing it. "
     "See https://snowllm.dev/docs/guides/windows-pagefile."
 )
 
@@ -96,6 +96,9 @@ def host_available() -> int:
 
 def prepare_gpu_commit(nbytes: int) -> None:
     if not WINDOWS or nbytes <= 0:
+        return
+    from .host_alloc import enabled
+    if enabled():
         return
     info = _PerformanceInfo()
     info.cb = ctypes.sizeof(info)
@@ -218,6 +221,13 @@ def _dedicated_vram(device: int) -> int:
 
 
 def gpu_mem_info() -> tuple[int, int]:
+    from . import host_alloc
+    if host_alloc.enabled():
+        return host_alloc.memory_info()
+    return device_mem_info()
+
+
+def device_mem_info() -> tuple[int, int]:
     import torch
     cap = (_dedicated_vram(torch.cuda.current_device())
            if WINDOWS and torch.version.hip else None)

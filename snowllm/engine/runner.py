@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING, NamedTuple, NoReturn
 
 import torch
 
-from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS
+from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, gpu_mem_info, prepare_gpu_commit
+from .._platform import gpu_mem_info, prepare_gpu_commit
 from ..ops._common import dry_alloc
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..trace import span
@@ -26,6 +26,11 @@ from .forward_context import (
     Batch,
     DecodeShape,
 )
+
+
+class CapacityError(SnowLLMError):
+    pass
+
 
 if TYPE_CHECKING:
     from .block_manager import BlockAllocator
@@ -49,7 +54,7 @@ class BaseRunner:
     gpu_util: float
 
     def __init__(self, model, num_kv_blocks, max_blocks_per_seq,
-                 max_num_seqs=DEFAULT_MAX_NUM_SEQS, max_prefill_tokens='auto', num_spec=0,
+                 max_num_seqs=DEFAULT_MAX_NUM_SEQS, max_prefill_tokens=DEFAULT_PREFILL_CHUNK, num_spec=0,
                  kv_int8=False, block_size=None, gpu_memory_utilization=DEFAULT_GPU_UTIL,
                  reserve_bytes=0, tap_layers=(), draft_geo=None, prefix_memory_ratio=0.,
                  plan_activations=True, load_peak_bytes=0):
@@ -63,6 +68,9 @@ class BaseRunner:
         self.num_spec = num_spec
         self.kv_int8, self.plan_activations = kv_int8, plan_activations
         self.gpu_util, self.reserve_bytes = gpu_memory_utilization, int(reserve_bytes)
+        from ..host_alloc import enabled
+        if enabled():
+            self.gpu_util = 1.
         self.load_peak_bytes = int(load_peak_bytes)
         self.prefix_memory_ratio, self.prefix_slots = prefix_memory_ratio, 0
         self.tap_layers, self.draft_geo = tuple(tap_layers), draft_geo
@@ -100,30 +108,19 @@ class BaseRunner:
                                'lower --max-num-seqs/--num-spec or offload more weights')
         for part in self.resources.support:
             part.allocate()
+        chunk = self._check_chunk(self.candidates()[0])
+        self.max_prefill_tokens = chunk
         with dry_alloc(), self.resources.planning():
-            self.resources.prepare(max(self.candidates()))
-            chunk = self._check_chunk(self._chunk_for(self._allow))
-        candidates = [c for c in self.candidates() if c <= chunk] or [chunk]
-        for chunk in candidates:
-            self.max_prefill_tokens = chunk
             self.resources.prepare(chunk)
-            if self.arena is not None:
-                self._reserve_activations(chunk)
-            else:
-                self.act_bytes = self.act_bytes_for(chunk)
-            plan = self._pool_plan(0)
-            plan.future_bytes += self._loading_extra(chunk)
-            if self._want_blocks is not None or ops.drying() is not None:
-                break
-            try:
-                plan.choose(self._allowance(), 0)
-                break
-            except ValueError:
-                if chunk == candidates[-1]:
-                    self._pool_capacity(plan)
-                if self.arena is not None:
-                    self.arena.release()
-                torch.cuda.empty_cache()
+        self.resources.prepare(chunk)
+        if self.arena is not None:
+            self._reserve_activations(chunk)
+        else:
+            self.act_bytes = self.act_bytes_for(chunk)
+        plan = self._pool_plan(0)
+        plan.future_bytes += self._loading_extra(chunk)
+        if ops.drying() is None:
+            self._pool_capacity(plan)
         self._allocate_pools(self.resources.probe_units())
 
     def create_inputs(self):
@@ -193,56 +190,33 @@ class BaseRunner:
         return (int(total * (self.gpu_util if util is None else util)) - (total - free)
                 - self.reserve_bytes)
 
-    def _fit_pool_commit(self, blocks: int, per_block: int, extra: int = 0, *,
-                         cost=None, minimum=None, unit_tokens=None) -> int:
-        if not WINDOWS or not torch.version.hip:
-            return blocks
-        requested = blocks
-        minimum = self.max_blocks_per_seq if minimum is None else minimum
-        unit_tokens = self.block_size if unit_tokens is None else unit_tokens
-        cost = (lambda n: n * per_block) if cost is None else cost
-        for attempt in range(8):
-            try:
-                prepare_gpu_commit(cost(blocks)+extra)
-            except MemoryError as e:
-                if blocks <= minimum or attempt == 7:
-                    raise MemoryError(
-                        f"Windows commit preflight cannot fit the KV pool. {WINDOWS_PAGEFILE_HINT} "
-                        "If allocation still fails, lower --max-model-len or --max-num-seqs.") from e
-                blocks = minimum if attempt == 6 else max(minimum,blocks*3//4)
-                continue
-            if blocks != requested:
-                old = self.gpu_util
-                self.gpu_util = max(0.0,old-(cost(requested)-cost(blocks))/gpu_mem_info()[1])
-                print(f"{term.stamp()} Windows commit preflight reduced GPU memory budget "
-                      f"{old:.3f} -> {self.gpu_util:.3f}; KV pool: "
-                      f"{blocks*unit_tokens} tokens",flush=True)
-            return blocks
-
     def _pool_capacity(self, plan, *, prefix_budget=0):
         torch.cuda.empty_cache()
         from ..models.placement import ensure_room
         floor = plan.minimum if plan.requested is None else plan.requested
         while True:
-            shortage = (plan.bytes_for(floor) + plan.checkpoint_bytes + plan.future_bytes
+            shortage = (plan.bytes_for(floor) + plan.snapshot_floor + plan.future_bytes
                         - self._allowance())
             if shortage <= 0 or not ensure_room(self.model, shortage):
                 break
         try:
             units, snapshots = plan.choose(self._allowance(), prefix_budget)
         except ValueError as exc:
-            checkpoint = ' and one prefix snapshot' if plan.checkpoint_bytes else ''
-            raise SnowLLMError(
+            checkpoint = (f' and {plan.minimum_snapshots} prefix snapshots'
+                          if plan.checkpoint_bytes else '')
+            raise CapacityError(
                 f'{type(self).__name__}: the KV pool cannot carry one sequence{checkpoint} at '
                 f'max_model_len={self.ctx_cap}, or the requested pool exceeds the budget. '
                 'Lower --max-model-len/--max-num-seqs, offload more weights, or raise '
-                '--gpu-memory-utilization.') from exc
+                '--max-gpu-mem, or enable/increase '
+                '--max-host-mem or --max-disk-offload.') from exc
         future = plan.future_bytes + snapshots * plan.checkpoint_bytes
-        if plan.requested is None:
-            units = self._fit_pool_commit(units, 0, future, cost=plan.bytes_for,
-                                          minimum=plan.minimum, unit_tokens=plan.unit_tokens)
         prepare_gpu_commit(plan.bytes_for(units) + future)
         return units, snapshots
+
+    def _cache_blocks(self):
+        return (self.max_blocks_per_seq*self.max_num_seqs
+                if self._want_blocks is None else self._want_blocks)
 
     def _draft_pool_blocks(self, blocks):
         if self.draft_geo is None:
@@ -258,9 +232,17 @@ class BaseRunner:
         try:
             plan = self._pool_plan(graph_bytes)
             self._prepare_pools()
-            units, self.prefix_slots = self._pool_capacity(
-                plan, prefix_budget=int(self.prefix_memory_ratio * self._allow))
-            self._allocate_pools(units)
+            while True:
+                units, self.prefix_slots = self._pool_capacity(
+                    plan, prefix_budget=self._prefix_budget(plan))
+                self._allocate_pools(units)
+                torch.cuda.empty_cache()
+                shortage = graph_bytes - self._allowance()
+                if shortage <= 0:
+                    break
+                # Measure allocator/driver overhead of the actual pools before graph capture.
+                self._prepare_pools()
+                plan.future_bytes += shortage
             if self.draft_geo is not None:
                 self.draft_blocks = self._draft_pool_blocks(self.draft_blocks)
             return self.num_kv_blocks
@@ -268,21 +250,18 @@ class BaseRunner:
             self._discard_pools()
             raise
 
-    CHUNK_CANDIDATES: tuple = ()
+    def _prefix_budget(self, plan):
+        floor = plan.minimum if plan.requested is None else plan.requested
+        ratio = self.prefix_memory_ratio
+        if not 0 <= ratio < 1:
+            raise SnowLLMError('--prefix-memory-ratio must be in [0, 1)')
+        return int(plan.bytes_for(floor) * ratio)
 
     def candidates(self) -> list:
-        rows = (self.CHUNK_CANDIDATES if self._want_chunk == "auto"
-                else (int(self._want_chunk),))
+        rows = (DEFAULT_PREFILL_CHUNK if self._want_chunk == 'auto' else int(self._want_chunk),)
         if any(c <= 0 for c in rows):
             raise SnowLLMError("prefill chunk must be positive")
         return list(dict.fromkeys(min(c, self.ctx_cap) for c in rows))
-
-    def _chunk_for(self, allowance: int) -> int:
-        cands = self.candidates()
-        for rows in cands:
-            if self.minimum_bytes(rows) + self.act_bytes_for(rows) <= allowance:
-                return rows
-        return cands[-1]
 
     def _loading_cache_bytes(self, rows: int) -> int:
         return self.fixed_bytes(rows)
@@ -332,6 +311,8 @@ class BaseRunner:
         return block_size
 
     def _check_seqs(self, max_num_seqs: int) -> None:
+        if max_num_seqs <= 0:
+            raise ValueError("max_num_seqs must be positive")
         if max_num_seqs > MAX_NUM_SEQS:
             raise ValueError(f"max_num_seqs={max_num_seqs} > {MAX_NUM_SEQS}, this engine's "
                              f"policy cap (runner.py). No kernel stops there; the state pool is "
@@ -564,7 +545,10 @@ class GraphRunner(BaseRunner):
 
     def _graph_pool(self) -> object:
         if self._pool is None:
-            self._pool = torch.cuda.graph_pool_handle()
+            from ..host_alloc import graph_pool
+            self._host_graph_pool = graph_pool()
+            self._pool = (self._host_graph_pool.id if self._host_graph_pool is not None
+                          else torch.cuda.graph_pool_handle())
         return self._pool
 
     def _capture(self, label: str,

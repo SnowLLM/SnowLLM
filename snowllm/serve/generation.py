@@ -284,8 +284,11 @@ def loads_args(arguments: str | dict | None, call_id: str | None) -> dict:
 def chat_prompt(messages: list[dict], kwargs: dict, tools: list[dict] | None = None) -> list[int]:
     if not messages:
         raise HTTPException(400, "the conversation is empty")
-    enc = serving().tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, tokenize=True, return_dict=True, tools=tools, **kwargs)
+    try:
+        enc = serving().tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True, return_dict=True, tools=tools, **kwargs)
+    except (ValueError, TypeError, TemplateError) as exc:
+        raise HTTPException(400, str(exc)) from exc
     ids = enc["input_ids"]
     if ids and isinstance(ids[0], list):
         ids = ids[0]

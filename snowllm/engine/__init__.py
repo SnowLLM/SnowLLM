@@ -11,7 +11,7 @@ import torch
 from .. import ops
 from .._capi import SnowLLMError
 from .._platform import gpu_mem_info
-from ..defaults import DEFAULT_GPU_UTIL
+from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
 from .block_manager import BlockAllocator, StateSlots
 from .forward_context import Batch, plain_decode_shapes
@@ -22,7 +22,7 @@ from .runner import (
     DraftGeometry,
     BaseRunner,
 )
-from .resources import allocate_draft_pool, draft_pool_bytes
+from .resources import allocate_draft_pool, draft_pool_bytes, draft_table_blocks
 from .qwen_runner import QwenRunner
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, SpecDecoder
@@ -140,6 +140,9 @@ def _check_dflash_target(model: "TargetModel", draft: DraftGeometry) -> None:
         if not isinstance(geo, DeepSeekV4Geometry):
             raise SnowLLMError("a DSpark drafter reads a DeepSeek-V4 target through three of its "
                                "layers; this model is not one.")
+        if draft.stack.v41 and (not geo.v41 or draft.stack.hidden != geo.hidden
+                                or draft.stack.vocab_size != geo.vocab_size):
+            raise SnowLLMError("native V4.1 DSpark requires a V4.1 target with matching hidden size and vocabulary")
         dspark_gguf.taps_in(draft.tap_layers, geo.num_layers)
         return
     if draft.dspark and draft.vocab_size != model.config["vocab_size"]:
@@ -172,6 +175,8 @@ def _dspark(geo: object) -> bool:
 
 def draft_block(geo: DraftGeometry, block: int) -> int:
     if _dspark(geo):
+        if geo.stack.v41 and block not in (0, geo.block_size):
+            raise SnowLLMError(f"native V4.1 DSpark requires its checkpoint block size {geo.block_size}")
         return max(block or 0, geo.block_size)
     if geo is not None and geo.dspark:
         if block not in (0, 1, 4, 8, 15) or block > geo.block_size:
@@ -289,14 +294,13 @@ def _runner_for(model: "TargetModel") -> type[BaseRunner]:
 
 def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
                    weights: int, *, load_peak: int = 0) -> int:
-    from ..checkpoint.loader import geo_context
-    ctx = min(int(kv.get("ctx") or 0), geo_context(cfg))
+    ctx = int(kv.get("ctx") or 0)
     if ctx <= 0:
         return 0
     free, total = gpu_mem_info()
     resident = int(kv.get("draft_resident", kv.get("reserve")) or 0)
-    room = (int(total * float(kv.get("util") or DEFAULT_GPU_UTIL)) - (total - free)
-            - resident + int(kv.get("loaded_weight_bytes") or 0))
+    available = int(total * float(kv.get("util") or DEFAULT_GPU_UTIL)) - (total - free)
+    room = available - resident + int(kv.get("loaded_weight_bytes") or 0)
     r = _runner_for(model)(
         model, None, ops.kv_blocks_for(ctx, ops.KV_BLOCK_SIZES[0]), max(1, int(kv.get("slots") or 1)),
         max_prefill_tokens=kv.get("chunk", "auto"), num_spec=int(kv.get("num_spec") or 0),
@@ -304,10 +308,12 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
         prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False)
-    loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - free)
+    loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - available)
+    from .capacity import auxiliary_bytes
+    aux = auxiliary_bytes(r, kv)
     got = loading
     for rows in r.candidates():
-        got = max(loading, weights + r.minimum_bytes(rows) + r.act_bytes_for(rows) - room)
+        got = max(loading, weights + r.minimum_bytes(rows) + r.act_bytes_for(rows) + aux - room)
         if got <= budget:
             break
     return got
@@ -315,7 +321,7 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
 
 class Engine:
     def __init__(self, model: torch.nn.Module, num_kv_blocks: int | None = None,
-                 max_num_seqs: int = 16,
+                 max_num_seqs: int = DEFAULT_MAX_NUM_SEQS,
                  max_model_len: int = 8192, stop_token_ids: Sequence[int] = (),
                  seed: int | None = None, enforce_eager: bool = False, num_spec: int = 0,
                  kv_int8: bool = False, mtp_window: int = 0,
@@ -323,7 +329,7 @@ class Engine:
                  dflash_path: str | None = None, dflash_block: int = 0,
                  dflash_p_min: float = DEFAULT_DSPARK_P_MIN,
                  dspark_adaptive: bool = False,
-                 prefill_chunk: int | str = "auto", batch_prefill: bool = False,
+                 prefill_chunk: int | str = DEFAULT_PREFILL_CHUNK, batch_prefill: bool = False,
                  plan_activations: bool = True,
                  account: bool = True, exact_stats: bool = False,
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
@@ -370,7 +376,8 @@ class Engine:
 
             self.slots = StateSlots(max_num_seqs, self.runner.slots_per_request,
                                     self.runner.dummy_slot)
-            self.sampler = Sampler(frozenset(stop_token_ids),seed)
+            self.sampler = Sampler(frozenset(stop_token_ids),seed,
+                                   native_rng=isinstance(model.geo, DeepSeekV4Geometry) and model.geo.v41)
             self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size)
             self.tables, self.stage = self.runner.create_inputs()
             self.dflash = None
@@ -492,8 +499,8 @@ class Engine:
         self._draft_pool.allocate(need)
         return DSparkDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
-                             max_blocks_per_seq=ops.kv_blocks_for(max_model_len + block,
-                                                                 self.runner.block_size),
+                             max_blocks_per_seq=draft_table_blocks(
+                                 self.dflash_geo, max_model_len, block, self.runner.block_size),
                              block=block, p_min=p_min, adaptive=adaptive)
 
     def _build_dflash(self, path: str, block: int, max_model_len: int,
@@ -646,6 +653,7 @@ class Engine:
         return True
 
     def _admit(self, r: Request, use_cache: bool = True) -> bool:
+        r.system_entry = r.prefix_entry = None
         if self._active_factor != r.rope_factor:
             self._activate_rope(r.rope_factor)
             self._active_factor = r.rope_factor
@@ -677,8 +685,12 @@ class Engine:
             return False
         if self.cache is not None and use_cache:
             self.cache.took(hit)
-            if hit is not None and len(hit.tokens) == self._system_cache_end(r):
-                hit.priority = True
+            system_end = self._system_cache_end(r)
+            system = self.cache.lookup(r.prefill_src, system_end + 1) if system_end else None
+            r.system_entry = system if system is not None and len(system.tokens) == system_end else None
+            if r.system_entry is not None:
+                r.system_entry.priority = True
+            r.prefix_entry = hit if hit is not None and not hit.priority else None
         if hit is not None:
             self.cache.store.residue.load(hit.ckpt, self.slots.name(r, 1)[0], r.blocks,
                                          self.cache.pages.target(hit.blocks))
@@ -795,17 +807,32 @@ class Engine:
             hi = system_end
         if self.cache is not None and r.embeds is None:
             hi = self.cache.store.prefill_end(lo, hi)
+            aligned = hi // self.cache.pages.align * self.cache.pages.align
+            if aligned > lo:
+                hi = aligned
         marks, idx = [], []
+        latest_end = 0
         backed = self.dflash is None or self._reserve_draft(r, hi - lo)
         if self.cache is not None and backed and r.embeds is None:
             marks = self.cache.store.marks(lo, hi)
-            priority = self.cache.reserve(1, priority=True) if lo < system_end == hi else []
+            keep = {entry for other in self.running if other is not r
+                    for entry in (other.system_entry, other.prefix_entry) if entry is not None}
+            if r.system_entry is not None:
+                keep.add(r.system_entry)
+            priority = self.cache.reserve(1, priority=True, keep=keep) if lo < system_end == hi else []
             if priority:
                 marks = [m for m in marks if m != system_end]
-            idx = self.cache.reserve(len(marks))
+            latest_end = hi if hi % self.cache.pages.align == 0 and hi != system_end else 0
+            latest = (self.cache.reserve(1, latest=True, replace=r.prefix_entry, keep=keep)
+                      if latest_end else [])
+            if latest:
+                marks = [m for m in marks if m != latest_end]
+            idx = self.cache.reserve(len(marks), keep=keep)
             pairs = list(zip(thin(marks, len(idx)), idx))
             if priority:
                 pairs.append((system_end, priority[0]))
+            if latest:
+                pairs.append((latest_end, latest[0]))
             pairs.sort()
             marks, idx = [p[0] for p in pairs], [p[1] for p in pairs]
         b = self._prefill([(r, lo, hi)])
@@ -819,9 +846,16 @@ class Engine:
         def publish() -> None:
             # Draft caches must be complete before their shared pages are visible.
             for m, i in zip(marks, idx):
-                self.cache.insert(r.prefill_src[:m],
+                entry = self.cache.insert(r.prefill_src[:m],
                                   self.cache.store.took(r, m, i, self.slots.name(r, 1)[0]), i,
-                                  priority=m == system_end)
+                                  priority=m == system_end, latest=m == latest_end)
+                if entry is not None:
+                    if m == system_end:
+                        r.system_entry = entry
+                    elif m == latest_end:
+                        if r.prefix_entry is not None and r.prefix_entry is not entry:
+                            r.prefix_entry.latest = False
+                        r.prefix_entry = entry
 
         if not b.need_logits:
             if self.dflash:
