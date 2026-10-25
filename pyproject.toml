@@ -4,9 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snowllm"
-dynamic = ["version"]
+dynamic = ["version", "readme"]
 description = "Hand-written HIP kernels for LLM inference on AMD Ryzen AI Max (Strix Halo)"
-readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "ColorsWind", email = "14761584+ColorsWind@users.noreply.github.com" }]
 keywords = ["hip", "rocm", "amd", "llm", "inference"]
@@ -43,10 +42,12 @@ Issues = "https://github.com/SnowLLM/SnowLLM/issues"
 
 [tool.setuptools.dynamic]
 version = { attr = "snowllm._version.__version__" }
+readme = { file = ["README.md", "CHANGELOG.md"], content-type = "text/markdown" }
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["snowllm*"]
 
 [tool.setuptools.package-data]
+"snowllm.models.deepseek_v4" = ["LICENSE-DeepSeek.txt"]
 "snowllm.daemon" = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/locales/*.json"]

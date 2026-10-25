@@ -201,7 +201,7 @@ def check_flags() -> None:
                             "snowllm/hub/recipes.py", "snowllm/ops/_common.py", "install.sh"))
     for cell in named:
         for token in cell.split():
-            if token.startswith("--") and f'"{token}"' not in hay:
+            if token.startswith("--") and not any(f"{q}{token}{q}" in hay for q in ('"', "'")):
                 problems.append(f"web/index.html documents {token}, which nothing declares")
             elif token.isupper() and token.isidentifier() and token not in hay:
                 problems.append(f"web/index.html documents ${token}, which nothing reads")
