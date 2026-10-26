@@ -17,6 +17,8 @@ files. Dated run directories and `results/` are ignored generated output.
 Kernel traces, ISA audits, weight-layout probes and operator tuning belong in
 the private development workspace.
 
-On the shared development machine, GPU programs must use
-`~/withgpu/withgpu`. The server launchers already acquire that lock;
-do not wrap the entire client/server benchmark in the same lock.
+On a shared GPU machine, run the benchmark through its GPU scheduler. For a
+withgpu installation under `~/withgpu`, use
+`"$HOME/withgpu/withgpu" benchmarks/run.sh <recipe>`.
+The server launchers do not acquire this lock themselves. Acquire it once for
+the complete run; avoid nesting another acquisition of the same lock.

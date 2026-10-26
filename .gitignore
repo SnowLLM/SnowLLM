@@ -47,6 +47,9 @@ __pycache__/
 /.vscode
 
 /.dev
+/experiments/
+/scratchpad/
+/internal/
 # Documentation tooling
 /node_modules/
 /docs/.vitepress/cache/
