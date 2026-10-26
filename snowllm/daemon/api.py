@@ -195,12 +195,7 @@ def create_app(manager: DaemonManager):
 
     @app.get("/daemon/logs")
     async def logs(download: bool = False):
-        path = manager.download_log if download else manager.log_path
-        if not path.exists():
-            return {"text": ""}
-        with path.open("rb") as stream:
-            stream.seek(max(0, path.stat().st_size - 65536))
-            return {"text": stream.read().decode("utf-8", errors="replace")}
+        return {"text": manager.read_log(download)}
 
     @app.get("/daemon/metrics")
     async def metrics(request: Request):

@@ -22,7 +22,15 @@
   <main>
     <header class="topbar"><span class="breadcrumb">SnowLLM <span>/</span> <strong id="page-name"><span data-i18n="Overview">Overview</span></strong></span><button id="copy-api" class="api-button" title="Copy API base URL" data-i18n-title="Copy API base URL"><span class="dot teal"></span><span id="api-address"><span data-i18n="Local API">Local API</span></span><span aria-hidden="true">⧉</span></button></header>
     <div id="connection-banner" class="banner error" role="status" hidden><span data-i18n="Cannot reach the local service. Reconnecting…">Cannot reach the local service. Reconnecting…</span></div>
-    <div id="model-error" class="banner error" role="status" hidden></div>
+    <div id="model-error" class="banner error" role="alert" hidden>
+      <strong id="model-error-title"></strong>
+      <p id="model-error-detail"></p>
+      <p id="model-error-hint" hidden></p>
+      <div class="load-error-actions">
+        <button id="adjust-load-settings" class="button secondary"><span data-i18n="Adjust inference settings">Adjust inference settings</span></button>
+        <button id="load-error-logs" class="button secondary"><span data-i18n="View logs">View logs</span></button>
+      </div>
+    </div>
     <details id="update-notice" class="banner" hidden><summary id="update-title"></summary><pre id="update-changelog" class="update-changelog"></pre><a class="text-link" href="https://snowllm.dev/docs/getting-started/installation" target="_blank" rel="noopener noreferrer"><span data-i18n="Update instructions →">Update instructions →</span></a></details>
     <section id="page-workspace" class="page">
       <div class="page-heading"><div><h1><span data-i18n="Overview">Overview</span></h1></div><button id="refresh-state" class="button secondary"><span data-i18n="↻ Refresh">↻ Refresh</span></button></div>

@@ -127,6 +127,18 @@ function controls() {
   document.querySelectorAll('[data-download]').forEach(button => button.disabled = !online || status?.download?.exit_code === null);
   document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online || transition() || Boolean(chatController));
 }
+function renderLoadError(next) {
+  const banner = $('model-error');
+  banner.hidden = !next.error;
+  const title = next.error_kind === 'capacity' ? t('Not enough memory for these settings') : t('Model failed to load or stopped');
+  const key = JSON.stringify([next.error, next.error_kind, title]);
+  if (banner.dataset.failure === key) return;
+  banner.dataset.failure = key;
+  $('model-error-title').textContent = title;
+  $('model-error-detail').textContent = next.error || '';
+  $('model-error-hint').hidden = next.error_kind !== 'capacity';
+  $('model-error-hint').textContent = t('Check Context length and memory limits in Inference settings. Reduce context, or set --max-num-seqs 1 in Additional options, then load the model again.');
+}
 function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
@@ -148,15 +160,14 @@ function renderStatus(next) {
   $('connection-title').textContent = t("Daemon connected");
   $('connection-detail').textContent = location.host;
   $('engine-state').textContent = stateLabels()[next.state] || next.state;
-  $('engine-detail').textContent = { idle: t("Ready to load a model"), draining: t("Waiting for active requests"), loading: t("Reading weights and initializing"), ready: t("Accepting inference requests"), failed: t("Check the activity log") }[next.state] || '';
+  $('engine-detail').textContent = { idle: t("Ready to load a model"), draining: t("Waiting for active requests"), loading: t("Reading weights and initializing"), ready: t("Accepting inference requests"), failed: t("See the error above") }[next.state] || '';
   $('current-model').textContent = next.model || t("None loaded");
   $('active-count').textContent = next.active_requests;
   $('runtime-state').textContent = stateLabels()[next.state] || next.state;
   $('runtime-pid').textContent = next.pid || '—';
   $('storage-preview').textContent = next.models_dir;
   $('config-source').textContent = { 'command-line': t("Command line"), environment: t("Environment"), config: t("Saved configuration"), default: t("Default") }[next.models_dir_source];
-  $('model-error').hidden = !next.error;
-  $('model-error').textContent = next.error || '';
+  renderLoadError(next);
   $('config-file').textContent = next.config_file || '';
   const modelOverride = ['command-line', 'environment'].includes(next.models_dir_source);
   const recipeOverride = next.recipes_url_source === 'environment';
@@ -252,6 +263,13 @@ async function refreshLogs() {
   const atBottom = $('logs').scrollTop + $('logs').clientHeight >= $('logs').scrollHeight - 30;
   $('logs').textContent = text || t("No activity.");
   if (atBottom) $('logs').scrollTop = $('logs').scrollHeight;
+}
+async function showLogs(kind) {
+  $('log-kind').value = kind;
+  location.hash = 'workspace';
+  navigate();
+  await refreshLogs();
+  $('logs').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 async function refreshCatalog(refresh) {
   if (catalogLoading) return;
@@ -505,6 +523,14 @@ $('model-search').addEventListener('input', renderRecipes); $('installed-only').
 $('refresh-state').addEventListener('click', () => action($('refresh-state'), refreshStatus));
 $('refresh-recipes').addEventListener('click', () => refreshCatalog(true));
 $('refresh-logs').addEventListener('click', () => action($('refresh-logs'), refreshLogs)); $('log-kind').addEventListener('change', () => refreshLogs().catch(error => toast(error.message)));
+$('adjust-load-settings').addEventListener('click', () => {
+  location.hash = 'workspace';
+  navigate();
+  document.querySelector('#load-form .advanced').open = true;
+  $('context-length').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('context-length').focus({ preventScroll: true });
+});
+$('load-error-logs').addEventListener('click', () => action($('load-error-logs'), () => showLogs('inference')));
 $('load-form').addEventListener('submit', (event) => {
   event.preventDefault(); action($('load-button'), async () => {
     const model = (source === 'recipe' ? $('load-recipe').value : $('load-path').value).trim();
@@ -519,7 +545,7 @@ $('load-form').addEventListener('submit', (event) => {
 });
 $('unload-button').addEventListener('click', () => action($('unload-button'), async () => { renderStatus(await post(`/daemon/unload?force=${$('force-switch').checked}`)); toast(t("Model unload requested")); }));
 $('cancel-download').addEventListener('click', () => action($('cancel-download'), async () => { renderStatus(await post('/daemon/download/cancel')); toast(t("Download stopped. Partial files are kept for resuming.")); }));
-$('download-logs-button').addEventListener('click', () => { $('log-kind').value = 'download'; location.hash = 'workspace'; refreshLogs().then(() => $('logs').scrollIntoView({ behavior: 'smooth', block: 'center' })).catch(error => toast(error.message)); });
+$('download-logs-button').addEventListener('click', () => action($('download-logs-button'), () => showLogs('download')));
 $('storage-form').addEventListener('submit', (event) => { event.preventDefault(); action(event.submitter, async () => { renderStatus(await api('/daemon/config', { method: 'PUT', body: JSON.stringify({ models_dir: $('models-dir').value.trim() }) })); await refreshCatalog(false); toast(['command-line', 'environment'].includes(status.models_dir_source) ? t("Directory saved to JSON. The startup override is still active.") : t("Model directory saved")); }); });
 $('recipes-settings-form').addEventListener('submit', (event) => { event.preventDefault(); action(event.submitter, async () => { renderStatus(await api('/daemon/config', { method: 'PUT', body: JSON.stringify({ recipes_url: $('recipes-url').value.trim() || null }) })); await refreshCatalog(true); toast(status.recipes_url_source === 'environment' ? t("Catalogue saved. SNOWLLM_RECIPES_URL still overrides it.") : t("Catalogue saved")); }); });
 $('library-settings-form').addEventListener('submit', (event) => { event.preventDefault(); action(event.submitter, async () => { renderStatus(await api('/daemon/config', { method: 'PUT', body: JSON.stringify({ library_path: $('library-path').value.trim() || null }) })); toast(status.library_path_source === 'environment' ? t("Library saved. SNOWLLM_LIB still overrides it.") : t("Library saved for the next model load")); }); });

@@ -33,5 +33,6 @@
     "device_map": "auto",
     "max_gpu_mem_util": 0.94,
     "max_host_mem_util": 0.9
-  }
+  },
+  "requires": "0.3.14"
 }

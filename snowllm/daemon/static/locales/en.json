@@ -234,5 +234,11 @@
   "SnowLLM {0} is available (installed: {1}).": "SnowLLM {0} is available (installed: {1}).",
   "Loading release notes…": "Loading release notes…",
   "Release notes are not available for this version.": "Release notes are not available for this version.",
-  "Update instructions →": "Update instructions →"
+  "Update instructions →": "Update instructions →",
+  "Adjust inference settings": "Adjust inference settings",
+  "View logs": "View logs",
+  "Not enough memory for these settings": "Not enough memory for these settings",
+  "Model failed to load or stopped": "Model failed to load or stopped",
+  "Check Context length and memory limits in Inference settings. Reduce context, or set --max-num-seqs 1 in Additional options, then load the model again.": "Check Context length and memory limits in Inference settings. Reduce context, or set --max-num-seqs 1 in Additional options, then load the model again.",
+  "See the error above": "See the error above"
 }

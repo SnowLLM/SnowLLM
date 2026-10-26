@@ -45,11 +45,51 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
 
     def spawn(self, args, log):
         port = args[args.index("--port") + 1]
-        child = subprocess.Popen([sys.executable, "-c", WORKER, port],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                 start_new_session=os.name != "nt")
+        with log.open("wb") as output:
+            child = subprocess.Popen([sys.executable, "-c", WORKER, port],
+                                     stdout=output, stderr=subprocess.STDOUT,
+                                     start_new_session=os.name != "nt")
         self.children.append(child)
         return child
+
+    async def test_worker_failure_exposes_the_cause_and_retry_clears_it(self):
+        errors = (
+            ('snowllm: the configured context/chunk/concurrency exceeds the GPU budget by 1024 bytes', 'capacity'),
+            ('torch.OutOfMemoryError: failed to allocate a tensor', 'capacity'),
+            ('FileNotFoundError: model weights are missing', None),
+            ('', None))
+        for message, kind in errors:
+            def failed(args, log):
+                with log.open('wb') as output:
+                    code = f'import sys; print("\\x1b[31m" + {message!r} + "\\x1b[0m", flush=True); sys.exit(2)'
+                    child = subprocess.Popen([sys.executable, '-c', code], stdout=output,
+                        stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')
+                self.children.append(child)
+                return child
+            with patch.object(self.manager, 'spawn', side_effect=failed):
+                await self.manager.switch('failed', [])
+                await self.manager.task
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
+                                         base_url='http://127.0.0.1') as client:
+                status = (await client.get('/daemon/status')).json()
+                self.assertEqual(status['state'], 'failed')
+                self.assertEqual(status['error_kind'], kind)
+                self.assertIn(message or 'exited with code 2', status['error'])
+                self.assertNotIn('\x1b', status['error'])
+                logs = (await client.get('/daemon/logs')).json()['text']
+                self.assertIn(message, logs)
+        with patch.object(self.manager, 'spawn', side_effect=self.spawn):
+            await self.manager.switch('retry', [])
+            await self.manager.task
+        self.assertEqual(self.manager.state, 'ready')
+        self.assertIsNone(self.manager.status()['error'])
+        self.assertIsNone(self.manager.status()['error_kind'])
+        child = self.manager.process
+        child.terminate()
+        await asyncio.to_thread(child.wait)
+        self.assertEqual(self.manager.status()['state'], 'failed')
+        self.assertIsNone(self.manager.status()['error_kind'])
+        self.assertIn('exited with code', self.manager.error)
 
     async def test_switch_readiness_drain_and_unload(self):
         with patch.object(self.manager, "spawn", side_effect=self.spawn):

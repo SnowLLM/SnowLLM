@@ -194,4 +194,4 @@ def memory_shortage(nbytes):
     return SnowLLMError(
         f'the configured context/chunk/concurrency exceeds the GPU budget by {max(0, nbytes)} bytes; '
         'set or increase --max-host-mem or --max-disk-offload, '
-        'or reduce context/concurrency')
+        'or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')

@@ -2,7 +2,9 @@
   "id": "glm5.3-flash-iq2-xxs",
   "model": "GLM-5.3-Flash",
   "family": "GLM",
-  "modalities": ["text"],
+  "modalities": [
+    "text"
+  ],
   "precision": "UD-IQ2_XXS",
   "dir": "GLM-5.3-Flash-UD-IQ2_XXS",
   "bytes": 101844951904,
@@ -24,5 +26,5 @@
     "num_spec": 0
   },
   "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
-  "note": "Vision is not supported. Defaults to one concurrent request and a 227328-token context limit."
+  "note": "Vision is not supported. Defaults to four concurrent requests and a 409600-token context limit."
 }

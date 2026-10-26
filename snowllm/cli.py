@@ -541,27 +541,46 @@ def main() -> None:
     from .serve.api import app
     from .serve.state import install
 
-    install(build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
-          default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
-          stats_interval=a.stats_interval, exact_stats=a.stats_exact,
-          enforce_eager=a.enforce_eager, num_spec=a.num_spec,
-          mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,
-          dflash=a.dflash, dflash_block=a.dflash_block,
-          dflash_p_min=a.dflash_p_min,
-          dspark_adaptive=a.dspark_adaptive,
-          batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
-          prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
-          max_gpu_mem_util=a.max_gpu_mem_util, max_gpu_mem_gib=a.max_gpu_mem_gib,
-          max_host_mem_util=a.max_host_mem_util, max_host_mem_gib=a.max_host_mem_gib,
-          offload_ratio=a.offload_ratio,
-          device_map=a.device_map,
-          moe_cache_experts=a.moe_cache_experts, moe_cache_mode=a.moe_cache_mode,
-          host_offload=a.host_offload,
-          host_alloc=a.host_alloc,
-          max_disk_mem_gib=a.max_disk_mem_gib,
-          serve_as=(recipe.serve_as if recipe else None),
-          prefix_memory_ratio=a.prefix_memory_ratio,
-          limit_mm_per_prompt=a.limit_mm_per_prompt))
+    try:
+        state = build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
+              default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
+              stats_interval=a.stats_interval, exact_stats=a.stats_exact,
+              enforce_eager=a.enforce_eager, num_spec=a.num_spec,
+              mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,
+              dflash=a.dflash, dflash_block=a.dflash_block,
+              dflash_p_min=a.dflash_p_min,
+              dspark_adaptive=a.dspark_adaptive,
+              batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
+              prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
+              max_gpu_mem_util=a.max_gpu_mem_util, max_gpu_mem_gib=a.max_gpu_mem_gib,
+              max_host_mem_util=a.max_host_mem_util, max_host_mem_gib=a.max_host_mem_gib,
+              offload_ratio=a.offload_ratio,
+              device_map=a.device_map,
+              moe_cache_experts=a.moe_cache_experts, moe_cache_mode=a.moe_cache_mode,
+              host_offload=a.host_offload,
+              host_alloc=a.host_alloc,
+              max_disk_mem_gib=a.max_disk_mem_gib,
+              serve_as=(recipe.serve_as if recipe else None),
+              prefix_memory_ratio=a.prefix_memory_ratio,
+              limit_mm_per_prompt=a.limit_mm_per_prompt)
+    except (RuntimeError, MemoryError) as exc:
+        from .errors import is_capacity_error
+        capacity_error = is_capacity_error(f'{type(exc).__name__}: {exc}')
+        if not isinstance(exc, SnowLLMError) and not capacity_error:
+            raise
+        message = str(exc) or type(exc).__name__
+        if capacity_error:
+            if not is_capacity_error(message):
+                message = f'Out of memory: {message}'
+            if 'budget exceeds physical' in message:
+                message += ' Lower --max-gpu-mem or --max-host-mem to fit physical memory.'
+            else:
+                context = max(1, a.max_model_len // 2)
+                chunk = min(context, max(1, a.max_num_batched_tokens // 2))
+                message += (f' Try smaller workload options, for example: --max-model-len {context} '
+                            f'--max-num-seqs 1 --max-num-batched-tokens {chunk}.')
+        p.exit(2, f'snowllm: {message}\n')
+    install(state)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")
 
 

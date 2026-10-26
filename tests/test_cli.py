@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Command discovery must work without torch or the native GPU library."""
 from pathlib import Path
+import contextlib
+import io
 import subprocess
 import sys
 import unittest
@@ -10,7 +12,7 @@ from unittest.mock import Mock, patch
 
 
 class CLITests(unittest.TestCase):
-    def launch_options(self, extra=(), recipe=None):
+    def launch_options(self, extra=(), recipe=None, failure=None):
         from snowllm import cli
         from snowllm.errors import SnowLLMError
         from snowllm.hub import recipes
@@ -22,7 +24,7 @@ class CLITests(unittest.TestCase):
                        'snowllm.serve.api': SimpleNamespace(app=object()),
                        'snowllm.serve.state': SimpleNamespace(install=Mock())}
             with patch.dict(sys.modules,modules), patch.object(recipes,'locate',return_value=(Path(root),recipe)), \
-                 patch.object(cli,'build') as build, patch.object(sys,'argv',['snowllm',root,*extra]):
+                 patch.object(cli,'build',side_effect=failure) as build, patch.object(sys,'argv',['snowllm',root,*extra]):
                 cli.main()
             return build.call_args
 
@@ -34,6 +36,28 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['max_gpu_mem_util'],defaults.max_gpu_mem_util)
         self.assertEqual(kw['prefix_memory_ratio'],defaults.prefix_memory_ratio)
         self.assertEqual(kw['device_map'],defaults.device_map)
+
+    def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
+        from snowllm.capacity import memory_shortage
+        from snowllm.errors import SnowLLMError
+        oom = type('OutOfMemoryError', (RuntimeError,), {})
+        for error, expected, forbidden in (
+            (memory_shortage(1024), '--max-model-len 4096 --max-num-seqs 1 --max-num-batched-tokens 32', 'Traceback'),
+            (SnowLLMError('GPU memory budget exceeds physical device memory'),
+             'Lower --max-gpu-mem or --max-host-mem', 'Try smaller workload'),
+            (MemoryError('allocation failed'), 'Out of memory: allocation failed', 'Traceback'),
+            (oom('tensor allocation failed'), 'Out of memory: tensor allocation failed', 'Traceback'),
+            (SnowLLMError('missing Engram table'), 'missing Engram table', 'Try smaller workload')):
+            with self.subTest(error=error):
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output), self.assertRaises(SystemExit) as raised:
+                    self.launch_options(('--max-model-len', '8192', '--max-num-batched-tokens', '64'),
+                                        failure=error)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(expected, output.getvalue())
+                self.assertNotIn(forbidden, output.getvalue())
+        with self.assertRaisesRegex(RuntimeError, 'kernel contract mismatch'):
+            self.launch_options(failure=RuntimeError('kernel contract mismatch'))
 
     def test_capacity_options_follow_recipe_and_explicit_flags(self):
         recipe=SimpleNamespace(id='local-glm',serve_as='GLM-5.3-Flash',defaults=dict(

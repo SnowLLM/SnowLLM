@@ -4,6 +4,7 @@ from dataclasses import asdict
 import json
 import shutil
 import os
+import re
 from pathlib import Path
 import signal
 import socket
@@ -12,6 +13,7 @@ import sys
 
 import httpx
 from ..updates import Update
+from ..errors import is_capacity_error
 from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
 from ..config import (models_directory, read_config, write_config, recipes_source,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
@@ -76,7 +78,7 @@ class DaemonManager:
         directory, source = models_directory(self.config_path, self.config, self.models_override)
         if self.process and self.process.poll() is not None and self.state == "ready":
             self.state = "failed"
-            self.error = f"inference exited with code {self.process.returncode}; see {self.log_path}"
+            self.error = self.worker_error()
         recipe_url, recipe_source = recipes_source(self.config_path, self.config)
         library, lib_source = library_path(self.config_path, self.config)
         progress = None
@@ -86,6 +88,7 @@ class DaemonManager:
             except (OSError, ValueError):
                 pass
         return dict(last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
+                    error_kind="capacity" if self.error and is_capacity_error(self.error) else None,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
                     config_file=str(self.config_path),
@@ -136,6 +139,23 @@ class DaemonManager:
         write_config(self.config_path, updated)
         self.config = updated
         return self.status()
+
+    def read_log(self, download=False):
+        path = self.download_log if download else self.log_path
+        try:
+            with path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, stream.tell() - 65536))
+                return stream.read().decode("utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    def worker_error(self):
+        text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', self.read_log())
+        for line in reversed(text.splitlines()):
+            if re.match(r'^(?:snowllm(?:: error)?|[\w.]+(?:Error|Exception)):\s*', line):
+                return line[:2048]
+        return f"inference exited with code {self.process.returncode}; see {self.log_path}"
 
     def spawn(self, args, log):
         env = os.environ.copy()
@@ -221,7 +241,7 @@ class DaemonManager:
             deadline = asyncio.get_running_loop().time() + self.load_timeout
             while asyncio.get_running_loop().time() < deadline:
                 if self.process.poll() is not None:
-                    raise RuntimeError(f"inference exited with code {self.process.returncode}; see {self.log_path}")
+                    raise RuntimeError(self.worker_error())
                 try:
                     response = await self.client.get(self.backend + "/health", timeout=1)
                     if response.status_code == 200:

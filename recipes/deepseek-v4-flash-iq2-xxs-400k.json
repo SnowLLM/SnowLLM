@@ -2,7 +2,9 @@
   "id": "deepseek-v4-flash-iq2-xxs-400k",
   "model": "DeepSeek-V4-Flash-0731",
   "family": "DeepSeek",
-  "modalities": ["text"],
+  "modalities": [
+    "text"
+  ],
   "precision": "IQ2_XXS",
   "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
   "bytes": 101756794368,
@@ -22,7 +24,7 @@
   ],
   "spec": "DSpark",
   "requires": "0.3.12",
-  "summary": "DeepSeek-V4-Flash with adaptive DSpark, one request, a 409600-token context and 8192-token prefill chunks.",
+  "summary": "DeepSeek-V4-Flash with adaptive DSpark, up to four concurrent requests, a 409600-token context and 8192-token prefill chunks.",
   "note": "Uses automatic weight offload at 95% GPU memory utilization, with no prefix-cache reservation.",
   "defaults": {
     "device_map": "auto",

@@ -234,5 +234,11 @@
   "SnowLLM {0} is available (installed: {1}).": "SnowLLM {0} 已发布（当前版本：{1}）。",
   "Loading release notes…": "正在获取更新说明…",
   "Release notes are not available for this version.": "暂时无法获取此版本的更新说明。",
-  "Update instructions →": "升级说明 →"
+  "Update instructions →": "升级说明 →",
+  "Adjust inference settings": "调整推理设置",
+  "View logs": "查看日志",
+  "Not enough memory for these settings": "内存不足或容量设置超出限制",
+  "Model failed to load or stopped": "模型加载失败或已停止",
+  "Check Context length and memory limits in Inference settings. Reduce context, or set --max-num-seqs 1 in Additional options, then load the model again.": "请在“推理设置”中检查上下文长度和内存上限。可降低上下文长度，或在“附加参数”中设置 --max-num-seqs 1，再重新加载模型。",
+  "See the error above": "请查看上方错误提示"
 }
