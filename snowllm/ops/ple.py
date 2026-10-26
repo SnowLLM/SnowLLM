@@ -210,7 +210,8 @@ class _QsaStep(ctypes.Structure):
     _fields_=[('attention',_PagedAttentionStep),('inputs',ctypes.c_void_p*6),
         ('compact',ctypes.c_void_p*5),('jobs',ctypes.c_void_p)]+[
         (n,ctypes.c_int64) for n in ('job_count','rows','n_comp','heads','dim','ratio','topk',
-                                    'wave','compact_pages','compact_slots')]+[('prefill',ctypes.c_int)]
+                                    'wave','compact_pages','compact_slots')]+[(n,ctypes.c_int) for n in
+                                    ('prefill','kv_int8','has_compact','has_row_map')]
 
 class _PleStep(ctypes.Structure):
     _fields_=[('inputs',ctypes.c_void_p*8),('state',ctypes.c_void_p),('out',ctypes.c_void_p)]+[
@@ -246,7 +247,8 @@ def qsa_attention(ctx, module, q, pools, out, proj):
         ctypes.addressof(jobs) if ctx.qsa_lens is not None else 0,len(jobs),q.shape[0],
         ctx.qsa_max_blocks,ix.heads,ix.dim,ix.ratio,ix.topk,
         table.shape[0] if table is not None else 0,table.shape[1] if table is not None else 0,
-        module.plan_slots,int(b.is_prefill))
+        module.plan_slots,int(b.is_prefill),int(ks is not None or vs is not None),
+        int(ck is not None),int(ctx.qsa_seq_of_row is not None))
     need=lib.snowllm_qsa_attention_scratch_bytes(ctypes.byref(step))
     with ctx.arena.frame():
         ws=ctx.arena.flat(need,torch.uint8)

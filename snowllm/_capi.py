@@ -160,7 +160,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 76
+ABI_VERSION = 77
 
 
 def _check_abi() -> None:
@@ -704,6 +704,8 @@ _SIGS += [sig for sig in (
     ("snowllm_file_reader_create_host", P, [c_int, c_int64, c_int]),
     ("snowllm_file_reader_readv_workspace_bytes", c_int64, [c_int64]),
     ("snowllm_file_reader_readv_host", c_int, [P]*5 + [c_int64]),
+    ("snowllm_file_reader_read_rows_host", c_int,
+     [P, P, P, c_int64, c_int64, P, P, c_int64, P, c_int64]),
     ("snowllm_vq_moe_workspace_bytes", c_int64, [c_int64]*5),
     ("snowllm_vq_moe_normalized_workspace_bytes", c_int64, [c_int64]*5),
     ("snowllm_vq_moe_normalized", c_int, [P]*10 + [c_int64, P, S]),

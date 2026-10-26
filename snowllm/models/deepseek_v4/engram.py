@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-import contextlib
-import ctypes
 import struct
-import threading
-import weakref
 from pathlib import Path
 
 import torch
@@ -12,11 +8,11 @@ from torch import nn
 
 from ... import ops
 from ...errors import SnowLLMError
-from ...checkpoint.reader import FileReader, Shard, host_buffer
+from ...checkpoint.reader import RowTable, Shard
 from ...ops import deepseek41 as native
 
 
-class Table:
+class Table(RowTable):
     def __init__(self, path, layer, rows):
         shard = Shard(Path(path))
         name = f"layers.{layer}.engram.embed."
@@ -29,55 +25,14 @@ class Table:
             start, end = meta["data_offsets"]
             if not 0 <= start <= end <= size or end - start != length:
                 raise SnowLLMError(f"{path}: invalid Engram table byte range")
-        self.offsets = tuple(shard.data_start + meta["data_offsets"][0] for meta in (weight, scale))
-        self.rows = rows
-        self.path = str(path)
-        self.reader = None
-        self.resources = contextlib.ExitStack()
-        self.lock = threading.Lock()
-        self._close = weakref.finalize(self, self.resources.close)
-
-    def close(self):
-        with self.lock:
-            self._close()
+        offsets = tuple(shard.data_start + meta["data_offsets"][0] for meta in (weight, scale))
+        super().__init__(path, rows, offsets, (256, 8), merge_gap=16384)
 
     def read(self, ids):
-        with self.lock:
-            if not self._close.alive:
-                raise SnowLLMError('Engram table is closed')
-            return self._read(ids)
-
-    def _read(self, ids):
-        known = dict.fromkeys(ids)
-        for row in known:
-            if not 0 <= row < self.rows:
-                raise SnowLLMError(f"Engram row {row} exceeds table size {self.rows}")
-        if not known:
-            return bytearray()
-        if self.reader is None:
-            self.reader = self.resources.enter_context(FileReader(64, 65536, 68, host_only=True))
-        count = len(known)
-        need = count * 2 * (ctypes.sizeof(ctypes.c_int64) * 2 + ctypes.sizeof(ctypes.c_void_p))
-        arrays = host_buffer(need)
-        result, packed = host_buffer(len(ids) * 264), host_buffer(count * 264)
-        base = ctypes.addressof(ctypes.c_uint8.from_buffer(packed))
-        stride = count * 2 * ctypes.sizeof(ctypes.c_int64)
-        offsets = (ctypes.c_int64 * (2 * count)).from_buffer(arrays)
-        sizes = (ctypes.c_int64 * (2 * count)).from_buffer(arrays, stride)
-        destinations = (ctypes.c_void_p * (2 * count)).from_buffer(arrays, 2 * stride)
-        for i, row in enumerate(known):
-            known[row] = i
-            offsets[2*i], offsets[2*i+1] = self.offsets[0] + row*256, self.offsets[1] + row*8
-            sizes[2*i], sizes[2*i+1] = 256, 8
-            destinations[2*i], destinations[2*i+1] = base + i*264, base + i*264 + 256
         try:
-            self.reader.readv_host(self.path, offsets, sizes, destinations)
+            return super().read(ids)
         except SnowLLMError as error:
-            raise SnowLLMError(f'{self.path}: Engram read failed or a row is truncated') from error
-        for i, row in enumerate(ids):
-            offset = known[row] * 264
-            result[i*264:(i+1)*264] = packed[offset:offset+264]
-        return result
+            raise SnowLLMError(f'{self.path}: Engram read failed (closed, invalid row or truncated table)') from error
 
 
 class Tables:

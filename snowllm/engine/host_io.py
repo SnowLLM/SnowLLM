@@ -70,9 +70,9 @@ class MappedBuffer:
         self.dtype, self.capacity = dtype, 0
         self.host = self.device = None
 
-    def reserve(self, n):
+    def reserve(self, n, *, exact=False):
         if n > self.capacity:
-            capacity = max(n, 2*self.capacity)
+            capacity = n if exact else max(n, 2*self.capacity)
             from ..capacity import reserve_host, release_host
             nbytes = capacity * torch.empty((), dtype=self.dtype).element_size()
             reserve_host(nbytes)

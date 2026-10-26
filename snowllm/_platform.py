@@ -9,7 +9,7 @@ import sys
 import uuid
 
 __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_runtimes",
-           "prefetch", "gpu_mem_info", "prepare_gpu_commit", "WINDOWS_PAGEFILE_HINT"]
+           "gpu_mem_info", "prepare_gpu_commit", "WINDOWS_PAGEFILE_HINT"]
 
 WINDOWS = sys.platform == "win32"
 WINDOWS_PAGEFILE_HINT = (
@@ -25,19 +25,12 @@ HIP_RUNTIME_GLOBS = ((("_rocm_sdk_core", "bin/amdhip64*.dll"), ("torch", "lib/am
 MEMINFO = pathlib.Path("/proc/meminfo")
 MAPS = pathlib.Path("/proc/self/maps")
 
-_FADVISE = getattr(os, "posix_fadvise", None)
-
-
 class _MemoryStatusEx(ctypes.Structure):
     _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong)] + [
         (n, ctypes.c_ulonglong)
         for n in ("ullTotalPhys", "ullAvailPhys", "ullTotalPageFile", "ullAvailPageFile",
                   "ullTotalVirtual", "ullAvailVirtual", "ullAvailExtendedVirtual")
     ]
-
-
-class _MemoryRangeEntry(ctypes.Structure):
-    _fields_ = [("VirtualAddress", ctypes.c_void_p), ("NumberOfBytes", ctypes.c_size_t)]
 
 
 class _PerformanceInfo(ctypes.Structure):
@@ -58,9 +51,6 @@ def _kernel32():
                                           ctypes.POINTER(ctypes.c_ulong)]
     k32.K32GetModuleFileNameExW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_wchar_p,
                                             ctypes.c_ulong]
-    if hasattr(k32, "PrefetchVirtualMemory"):
-        k32.PrefetchVirtualMemory.argtypes = [ctypes.c_void_p, ctypes.c_size_t,
-                                              ctypes.POINTER(_MemoryRangeEntry), ctypes.c_ulong]
     return k32
 
 
@@ -237,17 +227,3 @@ def device_mem_info() -> tuple[int, int]:
         total = min(total, cap)
         free = max(0, total - used)
     return free, total
-
-
-def prefetch(fd: int, file_offset: int, address: int, offsets, nbytes: int) -> None:
-    if _FADVISE is not None:
-        for off in offsets:
-            _FADVISE(fd, file_offset + int(off), nbytes, os.POSIX_FADV_WILLNEED)
-        return
-    if not WINDOWS or not hasattr(K32, "PrefetchVirtualMemory"):
-        return
-    entries = (_MemoryRangeEntry * len(offsets))()
-    for i, off in enumerate(offsets):
-        entries[i].VirtualAddress = address + int(off)
-        entries[i].NumberOfBytes = nbytes
-    K32.PrefetchVirtualMemory(CURRENT_PROCESS, len(entries), entries, 0)

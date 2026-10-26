@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from snowllm import capacity
-from snowllm.checkpoint.reader import FileReader
+from snowllm.checkpoint.reader import FileReader, RowTable
 from snowllm.errors import SnowLLMError
 from snowllm.models.deepseek_v4.engram import Table
 
@@ -42,10 +42,11 @@ class EngramIOTests(unittest.TestCase):
 
     def test_repeated_rows_use_one_shared_batch(self):
         table, ids = self.table(), [7, 1, 7, 0]
-        with patch.object(FileReader, "readv_host", autospec=True, side_effect=FileReader.readv_host) as read:
+        with patch.object(FileReader, "read_rows_host", autospec=True, side_effect=FileReader.read_rows_host) as read:
             self.assertEqual(table.read(ids), self.expected(ids))
         self.assertEqual(read.call_count, 1)
-        self.assertEqual(len(read.call_args.args[2]), 6)
+        self.assertEqual(len(read.call_args.args[2]), 4)
+        self.assertEqual(read.call_args.args[3:5], (table.offsets, (256, 8)))
         for ids in ([-1], [8]):
             with self.assertRaises(SnowLLMError):
                 table.read(ids)
@@ -109,6 +110,23 @@ class EngramIOTests(unittest.TestCase):
             offsets[0] = 4093
             reader.readv_host(self.path, offsets, sizes, destinations)
             self.assertEqual(data, expected)
+
+    def test_indexed_single_column_reads_keep_order_guards_and_budget(self):
+        source = bytes(i % 251 for i in range(37 + 1024 * 90))
+        self.path.write_bytes(source)
+        table = RowTable(self.path, 1024, (37,), (90,), merge_gap=16384)
+        self.addCleanup(table.close)
+        ids = [1023, 0, 511, 1, 511] * 900
+        data = bytearray([165] * (len(ids) * 90 + 32))
+        out = memoryview(data)[16:-16]
+        expected = b''.join(source[37+i*90:37+(i+1)*90] for i in ids)
+        self.assertEqual(table.read(ids, out), expected)
+        self.assertEqual(data[:16] + data[-16:], bytes([165] * 32))
+        for bad in ([-1], [1024]):
+            with self.assertRaises(SnowLLMError):
+                table.read(bad)
+        readonly = memoryview(bytes(ctypes.c_int64(511))).cast('q')
+        self.assertEqual(table.read(readonly), source[37+511*90:37+512*90])
 
 
 if __name__ == "__main__":

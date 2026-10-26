@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-import os
-
 import numpy as np
 import torch
 
-from ..._platform import prefetch
 from ...checkpoint.gguf import GGUF
 from ...checkpoint.gguf.dequant import dequantize
+from ...checkpoint.reader import RowTable
+from ...engine.host_io import MappedBuffer
+from ...errors import SnowLLMError
 from ..geometry import Qwen4ExpGeometry
 
 PLE_TABLE = "per_layer_token_embd.weight"
@@ -59,36 +59,35 @@ class PleTable:
         self.quant = t.quant.name
         self.row_bytes = t.nbytes // t.rows
         self.rows = t.rows
-        self._base = gguf.file_offset(PLE_TABLE)
-        self._fd = os.open(gguf.file_of(PLE_TABLE), os.O_RDONLY)
-        self._mm = np.memmap(gguf.file_of(PLE_TABLE), dtype=np.uint8, mode="r",
-                             offset=self._base, shape=(t.nbytes,))
-        self._pinned = torch.empty(0, dtype=torch.uint8)
+        self.reader = RowTable(gguf.file_of(PLE_TABLE), self.rows,
+                               (gguf.file_offset(PLE_TABLE),), (self.row_bytes,))
+        self._staging = MappedBuffer(torch.uint8)
         self._copied = torch.cuda.Event()
 
     def close(self) -> None:
-        if getattr(self, "_fd", -1) >= 0:
-            os.close(self._fd)
-            self._fd = -1
+        if getattr(self, '_copied', None) is not None:
+            self._copied.synchronize()
+        if getattr(self, 'reader', None) is not None:
+            self.reader.close()
+        self._staging = None
 
     def __del__(self) -> None:
         self.close()
 
     def gather(self, rows: np.ndarray, device: str = "cuda") -> torch.Tensor:
+        if self._staging is None:
+            raise SnowLLMError('PLE table is closed')
         idx = np.asarray(rows, dtype=np.int64)
         t, heads = idx.shape
         flat = idx.reshape(-1)
         if flat.min() < 0 or flat.max() >= self.rows:
             raise ValueError(f"row {flat.min()}..{flat.max()} is outside {self.rows}")
-        prefetch(self._fd, self._base, self._mm.ctypes.data, flat * self.row_bytes,
-                 self.row_bytes)
         n = flat.size * self.row_bytes
         self._copied.synchronize()
-        if n > self._pinned.numel():
-            self._pinned = torch.empty(n, dtype=torch.uint8).pin_memory()
-        np.take(self._mm, flat[:, None] * self.row_bytes + np.arange(self.row_bytes),
-                out=self._pinned[:n].numpy().reshape(flat.size, self.row_bytes), mode="clip")
-        q = self._pinned[:n].to(device, non_blocking=True)
+        self._staging.reserve(n, exact=True)
+        self.reader.read(flat, self._staging.host[:n].numpy())
+        q = self._staging.host[:n].to(device, non_blocking=True)
         self._copied.record()
         w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32)
-        return w.reshape(t, heads * self.geo.ple_head_dim).to(torch.bfloat16)
+        result = w.reshape(t, heads * self.geo.ple_head_dim).to(torch.bfloat16)
+        return result

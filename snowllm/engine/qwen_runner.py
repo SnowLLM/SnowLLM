@@ -146,7 +146,7 @@ class QwenRunner(GraphRunner):
 
     @contextlib.contextmanager
     def _activation_scope(self, rows):
-        with self._probe_pools():
+        with self._probe_pools(), self.resources.planning():
             yield ActivationReservation([ProbeGroup(self._activation_cases(rows, self.decode_rows))],
                                         extra_bytes=self._draft_context_bytes(rows), zero=True)
 

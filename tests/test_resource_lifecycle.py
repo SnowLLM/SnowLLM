@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import gc
+import contextlib
 import sys
 import weakref
 from types import SimpleNamespace
@@ -141,6 +142,16 @@ def main():
         ck('planning memoizes meta constants only in its temporary cache',
            owner.metadata['constant'].device.type=='meta')
     ck('planning never publishes meta constants to the runtime cache',
+       owner.metadata is real and not real)
+    from snowllm.engine.qwen_runner import QwenRunner
+    runner = object.__new__(QwenRunner)
+    runner.resources, runner.decode_rows = parts, 1
+    runner._probe_pools = contextlib.nullcontext
+    runner._activation_cases = lambda *_: iter(())
+    runner._draft_context_bytes = lambda _: 0
+    with runner._activation_scope(8), dry_alloc():
+        owner.metadata['constant'] = torch.zeros(3, device='cuda')
+    ck('Qwen activation planning scopes its metadata through real graph startup',
        owner.metadata is real and not real)
     parts.close()
 

@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import array
 import collections
 import contextlib
 import ctypes
 import json
 import os
 import pathlib
+import threading
 import time
 import weakref
 from collections.abc import KeysView
@@ -78,16 +80,20 @@ class _HostBuffer(bytearray):
     pass
 
 
-def host_buffer(nbytes):
+def _host_allocation(nbytes, allocate):
     from ..capacity import reserve_host, release_host
     reserve_host(nbytes)
     try:
-        data = _HostBuffer(nbytes)
+        data = allocate()
     except BaseException:
         release_host(nbytes)
         raise
     weakref.finalize(data, release_host, nbytes)
     return memoryview(data)
+
+
+def host_buffer(nbytes):
+    return _host_allocation(nbytes, lambda: _HostBuffer(nbytes))
 
 
 class FileReader:
@@ -140,6 +146,70 @@ class FileReader:
                                                     destinations, count), 'read host ranges')
         finally:
             release_host(scratch)
+
+    def read_rows_host(self, path, ids, offsets, widths, rows, destination, merge_gap=0):
+        from ..capacity import reserve_host, release_host
+        count, columns = len(ids), len(offsets)
+        if not self._r or not self._host_only or not columns or len(widths) != columns:
+            raise SnowLLMError('indexed file reads require an open host reader and matching columns')
+        scratch = lib.snowllm_file_reader_readv_workspace_bytes(count * columns)
+        if scratch < 0:
+            raise SnowLLMError('indexed file reads exceed the native workspace limit')
+        reserve_host(scratch + 16 * columns)
+        try:
+            offsets = (ctypes.c_int64 * columns)(*offsets)
+            widths = (ctypes.c_int64 * columns)(*widths)
+            check(lib.snowllm_file_reader_read_rows_host(
+                self._r, ctypes.c_char_p(os.fsencode(path)), ids, count, rows, offsets, widths,
+                columns, destination, merge_gap), 'read indexed host rows')
+        finally:
+            release_host(scratch + 16 * columns)
+
+
+class RowTable:
+    def __init__(self, path, rows, offsets, widths, *, merge_gap=0):
+        if (rows < 0 or not widths or len(offsets) != len(widths) or any(w <= 0 for w in widths)
+                or any(o < 0 for o in offsets) or merge_gap < 0 or merge_gap % 4096):
+            raise SnowLLMError('row tables require nonnegative rows and positive matching columns')
+        self.path, self.rows = str(path), rows
+        self.offsets, self.widths = tuple(offsets), tuple(widths)
+        self.row_bytes, self.merge_gap = sum(widths), merge_gap
+        self.reader = None
+        self.resources = contextlib.ExitStack()
+        self.lock = threading.Lock()
+        self._close = weakref.finalize(self, self.resources.close)
+
+    def close(self):
+        with self.lock:
+            self._close()
+
+    def read(self, ids, destination=None):
+        with self.lock:
+            if not self._close.alive:
+                raise SnowLLMError('row table is closed')
+            try:
+                source = memoryview(ids)
+            except TypeError:
+                source = _host_allocation(len(ids) * 8, lambda: array.array('q', ids))
+            if not source.c_contiguous or source.itemsize != 8 or source.format not in ('q', 'l'):
+                raise SnowLLMError('row IDs must be contiguous native int64 values')
+            count = source.nbytes // 8
+            if not count:
+                return bytearray()
+            if source.readonly:
+                copy = host_buffer(source.nbytes)
+                copy[:] = source.cast('B')
+                source = copy
+            result = host_buffer(count * self.row_bytes) if destination is None else memoryview(destination)
+            if result.readonly or not result.c_contiguous or result.nbytes != count * self.row_bytes:
+                raise SnowLLMError('row destination must be writable and match the requested byte count')
+            if self.reader is None:
+                self.reader = self.resources.enter_context(FileReader(64, 65536, 68, host_only=True))
+            ids = (ctypes.c_int64 * count).from_buffer(source)
+            out = (ctypes.c_uint8 * result.nbytes).from_buffer(result)
+            self.reader.read_rows_host(self.path, ids, self.offsets, self.widths, self.rows, out,
+                                      self.merge_gap if count >= 4096 else 0)
+            return result
 
 
 class Reader(FileReader):
