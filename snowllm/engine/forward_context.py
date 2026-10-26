@@ -270,7 +270,7 @@ class Dsv4Walker:
         return Dsv4Context(
             batch=b, M=b.input_ids.numel(), eps=stack.geo.eps,
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
-            arena=self.arena, plan_key=self.plan_key(b, tag, embedded),
+            arena=self.arena, plan_key=self.plan_key(b, tag, embedded, geo=stack.geo),
             cache=cache, geo=stack.geo, decode_max_m=self.decode_max_m, embedded=embedded,
             pre_head=pre_head, taps=self.taps, tap_at=self.tap_at)
 
@@ -280,8 +280,14 @@ class Dsv4Walker:
                            decode_max_m=self.decode_max_m)
 
     def plan_key(self, b: Batch, tag: tuple = PLAN_MAIN,
-                 embedded: torch.Tensor | None = None) -> tuple:
+                 embedded: torch.Tensor | None = None, *, geo=None) -> tuple:
         tiles = ()
+        projection_reuse = False
+        if getattr(geo, "v41", False):
+            from ..models.deepseek_v4.v41 import output_projection_plan
+            rows = b.input_ids.numel()
+            path = ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE
+            projection_reuse = output_projection_plan(rows, path, rows * geo.q_dim * 2)[2]
         if getattr(b, "v41_microbatches", 0):
             from ..models.deepseek_v4.v41 import index_score_tile_rows
             rows = b.input_ids.numel()
@@ -296,6 +302,7 @@ class Dsv4Walker:
                 getattr(b, "v41_microbatches", 0),
                 b.ced_stage,
                 b.ced_keep,
+                projection_reuse,
                 tiles,
                 tuple((int(pl.keep_dst is not None), int(pl.n_new > 0), int(pl.max_n_comp > 0))
                       for _, pl in sorted(b.plans.items())))

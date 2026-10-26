@@ -359,7 +359,7 @@ class Attention(nn.Module):
         m = plan.scratch_rows
         with ctx.arena.frame():
             ws = ctx.arena.flat(ops.dsv4_o_proj_scratch_bytes(m, plan.path), torch.uint8)
-            ops.dsv4_o_proj_kquant(out.reshape(t, -1), cos, sin, [p.kq for p in self.wo_a],
+            ops.dsv4_o_proj(out.reshape(t, -1), cos, sin, [p.kq for p in self.wo_a],
                                    self.wo_b.kq, folded, ws, plan.path)
 
     def _compress(self, ctx: Dsv4Context, lp: LayerPools, fan: Fan, plan: RatioPlan) -> None:

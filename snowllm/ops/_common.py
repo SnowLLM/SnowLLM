@@ -56,6 +56,14 @@ def _p(t: torch.Tensor | None) -> int:
     return 0 if t is None else t.data_ptr()
 
 
+def _overlaps(a: torch.Tensor, b: torch.Tensor) -> bool:
+    if a.device.type == "meta" or b.device.type == "meta" or not a.numel() or not b.numel():
+        return False
+    def span(t):
+        return (1 + sum((n - 1) * s for n, s in zip(t.shape, t.stride()))) * t.element_size()
+    return _p(a) < _p(b) + span(b) and _p(b) < _p(a) + span(a)
+
+
 def _chk_dense(t: torch.Tensor, name: str) -> None:
     if not t.is_contiguous():
         raise SnowLLMError(f"{name}: the kernel indexes it as memory, and {tuple(t.stride())} is "

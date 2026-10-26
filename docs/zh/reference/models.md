@@ -15,7 +15,7 @@
 | `qwen3.6-27b-fp8` | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8) | FP8 | 28.8 GiB |
 | `qwen3.6-27b-q4-k-s` | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF) | Q4_K_S GGUF | 17.9 GiB |
 
-`deepseek-v4.1-flash-1017-vq-q4-k` 已支持 1017 版 VQ + Q4_K 权重的纯文本推理。默认单请求、8192-token 上下文、64-token 预填充分块，关闭投机解码和前缀复用；支持思考模式、1–100 的数值推理预算和 V4.1 工具调用格式。添加 `--dflash MODEL_DIR` 可使用内嵌的三个 DSpark tower，按原生五 token 草稿块执行，无需单独的草稿模型。草稿保留 128-token 目标历史窗口；使用 `--max-model-len 1m --max-num-batched-tokens 8192` 可保留 1M 上下文容量和 8K 预填充分块，自动放置会核算草稿权重，并可能增加主模型专家 offload。视觉尚未接入，内核库需要 ABI 74。
+`deepseek-v4.1-flash-1017-vq-q4-k` 已支持 1017 版 VQ + Q4_K 权重的纯文本推理。默认单请求、8192-token 上下文、64-token 预填充分块，关闭投机解码和前缀复用；支持思考模式、1–100 的数值推理预算和 V4.1 工具调用格式。添加 `--dflash MODEL_DIR` 可使用内嵌的三个 DSpark tower，按原生五 token 草稿块执行，无需单独的草稿模型。草稿保留 128-token 目标历史窗口；使用 `--max-model-len 1m --max-num-batched-tokens 8192` 可保留 1M 上下文容量和 8K 预填充分块，自动放置会核算草稿权重，并可能增加主模型专家 offload。视觉尚未接入，内核库需要 ABI 75。
 
 V4.1 预填充采用 CED：全部提示词 token 经过前 20 层 Encoder，并写入 Decoder 的共享 KV 缓存；最后一个预填充分块完成后，仅对末尾最多 128 个 token 执行一次后 20 层 Decoder。每个生成 token 仍经过完整 40 层。有限窗口回放的结果可能与全部提示词 token 都经过完整 40 层时不同。
 

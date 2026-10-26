@@ -7,6 +7,8 @@
   新增 DeepSeek V4.1 Flash 支持，包括 CED Prefill、VQ 专家、Engram、FP4 KV 存储和原生 DSpark 解码。
 - Improve native MoE, routing, HC and MLA kernels, reusing shared projection and attention implementations.
   优化原生 MoE、路由、HC 和 MLA Kernel，复用已有投影和注意力实现。
+- Share the native attention output projection across V4/V4.1, preserving FP8 rounding; use common counting sort for adaptive VQ expert tiles.
+  V4/V4.1 共用原生注意力输出投影并保留 FP8 舍入，VQ 专家动态分桶复用公共计数排序。
 - Plan GPU, host and disk memory from actual allocation layouts; add mapped host tensor allocation and expert disk caching.
   根据实际分配布局规划 GPU、主机和磁盘用量，新增主机映射 Tensor 分配及专家磁盘缓存。
 - Fix multipart GGUF reads, loading-time memory accounting, speculative cache lifetimes and Windows memory diagnostics.

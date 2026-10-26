@@ -4,7 +4,7 @@ import ctypes
 import math
 import torch
 from .._capi import lib,check,SnowLLMError
-from ._common import _p,_stream,_chk,_chk_rows
+from ._common import _overlaps, _p,_stream,_chk,_chk_rows
 
 _TYPES={torch.int32:0,torch.int64:1,torch.float32:2,torch.bfloat16:3,torch.uint8:4,torch.int8:5}
 
@@ -125,9 +125,7 @@ def copy_tensor(dst,src):
     if dst.device.type!='meta' and src.device.type!='meta':
         sp,dp=_p(src),_p(dst)
         if sp==dp and src.dtype==dst.dtype and src.stride()==dst.stride():return dst
-        sn=(1+sum((n-1)*s for n,s in zip(src.shape,src.stride())))*src.element_size()
-        dn=(1+sum((n-1)*s for n,s in zip(dst.shape,dst.stride())))*dst.element_size()
-        if sp<dp+dn and dp<sp+sn:
+        if _overlaps(src,dst):
             raise SnowLLMError('stage aliased tensor copies in the planned arena')
     if src.ndim:
         try:

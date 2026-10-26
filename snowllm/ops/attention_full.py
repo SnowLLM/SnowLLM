@@ -9,7 +9,7 @@ from typing import NamedTuple
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import (geo, KQuantProjWeight, Path, _chk, _chk_rows, _p,
+from ._common import (geo, KQuantProjWeight, Path, _chk, _chk_rows, _p, _overlaps,
                       _proj_shuffle_kquant, _shuffle, _passthru, _stream)
 
 COMP_MASK_QUANTUM = 128
@@ -262,31 +262,53 @@ def dsv4_q_proj_kquant(x: torch.Tensor, gamma: torch.Tensor, eps: float, w: KQua
         "dsv4_q_proj_kquant")
 
 
-def dsv4_o_proj_scratch_bytes(M: int, path: Path) -> int:
-    return lib.snowllm_dsv4_o_proj_scratch_bytes(M, int(path))
+def dsv4_o_proj_scratch_bytes(M: int, path: Path, low_capacity: int = 0) -> int:
+    return lib.snowllm_dsv4_o_proj_scratch_bytes(M, int(path), low_capacity)
 
 
-def dsv4_o_proj_kquant(attn_out: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                       ws: list[KQuantProjWeight], w_b: KQuantProjWeight, out: torch.Tensor,
-                       scratch: torch.Tensor, path: Path) -> None:
-    M = attn_out.shape[0]
-    _chk(attn_out, "attn_out", torch.bfloat16)
-    _chk(out, "out", torch.bfloat16, out.shape[0], out.shape[1])
+def dsv4_o_proj(attn_out: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
+                       ws: list[KQuantProjWeight | torch.Tensor], w_b: KQuantProjWeight | torch.Tensor,
+                       out: torch.Tensor, scratch: torch.Tensor, path: Path, *,
+                       low: torch.Tensor | None = None, fp8: bool = False, fp8_b: bool = False) -> None:
+    M, g = attn_out.shape[0], geo()
+    _chk(attn_out, "attn_out", torch.bfloat16, M, g.num_heads * g.head_size)
+    _chk(cos, "output projection cos", torch.float32, M, 32)
+    _chk(sin, "output projection sin", torch.float32, M, 32)
+    _chk(out, "out", torch.bfloat16, M, g.hidden)
     _chk(scratch, "scratch", torch.uint8)
-    fmt = ws[0].fmt
-    if any(w.fmt != fmt for w in ws):
-        raise SnowLLMError("dsv4_o_proj_kquant: the groups are row slices of one tensor and must "
-                           "share a format")
-    want = dsv4_o_proj_scratch_bytes(M, path)
+    if low is not None:
+        _chk(low, "output projection low buffer", torch.bfloat16)
+        for value in (attn_out, out, scratch):
+            if _overlaps(low, value):
+                raise SnowLLMError("output projection low buffer overlaps input or output")
+    capacity = 0 if low is None else low.nbytes
+    want = dsv4_o_proj_scratch_bytes(M, path, capacity)
     if scratch.numel() < want:
-        raise SnowLLMError(f"dsv4_o_proj_kquant at M={M} wants {want} bytes of scratch, got "
-                           f"{scratch.numel()}")
-    g = len(ws)
-    quant = (ctypes.c_void_p * g)(*[_p(w.quant) for w in ws])
-    meta = (ctypes.c_void_p * g)(*[_p(w.meta) for w in ws])
-    check(lib.snowllm_dsv4_o_proj_kquant(_p(attn_out), _p(cos), _p(sin), fmt, quant, meta, w_b.fmt,
-                                         _p(w_b.quant), _p(w_b.meta), _p(out), _p(scratch), M,
-                                         int(path), _stream()), "dsv4_o_proj_kquant")
+        raise SnowLLMError(f"output projection at M={M} needs {want} scratch bytes")
+    if len(ws) != g.num_heads * g.head_size // 4096:
+        raise SnowLLMError("output projection group count does not match the geometry")
+    quantized = isinstance(ws[0], KQuantProjWeight)
+    if any(isinstance(w, KQuantProjWeight) != quantized for w in ws):
+        raise SnowLLMError("output projection groups must share a storage family")
+    if quantized:
+        fmt = ws[0].fmt
+        if any(w.fmt != fmt for w in ws):
+            raise SnowLLMError("output projection groups must share a quantization format")
+        weights = [w.quant for w in ws]
+        meta = (ctypes.c_void_p * len(ws))(*[_p(w.meta) for w in ws])
+    else:
+        fmt, weights, meta = 0, ws, None
+        for w in weights:
+            _chk(w, "output group weight", torch.bfloat16)
+    quant = (ctypes.c_void_p * len(ws))(*[_p(w) for w in weights])
+    if isinstance(w_b, KQuantProjWeight):
+        fmt_b, weight_b, meta_b = w_b.fmt, w_b.quant, w_b.meta
+    else:
+        _chk(w_b, "output contraction weight", torch.bfloat16)
+        fmt_b, weight_b, meta_b = 0, w_b, None
+    check(lib.snowllm_dsv4_o_proj(_p(attn_out), _p(cos), _p(sin), fmt, quant, meta,
+          fmt_b, _p(weight_b), _p(meta_b), _p(out), _p(scratch), M, int(path), _p(low), capacity,
+          int(fp8), int(fp8_b), _stream()), "dsv4_o_proj")
 
 
 def dsv4_proj_scratch_bytes(which: Dsv4Proj, M: int) -> int:

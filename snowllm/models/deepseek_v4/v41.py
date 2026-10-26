@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
+from functools import lru_cache
 
 import torch
 from torch import nn
@@ -17,6 +18,14 @@ _INDEX_SCORE_TILE_BYTES = 512 << 20
 
 def index_score_tile_rows(rows, stride_cap):
     return max(1, min(rows, _INDEX_SCORE_TILE_BYTES // (4 * stride_cap)))
+
+
+@lru_cache(None)
+def output_projection_plan(rows, path, low_capacity):
+    path = ops.Path.DECODE if path == ops.Path.DECODE and rows <= 16 else ops.Path.PREFILL
+    need = ops.dsv4_o_proj_scratch_bytes(rows, path, low_capacity)
+    reuse = need < ops.dsv4_o_proj_scratch_bytes(rows, path)
+    return path, need, reuse
 
 
 class Linear(nn.Module):
@@ -166,21 +175,14 @@ class Attention(nn.Module):
                         comp_table=plan.table if compressed else None,
                         selection=ctx.selection if compressed else None,
                         counts=ctx.selection_counts if compressed else None, start=b.swa_start, scratch=scratch)
-            ops.dsv4_rope_tail(attended, *rot, inverse=True)
-            native.fp8_quant(attended)
-            # Attention has consumed Q; reuse its storage for the output projection latent.
-            low = q.view(-1)[:ctx.M * g.o_groups * g.o_lora_rank].view(ctx.M, g.o_groups * g.o_lora_rank)
-            flat = attended.view(ctx.M, -1)
-            if ctx.path == ops.Path.DECODE and ctx.M <= 16 and all(p.quant for p in self.o_a):
-                grouped = a.dense(flat.as_strided((g.o_groups, ctx.M, 4096),
-                                                 (4096, g.o_groups * 4096, 1)))
-                ops.dsv4_proj_kquant_grouped(grouped, [p.quant for p in self.o_a], low)
-            else:
-                for group, proj in enumerate(self.o_a):
-                    with a.frame():
-                        ops.copy_tensor(low[:, group * g.o_lora_rank:(group + 1) * g.o_lora_rank],
-                                        proj(ctx, flat[:, group * 4096:(group + 1) * 4096]))
-            self.o_b(ctx, low, out)
+            with a.frame():
+                low = q.view(-1)
+                path, need, _ = output_projection_plan(ctx.M, ctx.path, low.nbytes)
+                scratch = a.flat(need, torch.uint8)
+                ops.dsv4_o_proj(attended.view(ctx.M, -1), *rot,
+                    [p.quant if p.quant is not None else p.weight for p in self.o_a],
+                    self.o_b.quant if self.o_b.quant is not None else self.o_b.weight,
+                    out, scratch, path, low=low, fp8=True, fp8_b=self.o_b.fp8)
         return out
 
     def write_kv(self, ctx, lp, x):

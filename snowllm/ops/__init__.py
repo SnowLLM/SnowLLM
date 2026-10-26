@@ -41,7 +41,7 @@ from .attention_full import (
     dsv4_norm_proj_kquant,
     dsv4_norm_proj_kquant_scratch_bytes,
     dsv4_norm_proj_scratch_bytes,
-    dsv4_o_proj_kquant,
+    dsv4_o_proj,
     dsv4_o_proj_scratch_bytes,
     dsv4_q_proj_kquant,
     dsv4_q_proj_scratch_bytes,

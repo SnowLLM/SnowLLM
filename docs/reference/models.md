@@ -25,7 +25,7 @@ embedded DSpark towers with their native five-token block; no separate draft che
 The draft retains a 128-token target window. `--max-model-len 1m --max-num-batched-tokens 8192`
 keeps 1M context capacity and 8K prefill chunks; automatic placement accounts for the extra
 draft weights and may offload more target experts. Vision is not connected yet. The kernel
-library requires ABI 74.
+library requires ABI 75.
 
 With updated kernels, V4.1 keeps token embeddings in their original Q4_K storage and restores
 only the requested rows directly into BF16 activations. The target and DSpark share this table.

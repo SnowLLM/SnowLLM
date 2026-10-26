@@ -160,7 +160,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 74
+ABI_VERSION = 75
 
 
 def _check_abi() -> None:
@@ -616,9 +616,9 @@ _SIGS = [
     ("snowllm_dsv4_q_proj_scratch_bytes", c_int64, [c_int64, c_int]),
     ("snowllm_dsv4_q_proj_kquant", c_int,
      [P, P, c_float, c_int, P, P, P, c_int, P, P, P, P, c_int64, c_int, S]),
-    ("snowllm_dsv4_o_proj_scratch_bytes", c_int64, [c_int64, c_int]),
-    ("snowllm_dsv4_o_proj_kquant", c_int,
-     [P, P, P, c_int, P, P, c_int, P, P, P, P, c_int64, c_int, S]),
+    ("snowllm_dsv4_o_proj_scratch_bytes", c_int64, [c_int64, c_int, c_int64]),
+    ("snowllm_dsv4_o_proj", c_int,
+     [P, P, P, c_int, P, P, c_int, P, P, P, P, c_int64, c_int, P, c_int64, c_int, c_int, S]),
     ("snowllm_dsv4_proj_scratch_bytes", c_int64, [c_int, c_int64]),
     ("snowllm_dsv4_proj_kquant", c_int, [c_int, c_int, P, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_dsv4_proj_bf16", c_int, [c_int, P, P, P, P, c_int64, c_int, S]),
