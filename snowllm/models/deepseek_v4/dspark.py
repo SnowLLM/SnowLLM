@@ -103,8 +103,10 @@ class DSparkDraft:
             total_q_blocks=total_q, q_block_map=qmap, plans={}, block_q=True,
             is_prefill=True, num_tokens=M,
             state_indices=states)
+        # Projection dispatch is independent of the block's bidirectional attention mask.
         ctx = self.walker.context(self.stack, b, self.cache, PLAN_DRAFT,
-                                  embedded=noise, pre_head=pre_head)
+                                  embedded=noise, pre_head=pre_head,
+                                  path=ops.Path.DECODE if self.geo.stack.v41 else None)
         self.walker.plan_for(self.stack, ctx)
         return self.stack(ctx)
 
@@ -126,7 +128,7 @@ class DSparkDraft:
         return ops.dspark_markov(base, self.markov_w1, self.markov_w2, anchor, block,
                                 pre_head=pre_head, conf_weight=self.conf_proj,
                                 conf_bias=self.conf_bias, confidence=conf,
-                                workspace=self._markov_ws)
+                                workspace=self._markov_ws, fp32_bias=True)
 
 
 

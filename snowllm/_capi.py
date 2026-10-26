@@ -160,7 +160,7 @@ _preload_hip_runtime()
 _lib_path = _find_lib()
 lib = ctypes.CDLL(_lib_path)
 
-ABI_VERSION = 77
+ABI_VERSION = 78
 
 
 def _check_abi() -> None:
@@ -553,7 +553,7 @@ _SIGS = [
     ("snowllm_dspark_context_workspace_bytes",c_int64,[c_int64]*3),
     ("snowllm_dspark_context",c_int,[P]*4+[c_int64]*4+[S]),
     ("snowllm_dspark_markov_workspace_bytes",c_int64,[c_int64]*4),
-    ("snowllm_dspark_markov",c_int,[P]*10+[c_int64]*8+[S]),
+    ("snowllm_dspark_markov",c_int,[P]*10+[c_int64]*8+[c_int,S]),
     ("snowllm_metadata_ranges",c_int,[P,c_int64,S]),
     ("snowllm_row_copy_workspace_bytes",c_int64,[P]),
     ("snowllm_row_copy",c_int,[P,P,c_int64,S]),

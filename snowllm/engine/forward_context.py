@@ -264,13 +264,14 @@ class Dsv4Walker:
 
     def context(self, stack: object, b: Batch, cache: object, tag: tuple = PLAN_MAIN,
                 embedded: torch.Tensor | None = None,
-                pre_head: torch.Tensor | None = None) -> Dsv4Context:
+                pre_head: torch.Tensor | None = None, *, path: ops.Path | None = None) -> Dsv4Context:
         if b.ced_stage == "encoder":
             b.ced_keep = cache.plan.ced.retained(b)
+        path = (ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE) if path is None else path
         return Dsv4Context(
             batch=b, M=b.input_ids.numel(), eps=stack.geo.eps,
-            path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
-            arena=self.arena, plan_key=self.plan_key(b, tag, embedded, geo=stack.geo),
+            path=path,
+            arena=self.arena, plan_key=self.plan_key(b, tag, embedded, geo=stack.geo, path=path),
             cache=cache, geo=stack.geo, decode_max_m=self.decode_max_m, embedded=embedded,
             pre_head=pre_head, taps=self.taps, tap_at=self.tap_at)
 
@@ -280,20 +281,20 @@ class Dsv4Walker:
                            decode_max_m=self.decode_max_m)
 
     def plan_key(self, b: Batch, tag: tuple = PLAN_MAIN,
-                 embedded: torch.Tensor | None = None, *, geo=None) -> tuple:
+                 embedded: torch.Tensor | None = None, *, geo=None, path=None) -> tuple:
         tiles = ()
         projection_reuse = False
+        path = (ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE) if path is None else path
         if getattr(geo, "v41", False):
             from ..models.deepseek_v4.v41 import output_projection_plan
             rows = b.input_ids.numel()
-            path = ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE
             projection_reuse = output_projection_plan(rows, path, rows * geo.q_dim * 2)[2]
         if getattr(b, "v41_microbatches", 0):
             from ..models.deepseek_v4.v41 import index_score_tile_rows
             rows = b.input_ids.numel()
             tiles = tuple(-(-rows // index_score_tile_rows(rows, pl.stride_cap))
                           for _, pl in sorted(b.plans.items()))
-        return (tag, b.inplace, b.is_prefill, b.last_row is not None, embedded is not None,
+        return (tag, b.inplace, b.is_prefill, path, b.last_row is not None, embedded is not None,
                 b.split, tuple(sorted(self.tap_at)),
                 b.input_ids.numel() == 1,
                 b.input_ids.numel() <= 16,
