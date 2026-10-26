@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 from concurrent.futures import ThreadPoolExecutor
+import ctypes
+import gc
 import json
-import os
 from pathlib import Path
 import struct
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from snowllm.checkpoint import _file_io
+from snowllm import capacity
+from snowllm.checkpoint.reader import FileReader
 from snowllm.errors import SnowLLMError
 from snowllm.models.deepseek_v4.engram import Table
 
@@ -39,20 +40,20 @@ class EngramIOTests(unittest.TestCase):
     def expected(self, ids):
         return b"".join(self.rows[i] + self.scales[i] for i in ids)
 
-    def test_repeated_rows_use_shared_positional_reads(self):
+    def test_repeated_rows_use_one_shared_batch(self):
         table, ids = self.table(), [7, 1, 7, 0]
-        with patch.object(_file_io, "pread", wraps=_file_io.pread) as read:
+        with patch.object(FileReader, "readv_host", autospec=True, side_effect=FileReader.readv_host) as read:
             self.assertEqual(table.read(ids), self.expected(ids))
-        self.assertEqual(read.call_count, 6)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(len(read.call_args.args[2]), 6)
         for ids in ([-1], [8]):
             with self.assertRaises(SnowLLMError):
                 table.read(ids)
 
-    def test_seek_fallback_serializes_shared_descriptor_and_preserves_bytes(self):
+    def test_shared_batch_reader_serializes_concurrent_requests(self):
         table = self.table()
-        fallback = SimpleNamespace(name="nt", lseek=os.lseek, read=os.read, SEEK_SET=os.SEEK_SET)
         inputs = [[i % 8, 7 - i % 8, 0] for i in range(128)]
-        with patch.object(_file_io, "os", fallback), ThreadPoolExecutor(8) as workers:
+        with ThreadPoolExecutor(8) as workers:
             self.assertEqual(list(workers.map(table.read, inputs)), [self.expected(ids) for ids in inputs])
 
     def test_invalid_ranges_and_truncation_are_rejected(self):
@@ -63,10 +64,51 @@ class EngramIOTests(unittest.TestCase):
         self.header["layers.0.engram.embed.scale"]["data_offsets"][1] -= 1
         self.write()
         table = self.table()
+        self.assertEqual(table.read([7]), self.expected([7]))
         with self.path.open("r+b") as file:
             file.truncate(self.path.stat().st_size - 1)
         with self.assertRaisesRegex(SnowLLMError, "truncated"):
             table.read([7])
+        self.write()
+        self.assertEqual(table.read([0, 7]), self.expected([0, 7]))
+
+    def test_output_lifetime_and_close_release_the_exact_host_budget(self):
+        gc.collect()
+        before = capacity._host_reserved
+        table = self.table()
+        self.assertEqual(table.read([]), b'')
+        data = table.read([2, 2])
+        gc.collect()
+        self.assertEqual(capacity._host_reserved - before, 68 * 65536 + 2 * 264)
+        table.close()
+        self.assertEqual(data, self.expected([2, 2]))
+        self.assertEqual(capacity._host_reserved - before, 2 * 264)
+        data.release()
+        gc.collect()
+        self.assertEqual(capacity._host_reserved, before)
+        with self.assertRaisesRegex(SnowLLMError, 'closed'):
+            table.read([0])
+
+    def test_shared_host_reader_handles_unordered_cross_page_ranges_and_eof(self):
+        source = bytes(i % 251 for i in range(12289))
+        self.path.write_bytes(source)
+        offsets = (ctypes.c_int64 * 7)(4093, 2, 8190, 4093, 0, 12280, 12000)
+        sizes = (ctypes.c_int64 * 7)(9, 14, 7, 9, 0, 9, 31)
+        data = bytearray([165] * (7 * 64 + 32))
+        base = ctypes.addressof(ctypes.c_uint8.from_buffer(data))
+        destinations = (ctypes.c_void_p * 7)(*(base + 16 + i * 64 for i in range(7)))
+        expected = bytearray(data)
+        for i, (offset, size) in enumerate(zip(offsets, sizes)):
+            expected[16+i*64:16+i*64+size] = source[offset:offset+size]
+        with FileReader(8, 4096, 12, host_only=True) as reader:
+            reader.readv_host(self.path, offsets, sizes, destinations)
+            self.assertEqual(data, expected)
+            offsets[0] = -1
+            with self.assertRaises(SnowLLMError):
+                reader.readv_host(self.path, offsets, sizes, destinations)
+            offsets[0] = 4093
+            reader.readv_host(self.path, offsets, sizes, destinations)
+            self.assertEqual(data, expected)
 
 
 if __name__ == "__main__":

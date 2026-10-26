@@ -3,9 +3,12 @@
 
 import collections
 import contextlib
+import ctypes
 import json
+import os
 import pathlib
 import time
+import weakref
 from collections.abc import KeysView
 
 import torch
@@ -71,14 +74,34 @@ class Shard:
         return _DTYPE[m["dtype"]], tuple(m["shape"]), self.data_start + start, end - start
 
 
+class _HostBuffer(bytearray):
+    pass
+
+
+def host_buffer(nbytes):
+    from ..capacity import reserve_host, release_host
+    reserve_host(nbytes)
+    try:
+        data = _HostBuffer(nbytes)
+    except BaseException:
+        release_host(nbytes)
+        raise
+    weakref.finalize(data, release_host, nbytes)
+    return memoryview(data)
+
+
 class FileReader:
-    def __init__(self, queue_depth, chunk_bytes, num_buffers):
+    def __init__(self, queue_depth, chunk_bytes, num_buffers, *, host_only=False):
         from ..capacity import reserve_host
+        if queue_depth <= 0 or chunk_bytes <= 0 or chunk_bytes % 4096 or num_buffers <= queue_depth:
+            raise SnowLLMError('file reader needs a positive queue, 4096-aligned chunks and more buffers than the queue')
         self._r, self._io_bytes = None, 0
+        self._host_only = host_only
         reserve_host(chunk_bytes * num_buffers)
         self._io_bytes = chunk_bytes * num_buffers
         try:
-            self._r = lib.snowllm_file_reader_create(queue_depth, chunk_bytes, num_buffers)
+            create = lib.snowllm_file_reader_create_host if host_only else lib.snowllm_file_reader_create
+            self._r = create(queue_depth, chunk_bytes, num_buffers)
             if not self._r:
                 raise SnowLLMError('cannot create asynchronous file reader (io_uring_setup/IOCP)')
         except BaseException:
@@ -102,6 +125,21 @@ class FileReader:
 
     def __exit__(self, *_):
         self.close()
+
+    def readv_host(self, path, offsets, sizes, destinations):
+        from ..capacity import reserve_host, release_host
+        count = len(offsets)
+        if not self._r or not self._host_only or len(sizes) != count or len(destinations) != count:
+            raise SnowLLMError('host file reads require an open host reader and matching ranges')
+        scratch = lib.snowllm_file_reader_readv_workspace_bytes(count)
+        if scratch < 0:
+            raise SnowLLMError('host file read count exceeds the native workspace limit')
+        reserve_host(scratch)
+        try:
+            check(lib.snowllm_file_reader_readv_host(self._r, ctypes.c_char_p(os.fsencode(path)), offsets, sizes,
+                                                    destinations, count), 'read host ranges')
+        finally:
+            release_host(scratch)
 
 
 class Reader(FileReader):

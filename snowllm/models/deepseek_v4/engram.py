@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
-import os
+import contextlib
+import ctypes
 import struct
 import threading
 import weakref
@@ -11,8 +12,7 @@ from torch import nn
 
 from ... import ops
 from ...errors import SnowLLMError
-from ...checkpoint import _file_io
-from ...checkpoint.reader import Shard
+from ...checkpoint.reader import FileReader, Shard, host_buffer
 from ...ops import deepseek41 as native
 
 
@@ -31,27 +31,52 @@ class Table:
                 raise SnowLLMError(f"{path}: invalid Engram table byte range")
         self.offsets = tuple(shard.data_start + meta["data_offsets"][0] for meta in (weight, scale))
         self.rows = rows
-        self.fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        self.path = str(path)
+        self.reader = None
+        self.resources = contextlib.ExitStack()
         self.lock = threading.Lock()
-        self.close = weakref.finalize(self, os.close, self.fd)
+        self._close = weakref.finalize(self, self.resources.close)
+
+    def close(self):
+        with self.lock:
+            self._close()
 
     def read(self, ids):
         with self.lock:
+            if not self._close.alive:
+                raise SnowLLMError('Engram table is closed')
             return self._read(ids)
 
     def _read(self, ids):
-        result = bytearray(len(ids) * 264)
-        known = {}
-        for i, row in enumerate(ids):
+        known = dict.fromkeys(ids)
+        for row in known:
             if not 0 <= row < self.rows:
                 raise SnowLLMError(f"Engram row {row} exceeds table size {self.rows}")
-            if row not in known:
-                data = (_file_io.pread(self.fd, 256, self.offsets[0] + row * 256)
-                        + _file_io.pread(self.fd, 8, self.offsets[1] + row * 8))
-                if len(data) != 264:
-                    raise SnowLLMError(f"Engram row {row} is truncated")
-                known[row] = data
-            result[i * 264:(i + 1) * 264] = known[row]
+        if not known:
+            return bytearray()
+        if self.reader is None:
+            self.reader = self.resources.enter_context(FileReader(64, 65536, 68, host_only=True))
+        count = len(known)
+        need = count * 2 * (ctypes.sizeof(ctypes.c_int64) * 2 + ctypes.sizeof(ctypes.c_void_p))
+        arrays = host_buffer(need)
+        result, packed = host_buffer(len(ids) * 264), host_buffer(count * 264)
+        base = ctypes.addressof(ctypes.c_uint8.from_buffer(packed))
+        stride = count * 2 * ctypes.sizeof(ctypes.c_int64)
+        offsets = (ctypes.c_int64 * (2 * count)).from_buffer(arrays)
+        sizes = (ctypes.c_int64 * (2 * count)).from_buffer(arrays, stride)
+        destinations = (ctypes.c_void_p * (2 * count)).from_buffer(arrays, 2 * stride)
+        for i, row in enumerate(known):
+            known[row] = i
+            offsets[2*i], offsets[2*i+1] = self.offsets[0] + row*256, self.offsets[1] + row*8
+            sizes[2*i], sizes[2*i+1] = 256, 8
+            destinations[2*i], destinations[2*i+1] = base + i*264, base + i*264 + 256
+        try:
+            self.reader.readv_host(self.path, offsets, sizes, destinations)
+        except SnowLLMError as error:
+            raise SnowLLMError(f'{self.path}: Engram read failed or a row is truncated') from error
+        for i, row in enumerate(ids):
+            offset = known[row] * 264
+            result[i*264:(i+1)*264] = packed[offset:offset+264]
         return result
 
 
