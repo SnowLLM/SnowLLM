@@ -158,7 +158,17 @@ def _preload_hip_runtime() -> None:
 
 _preload_hip_runtime()
 _lib_path = _find_lib()
-lib = ctypes.CDLL(_lib_path)
+try:
+    import snowllm_kernels as _kernels
+except ModuleNotFoundError as exc:
+    if exc.name != "snowllm_kernels":
+        raise
+    _kernels = None
+try:
+    lib = getattr(_kernels, "load_library", ctypes.CDLL)(_lib_path)
+except OSError as exc:
+    raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
+_lib_path = lib._name
 
 ABI_VERSION = 79
 
