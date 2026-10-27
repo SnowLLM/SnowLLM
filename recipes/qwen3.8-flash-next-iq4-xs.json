@@ -18,7 +18,8 @@
   "defaults": {
     "num_spec": 2,
     "max_model_len": 409600,
-    "max_num_seqs": 4
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 8192
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

@@ -20,14 +20,14 @@ GPU 内存主要用于：
 
 ## 预填充分块大小 {#prefill-chunk-size}
 
-`--max-num-batched-tokens` 设置每个预填充分块处理的 token 数。默认使用固定的 2048 tokens。上下文长度由 `--max-model-len` 控制。
+`--max-num-batched-tokens` 设置每个预填充分块处理的 token 数，默认为 8192 tokens。上下文长度由 `--max-model-len` 控制；多个并发请求共享这份总 token 容量的 KV 池。
 
 ```sh
 snowllm qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 snowllm load qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 ```
 
-更大的分块可能提高预填充吞吐，但需要更多工作区内存。较小分块可降低工作区占用。可以从默认值 `2048` 开始，调优时同时比较预填充 tok/s 和首 token 延迟。
+更大的分块可能提高预填充吞吐，但需要更多工作区内存。较小分块可降低工作区占用。可以从默认值 `8192` 开始，调优时同时比较预填充 tok/s 和首 token 延迟。
 
 在 Web UI 加载模型前，于 **推理设置 → 额外选项** 中填写 `--max-num-batched-tokens 8k`。运行时设置会显示实际生效的 **预填充分块**。
 

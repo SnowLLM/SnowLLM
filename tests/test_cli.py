@@ -184,7 +184,7 @@ class CLITests(unittest.TestCase):
         recipe = Recipe(json.loads((Path(__file__).parents[1] / 'recipes' /
                          'deepseek-v4-flash-iq2-xxs-400k.json').read_text()))
         args, kw = self.launch_options(recipe=recipe)
-        self.assertEqual(args[1:3], (4, 409600))
+        self.assertEqual(args[1:3], (1, 409600))
         self.assertEqual(kw['prefill_chunk'], 8192)
         self.assertEqual(kw['device_map'], 'auto')
         self.assertEqual(kw['max_gpu_mem_util'], .95)
@@ -201,7 +201,7 @@ class CLITests(unittest.TestCase):
                          (512, .4, .5))
         self.assertNotIn('capacity_given', kw)
         args, kw = self.launch_options(('--max-host-mem', '12.5GiB'))
-        self.assertEqual((args[2], kw['prefill_chunk']), (409600, 2048))
+        self.assertEqual((args[2], kw['prefill_chunk']), (409600, 8192))
         self.assertEqual(kw['max_host_mem_gib'], 12.5)
         self.assertIsNone(kw['max_host_mem_util'])
 
@@ -233,7 +233,7 @@ class CLITests(unittest.TestCase):
         _, kw = self.launch_options(('--max-gpu-mem', '.6'), recipe)
         self.assertEqual((kw['max_gpu_mem_gib'], kw['max_gpu_mem_util']), (None, .6))
         args, kw = self.launch_options(('--max-gpu-mem', '12.5GiB', '--max-host-mem', '16GiB'))
-        self.assertEqual((args[2], kw['prefill_chunk']), (409600, 2048))
+        self.assertEqual((args[2], kw['prefill_chunk']), (409600, 8192))
         self.assertEqual((kw['max_gpu_mem_gib'], kw['max_host_mem_gib']), (12.5, 16))
         with self.assertRaises(SnowLLMError):
             Recipe(dict(id='local', repo='a/b', defaults=dict(max_gpu_mem_util=.7, max_gpu_mem_gib=16)))

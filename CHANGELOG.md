@@ -1,6 +1,13 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.16 — 2026-10-27
+
+- Restore a shared KV pool across concurrent requests instead of multiplying context capacity by the request count.
+  恢复多个并发请求共享 KV 池的容量计算，不再按并发数成倍预留上下文容量。
+- Restore the 8192-token default prefill chunk and set it explicitly in Flash-Next recipes, preserving the existing GPU memory utilization limits.
+  恢复默认 8192-token 预填充分块，并在 Flash-Next 方案中显式指定，保持原有 GPU 显存使用比例。
+
 ## 0.3.15 — 2026-10-27
 
 - Restore the original recipe catalogue for SnowLLM 0.3.13 and use a separate schema-2 catalogue by default in 0.3.15.

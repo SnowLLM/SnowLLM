@@ -20,14 +20,14 @@ Lower-bit weights use less memory but require dequantization. Decode may improve
 
 ## Prefill chunk size
 
-Use `--max-num-batched-tokens` to set the tokens processed per prefill chunk. The default is a fixed 2048 tokens. Context length is controlled by `--max-model-len`.
+Use `--max-num-batched-tokens` to set the tokens processed per prefill chunk. The default is 8192 tokens. Context length is controlled by `--max-model-len`; concurrent requests share one KV pool with that total token capacity.
 
 ```sh
 snowllm qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 snowllm load qwen3.8-flash-next-q3-k-xl --max-num-batched-tokens 8k
 ```
 
-Larger chunks can improve prefill throughput but need more workspace memory, leaving less room for KV caches. Smaller chunks reduce workspace use. Start with `auto`; compare prefill tok/s and time to first token when tuning.
+Larger chunks can improve prefill throughput but need more workspace memory, leaving less room for KV caches. Smaller chunks reduce workspace use. Start with 8192; compare prefill tok/s and time to first token when tuning.
 
 In the Web UI, enter `--max-num-batched-tokens 8k` under **Inference settings → Additional options** before loading. The runtime settings show the effective **Prefill chunk**.
 

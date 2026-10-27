@@ -6,6 +6,9 @@ from unittest.mock import patch
 import _harness
 from snowllm.engine.resources import PoolPlan
 from snowllm.engine.runner import BaseRunner, CapacityError
+from snowllm.engine.qwen_runner import QwenRunner
+from snowllm.engine.glm5_next_runner import Glm5NextRunner
+from snowllm.engine.dsv4_runner import Dsv4Runner
 from snowllm.checkpoint import loader
 from snowllm.models import placement
 
@@ -39,6 +42,24 @@ def main():
     else:
         ck('host budget errors identify the host ceiling', False)
     runner = object.__new__(BaseRunner)
+    runner._want_blocks, runner.max_blocks_per_seq = None, 25600
+    for slots in (1, 4, 16):
+        runner.max_num_seqs = slots
+        ck(f'{slots} slots share the configured total KV pool', runner._cache_blocks() == 25600)
+    runner._want_blocks = 32768
+    ck('explicit total KV block count is preserved', runner._cache_blocks() == 32768)
+    for cls in (QwenRunner, Glm5NextRunner, Dsv4Runner):
+        shared = object.__new__(cls)
+        shared.max_blocks_per_seq, shared.ctx_cap, shared.block_size = 10, 160, 16
+        shared._want_blocks, shared.prefix_memory_ratio = None, 0.
+        shared.plan_activations = True
+        shared._cache_bytes = lambda n: n*16
+        for slots in (1, 4, 16):
+            shared.max_num_seqs = slots
+            plan = shared._pool_plan(0)
+            expected = 160 if cls is Dsv4Runner else 10
+            ck(f'{cls.__name__} shares total KV capacity across {slots} slots',
+               plan.requested == expected)
     runner.model, runner.ctx_cap = SimpleNamespace(), 160
     runner._allowance = lambda: 100
     plan = PoolPlan(lambda n: n*16, minimum=10, requested=10, future_bytes=20)
@@ -72,7 +93,7 @@ def main():
     ck('KV and snapshots follow workload size and a direct budget ratio',
        runner.num_kv_blocks == 8 and runner.prefix_slots == 4)
     runner._want_chunk, runner.ctx_cap = 'auto', 8192
-    ck('legacy auto chunk uses the fixed default', runner.candidates() == [2048])
+    ck('legacy auto chunk preserves the 8K default', runner.candidates() == [8192])
     runner._want_chunk = 512
     ck('explicit chunk is preserved', runner.candidates() == [512])
     return ck.done()

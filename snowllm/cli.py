@@ -416,7 +416,7 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--kv-cache-dtype", choices=("bf16", "auto", "int8"), default="bf16",
                    help='KV cache precision; auto uses bf16.')
     g.add_argument("--max-num-batched-tokens", default=DEFAULT_PREFILL_CHUNK, metavar="N",
-                   type=_size, help='Prefill chunk size, e.g. 2k; fixed independently of memory budgets.')
+                   type=_size, help='Prefill chunk size, e.g. 8k; fixed independently of memory budgets.')
     g.add_argument("--batch-prefill", action="store_true",
                    help='Batch fresh prompts; requires --num-spec 0, may change output.')
     g.add_argument("--mtp-window", type=int, default=0, metavar="W",

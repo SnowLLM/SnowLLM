@@ -39,7 +39,7 @@ def main():
             ck('host budget enables automatic GGUF offload without device-map',
                model.device_map.host_bytes > 0 and model.device_map.host_bytes <= cpu_gb << 30)
         allocations.append((engine.blocks.total, engine.runner.prefix_slots))
-        ck('KV pool follows context and concurrency', engine.blocks.total == 2*engine.max_blocks)
+        ck('KV pool is shared across concurrent requests', engine.blocks.total == engine.max_blocks)
         ck('configured chunk and context are preserved',
            engine.prefill_chunk == 512 and engine.max_model_len == 4096)
         ck('decode graphs are retained', engine.graph_sizes == [1, 2])

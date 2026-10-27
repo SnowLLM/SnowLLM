@@ -17,7 +17,8 @@
   "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter.",
   "defaults": {
     "num_spec": 0,
-    "max_num_seqs": 4
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 8192
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

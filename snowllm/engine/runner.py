@@ -215,7 +215,8 @@ class BaseRunner:
         return units, snapshots
 
     def _cache_blocks(self):
-        return (self.max_blocks_per_seq*self.max_num_seqs
+        # All request slots share this total KV pool.
+        return (self.max_blocks_per_seq
                 if self._want_blocks is None else self._want_blocks)
 
     def _draft_pool_blocks(self, blocks):

@@ -17,7 +17,8 @@
   "defaults": {
     "dflash": "@model/dflash2",
     "dflash_block": 4,
-    "max_num_seqs": 4
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 8192
   },
   "serve_as": "Qwen3.8-Flash-Next",
   "sources": [

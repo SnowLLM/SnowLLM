@@ -126,6 +126,19 @@ class RecipeCompatibilityTests(unittest.TestCase):
         self.assertTrue(recipes.Recipe(draft).servable)
         self.assertNotIn(draft['id'], {r['id'] for r in builder.for_client(book, '0.3.13')})
 
+    def test_flash_next_recipes_keep_four_slots_and_8k_prefill(self):
+        book = builder.recipes()
+        for view in (book, builder.for_client(book, '0.3.13')):
+            selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
+            self.assertEqual(len(selected), 5)
+            for raw in selected:
+                with self.subTest(recipe=raw['id'], legacy=view is not book):
+                    defaults = raw['defaults']
+                    self.assertEqual(defaults['max_num_seqs'], 4)
+                    self.assertEqual(defaults['max_num_batched_tokens'], 8192)
+                    self.assertEqual(defaults.get('max_gpu_mem_util', .9), .9)
+                    self.assertEqual(defaults.get('gpu_memory_utilization', .9), .9)
+
     def test_old_saved_default_is_migrated_without_changing_explicit_overrides(self):
         old = 'https://snowllm.dev/recipe.json'
         with tempfile.TemporaryDirectory() as folder, patch.dict('os.environ', {}, clear=True):
