@@ -57,6 +57,8 @@ class DSparkDraft:
                                f"offered {taps.shape[1]}")
         ctx = self.walker.bare_context(self.stack, taps.shape[0])
         if self.geo.stack.v41:
+            # Persisted taps start a new stage after the target logits are consumed.
+            ctx.begin_plan()
             out = ctx.arena.new(taps.shape[0], self.geo.stack.hidden)
             with ctx.arena.frame():
                 self.fc(ctx, taps, out)

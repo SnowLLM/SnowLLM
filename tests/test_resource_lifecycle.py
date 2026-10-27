@@ -168,6 +168,36 @@ def main():
         ck('static batch retains mapped message ownership',
            host_view(batch.input_ids) is not None and host_view(batch.state_indices) is not None
            and host_view(batch.num_accepted).tolist() == [1]*len(lengths))
+    from snowllm.engine.cache_resources import Dsv4Resources
+    for chunk in (1, 64, 128, 8192):
+        probe = SimpleNamespace(lm_rows=6, num_taps=3, draft_geo=None,
+            geo=SimpleNamespace(v41=True, sliding_window=128, vocab_size=256, hidden=32),
+            walker=SimpleNamespace())
+        outputs = object.__new__(Dsv4Resources)
+        outputs.r = probe
+        resource = Resource(lambda slabs: outputs.allocate_outputs(slabs, chunk))
+        with dry_alloc():
+            resource.allocate()
+            ck(f'V4.1 DSpark taps cover the replay window with chunk {chunk}',
+               probe.walker.taps.shape == (128, 96))
+        resource.release()
+    from snowllm.engine.forward_context import Dsv4Walker
+    from snowllm.models.deepseek_v4.dspark import DSparkDraft
+    arena = ops.Arena()
+    arena.freeze(arena.ALIGN)
+    arena.at = arena.buf.numel()
+    draft = object.__new__(DSparkDraft)
+    geo = SimpleNamespace(v41=True, hidden=8, eps=1e-6)
+    draft.geo = SimpleNamespace(stack=geo, fc_k=16)
+    draft.stack = SimpleNamespace(geo=geo)
+    draft.walker = Dsv4Walker(arena)
+    draft.fc = lambda ctx, taps, out: out.zero_()
+    draft.enc_norm = lambda ctx, values, out: out
+    buffer = arena.buf
+    feature = draft.context_feature(torch.zeros(4, 16, dtype=torch.bfloat16, device='cuda'))
+    ck('V4.1 DSpark context reuses the consumed target arena stage',
+       feature.shape == (4, 8) and arena.buf is buffer and feature.data_ptr() == buffer.data_ptr())
+    arena.release()
     return ck.done()
 
 

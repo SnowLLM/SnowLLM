@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.17 — 2026-10-27
+
+- Fix V4.1 DSpark tap buffers for the full decoder replay window and reuse activation workspace after target sampling.
+  修复 V4.1 DSpark 回放窗口的 tap 缓冲规划，并在主模型采样后复用激活工作区。
+- Set both V4.1 recipes to 8192-token prefill chunks and require 0.3.17 for the DSpark recipe.
+  V4.1 普通版和 DSpark 版均默认使用 8192-token 预填充分块，DSpark 方案要求 0.3.17。
+- Tighten the V4.1 host memory ceiling to 75% so automatic placement can use smaller weight groups instead of excessive whole-layer offload.
+  V4.1 主机内存上限收紧到 75%，让自动放置选择更小的权重组，避免整层卸载占用过多主机内存。
+
 ## 0.3.16 — 2026-10-27
 
 - Restore a shared KV pool across concurrent requests instead of multiplying context capacity by the request count.

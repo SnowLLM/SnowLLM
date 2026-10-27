@@ -68,7 +68,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         self.assertEqual(current[key]['defaults']['max_gpu_mem_util'], .95)
         future = 'deepseek-v4.1-flash-1017-vq-q4-k'
         self.assertNotIn(future, old)
-        self.assertEqual(current[future]['defaults']['max_host_mem_util'], .9)
+        self.assertEqual(current[future]['defaults']['max_host_mem_util'], .75)
         self.assertEqual(book, before)
 
     def test_producer_requires_a_version_gate_for_new_options(self):
@@ -123,7 +123,11 @@ class RecipeCompatibilityTests(unittest.TestCase):
             self.assertEqual(draft[key], base[key])
         self.assertEqual(draft['defaults'], {**base['defaults'], 'dflash': '@model', 'dflash_block': 5})
         self.assertEqual(builder.spec_of(draft), 'DSpark')
-        self.assertTrue(recipes.Recipe(draft).servable)
+        self.assertEqual(draft['defaults']['max_num_batched_tokens'], 8192)
+        self.assertEqual(draft['defaults']['max_gpu_mem_util'], .94)
+        self.assertEqual(draft['defaults']['max_host_mem_util'], .75)
+        self.assertEqual(draft['requires'], '0.3.17')
+        self.assertEqual(recipes.Recipe(draft).stale, builder.needs_newer(draft))
         self.assertNotIn(draft['id'], {r['id'] for r in builder.for_client(book, '0.3.13')})
 
     def test_flash_next_recipes_keep_four_slots_and_8k_prefill(self):

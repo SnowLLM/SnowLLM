@@ -248,7 +248,8 @@ class Dsv4Resources(ResourceSet):
     def allocate_outputs(self, slabs, chunk):
         r = self.r
         r.logits = tensor(slabs, (r.lm_rows, r.geo.vocab_size), torch.float32)
-        tap_rows = max(min(chunk, r.geo.sliding_window) if r.geo.v41 else chunk, r.lm_rows)
+        # V4.1 replays the full retained tail even when prefill chunks are shorter.
+        tap_rows = max(r.geo.sliding_window if r.geo.v41 else chunk, r.lm_rows)
         r.walker.taps = (tensor(slabs, (tap_rows, r.num_taps*r.geo.hidden), torch.bfloat16)
                          if r.num_taps else None)
         from ..models.geometry import DSparkGeometry

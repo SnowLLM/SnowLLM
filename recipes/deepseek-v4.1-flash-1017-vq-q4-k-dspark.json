@@ -31,10 +31,10 @@
     "dflash_block": 5,
     "prefix_memory_ratio": 0,
     "max_model_len": 8192,
-    "max_num_batched_tokens": 64,
+    "max_num_batched_tokens": 8192,
     "device_map": "auto",
     "max_gpu_mem_util": 0.94,
-    "max_host_mem_util": 0.9
+    "max_host_mem_util": 0.75
   },
-  "requires": "0.3.15"
+  "requires": "0.3.17"
 }
