@@ -14,12 +14,23 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 ```json
 {
   "models_dir": "D:/Models",
-  "recipes_url": "https://snowllm.dev/recipe.json",
+  "recipes_url": "https://snowllm.dev/recipe-v2.json",
   "library_path": null
 }
 ```
 
 相对路径基于配置文件所在目录解析。支持 UTF-8 路径和 UTF-8 BOM。
+
+## Recipe 目录兼容性 {#recipe-catalogue-compatibility}
+
+| SnowLLM 版本 | 默认目录 |
+| --- | --- |
+| 0.3.13 | `https://snowllm.dev/recipe.json` |
+| 0.3.15 及以上 | `https://snowllm.dev/recipe-v2.json` |
+
+0.3.15 会自动切换到新默认地址，自定义地址保持不变。旧版出现目录错误时，可运行 `snowllm recipes --refresh` 更新缓存。
+
+后续版本将移除对 0.3.13 及更早版本的兼容支持，建议升级到 0.3.15 或更高版本。
 
 ## 覆盖优先级 {#overrides}
 

@@ -14,12 +14,23 @@ Windows keeps an existing `~/.config/snowllm/config.json` until the new-location
 ```json
 {
   "models_dir": "D:/Models",
-  "recipes_url": "https://snowllm.dev/recipe.json",
+  "recipes_url": "https://snowllm.dev/recipe-v2.json",
   "library_path": null
 }
 ```
 
 Relative paths resolve against the configuration directory. UTF-8 paths and a UTF-8 BOM are supported.
+
+## Recipe catalogue compatibility
+
+| SnowLLM version | Default catalogue |
+| --- | --- |
+| 0.3.13 | `https://snowllm.dev/recipe.json` |
+| 0.3.15 and later | `https://snowllm.dev/recipe-v2.json` |
+
+Version 0.3.15 automatically switches saved default URLs to the new catalogue; custom URLs are preserved. On older clients, run `snowllm recipes --refresh` to clear catalogue errors caused by cached data.
+
+A future release will remove compatibility with 0.3.13 and earlier. Upgrade to 0.3.15 or later.
 
 ## Overrides
 

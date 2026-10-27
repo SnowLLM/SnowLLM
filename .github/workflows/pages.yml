@@ -14,9 +14,12 @@ on:
       - README.md
       - pyproject.toml
       - snowllm/hub/recipes.py
+      - snowllm/config.py
       - snowllm/_version.py
       - scripts/check-site.py
       - scripts/build-recipes.py
+      - scripts/check-recipe-clients.py
+      - tests/test_recipe_compatibility.py
       - scripts/build-benchmarks.py
       - tests/test_benchmark_page.py
       - .github/workflows/pages.yml
@@ -51,6 +54,13 @@ jobs:
 
       - name: Every recipe is well formed
         run: scripts/build-recipes.py --check
+
+      - name: Recipe compatibility with published clients
+        run: |
+          python -m unittest discover -s tests -p test_recipe_compatibility.py
+          python scripts/build-recipes.py
+          python -m pip download --no-deps --only-binary=:all: -d "$RUNNER_TEMP/recipe-clients" "snowllm==0.3.13"
+          python scripts/check-recipe-clients.py "$RUNNER_TEMP/recipe-clients"
 
       - name: Assemble the benchmark data the page draws
         run: scripts/build-benchmarks.py

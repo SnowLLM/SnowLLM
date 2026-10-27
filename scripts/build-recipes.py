@@ -14,10 +14,38 @@ sys.path.insert(0, str(ROOT))
 from snowllm.hub.recipes import SCHEMA, SETTABLE
 
 SOURCE = ROOT / "recipes"
-OUT = ROOT / "web" / "recipe.json"
+OUT = ROOT / "web" / "recipe-v2.json"
+UNVERSIONED_CLIENT = "0.3.13"
 ENDPOINT = "https://huggingface.co"
 VERSION = re.search(r'__version__ = "([^"]+)"',
                     (ROOT / "snowllm/_version.py").read_text()).group(1)
+
+
+# These field sets are wire contracts for clients already on PyPI.
+V13_DEFAULTS = frozenset(("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens",
+    "device_map", "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype",
+    "gpu_memory_utilization", "prefix_memory_ratio", "mtp_window", "mtp_sinks"))
+CLIENT_DEFAULTS = {"0.3.13": V13_DEFAULTS}
+
+
+def client_defaults(recipe: dict, client: str) -> dict:
+    defaults = dict(recipe.get("defaults") or {})
+    if client == "0.3.13" and "max_gpu_mem_util" in defaults:
+        defaults["gpu_memory_utilization"] = defaults.pop("max_gpu_mem_util")
+    return defaults
+
+
+def for_client(book: list[dict], client: str) -> list[dict]:
+    result = []
+    for recipe in book:
+        if parts(str(recipe.get("requires") or "0")) > parts(client):
+            continue
+        defaults = client_defaults(recipe, client)
+        unknown = set(defaults) - CLIENT_DEFAULTS[client]
+        if unknown:
+            raise ValueError(f"{recipe['id']}: defaults {sorted(unknown)} require a version newer than {client}")
+        result.append({**recipe, "defaults": defaults})
+    return result
 
 
 def parts(v: str) -> tuple[int, ...]:
@@ -67,6 +95,12 @@ def load(path: pathlib.Path) -> dict | None:
         if k not in SETTABLE:
             complain(path, f"sets {k!r} in defaults, which is not a recipe's to set. "
                            f"One of: {', '.join(SETTABLE)}")
+    if not problems[before:]:
+        for client in CLIENT_DEFAULTS:
+            try:
+                for_client([r], client)
+            except ValueError as exc:
+                complain(path, str(exc))
     if r.get("status", "supported") not in ("supported", "coming soon"):
         complain(path, "status must be 'supported' or 'coming soon'")
     if "family" in r and not (isinstance(r["family"], str) and r["family"].strip()):
@@ -172,7 +206,7 @@ def rank(r: dict) -> tuple:
 
 def updated() -> str:
     try:
-        stamp = subprocess.run(["git", "log", "-1", "--format=%cs", "--", "recipes"],
+        stamp = subprocess.run(["git", "log", "-1", "--format=%cs", "--", "recipes", "scripts/build-recipes.py", "snowllm/hub/recipes.py"],
                                cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         stamp = ""
@@ -240,9 +274,18 @@ def main() -> None:
         r["url"] = url_of(r["repo"], r.get("revision", "main"))
         for src in r.get("sources", ()):
             src["url"] = url_of(src["repo"], src.get("revision", "main"))
-    OUT.write_text(json.dumps({"schema": SCHEMA, "version": VERSION, "updated": updated(),
-                               "recipes": book},
-                              indent=2) + "\n")
+    stamp = updated()
+    OUT.write_text(json.dumps({"schema": SCHEMA, "version": VERSION, "updated": stamp,
+                               "recipes": book}, indent=2) + "\n")
+    destination = OUT.parent / "recipes"
+    destination.mkdir(parents=True, exist_ok=True)
+    for client in CLIENT_DEFAULTS:
+        payload = {"schema": 1, "version": VERSION, "client_version": client,
+                   "updated": stamp, "recipes": for_client(book, client)}
+        encoded = json.dumps(payload, indent=2) + "\n"
+        (destination / f"{client}.json").write_text(encoded)
+        if client == UNVERSIONED_CLIENT:
+            (OUT.parent / "recipe.json").write_text(encoded)
     served = sum(1 for r in book if r.get("status", "supported") == "supported" and not needs_newer(r))
     print(f"build-recipes.py: {OUT.relative_to(ROOT)} <- {len(book)} recipe(s), {served} servable")
 

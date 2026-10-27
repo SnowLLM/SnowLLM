@@ -27,6 +27,8 @@ __pycache__/
 # them would leave two copies to disagree.
 /web/install.sh
 /web/recipe.json
+/web/recipe-v2.json
+/web/recipes/
 /web/benchmarks.json
 
 # Editor / tooling caches

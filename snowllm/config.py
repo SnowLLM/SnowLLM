@@ -73,7 +73,7 @@ def write_config(path: Path, values: dict) -> None:
             temp.unlink(missing_ok=True)
 
 
-DEFAULT_RECIPES_URL = "https://snowllm.dev/recipe.json"
+DEFAULT_RECIPES_URL = "https://snowllm.dev/recipe-v2.json"
 
 
 def configured_value(key: str, environment: str, default=None, path: Path | None = None,
@@ -98,8 +98,11 @@ def configured_value(key: str, environment: str, default=None, path: Path | None
 
 
 def recipes_source(path=None, values=None, override=None):
-    return configured_value("recipes_url", "SNOWLLM_RECIPES_URL", DEFAULT_RECIPES_URL,
-                            path, values, override)
+    url, source = configured_value("recipes_url", "SNOWLLM_RECIPES_URL", DEFAULT_RECIPES_URL,
+                                   path, values, override)
+    if source == "config" and url == "https://snowllm.dev/recipe.json":
+        url = DEFAULT_RECIPES_URL
+    return url, source
 
 
 def library_path(path=None, values=None):

@@ -30,7 +30,7 @@ CATALOGUE_URL = DEFAULT_RECIPES_URL
 CATALOGUE_TTL = 3600.0
 DEFAULT_CONTEXT = DEFAULT_CONTEXT_TARGET
 DEFAULT_SLOTS = DEFAULT_MAX_NUM_SEQS
-SCHEMA = 1
+SCHEMA = 2
 MANIFEST = "snowllm-recipe.json"
 SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
             "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "max_gpu_mem_util", "max_gpu_mem_gib", "max_host_mem_util", "max_host_mem_gib", "max_disk_mem_gib",
@@ -114,19 +114,25 @@ class Recipe:
         self.priority = int(raw.get("priority", 0))
         self.files = raw.get("files") or []
         self.defaults = dict(raw.get("defaults") or {})
-        from ..capacity import MemoryBudget, placement_options
-        limits = MemoryBudget(**{k: self.defaults[k] for k in
-                        ('max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib', 'max_disk_mem_gib') if k in self.defaults})
-        host_offload, _ = placement_options(max_disk_bytes=limits.disk_limit(), complete=False, **{
-            k: self.defaults[k] for k in ('host_alloc', 'device_map', 'host_offload', 'offload_ratio',
-                                         'moe_cache_experts', 'moe_cache_mode') if k in self.defaults})
-        if host_offload is not None:
-            self.defaults['host_offload'] = host_offload
-        for k in self.defaults:
-            if k not in SETTABLE:
-                raise SnowLLMError(
-                    f"recipe {self.id!r} sets {k!r}, which is not a recipe's to set. "
-                    f"One of: {', '.join(SETTABLE)}")
+        if not self.stale:
+            if "gpu_memory_utilization" in self.defaults:
+                previous = self.defaults.pop("gpu_memory_utilization")
+                if "max_gpu_mem_util" in self.defaults and self.defaults["max_gpu_mem_util"] != previous:
+                    raise SnowLLMError(f"recipe {self.id!r} sets conflicting GPU memory limits")
+                self.defaults.setdefault("max_gpu_mem_util", previous)
+            for k in self.defaults:
+                if k not in SETTABLE:
+                    raise SnowLLMError(
+                        f"recipe {self.id!r} sets {k!r}, which is not a recipe's to set. "
+                        f"One of: {', '.join(SETTABLE)}")
+            from ..capacity import MemoryBudget, placement_options
+            limits = MemoryBudget(**{k: self.defaults[k] for k in
+                            ('max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib', 'max_disk_mem_gib') if k in self.defaults})
+            host_offload, _ = placement_options(max_disk_bytes=limits.disk_limit(), complete=False, **{
+                k: self.defaults[k] for k in ('host_alloc', 'device_map', 'host_offload', 'offload_ratio',
+                                             'moe_cache_experts', 'moe_cache_mode') if k in self.defaults})
+            if host_offload is not None:
+                self.defaults['host_offload'] = host_offload
         self.sources = ([Source(raw)] if raw.get("repo") else []) \
             + [Source(s) for s in (raw.get("sources") or [])]
         if not self.sources and not self.files:
