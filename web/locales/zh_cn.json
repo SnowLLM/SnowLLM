@@ -225,5 +225,7 @@
   "status.rangeUnavailable": "该范围没有这个粒度的数据，请选择更粗粒度或重置日期。",
   "status.loading": "正在加载使用统计…",
   "status.periodLabel": "统计粒度",
-  "status.pageTitle": "推理使用统计 — SnowLLM"
+  "status.pageTitle": "推理使用统计 — SnowLLM",
+  "home.target": "Target",
+  "install.targets": "APU target：gfx1103、gfx1150、gfx1151、gfx1152、gfx1153。目前已在 Ryzen AI Max+ 395 上实测，其他 APU 正在验证中。"
 }

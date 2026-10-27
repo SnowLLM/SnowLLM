@@ -40,7 +40,10 @@ Accuracy: **91.7%** avg@4 on AIME 2026 (±4.2), vs.
 ## Support matrix
 
 Tested only on the [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html);
-the rest of the Ryzen AI Max 300 and 400 series (same `gfx1151`) should work but unverified.
+validation of other APUs is in progress. The APU target list is `gfx1103`, `gfx1150`,
+`gfx1151`, `gfx1152` and `gfx1153`.
+Use the [homepage target selector](https://snowllm.dev/#install) to generate installation commands,
+or see the [APU target table](https://snowllm.dev/docs/getting-started/installation#choose-your-apu-target).
 
 Hugging Face `safetensors` at FP8, and GGUF K-quants and i-quants. `snowllm recipes` lists the
 lot; a recipe that names a snowllm newer than yours says so instead of serving:
@@ -66,8 +69,7 @@ read off disk per batch, so keep it on the SSD you serve from. Only the Qwens ta
 
 ## Requirements
 
-- Linux x86_64 or Windows 11, AMD gfx1151 (Ryzen AI Max 300 and 400 series — Strix Halo and
-  Gorgon Halo). WSL2 works;
+- Linux x86_64 or Windows 11, an AMD Ryzen APU with one of the targets listed above. WSL2 works;
   ROCm reaches the GPU there through `/dev/dxg`, so set it up with
   [AMD's WSL guide](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html)
   first

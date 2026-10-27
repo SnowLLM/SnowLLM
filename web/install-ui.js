@@ -5,9 +5,32 @@ import { t, onLanguageChange } from "./i18n.js"
   var SNOWLLM_LINE = '<span class="p">$</span>python -m pip install snowllm snowllm-kernels';
   var CURL_LINE = '<span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh';
 
-  var choice = { os: "linux", how: "script", gpu: "gfx1151" };
+  var choice = { os: "linux", how: "script", gpu: "gfx1151", apu: "ryzen-ai-max" };
   var cmdEl = document.getElementById("install-cmd");
   var noteEl = document.getElementById("install-note");
+  var targetEl = document.getElementById("install-target");
+  var params = new URLSearchParams(location.search);
+  var apus = Array.from(targetEl.options);
+  var axes = { os: ["linux", "wsl2", "windows"], how: ["script", "pip"],
+    gpu: apus.map(function (option) { return option.dataset.target; }) };
+  Object.keys(axes).forEach(function (axis) {
+    var value = params.get(axis === "gpu" ? "target" : axis);
+    if (axes[axis].includes(value)) choice[axis] = value;
+  });
+  var initialApu = apus.find(function (option) { return option.value === params.get("apu"); })
+    || apus.find(function (option) { return option.value === choice.apu && option.dataset.target === choice.gpu; })
+    || apus.find(function (option) { return option.dataset.target === choice.gpu; });
+  choice.apu = initialApu.value;
+  choice.gpu = initialApu.dataset.target;
+
+  function saveChoice() {
+    var url = new URL(location.href);
+    url.searchParams.set("os", choice.os);
+    url.searchParams.set("how", choice.how);
+    url.searchParams.set("target", choice.gpu);
+    url.searchParams.set("apu", choice.apu);
+    history.replaceState(null, "", url);
+  }
 
   function renderInstall() {
     var scriptBtn = document.querySelector('.opts[data-axis="how"] .opt[data-value="script"]');
@@ -22,7 +45,11 @@ import { t, onLanguageChange } from "./i18n.js"
       });
     });
 
-    cmdEl.innerHTML = choice.how === "script" ? CURL_LINE : TORCH_LINE + SNOWLLM_LINE;
+    targetEl.value = choice.apu;
+    var curl = choice.gpu === "gfx1151" ? CURL_LINE
+      : CURL_LINE + " -s -- --target " + choice.gpu;
+    cmdEl.innerHTML = choice.how === "script" ? curl
+      : TORCH_LINE.replace("device-gfx1151", "device-" + choice.gpu) + SNOWLLM_LINE;
     noteEl.hidden = choice.os !== "wsl2";
     noteEl.textContent = choice.os === "wsl2" ? t("install.wsl") : "";
   }
@@ -32,7 +59,15 @@ import { t, onLanguageChange } from "./i18n.js"
       if (button.disabled) return;
       choice[button.parentNode.dataset.axis] = button.dataset.value;
       if (cmdEl) renderInstall();
+      saveChoice();
     });
+  });
+
+  targetEl.addEventListener("change", function () {
+    choice.apu = targetEl.value;
+    choice.gpu = targetEl.selectedOptions[0].dataset.target;
+    renderInstall();
+    saveChoice();
   });
 
   if (cmdEl) renderInstall();

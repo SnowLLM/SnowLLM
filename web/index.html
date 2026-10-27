@@ -39,7 +39,7 @@
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "LLM inference server",
   "operatingSystem": "Linux x86_64, Windows 11",
-  "processorRequirements": "AMD gfx1151 — Ryzen AI Max 300 and 400 series (Strix Halo, Gorgon Halo)",
+  "processorRequirements": "AMD Ryzen APU — gfx1103, gfx1150, gfx1151, gfx1152, gfx1153",
   "softwareRequirements": "ROCm 7.x, Python 3.10-3.14",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "codeRepository": "https://github.com/SnowLLM/SnowLLM",
@@ -48,7 +48,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="/site.css?v=aligned-content">
+<link rel="stylesheet" href="/site.css?v=apu-targets">
 <link rel="stylesheet" href="/site-header.css">
 <script>
 (function () {
@@ -88,20 +88,49 @@
         </div>
       </div>
       <div class="axis">
-        <span class="axis-label">GPU</span>
-        <div class="opts" data-axis="gpu">
-          <button class="opt" type="button" data-value="gfx1151" aria-pressed="true">gfx1151</button>
+        <label class="axis-label" for="install-target" data-i18n="home.target">Target</label>
+        <div class="target-picker">
+          <select id="install-target" aria-describedby="target-note">
+            <optgroup label="gfx1151">
+              <option value="ryzen-ai-max" data-target="gfx1151" selected>Ryzen AI Max+ 395 / 392 / 388; Max 390 / 385 (gfx1151)</option>
+              <option value="ryzen-ai-max-pro" data-target="gfx1151">Ryzen AI Max+ PRO 495 / 395; Max PRO 490 / 485 / 390 / 385 / 380 (gfx1151)</option>
+            </optgroup>
+            <optgroup label="gfx1150">
+              <option value="ryzen-ai-9" data-target="gfx1150">Ryzen AI 9 HX 475 / 470 / 375 / 370; AI 9 465 / 365 (gfx1150)</option>
+              <option value="ryzen-ai-9-pro" data-target="gfx1150">Ryzen AI 9 HX PRO 475 / 470 / 375 / 370; AI 9 PRO 465 (gfx1150)</option>
+            </optgroup>
+            <optgroup label="gfx1152">
+              <option value="ryzen-ai-7" data-target="gfx1152">Ryzen AI 7 450 / 350 / 345 (gfx1152)</option>
+              <option value="ryzen-ai-7-pro" data-target="gfx1152">Ryzen AI 7 PRO 450 / 350 (gfx1152)</option>
+              <option value="ryzen-ai-5" data-target="gfx1152">Ryzen AI 5 340 / 330 (gfx1152)</option>
+              <option value="ryzen-ai-5-pro" data-target="gfx1152">Ryzen AI 5 PRO 440 / 340 (gfx1152)</option>
+            </optgroup>
+            <optgroup label="gfx1153">
+              <option value="ryzen-ai-400" data-target="gfx1153">Ryzen AI 7 445; AI 5 435 / 430 (gfx1153)</option>
+              <option value="ryzen-ai-400-pro" data-target="gfx1153">Ryzen AI 5 PRO 435 (gfx1153)</option>
+            </optgroup>
+            <optgroup label="gfx1103">
+              <option value="ryzen-7040" data-target="gfx1103">Ryzen 9 7940HS; Ryzen 7 7840HS / 7840U; Ryzen 5 7640HS / 7640U / 7540U; Ryzen 3 7440U (gfx1103)</option>
+              <option value="ryzen-7040-pro" data-target="gfx1103">Ryzen 9 PRO 7940HS; Ryzen 7 PRO 7840HS / 7840U; Ryzen 5 PRO 7640HS / 7640U / 7540U (gfx1103)</option>
+              <option value="ryzen-8040" data-target="gfx1103">Ryzen 9 8945HS; Ryzen 7 8845HS / 8840HS / 8840U; Ryzen 5 8645HS / 8640HS / 8640U / 8540U; Ryzen 3 8440U (gfx1103)</option>
+              <option value="ryzen-8040-pro" data-target="gfx1103">Ryzen 9 PRO 8945HS; Ryzen 7 PRO 8845HS / 8840HS / 8840U; Ryzen 5 PRO 8645HS / 8640HS / 8640U / 8540U (gfx1103)</option>
+              <option value="ryzen-8000g" data-target="gfx1103">Ryzen 7 8700G; Ryzen 5 8600G / 8500G; Ryzen 3 8300G (gfx1103)</option>
+              <option value="ryzen-200" data-target="gfx1103">Ryzen 9 270; Ryzen 7 260 / 250; Ryzen 5 240 / 230 / 220; Ryzen 3 210 (gfx1103)</option>
+              <option value="ryzen-200-pro" data-target="gfx1103">Ryzen 7 PRO 250; Ryzen 5 PRO 230 / 220 / 215; Ryzen 3 PRO 210 (gfx1103)</option>
+            </optgroup>
+          </select>
         </div>
       </div>
       <div class="axis">
         <span class="axis-label" data-i18n="home.run">Run</span>
         <div class="cmd">
-          <pre id="install-cmd"></pre>
+          <pre id="install-cmd" aria-live="polite"></pre>
           <button class="copy" type="button" data-copy="panel-install" data-i18n="common.copy">Copy</button>
         </div>
       </div>
     </div>
 
+    <p class="note" id="target-note" data-i18n="install.targets">APU targets: gfx1103, gfx1150, gfx1151, gfx1152 and gfx1153. Tested on Ryzen AI Max+ 395; validation of other APUs is in progress.</p>
     <p class="note" id="install-note" hidden></p>
   </div>
 

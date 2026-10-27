@@ -283,6 +283,21 @@
   .opt[disabled] { color: var(--hair); cursor: not-allowed; }
   .opt[disabled]:hover { color: var(--hair); }
 
+  .target-picker { min-width: 0; background: var(--panel); padding: 0.4rem 0.7rem; }
+  .target-picker select {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--line);
+    border-radius: 0;
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--fs-ui);
+    cursor: pointer;
+  }
+
   .toolbar {
     display: flex;
     flex-wrap: wrap;

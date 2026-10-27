@@ -2,6 +2,7 @@
 # curl -fsSL https://snowllm.dev/install.sh | sh
 #
 # Options:
+#   --target GFX       APU target (default: gfx1151)
 #   --uninstall        remove SnowLLM
 #   --help
 #
@@ -18,6 +19,7 @@ TORCH="torch[device-gfx1151]==2.12.0+rocm7.14.0"
 TORCHVISION="torchvision==0.27.0+rocm7.14.0"
 ROCM_INDEX="https://repo.amd.com/rocm/whl-multi-arch/"
 GFX_TARGET=110501
+TARGET=gfx1151
 NEED_GIB=15
 
 SNOWLLM_HOME="${SNOWLLM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/snowllm}"
@@ -35,6 +37,7 @@ usage() {
 Install SnowLLM into $VENV and link it into $BIN_DIR.
 
     --uninstall    remove both
+    --target GFX   gfx1103, gfx1150, gfx1151, gfx1152 or gfx1153 (default: gfx1151)
     --help         this
 
 Env: SNOWLLM_HOME SNOWLLM_BIN_DIR SNOWLLM_PYTHON
@@ -116,7 +119,7 @@ check_machine() {
         if [ "$v" = "$GFX_TARGET" ]; then ok=1; fi
     done
     [ -n "$ok" ] || die \
-        "no gfx1151 GPU found (kfd reports:${seen:- nothing}). SnowLLM's kernels are compiled for gfx1151 (Ryzen AI Max 300 and 400 series) and run nowhere else."
+        "no $TARGET GPU found (kfd reports:${seen:- nothing}). Select the matching APU with --target."
 }
 
 check_python() {
@@ -175,18 +178,34 @@ pip_install() {
     "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$@"
 }
 
-case "${1:-}" in
-    --help|-h) usage; exit 0 ;;
-    --uninstall) uninstall ;;
-    "") ;;
-    *) usage; exit 2 ;;
-esac
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --help|-h) usage; exit 0 ;;
+        --uninstall) uninstall ;;
+        --target)
+            [ "$#" -ge 2 ] || die "--target requires a gfx target."
+            TARGET=$2
+            case "$TARGET" in
+                gfx1103) GFX_TARGET=110003 ;;
+                gfx1150) GFX_TARGET=110500 ;;
+                gfx1151) GFX_TARGET=110501 ;;
+                gfx1152) GFX_TARGET=110502 ;;
+                gfx1153) GFX_TARGET=110503 ;;
+                *) die "unsupported APU target: $TARGET" ;;
+            esac
+            shift ;;
+        *) usage; exit 2 ;;
+    esac
+    shift
+done
+
+TORCH=$(printf '%s' "$TORCH" | sed "s/device-gfx1151/device-$TARGET/")
 
 check_machine
 check_python
 check_dirs
 check_network
-say "gfx1151 ok, ${free}G free, python $("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])') at $PYTHON"
+say "$TARGET ok, ${free}G free, python $("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])') at $PYTHON"
 
 mkdir -p "$SNOWLLM_HOME"
 if [ -x "$VENV/bin/python" ] && "$VENV/bin/python" -c '' 2>/dev/null; then

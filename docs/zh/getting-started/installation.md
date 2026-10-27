@@ -2,9 +2,24 @@
 
 ## 环境要求 {#requirements}
 
-- Linux x86_64 或 Windows 11，AMD gfx1151（Ryzen AI Max 300 / 400 系列，即 Strix Halo 和 Gorgon Halo）。也支持 WSL2；ROCm 在 WSL2 中通过 `/dev/dxg` 访问 GPU，请先按照 [AMD WSL 指南](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html) 完成配置。
+- Linux x86_64 或 Windows 11，使用下表 target 的 AMD Ryzen APU。也支持 WSL2；ROCm 在 WSL2 中通过 `/dev/dxg` 访问 GPU，请先按照 [AMD WSL 指南](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html) 完成配置。
 - ROCm **7.x**。
 - Python **3.10 – 3.14**，以及 ROCm 版本的 torch 和 torchvision，见下文。
+
+## 选择 APU target {#choose-your-apu-target}
+
+[官网选择器](https://snowllm.dev/?lang=zh_cn#install)会根据 target 和操作系统生成安装命令。
+目前已在 Ryzen AI Max+ 395 上实测，其他 APU 正在验证中。
+
+| Target | APU 系列 / 核显 |
+| --- | --- |
+| `gfx1151` | Ryzen AI Max 300 / 400 · Radeon 8040S–8065S |
+| `gfx1150` | Ryzen AI 9 300 / 400 · Radeon 880M / 890M |
+| `gfx1152` | Ryzen AI 5 / 7 300 / 400 · Radeon 820M / 840M / 860M |
+| `gfx1153` | Ryzen AI 5 430 / 435、AI 7 445 · Radeon 840M |
+| `gfx1103` | Ryzen 7040 / 8040 / 8000G / 200 · Radeon 740M / 760M / 780M |
+
+具体处理器对应的 target 可在 [AMD APU 选择器](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html)中查询。
 
 ## 选择安装方式 {#choose-an-installation-method}
 
@@ -22,11 +37,19 @@
 curl -fsSL https://snowllm.dev/install.sh | sh
 ```
 
+默认 target 为 `gfx1151`。其他 APU 请通过参数指定，例如：
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --target gfx1150
+```
+
 - 下载前检查 GPU、驱动访问权限、Python、磁盘和网络。
 - 安装到 `~/.local/share/snowllm`，将 `snowllm` 链接到 `~/.local/bin`；XDG 或 `SNOWLLM_*` 设置可以覆盖这些路径。
 - 再次运行即可升级。卸载命令：`curl -fsSL https://snowllm.dev/install.sh | sh -s -- --uninstall`。
 
 ## Linux / WSL2：手动安装 {#linux-wsl2-manual-installation}
+
+手动安装时，将示例中的 `device-gfx1151` 替换为所选 target，例如 `device-gfx1150`。
 
 也可以手动安装。torch 和 torchvision 必须来自 AMD 的软件源：
 
@@ -40,7 +63,7 @@ pip install snowllm snowllm-kernels
 
 ## Windows：手动安装 {#windows-manual-installation}
 
-原生 Windows **仅支持手动安装**。在 PowerShell 或命令提示符中，使用你的 Python 环境运行以下命令。torch 和 torchvision 必须来自 AMD 的软件源：
+原生 Windows **仅支持手动安装**。请将 `device-gfx1151` 替换为所选 target。在 PowerShell 或命令提示符中，使用你的 Python 环境运行以下命令。torch 和 torchvision 必须来自 AMD 的软件源：
 
 ```powershell
 python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"

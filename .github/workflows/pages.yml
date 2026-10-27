@@ -22,6 +22,7 @@ on:
       - tests/test_recipe_compatibility.py
       - scripts/build-benchmarks.py
       - tests/test_benchmark_page.py
+      - tests/test_install_targets.py
       - .github/workflows/pages.yml
   pull_request:
     paths: *site
@@ -70,6 +71,9 @@ jobs:
 
       - name: The site agrees with the tree it is published from
         run: scripts/check-site.py
+
+      - name: APU install targets match the website
+        run: python -m unittest discover -s tests -p test_install_targets.py
 
   publish:
     needs: check
