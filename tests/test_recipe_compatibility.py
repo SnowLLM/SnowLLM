@@ -114,6 +114,18 @@ class RecipeCompatibilityTests(unittest.TestCase):
             self.assertEqual((path.parent/'recipe.json').read_bytes(),
                              (path.parent/'recipes/0.3.13.json').read_bytes())
 
+    def test_v41_dspark_recipe_reuses_the_base_download_and_stays_out_of_legacy_feed(self):
+        book = builder.recipes()
+        selected = {r['id']: r for r in book}
+        base = selected['deepseek-v4.1-flash-1017-vq-q4-k']
+        draft = selected[base['id'] + '-dspark']
+        for key in ('dir', 'repo', 'revision', 'include', 'bytes'):
+            self.assertEqual(draft[key], base[key])
+        self.assertEqual(draft['defaults'], {**base['defaults'], 'dflash': '@model', 'dflash_block': 5})
+        self.assertEqual(builder.spec_of(draft), 'DSpark')
+        self.assertTrue(recipes.Recipe(draft).servable)
+        self.assertNotIn(draft['id'], {r['id'] for r in builder.for_client(book, '0.3.13')})
+
     def test_old_saved_default_is_migrated_without_changing_explicit_overrides(self):
         old = 'https://snowllm.dev/recipe.json'
         with tempfile.TemporaryDirectory() as folder, patch.dict('os.environ', {}, clear=True):

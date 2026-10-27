@@ -1,0 +1,40 @@
+{
+  "id": "deepseek-v4.1-flash-1017-vq-q4-k-dspark",
+  "model": "DeepSeek-V4.1-Flash-1017",
+  "family": "DeepSeek",
+  "precision": "VQ + Q4_K",
+  "dir": "DeepSeek-V4.1-Flash-1017-vq8sh14-q4k-mtpnative",
+  "repo": "Baekpica/DeepSeek-V4.1-Flash-1017-VQ-GGUF",
+  "revision": "f81ee2e9801fcc58fd51ae75dd827467ffc0b9e5",
+  "include": [
+    "DeepSeek-V4.1-Flash-vq8sh14-q4k-mtpnative.gguf.part??-of-40",
+    "DeepSeek-V4.1-Flash.vision.gguf",
+    "deepseek-engram/*.safetensors",
+    "SHA256SUMS",
+    "README.md",
+    "RECIPE.md",
+    "SOURCE.md",
+    "LICENSE",
+    "LICENSE-DeepSeek"
+  ],
+  "bytes": 317600818409,
+  "status": "supported",
+  "spec": "DSpark",
+  "priority": 10,
+  "serve_as": "DeepSeek-V4.1-Flash-1017",
+  "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
+  "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Vision and prefix reuse are not enabled.",
+  "defaults": {
+    "max_num_seqs": 1,
+    "num_spec": 0,
+    "dflash": "@model",
+    "dflash_block": 5,
+    "prefix_memory_ratio": 0,
+    "max_model_len": 8192,
+    "max_num_batched_tokens": 64,
+    "device_map": "auto",
+    "max_gpu_mem_util": 0.94,
+    "max_host_mem_util": 0.9
+  },
+  "requires": "0.3.15"
+}

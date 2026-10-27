@@ -170,6 +170,7 @@
   "recipe.title": "模型 — SnowLLM",
   "docs.details": "显示详情",
   "recipe.summary.deepseek-v4-flash-iq2-xxs-400k": "DeepSeek-V4-Flash，自适应 DSpark，单并发，400K 上下文，8K 预填充分块。",
+  "recipe.summary.deepseek-v4.1-flash-1017-vq-q4-k-dspark": "DeepSeek-V4.1-Flash-1017，启用内置 DSpark，单并发，8192-token 上下文。",
   "recipe.summary.qwen3.6-27b-fp8": "FP8 精度的 Qwen3.6-27B，支持视觉和 MTP。",
   "recipe.summary.qwen3.6-27b-q4-k-s": "Q4_K_S 精度的 Qwen3.6-27B，支持视觉和 MTP。",
   "recipe.summary.qwen3.6-35b-a3b-fp8-dflash": "FP8 精度的 Qwen3.6-35B-A3B，搭配外部 DFlash 草稿模型。",

@@ -18,7 +18,8 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB |
 
 `deepseek-v4.1-flash-1017-vq-q4-k` supports text inference with the 1017 VQ + Q4_K checkpoint.
-Its defaults are one active request, an 8192-token context and 64-token prefill chunks, with
+Use `deepseek-v4.1-flash-1017-vq-q4-k-dspark` in SnowLLM 0.3.15 or later to enable DSpark by default with the same model directory and downloads.
+The base recipe defaults are one active request, an 8192-token context and 64-token prefill chunks, with
 speculative decoding and prefix reuse disabled. It supports thinking mode, numeric reasoning
 effort from 1 to 100, and the V4.1 tool-call format. Add `--dflash MODEL_DIR` to use the three
 embedded DSpark towers with their native five-token block; no separate draft checkpoint is needed.
@@ -75,8 +76,7 @@ read off disk per batch, so keep it on the SSD you serve from. Image input requi
 
 GLM-5.3-Flash has separate plain and `glm5.3-flash-iq2-xxs-mtp` recipes; the latter enables
 MTP k=2 using the NextN head embedded in the same four GGUF shards. Both use automatic host
-expert placement, GPU utilization 0.95, BF16 KV and four request slots. Context is selected by
-the capacity planner and printed after loading. GLM image input is not implemented, so these
+expert placement, GPU utilization 0.95, BF16 KV, one request slot and a 227328-token context limit. GLM image input is not implemented, so these
 recipes download only text weights.
 
 MiniCPM-V 4.7 supports text, single and multiple images, and high-resolution image slices.

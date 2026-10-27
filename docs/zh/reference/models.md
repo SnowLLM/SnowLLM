@@ -15,7 +15,7 @@
 | `qwen3.6-27b-fp8` | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8) | FP8 | 28.8 GiB |
 | `qwen3.6-27b-q4-k-s` | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF) | Q4_K_S GGUF | 17.9 GiB |
 
-`deepseek-v4.1-flash-1017-vq-q4-k` 已支持 1017 版 VQ + Q4_K 权重的纯文本推理。默认单请求、8192-token 上下文、64-token 预填充分块，关闭投机解码和前缀复用；支持思考模式、1–100 的数值推理预算和 V4.1 工具调用格式。添加 `--dflash MODEL_DIR` 可使用内嵌的三个 DSpark tower，按原生五 token 草稿块执行，无需单独的草稿模型。草稿保留 128-token 目标历史窗口；使用 `--max-model-len 1m --max-num-batched-tokens 8192` 可保留 1M 上下文容量和 8K 预填充分块，自动放置会核算草稿权重，并可能增加主模型专家 offload。视觉尚未接入，内核库需要 ABI 75。
+`deepseek-v4.1-flash-1017-vq-q4-k` 已支持 1017 版 VQ + Q4_K 权重的纯文本推理。SnowLLM 0.3.15 及以上可选择 `deepseek-v4.1-flash-1017-vq-q4-k-dspark` 默认开启 DSpark，复用同一模型目录和下载文件。普通版默认单请求、8192-token 上下文、64-token 预填充分块，关闭投机解码和前缀复用；支持思考模式、1–100 的数值推理预算和 V4.1 工具调用格式。添加 `--dflash MODEL_DIR` 可使用内嵌的三个 DSpark tower，按原生五 token 草稿块执行，无需单独的草稿模型。草稿保留 128-token 目标历史窗口；使用 `--max-model-len 1m --max-num-batched-tokens 8192` 可保留 1M 上下文容量和 8K 预填充分块，自动放置会核算草稿权重，并可能增加主模型专家 offload。视觉尚未接入，内核库需要 ABI 75。
 
 V4.1 预填充采用 CED：全部提示词 token 经过前 20 层 Encoder，并写入 Decoder 的共享 KV 缓存；最后一个预填充分块完成后，仅对末尾最多 128 个 token 执行一次后 20 层 Decoder。每个生成 token 仍经过完整 40 层。有限窗口回放的结果可能与全部提示词 token 都经过完整 40 层时不同。
 
@@ -35,7 +35,7 @@ Flash-Next 配置的上下文上限超过 262144 tokens 时，SnowLLM 会在加�
 
 常驻大小仅含权重。KV 容量按 context 和并发配置确定；`--max-gpu-mem` 只设置上限，不会扩大缓存来占满空闲显存。DeepSeek 需要 128 GiB 内存的机器、较大的 GPU 内存划分，长上下文时还需 `--device-map auto`。Flash-Next 同样需要这类机器，但不使用 `--device-map`；另有 26.8 GiB 查找表按批次从磁盘读取，因此请将其保留在提供推理服务的 SSD 上。图片输入需要带视觉模块的模型；DeepSeek V4 仅支持文本。
 
-GLM-5.3-Flash 提供普通版和 `glm5.3-flash-iq2-xxs-mtp` 两个方案，后者使用四个 GGUF 分片中内嵌的 NextN 头启用 MTP k=2。两者均使用自动主机专家放置、0.95 GPU 显存使用比例、BF16 KV 和 4 个请求槽位；上下文由容量规划器确定并在加载后打印。目前未实现 GLM 图片输入，因此方案只下载文本权重。
+GLM-5.3-Flash 提供普通版和 `glm5.3-flash-iq2-xxs-mtp` 两个方案，后者使用四个 GGUF 分片中内嵌的 NextN 头启用 MTP k=2。两者均使用自动主机专家放置、0.95 GPU 显存使用比例、BF16 KV、单请求和 227328-token 上下文上限。目前未实现 GLM 图片输入，因此方案只下载文本权重。
 
 MiniCPM-V 4.7 支持文本、单图、多图和高分辨率图片切片，图像处理器需要 `transformers>=5.18` 和 `torchvision`。方案附带视觉投影文件和官方聊天模板，后者支持 `enable_thinking`；官方 GGUF 内嵌模板强制使用指令模式。图片默认使用 16x 压缩，可在 `chat_template_kwargs` 中传入 `downsample_mode: "4x"` 保留更多视觉细节，或用 `max_slice_nums: 1` 关闭细节切片。请将匹配的 `mmproj-model-f16.gguf` 和 `chat_template.jinja` 与模型放在同一目录。目前未接入该模型的视频输入和 LES 专家流式加载。
 

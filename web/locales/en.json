@@ -170,6 +170,7 @@
   "recipe.title": "Models — SnowLLM",
   "docs.details": "Display details",
   "recipe.summary.deepseek-v4-flash-iq2-xxs-400k": "DeepSeek-V4-Flash with adaptive DSpark, one request, a 409600-token context and 8192-token prefill chunks.",
+  "recipe.summary.deepseek-v4.1-flash-1017-vq-q4-k-dspark": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
   "recipe.summary.qwen3.6-27b-fp8": "Qwen3.6-27B in FP8 with vision and MTP.",
   "recipe.summary.qwen3.6-27b-q4-k-s": "Qwen3.6-27B in Q4_K_S with vision and MTP.",
   "recipe.summary.qwen3.6-35b-a3b-fp8-dflash": "Qwen3.6-35B-A3B in FP8 with an external DFlash drafter.",
