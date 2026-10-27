@@ -83,6 +83,25 @@ class RecipeCompatibilityTests(unittest.TestCase):
         raw['requires'] = '0.3.14'
         self.assertEqual(builder.for_client([raw], '0.3.13'), [])
 
+    def test_large_model_recipes_keep_single_request_capacity_settings(self):
+        book = builder.recipes()
+        expected = {'deepseek-v4-flash-iq2-xxs-400k': 409600,
+                    'glm5.3-flash-iq2-xxs': 227328,
+                    'glm5.3-flash-iq2-xxs-mtp': 227328}
+        for view in (book, builder.for_client(book, '0.3.13')):
+            selected = {r['id']: r for r in view}
+            for key, context in expected.items():
+                with self.subTest(recipe=key, legacy=view is not book):
+                    defaults = selected[key]['defaults']
+                    self.assertEqual(defaults['max_num_seqs'], 1)
+                    self.assertEqual(defaults['max_model_len'], context)
+                    self.assertEqual(defaults['max_num_batched_tokens'], 8192)
+                    memory = 'max_gpu_mem_util' if view is book else 'gpu_memory_utilization'
+                    self.assertEqual(defaults[memory], .95)
+            for key in ('qwen3.8-flash-next-iq4-xs', 'qwen3.8-flash-next-q3-k-xl'):
+                with self.subTest(recipe=key, legacy=view is not book):
+                    self.assertEqual(selected[key]['defaults']['max_model_len'], 409600)
+
     def test_generated_versioned_feeds_and_old_alias(self):
         with tempfile.TemporaryDirectory(dir=ROOT) as folder:
             path = Path(folder) / 'recipe-v2.json'

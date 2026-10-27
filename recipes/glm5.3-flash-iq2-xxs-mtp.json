@@ -20,11 +20,12 @@
   "defaults": {
     "device_map": "auto",
     "max_gpu_mem_util": 0.95,
-    "max_num_seqs": 4,
+    "max_num_seqs": 1,
+    "max_model_len": 227328,
     "max_num_batched_tokens": 8192,
     "kv_cache_dtype": "bf16",
     "num_spec": 2
   },
   "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with MTP depth 2.",
-  "note": "Vision is not supported. Defaults to four concurrent requests and a 409600-token context limit."
+  "note": "Vision is not supported. Defaults to one request and a 227328-token context limit."
 }
