@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/palette.css">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/site-header.css">
-<link rel="stylesheet" href="/status/status.css?v=series-colors">
+<link rel="stylesheet" href="/status/status.css?v=bar-tooltip">
 <script>
 try {
   const theme = localStorage.getItem('snowllm-theme');
@@ -81,6 +81,15 @@ try {
   </div>
 </main>
 <footer class="foot"><span>SnowLLM</span><a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a><a href="https://github.com/SnowLLM/SnowLLM">github.com/SnowLLM/SnowLLM</a></footer>
+</div>
+<div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden>
+  <p class="tooltip-date"></p>
+  <dl>
+    <dt class="key key-prefill" data-i18n="status.prefill">Prefill tokens</dt><dd data-tooltip-value="prefill"></dd>
+    <dt class="key key-decode" data-i18n="status.decode">Decode tokens</dt><dd data-tooltip-value="decode"></dd>
+    <dt data-i18n="status.total">Total tokens</dt><dd data-tooltip-value="total"></dd>
+  </dl>
+  <p class="tooltip-partial" data-i18n="status.partial" hidden>Current period · partial</p>
 </div>
 <script type="module" src="/site-shell.js?v=status"></script>
 </body>

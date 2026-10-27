@@ -32,7 +32,27 @@
 .decode { fill: var(--decode); }
 .bar:hover, .bar:focus { filter: brightness(1.13); }
 .bar:focus { outline: none; }
-.bar:focus rect { stroke: var(--ink); stroke-width: 1; }
+.bar:focus rect:not(.bar-hit) { stroke: var(--ink); stroke-width: 1; }
+.bar-hit { fill: transparent; pointer-events: all; }
+.usage-tooltip {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  width: max-content;
+  max-width: calc(100vw - 1rem);
+  padding: .85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 4px 18px rgb(0 0 0 / .15);
+  font-size: var(--fs-ui);
+}
+.tooltip-date { margin: 0 0 .65rem; font-family: var(--mono); font-size: var(--fs-code); }
+.usage-tooltip dl { display: grid; grid-template-columns: auto auto; gap: .35rem 1.5rem; margin: 0; }
+.usage-tooltip dt { color: var(--muted); }
+.usage-tooltip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.usage-tooltip .tooltip-partial { margin: .65rem 0 0; color: var(--faint); font-size: var(--fs-label); }
 .chart-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; color: var(--faint); font-size: .875rem; }
 .partial-dot { background: transparent; border: 1px solid var(--faint); width: .55em; height: .55em; }
 .freshness { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; margin-top: 1.4rem; color: var(--muted); font-size: .875rem; }

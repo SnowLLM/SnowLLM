@@ -48,7 +48,7 @@ function chart(points, width) {
     const x = left + step * i + (step - barWidth) / 2;
     const hp = p.prefill_tokens * scale, hd = p.decode_tokens * scale;
     const caption = `${localTimestamp(p.period_start, { offset: true })}: prefill ${p.prefill_tokens.toLocaleString('en-US')}, decode ${p.decode_tokens.toLocaleString('en-US')}${p.partial ? ' · ' + tr('partial') : ''}`;
-    svg += `<g class="bar" tabindex="0" role="img" aria-label="${caption}"><title>${caption}</title><rect class="prefill" x="${x}" y="${bottom - hp}" width="${barWidth}" height="${hp}"/><rect class="decode" x="${x}" y="${bottom - hp - hd}" width="${barWidth}" height="${hd}"/></g>`;
+    svg += `<g class="bar" data-index="${i}" tabindex="0" role="img" aria-label="${caption}"><rect class="bar-hit" x="${left + step * i}" y="${top}" width="${step}" height="${bottom - top}"/><rect class="prefill" x="${x}" y="${bottom - hp}" width="${barWidth}" height="${hp}"/><rect class="decode" x="${x}" y="${bottom - hp - hd}" width="${barWidth}" height="${hd}"/></g>`;
     if (i % every === 0) {
       const label = period === 'hour' ? localTimestamp(p.period_start).slice(5) : localDate(p.period_start).slice(5);
       svg += `<text class="plot-axis" text-anchor="middle" x="${x + barWidth / 2}" y="280">${label}</text>`;
@@ -82,6 +82,53 @@ async function loadSources() {
 updateLinks();
 loadSources().then(sources => {
   let data, now, firstDate, lastDate;
+  const plot = document.querySelector('.plot-container');
+  const tooltip = document.getElementById('usage-tooltip');
+  let plottedPoints = [], activeBar;
+  function hideTooltip() {
+    tooltip.hidden = true;
+    activeBar?.removeAttribute('aria-describedby');
+    activeBar = null;
+  }
+  function showTooltip(bar, x, y) {
+    const point = plottedPoints[Number(bar.dataset.index)];
+    if (!point) return;
+    if (activeBar !== bar) {
+      activeBar?.removeAttribute('aria-describedby');
+      activeBar = bar;
+      bar.setAttribute('aria-describedby', tooltip.id);
+      tooltip.querySelector('.tooltip-date').textContent = localTimestamp(point.period_start, { offset: true });
+      for (const [key, value] of Object.entries({ prefill: point.prefill_tokens, decode: point.decode_tokens,
+        total: point.prefill_tokens + point.decode_tokens })) {
+        tooltip.querySelector(`[data-tooltip-value="${key}"]`).textContent = value.toLocaleString('en-US');
+      }
+      tooltip.querySelector('.tooltip-partial').hidden = !point.partial;
+    }
+    tooltip.hidden = false;
+    const rect = tooltip.getBoundingClientRect();
+    tooltip.style.left = Math.max(8, Math.min(x + 12, innerWidth - rect.width - 8)) + 'px';
+    tooltip.style.top = Math.max(8, Math.min(y + 12, innerHeight - rect.height - 8)) + 'px';
+  }
+  function hoverTooltip(event) {
+    const bar = event.target.closest('.bar');
+    if (bar) showTooltip(bar, event.clientX, event.clientY);
+    else hideTooltip();
+  }
+  plot.addEventListener('pointermove', hoverTooltip);
+  plot.addEventListener('pointerdown', hoverTooltip);
+  plot.addEventListener('pointerleave', hideTooltip);
+  plot.addEventListener('focusin', event => {
+    const bar = event.target.closest('.bar');
+    if (!bar) return;
+    const rect = bar.getBoundingClientRect();
+    showTooltip(bar, rect.x + rect.width / 2, rect.y);
+  });
+  plot.addEventListener('focusout', hideTooltip);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hideTooltip(); });
+  document.addEventListener('pointerdown', event => { if (!plot.contains(event.target)) hideTooltip(); });
+  window.addEventListener('wheel', hideTooltip, { passive: true });
+  window.addEventListener('touchmove', hideTooltip, { passive: true });
+  window.addEventListener('resize', hideTooltip);
   function updateBounds() {
     data = sources[period];
     now = new Date(data.generated_at);
@@ -148,7 +195,9 @@ loadSources().then(sources => {
       if (unavailable) { anchor.setAttribute('aria-disabled', 'true'); anchor.title = tr('rangeUnavailable'); }
       else { anchor.removeAttribute('aria-disabled'); anchor.removeAttribute('title'); }
     });
-    document.querySelector('.plot-container').innerHTML = prefill || decode ? chart(points, 960) + chart(points, 400)
+    hideTooltip();
+    plottedPoints = points;
+    plot.innerHTML = prefill || decode ? chart(points, 960) + chart(points, 400)
       : `<div class="empty"><h3>${tr('empty')}</h3><p>${tr('emptyDesc')}</p></div>`;
     document.querySelector('.usage-table tbody').innerHTML = points.slice().reverse().map(p => {
       const moment = localTimestamp(p.period_start, { offset: true });
