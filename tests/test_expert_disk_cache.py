@@ -103,6 +103,16 @@ class DiskCacheTests(unittest.TestCase):
         changed, _ = self.cache(size=17002)
         self.assertIsNone(changed.lookup(3, 'down', 1))
 
+    def test_layout_version_invalidates_same_sized_records(self):
+        from snowllm.checkpoint import expert_cache
+        cache, record = self.cache()
+        cache.publish(3, 'down', 1, bytes([19]) * record)
+        with patch.object(expert_cache, 'LAYOUT_VERSION', expert_cache.LAYOUT_VERSION + 1):
+            changed, _ = self.cache()
+            self.assertIsNone(changed.lookup(3, 'down', 1))
+            self.assertNotEqual(changed.bundles[3, 'down']['index'], cache.bundles[3, 'down']['index'])
+        self.assertEqual(self.read(cache.lookup(3, 'down', 1)), bytes([19]) * record)
+
     def test_environment_validation(self):
         with patch.dict(os.environ, {'SNOWLLM_MOE_CACHE_DIRS': ''}):
             self.assertIsNone(ExpertDiskCache.from_env())

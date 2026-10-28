@@ -170,7 +170,7 @@ except OSError as exc:
     raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
 _lib_path = lib._name
 
-ABI_VERSION = 79
+ABI_VERSION = 80
 
 
 def _check_abi() -> None:

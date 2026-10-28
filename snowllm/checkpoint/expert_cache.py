@@ -10,7 +10,7 @@ from . import _cache_io
 
 
 ALIGN = 4096
-LAYOUT_VERSION = 1
+LAYOUT_VERSION = 2
 
 
 def align(size):
