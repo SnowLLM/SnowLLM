@@ -14,7 +14,7 @@ from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, DEF
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info, prepare_gpu_commit, release_device_cache
+from .._platform import gpu_mem_info, prepare_gpu_commit, release_device_cache, retain_device_cache
 from ..ops._common import dry_alloc
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..trace import span
@@ -199,15 +199,30 @@ class BaseRunner:
 
     def _pool_capacity(self, plan, *, prefix_budget=0):
         release_device_cache()
+        from ..host_alloc import enabled
         from ..models.placement import ensure_room
         floor = plan.minimum if plan.requested is None else plan.requested
+
+        def allowance():
+            room = self._allowance()
+            if not enabled() and not retain_device_cache():
+                # Tensor pools can reuse inactive blocks in segments still held by live weights.
+                device = torch.cuda.current_device()
+                stream = torch.cuda.current_stream().cuda_stream
+                cached = sum(s['total_size'] - s['active_size']
+                    for s in torch.cuda.memory_snapshot()
+                    if s['device'] == device and s['stream'] == stream
+                    and s.get('segment_pool_id', (0, 0)) == (0, 0))
+                room += min(cached, plan.bytes_for(floor))
+            return room
+
         while True:
             shortage = (plan.bytes_for(floor) + plan.snapshot_floor + plan.future_bytes
-                        - self._allowance())
+                        - allowance())
             if shortage <= 0 or not ensure_room(self.model, shortage):
                 break
         try:
-            units, snapshots = plan.choose(self._allowance(), prefix_budget)
+            units, snapshots = plan.choose(allowance(), prefix_budget)
         except ValueError as exc:
             checkpoint = (f' and {plan.minimum_snapshots} prefix snapshots'
                           if plan.checkpoint_bytes else '')

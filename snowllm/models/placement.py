@@ -242,9 +242,10 @@ def take(g: str, sizes: dict[str, int], per_layer: dict[str, dict[int, int]], ro
             continue
         pick.append(i)
         took += by[i]
-    if took < need <= room or (g in PROJECTIONS and took >= need):
-        # Projection groups prefer the smallest sufficient byte sum.
-        sums, best = {0: ()}, None
+    if took != need and need <= room:
+        # Refine successful greedy picks too, without worsening the fallback at the search limit.
+        sums = {0: ()}
+        best = (took, tuple(pick)) if took >= need else None
         for i in sorted(by, key=lambda i: (-by[i], i)):
             more = {}
             for total, chosen in sums.items():

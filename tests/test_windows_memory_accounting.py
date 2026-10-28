@@ -88,6 +88,21 @@ class WindowsAccountingTests(unittest.TestCase):
             with self.assertRaisesRegex(SnowLLMError, 'persistent state and workspace'):
                 runner._persistent_capacity(10)
 
+    def test_pool_does_not_credit_windows_reusable_cache_twice(self):
+        from snowllm.engine.runner import BaseRunner, CapacityError
+        from snowllm.engine.resources import PoolPlan
+        runner = object.__new__(BaseRunner)
+        runner.model, runner.ctx_cap = SimpleNamespace(), 160
+        runner._allowance = lambda: 100
+        plan = PoolPlan(lambda n: n * 16, minimum=10, requested=10, future_bytes=20)
+        with patch('snowllm.engine.runner.release_device_cache'), \
+             patch('snowllm.engine.runner.retain_device_cache', return_value=True), \
+             patch.object(host_alloc, 'enabled', return_value=False), \
+             patch.object(torch.cuda, 'memory_snapshot', side_effect=AssertionError('already counted')), \
+             patch('snowllm.models.placement.ensure_room', return_value=False):
+            with self.assertRaises(CapacityError):
+                runner._pool_capacity(plan)
+
     def test_uma_host_window_obeys_both_descriptor_and_os_budget(self):
         adapter = SimpleNamespace(dedicated=96 * GIB, shared=16 * GIB,
                                   mapping_limit=15 * GIB, uma=True,
