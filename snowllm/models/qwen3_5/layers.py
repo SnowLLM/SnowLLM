@@ -29,12 +29,15 @@ class RMSNorm(nn.Module):
 
 
 class VocabEmbedding(nn.Module):
-    def __init__(self, weight: torch.Tensor) -> None:
+    def __init__(self, weight: torch.Tensor, quant: int = 0) -> None:
         super().__init__()
-        self.weight = weight
+        self.weight, self.quant = weight, quant
 
     def forward(self, input_ids: torch.Tensor, out: torch.Tensor) -> None:
-        ops.gather_embedding(input_ids, self.weight, out)
+        if self.quant == 4:
+            ops.gather_embedding_q4_k(input_ids, self.weight, out)
+        else:
+            ops.gather_embedding(input_ids, self.weight, out)
 
 
 class QKVProj(nn.Module):

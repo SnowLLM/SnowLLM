@@ -1,0 +1,47 @@
+{
+  "id": "minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark",
+  "model": "MiniCPM-V-4.7-35B-A3B",
+  "family": "MiniCPM",
+  "modalities": ["text", "image"],
+  "precision": "mix_q3gud_im",
+  "dir": "MiniCPM-V-4.7-35B-A3B-mix_q3gud_im",
+  "bytes": 17048100913,
+  "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-gguf",
+  "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+  "include": [
+    "MiniCPM-V-4_7-35B-A3B-mix_q3gud_im.gguf",
+    "mmproj-model-f16.gguf"
+  ],
+  "priority": 54,
+  "requires": "0.3.11",
+  "summary": "MiniCPM-V 4.7 with mixed Q3 expert weights, vision support and a Q8 DSpark drafter.",
+  "serve_as": "MiniCPM-V-4.7-35B-A3B",
+  "sources": [
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B",
+      "revision": "896c2d454672476a7b45dcc5e3f0c700a0218577",
+      "include": [
+        "chat_template.jinja"
+      ]
+    },
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-DSpark-gguf",
+      "revision": "2c8f6931e5fba8a01bcc74b2964f330c62056b5e",
+      "subdir": "dspark",
+      "include": [
+        "dspark-MiniCPM-V-4_7-35B-A3B-Q8_0.gguf"
+      ]
+    }
+  ],
+  "defaults": {
+    "num_spec": 0,
+    "dflash": "@model/dspark",
+    "dflash_block": 8,
+    "max_num_seqs": 1,
+    "max_model_len": 170000,
+    "max_num_batched_tokens": 8192,
+    "kv_cache_dtype": "bf16"
+  },
+  "note": "Uses the official importance-matrix mixed Q3 checkpoint and retains the Q8 DSpark drafter.",
+  "spec": "DSpark"
+}

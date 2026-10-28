@@ -384,11 +384,20 @@ def load_weights(w: "Weights", cfg: dict, want: range, fp8: bool, with_mtp: bool
     lm_head = load_lm_head(w, device_map)
     model = Qwen3_5Model(
         layers=layers,
-        embed_tokens=VocabEmbedding(w.read(PREFIX + "embed_tokens.weight")),
+        embed_tokens=load_embedding(w),
         norm=RMSNorm(gamma(w.read(PREFIX + "norm.weight"))),
         inv_freq=inv_freq(cfg), eps=cfg["rms_norm_eps"])
     del stg
     return Qwen3_5MoeForCausalLM(model, lm_head, cfg, geo, mtp)
+
+
+def load_embedding(w: "Weights") -> VocabEmbedding:
+    key = PREFIX + "embed_tokens.weight"
+    fmt = w.kquant_format(key) if hasattr(w, "kquant_format") else None
+    if fmt == 4:
+        blocks, = w.blocks(key)
+        return VocabEmbedding(blocks.view(w.rows(key), -1), fmt)
+    return VocabEmbedding(w.read(key))
 
 
 def load_lm_head(w: "Weights", dmap: placement.DeviceMap | None = None) -> LMHead:
