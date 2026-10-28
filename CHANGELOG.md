@@ -1,6 +1,13 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.18 — 2026-10-28
+
+- Fix Flash-Next DFlash2 startup failures.
+  修复 Flash-Next DFlash2 启动失败的问题。
+- Show a one-line summary in update notifications.
+  更新提示改为显示一行摘要。
+
 ## 0.3.17 — 2026-10-27
 
 - Fix V4.1 DSpark tap buffers for the full decoder replay window and reuse activation workspace after target sampling.
