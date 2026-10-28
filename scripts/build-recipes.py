@@ -11,7 +11,7 @@ from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from snowllm.hub.recipes import SCHEMA, SETTABLE
+from snowllm.hub.recipes import SCHEMA, SETTABLE, version as parts
 
 SOURCE = ROOT / "recipes"
 OUT = ROOT / "web" / "recipe-v2.json"
@@ -46,10 +46,6 @@ def for_client(book: list[dict], client: str) -> list[dict]:
             raise ValueError(f"{recipe['id']}: defaults {sorted(unknown)} require a version newer than {client}")
         result.append({**recipe, "defaults": defaults})
     return result
-
-
-def parts(v: str) -> tuple[int, ...]:
-    return tuple(int(x) for x in v.split("."))
 
 
 def needs_newer(r: dict) -> bool:

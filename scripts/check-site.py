@@ -145,7 +145,8 @@ def check_catalogue() -> None:
         problems.append("recipes/ holds no recipe")
         return
 
-    ours = runpy.run_path(str(ROOT / "scripts" / "build-recipes.py"))["SCHEMA"]
+    builder = runpy.run_path(str(ROOT / "scripts" / "build-recipes.py"))
+    ours = builder["SCHEMA"]
     theirs = need(r"^SCHEMA = (\d+)$", RECIPES, "SCHEMA in snowllm/hub/recipes.py")
     if theirs and ours != int(theirs.group(1)):
         problems.append(f"build-recipes.py writes schema {ours}, "
@@ -165,9 +166,7 @@ def check_catalogue() -> None:
             problems.append(f"snowllm fetches /{url.group(2)}, "
                             f"build-recipes.py publishes {out.group(1)}")
 
-    def parts(v: str) -> tuple[int, ...]:
-        return tuple(int(x) for x in v.split("."))
-
+    parts = builder["parts"]
     named = {r.get("id") for r in book}
     served = {r["repo"] for r in book if r.get("repo") and r.get("status", "supported") == "supported"
               and not (r.get("requires") and parts(VERSION) < parts(str(r["requires"])))}
