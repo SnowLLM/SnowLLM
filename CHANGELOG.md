@@ -1,6 +1,25 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.19.dev1 — 2026-10-28
+
+Add MiniCPM mixed-Q3 DSpark, reduce memory use, improve Windows compatibility and simplify Pi setup.
+
+- Add a MiniCPM-V 4.7 mixed-Q3 vision recipe with a Q8 DSpark drafter (intended for machines with 32GB of RAM).
+  新增 MiniCPM-V 4.7 混合 Q3 视觉方案，搭配 Q8 DSpark 草稿模型（为 32GB 内存的机器准备）。
+- Reduce memory use during quantized model loading and inference, including DFlash and DSpark decoding.
+  降低量化模型加载与推理时的内存占用，包括 DFlash 和 DSpark 解码。
+- Improve automatic weight placement to reduce unnecessary host offload.
+  优化自动权重放置，减少不必要的主机卸载。
+- Remove the implicit 90% host memory ceiling when no host budget is configured; automatic host weight offload remains disabled by default.
+  未配置主机预算时不再施加隐含的 90% 主机内存上限，自动主机权重卸载仍默认关闭。
+- Fix Windows compatibility for DeepSeek V4 Flash 0731 and GLM 5.3 Flash. DeepSeek V4.1 Flash 1017 also runs, but prefix caching still needs fixes.
+  修复 DeepSeek V4 Flash 0731 和 GLM 5.3 Flash 的 Windows 兼容性。DeepSeek V4.1 Flash 1017 也可运行，但前缀缓存仍有待修复。
+- Configure Pi with all named models and context limits from the recipe catalogue without requiring a running inference service.
+  Pi 配置直接读取 recipe 目录中的全部具名模型及上下文上限，无需提前启动推理服务。
+- Require SnowLLM-Kernels 0.3.11. Existing expert disk caches can no longer be reused.
+  依赖升级至 SnowLLM-Kernels 0.3.11，旧专家磁盘缓存不再复用。
+
 ## 0.3.18 — 2026-10-28
 
 - Fix Flash-Next DFlash2 startup failures.
