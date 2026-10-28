@@ -9,6 +9,7 @@ import weakref
 import torch
 
 from .._capi import SnowLLMError
+from .._hip_memory import device_pointer
 
 
 class _DLTensorPrefix(ctypes.Structure):
@@ -25,11 +26,11 @@ _capsule_pointer.restype = ctypes.c_void_p
 def _mapped_view(host):
     if not host.is_pinned():
         raise SnowLLMError("a shared scheduler buffer must be pinned")
+    mapped = device_pointer(host.data_ptr())
     capsule = torch.utils.dlpack.to_dlpack(host)
     tensor = _DLTensorPrefix.from_address(_capsule_pointer(capsule, b"dltensor"))
-    # HIP pinned allocations have a unified CPU/GPU address. Change only the
-    # device view; DLPack's native manager/deleter still owns the CPU storage.
-    # Python attributes on an alias would be lost when Torch collapses views.
+    # DLPack retains CPU storage ownership while exposing its GPU alias.
+    tensor.data = mapped
     tensor.device_type = 10 if torch.version.hip else 2  # kDLROCM / kDLCUDA
     tensor.device_id = torch.cuda.current_device()
     return torch.from_dlpack(capsule)
@@ -42,11 +43,12 @@ def host_view(tensor):
     """CPU alias of one of our mapped messages, including sliced/strided views."""
     if not tensor.is_cuda:
         return tensor
-    ref = _mapped_hosts.get(tensor.untyped_storage().data_ptr())
+    base = tensor.untyped_storage().data_ptr()
+    ref = _mapped_hosts.get(base)
     host = ref() if ref is not None else None
     if host is None or tensor.dtype != host.dtype:
         return None
-    offset = (tensor.data_ptr()-host.data_ptr())//tensor.element_size()
+    offset = (tensor.data_ptr()-base)//tensor.element_size()
     reach = offset + sum((n-1)*s for n,s in zip(tensor.shape,tensor.stride()))
     if tensor.numel() and 0 <= offset and reach < host.numel():
         return host.as_strided(tensor.shape,tensor.stride(),offset)
@@ -84,7 +86,7 @@ class MappedBuffer:
                 raise
             weakref.finalize(host.untyped_storage(), release_host, nbytes)
             self.capacity, self.host, self.device = capacity, host, device
-            ptr = host.data_ptr()
+            ptr = device.data_ptr()
             def retire(ref):
                 if _mapped_hosts.get(ptr) is ref:
                     _mapped_hosts.pop(ptr,None)

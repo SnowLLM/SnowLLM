@@ -11,6 +11,7 @@ import weakref
 from collections.abc import Callable, Iterator, Sequence
 
 from .. import _capi
+from .. import _hip_memory
 from .._capi import SnowLLMError, check, lib
 from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, prepare_gpu_commit
 
@@ -206,12 +207,23 @@ def _host_buffer(n: int) -> tuple[mmap.mmap | _THPBuffer, int, int]:
 def _register(n: int) -> torch.Tensor:
     buf, base, size = _host_buffer(n)
     skip = -base % HOST_ALIGN
-    if int(torch.cuda.cudart().cudaHostRegister(base, size, 1)):
+    try:
+        mapped = _hip_memory.register(base, size)
+    except BaseException:
         buf.close()
-        raise RuntimeError(f"cudaHostRegister of {size} bytes")
-    _mapped.append(buf)
-    _ranges.append((base + skip, base + skip + n))
-    return torch.as_tensor(_Mapped(base + skip, n), device="cuda")
+        raise
+    try:
+        tensor = torch.as_tensor(_Mapped(mapped + skip, n), device="cuda")
+    except BaseException:
+        try:
+            _hip_memory.unregister(base)
+        finally:
+            buf.close()
+        raise
+    # Keep registration and CPU storage alive for asynchronous native launches.
+    _mapped.append((buf, base))
+    _ranges.append((mapped + skip, mapped + skip + n))
+    return tensor
 
 
 def host_mapped(t: torch.Tensor) -> bool:
