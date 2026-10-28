@@ -26,7 +26,7 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 | `--max-num-seqs` | `4` | Maximum concurrent requests, up to 256; each request holds attention state. |
 | `--max-model-len` | `409600` | Input + output tokens per request. Flash-Next automatically enables static YaRN above 256K; see [model details](./models). KV memory is shared. |
 | `--max-gpu-mem` | `0.9` | GPU memory ceiling: fraction (`0.9`) or capacity (`20GB`, `20GiB`). |
-| `--max-host-mem` | No automatic host weight offload | Host buffer ceiling: fraction or capacity; explicitly enables automatic host weight offload. |
+| `--max-host-mem` | Unset; no automatic host weight offload | Host buffer ceiling: fraction or capacity; explicitly enables automatic host weight offload. Without a configured ceiling, host buffers are constrained by available RAM and platform mapping limits. |
 | `--host-alloc` | Disabled | Allocate GPU tensors with mapped `hipHostMalloc` memory. Weights, KV, workspace and temporary tensors use host RAM; excludes host/disk offload. |
 | `--device-map` | No offload | Offload model weights to host RAM: `off`, `auto`, `all` or groups such as `experts:20`. |
 | `--offload-ratio` | Unset | Host-resident fraction of total final weight bytes, from 0 to 1. Enable offload with `--device-map auto`. Placement rounds to supported weight groups/layers. |

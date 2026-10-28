@@ -5,7 +5,7 @@ import re
 import threading
 from fractions import Fraction
 
-from .defaults import DEFAULT_GPU_UTIL, DEFAULT_HOST_UTIL
+from .defaults import DEFAULT_GPU_UTIL
 from .errors import SnowLLMError
 
 
@@ -75,8 +75,10 @@ class MemoryBudget:
         return util
 
     def host_limit(self, total):
+        if not self.host_offload_enabled:
+            return None
         limit = (gibibytes(self.max_host_mem_gib) if self.max_host_mem_gib is not None else
-                 int(total * (DEFAULT_HOST_UTIL if self.max_host_mem_util is None else self.max_host_mem_util)))
+                 int(total * self.max_host_mem_util))
         if total <= 0 or limit > total:
             raise SnowLLMError('host memory budget exceeds physical system RAM')
         return limit
@@ -144,7 +146,11 @@ def configure(value):
 
 def host_room(used=0):
     from ._platform import host_available, host_total, host_mapping_room
-    room = max(0, min(host_available(), budget.host_limit(host_total()) - used - _host_reserved))
+    limit = budget.host_limit(host_total())
+    room = host_available()
+    if limit is not None:
+        room = min(room, limit - used - _host_reserved)
+    room = max(0, room)
     mapped_room = host_mapping_room()
     return room if mapped_room is None else min(room, mapped_room)
 
@@ -152,6 +158,9 @@ def host_room(used=0):
 def check_host(nbytes, used=0):
     room = host_room(used)
     if nbytes > room:
+        if not budget.host_offload_enabled:
+            raise SnowLLMError(f'host allocation needs {nbytes} bytes, but only {room} bytes remain '
+                               'in available host memory and mapping space; reduce host allocations or free system RAM')
         raise SnowLLMError(f'host allocation needs {nbytes} bytes, but only {room} bytes remain '
                            'within the host memory budget; lower context/concurrency or offload, '
                            'or raise --max-host-mem')

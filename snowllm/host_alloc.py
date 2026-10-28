@@ -74,7 +74,9 @@ def refresh_limit():
         from ._capi import lib
         common = sys.modules.get('snowllm.ops._common')
         used = getattr(common, '_host_pinned', 0) + capacity._host_reserved
-        limit = max(0, capacity.budget.host_limit(host_total()) - used)
+        total = host_total()
+        limit = capacity.budget.host_limit(total)
+        limit = max(0, (total if limit is None else limit) - used)
         if not lib.snowllm_host_set_limit(limit):
             raise SnowLLMError('existing host tensor pools exceed the host memory budget')
 
@@ -105,5 +107,8 @@ def memory_info():
     from . import capacity, ops
     pool = getattr(_threads, 'pool', _pool)
     cached = sum(s['total_size'] - s['active_size'] for s in pool.snapshot(include_traces=False))
-    total = capacity.budget.host_limit(host_total())
+    total = host_total()
+    limit = capacity.budget.host_limit(total)
+    if limit is not None:
+        total = limit
     return min(total, capacity.host_room(ops.host_pinned_bytes()) + cached), total

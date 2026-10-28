@@ -26,7 +26,7 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 | `--max-num-seqs` | `4` | 最大并发请求数，最多 256；每个请求持有注意力状态。 |
 | `--max-model-len` | `409600` | 单请求的输入与输出 token 总数。Flash-Next 超过 256K 时自动启用静态 YaRN，见[模型说明](./models)。KV 内存共享。 |
 | `--max-gpu-mem` | `0.9` | GPU 内存上限：比例（`0.9`）或容量（`20GB`、`20GiB`）。 |
-| `--max-host-mem` | 未启用自动 host 卸载 | host 缓冲上限：比例或容量；显式设置后允许自动 host 权重卸载。 |
+| `--max-host-mem` | 未设置，不自动 host 卸载 | host 缓冲上限：比例或容量；显式设置后允许自动 host 权重卸载。未设置上限时，主机缓冲受可用 RAM 和平台映射限制约束。 |
 | `--host-alloc` | 关闭 | 通过映射的 `hipHostMalloc` 分配 GPU Tensor：权重、KV、workspace 和临时 Tensor 均使用主机 RAM；与 host/disk offload 互斥。 |
 | `--device-map` | 不卸载 | 将模型权重卸载到主机内存：`off`、`auto`、`all` 或 `experts:20` 等分组。 |
 | `--offload-ratio` | 未设置 | 最终权重总字节数中驻留主机内存的比例，取值 0–1。通过 `--device-map auto` 开启卸载，实际比例按可放置的权重分组和层取整。 |

@@ -2,7 +2,6 @@
 """CPU-only defaults shared by command parsing and the inference engine."""
 
 DEFAULT_GPU_UTIL = 0.9
-DEFAULT_HOST_UTIL = 0.9
 DEFAULT_PREFILL_CHUNK = 8192
 MAX_NUM_SEQS = 256
 DEFAULT_MAX_NUM_SEQS = 4

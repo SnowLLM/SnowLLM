@@ -133,8 +133,9 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from ._platform import device_mem_info
     _, physical = device_mem_info()
     gpu_memory_utilization = 1. if host_alloc else limits.gpu_utilization(physical)
-    _log(f'memory ceilings: GPU {limits.gpu_limit(physical) / (1 << 30):.3f} GiB; '
-         f'host {limits.host_limit(host_total()) / (1 << 30):.3f} GiB')
+    host_limit = limits.host_limit(host_total())
+    host_ceiling = 'unset' if host_limit is None else f'{host_limit / (1 << 30):.3f} GiB'
+    _log(f'memory ceilings: GPU {limits.gpu_limit(physical) / (1 << 30):.3f} GiB; host {host_ceiling}')
     if host_alloc:
         _log('host allocation: hipHostMalloc-backed tensors; weights, KV and workspace use system RAM')
     if prefix_memory_ratio is None:
