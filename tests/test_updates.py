@@ -22,6 +22,7 @@ from snowllm import updates
 
 
 NOTES = "# Changelog\n\n- Example release notes / 示例更新说明。"
+SUMMARY = "v99.0.0: Example release notes / 示例更新说明。"
 DESCRIPTION = ("# README\n\n<!-- snowllm-changelog:start -->\n" + NOTES +
                "\n<!-- snowllm-changelog:end -->\n")
 
@@ -33,7 +34,7 @@ def release_report(description=DESCRIPTION, version="99.0.0"):
 
 class UpdateTests(unittest.IsolatedAsyncioTestCase):
     async def test_report_extracts_only_matching_release_notes(self):
-        self.assertEqual(updates._changelog(release_report(), Version("99.0.0")), NOTES)
+        self.assertEqual(updates._changelog(release_report(), Version("99.0.0")), SUMMARY)
         for output in ("invalid", "[]", "null", '{"version": "2"}',
                        '{"version": "1", "install": null}',
                        '{"version": "1", "install": [null, {"metadata": {"name": null}}]}',
@@ -43,6 +44,27 @@ class UpdateTests(unittest.IsolatedAsyncioTestCase):
                        release_report("<!-- snowllm-changelog:start --> <!-- snowllm-changelog:end -->")):
             with self.subTest(output=output):
                 self.assertIsNone(updates._changelog(output, Version("99.0.0")))
+
+    async def test_summary_only_uses_the_matching_versions_first_entry(self):
+        for heading in ('## 99.0.0 — 2026-10-27', '## [v99.0.0] - 2026-10-27'):
+            notes = ("# Changelog / 更新日志\n\n## 100.0.0\n\n- Future change.\n\n"
+                     + heading + "\n\n- **Fix** `max_model_len` and [memory](https://example.com)\n"
+                     "  planning.\n  修复内存规划。\n- Another change.\n\n"
+                     "## 98.0.0\n\n- Older change.\n")
+            description = ("<!-- snowllm-changelog:start -->\n" + notes +
+                           "<!-- snowllm-changelog:end -->")
+            with self.subTest(heading=heading):
+                self.assertEqual(updates._changelog(release_report(description), Version('99.0.0')),
+                                 'v99.0.0: Fix max_model_len and memory planning. 修复内存规划。')
+
+    async def test_other_versions_or_empty_release_sections_are_not_used_as_a_summary(self):
+        for notes in ('## 98.0.0\n\n- Older change.',
+                      '## 99.0.0\n\n## 98.0.0\n\n- Older change.',
+                      '# Changelog\n\n'):
+            description = ('<!-- snowllm-changelog:start -->\n' + notes +
+                           '\n<!-- snowllm-changelog:end -->')
+            with self.subTest(notes=notes):
+                self.assertIsNone(updates._changelog(release_report(description), Version('99.0.0')))
 
     async def test_new_release_fetches_notes_without_installing_or_resolving_dependencies(self):
         update = updates.Update()
@@ -54,9 +76,10 @@ class UpdateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pip.call_args_list[1].args, ("install", "snowllm==99.0.0", "--dry-run",
                          "--ignore-installed", "--no-deps", "--only-binary=:all:", "--quiet", "--report", "-"))
         self.assertEqual(update.latest, "99.0.0")
-        self.assertEqual(update.changelog, NOTES)
+        self.assertEqual(update.changelog, SUMMARY)
         self.assertFalse(update.checking)
-        self.assertIn(NOTES, output.getvalue())
+        self.assertEqual(output.getvalue().splitlines()[-1], SUMMARY)
+        self.assertEqual(len(output.getvalue().splitlines()), 2)
         self.assertNotIn("# README", output.getvalue())
 
     async def test_notes_failure_preserves_version_notice(self):
@@ -238,7 +261,7 @@ class MirrorTests(unittest.TestCase):
                             cwd=Path(__file__).resolve().parents[1])
                         self.assertEqual(result.returncode, 0, result.stderr)
                         self.assertIn("SnowLLM 99.0.0 is available", result.stderr)
-                        self.assertIn(NOTES, result.stderr)
+                        self.assertIn(SUMMARY, result.stderr)
                         self.assertNotIn("# README", result.stderr)
                         self.assertEqual(paths, ["/simple/snowllm/", "/simple/snowllm/",
                                                 wheel_path + (".metadata" if use_metadata else "")])
