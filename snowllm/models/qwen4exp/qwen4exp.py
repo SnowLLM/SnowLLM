@@ -46,7 +46,7 @@ class Qwen4ExpModel(nn.Module):
             if ctx.tap_at is not None and i in ctx.tap_at:
                 j = ctx.tap_at[i]
                 # The drafter reads completed layer outputs averaged over the residual streams.
-                torch.mean(streams, dim=1, out=ctx.taps[:, j * H:(j + 1) * H])
+                ops.dspark_tap_mean(streams, ctx.taps[:, j * H:(j + 1) * H])
 
         if b.last_row is not None:
             ctx.take_xn()
