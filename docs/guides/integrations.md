@@ -29,13 +29,13 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 ## Pi
 
-Connect [Pi](https://pi.dev) to a running SnowLLM server:
+Configure [Pi](https://pi.dev) to connect to a SnowLLM server:
 
 ```sh
 snowllm pi --port 8000
 snowllm pi --host 192.168.1.10 --port 8000
 ```
 
-Load a recipe model first. This reads its actual context from `/v1/models` and writes the running recipe model to `~/.pi/agent/models.json`; it does not guess context from recipe defaults. `--host` defaults to `localhost`; use the inference server's port. Run the command again after loading a different model or changing its capacity settings.
+This writes all models from the recipe catalogue to `~/.pi/agent/models.json`, without requiring a running server or a loaded model. Context comes from each recipe's `max_model_len`, or the default when omitted. `--host` defaults to `localhost`; use the inference server's port.
 
 For LAN access, serve with `--host 0.0.0.0`. Model management uses a separate listener; see [Web UI](../webui).
