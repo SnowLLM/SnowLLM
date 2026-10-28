@@ -143,8 +143,10 @@ def configure(value):
 
 
 def host_room(used=0):
-    from ._platform import host_available, host_total
-    return max(0, min(host_available(), budget.host_limit(host_total()) - used - _host_reserved))
+    from ._platform import host_available, host_total, host_mapping_room
+    room = max(0, min(host_available(), budget.host_limit(host_total()) - used - _host_reserved))
+    mapped_room = host_mapping_room()
+    return room if mapped_room is None else min(room, mapped_room)
 
 
 def check_host(nbytes, used=0):

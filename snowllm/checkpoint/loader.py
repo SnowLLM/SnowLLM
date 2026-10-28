@@ -13,6 +13,7 @@ import torch
 
 from .. import models, term
 from .._capi import SnowLLMError
+from .._platform import release_device_cache
 from ..capacity import placement_options
 from .reader import Reader
 
@@ -278,7 +279,7 @@ def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int
             dmap = placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
         model = _load_placed(build, cfg, kv, dmap, device_map,
                              host_offload=host_offload, eligibility=eligibility)
-    torch.cuda.empty_cache()
+    release_device_cache()
     return model
 
 
@@ -434,7 +435,7 @@ def _load_placed(build, cfg, kv, dmap, device_map, *, host_offload=None, eligibi
         model._placement_host_reserve = int(kv.get('host_taken') or 0)
         if plan is not None:
             model._placement_frozen_groups = ('experts', 'experts.gate_up', 'experts.down')
-        torch.cuda.empty_cache()
+        release_device_cache()
         budget = placement.host_budget(model)
         need = dry_need(lambda: build(dmap), cfg, dict(kv, loaded_weight_bytes=dmap.device_bytes),
                         max(0, budget - dmap.host_bytes))
@@ -554,5 +555,5 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
             dmap = dataclasses.replace(dmap, disk_savings=total - dmap.host_bytes - planned_device)
         model = _load_placed(build, cfg, kv, dmap, device_map,
                              host_offload=host_offload, eligibility=eligibility)
-    torch.cuda.empty_cache()
+    release_device_cache()
     return model

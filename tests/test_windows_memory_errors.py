@@ -13,6 +13,33 @@ from snowllm.ops import _common
 
 
 class WindowsMemoryErrorTests(unittest.TestCase):
+    def test_host_preflight_reserves_cpu_and_gpu_commit_before_releasing_guard(self):
+        def performance(info, size):
+            info._obj.PageSize = 4096
+            info._obj.CommitLimit = info._obj.CommitTotal = 100
+            return True
+
+        kernel = SimpleNamespace(K32GetPerformanceInfo=performance,
+                                 VirtualAlloc=Mock(return_value=1234),
+                                 VirtualFree=Mock(return_value=True))
+        with patch.object(_platform, 'WINDOWS', True), patch.object(_platform, 'K32', kernel):
+            _platform.prepare_host_commit(8192)
+        kernel.VirtualAlloc.assert_called_once_with(None, 2 * 8192 + (256 << 20), 0x3000, 0x04)
+        kernel.VirtualFree.assert_called_once_with(1234, 0, 0x8000)
+
+    def test_host_buffer_preflights_before_mapping(self):
+        events = []
+        with patch.object(_common, 'prepare_host_commit', side_effect=lambda n: events.append(n)), \
+             patch.object(_common.mmap, 'mmap', side_effect=OSError('stop before allocating')):
+            with self.assertRaisesRegex(OSError, 'stop before allocating'):
+                _common._host_buffer(8192)
+        self.assertEqual(events, [_common._host_buffer_size(8192)])
+
+    def test_linux_host_preflight_does_not_call_windows(self):
+        with patch.object(_platform, 'WINDOWS', False), \
+             patch.object(_platform, '_prepare_commit', side_effect=AssertionError()):
+            _platform.prepare_host_commit(8192)
+
     def guidance(self, error):
         text = str(error)
         self.assertIn("SnowLLM recommends", text)

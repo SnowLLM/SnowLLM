@@ -14,12 +14,12 @@ from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, DEF
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info, prepare_gpu_commit
+from .._platform import gpu_mem_info, prepare_gpu_commit, release_device_cache
 from ..ops._common import dry_alloc
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..trace import span
 from .host_io import SchedulerInputs
-from .graphs import CapturedGraph, GraphBudget, GraphInputs
+from .graphs import CapturedGraph, GraphBudget, GraphInputs, capture_graph
 from .inputs import prefill_batch
 from .resources import plan_activations
 from .forward_context import (
@@ -87,7 +87,7 @@ class BaseRunner:
             model.runtime_resources = model.kv_slabs = None
             del previous
             gc.collect()
-            torch.cuda.empty_cache()
+            release_device_cache()
         try:
             self._initialize()
         except BaseException:
@@ -103,9 +103,8 @@ class BaseRunner:
         self.slabs = self.model.kv_slabs = self.resources
         self._allow = self._allowance()
         persistent = sum(part.bytes_for() for part in self.resources.support)
-        if ops.drying() is None and persistent > self._allow:
-            raise SnowLLMError(f'persistent state and workspace need {persistent/(1<<30):.2f} GiB; '
-                               'lower --max-num-seqs/--num-spec or offload more weights')
+        if ops.drying() is None:
+            self._persistent_capacity(persistent)
         for part in self.resources.support:
             part.allocate()
         chunk = self._check_chunk(self.candidates()[0])
@@ -190,8 +189,16 @@ class BaseRunner:
         return (int(total * (self.gpu_util if util is None else util)) - (total - free)
                 - self.reserve_bytes)
 
+    def _persistent_capacity(self, required):
+        from ..models.placement import ensure_room
+        while required > self._allow:
+            if not ensure_room(self.model, required - self._allow):
+                raise SnowLLMError(f'persistent state and workspace need {required/(1<<30):.2f} GiB; '
+                                   'lower --max-num-seqs/--num-spec or offload more weights')
+            self._allow = self._allowance()
+
     def _pool_capacity(self, plan, *, prefix_budget=0):
-        torch.cuda.empty_cache()
+        release_device_cache()
         from ..models.placement import ensure_room
         floor = plan.minimum if plan.requested is None else plan.requested
         while True:
@@ -237,7 +244,7 @@ class BaseRunner:
                 units, self.prefix_slots = self._pool_capacity(
                     plan, prefix_budget=self._prefix_budget(plan))
                 self._allocate_pools(units)
-                torch.cuda.empty_cache()
+                release_device_cache()
                 shortage = graph_bytes - self._allowance()
                 if shortage <= 0:
                     break
@@ -297,7 +304,7 @@ class BaseRunner:
             a.high, a.at = was, 0
             self.n_eager_forwards = 0
             walk = None
-            torch.cuda.empty_cache()
+            release_device_cache()
 
     @contextlib.contextmanager
     def _walk_scope(self, rows: int) -> Iterator[Callable[[], torch.Tensor]]:
@@ -332,7 +339,7 @@ class BaseRunner:
         n = a.freeze(max(a.high, a.planner.high) + extra)
         if self.plan_activations:
             a.planner.buf = a.buf
-        torch.cuda.empty_cache()
+        release_device_cache()
         return n
 
     def _reserve_activations(self, rows=None):
@@ -525,7 +532,7 @@ class GraphRunner(BaseRunner):
                     captured = True
         except torch.OutOfMemoryError:
             self.budget.full = True
-            torch.cuda.empty_cache()
+            release_device_cache()
         finally:
             self.n_eager_forwards = 0
         return captured
@@ -564,7 +571,7 @@ class GraphRunner(BaseRunner):
         cur.wait_stream(side)
         torch.cuda.synchronize()
         g = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(g, pool=self._graph_pool()):
+        with capture_graph(g, pool=self._graph_pool()):
             out = walk()
         torch.cuda.synchronize()
         self.budget.charge()

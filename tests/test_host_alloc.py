@@ -105,7 +105,9 @@ def main():
     x.add_(1)
     graph.replay()
     ck.close('graph replay survives ordinary pool reuse', output.cpu(), expected + 2, 1e-6)
-    with patch('snowllm._platform.host_total', return_value=256 << 30), \
+    # Isolate RAM accounting from the separately tested WDDM mapping window.
+    with patch('snowllm._platform.host_mapping_room', return_value=None), \
+         patch('snowllm._platform.host_total', return_value=256 << 30), \
          patch('snowllm._platform.host_available', return_value=128 << 30), \
          patch.object(torch.cuda, 'mem_get_info', side_effect=AssertionError('VRAM used as RAM budget')):
         free, total = gpu_mem_info()

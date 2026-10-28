@@ -10,7 +10,7 @@ import torch
 
 from .. import ops
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info
+from .._platform import gpu_mem_info, release_device_cache
 from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
 from .block_manager import BlockAllocator, StateSlots
@@ -490,7 +490,7 @@ class Engine:
             draft = dspark.load(rd, self.dflash_geo, self.runner.model, self.runner.walker)
         draft._context_ws = self.runner.draft_context_ws
         draft._markov_ws = self.runner.draft_markov_ws
-        torch.cuda.empty_cache()
+        release_device_cache()
         need = self.dflash_blocks
         def allocate(slabs, blocks):
             draft.cache = allocate_draft_pool(self.dflash_geo, blocks, self.runner.block_size, slabs)

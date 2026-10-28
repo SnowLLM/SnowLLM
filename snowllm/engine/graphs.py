@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import contextlib
+import functools
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -7,8 +8,29 @@ import torch
 
 from .. import ops, term
 from .._capi import SnowLLMError
-from .._platform import gpu_mem_info, device_mem_info
+from .._platform import gpu_mem_info, device_mem_info, release_device_cache, retain_device_cache
 from .host_io import HostArena, copy_message, host_view
+
+
+@functools.cache
+def _capture_stream(device):
+    return torch.cuda.Stream(device=device)
+
+
+@contextlib.contextmanager
+def capture_graph(graph, *, pool):
+    if not retain_device_cache():
+        with torch.cuda.graph(graph, pool=pool):
+            yield
+        return
+    # Public capture calls avoid torch.cuda.graph's implicit cache flush on Windows HIP.
+    torch.cuda.synchronize()
+    with torch.cuda.stream(_capture_stream(torch.cuda.current_device())):
+        graph.capture_begin(pool=pool)
+        try:
+            yield
+        finally:
+            graph.capture_end()
 
 
 class GraphBudget:
@@ -21,7 +43,7 @@ class GraphBudget:
 
     @staticmethod
     def _in_use() -> int:
-        torch.cuda.empty_cache()
+        release_device_cache()
         free, total = gpu_mem_info()
         return total - free
 

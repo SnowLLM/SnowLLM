@@ -7,6 +7,8 @@ import os
 import pathlib
 import sys
 import uuid
+import weakref
+from dataclasses import dataclass
 
 __all__ = ["WINDOWS", "HIP_RUNTIME_GLOBS", "host_available", "host_total", "hip_runtimes",
            "gpu_mem_info", "prepare_gpu_commit", "WINDOWS_PAGEFILE_HINT"]
@@ -90,6 +92,16 @@ def prepare_gpu_commit(nbytes: int) -> None:
     from .host_alloc import enabled
     if enabled():
         return
+    _prepare_commit(nbytes, 'GPU')
+
+
+def prepare_host_commit(nbytes: int) -> None:
+    if WINDOWS and nbytes > 0:
+        # Preflight both CPU mapping and WDDM registration before mmap can exhaust commit.
+        _prepare_commit(nbytes, 'mapped host', charges=2)
+
+
+def _prepare_commit(nbytes: int, kind: str, charges: int = 1) -> None:
     info = _PerformanceInfo()
     info.cb = ctypes.sizeof(info)
     if not K32.K32GetPerformanceInfo(ctypes.byref(info), info.cb):
@@ -98,12 +110,12 @@ def prepare_gpu_commit(nbytes: int) -> None:
     # Encourage pagefile growth before GPU allocation, retaining some headroom.
     # This is a heuristic: releasing the charge cannot reserve it for hipMalloc.
     # https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors
-    needed = int(nbytes) + (256 << 20)
+    needed = int(nbytes) * charges + (256 << 20)
     if (info.CommitLimit - info.CommitTotal) * info.PageSize >= needed:
         return
     guard = K32.VirtualAlloc(None, needed, 0x3000, 0x04)  # RESERVE | COMMIT, READWRITE
     if not guard:
-        raise MemoryError(f"Windows commit preflight failed for {nbytes} GPU bytes: "
+        raise MemoryError(f"Windows commit preflight failed for {nbytes} {kind} bytes: "
                           f"{ctypes.WinError(ctypes.get_last_error())}\n{WINDOWS_PAGEFILE_HINT}")
     if not K32.VirtualFree(guard, 0, 0x8000):  # RELEASE; no physical pages were touched
         raise ctypes.WinError(ctypes.get_last_error())
@@ -147,6 +159,32 @@ class _Luid(ctypes.Structure):
     _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_int32)]
 
 
+class _Architecture(ctypes.Structure):
+    _fields_ = [("node", ctypes.c_uint32)] + [
+        (n, ctypes.c_int32) for n in ("tile_based", "uma", "coherent", "isolated_mmu")]
+
+
+class _VideoMemoryInfo(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_uint64) for n in
+                ("budget", "usage", "available_reservation", "reservation")]
+
+
+class _WindowsAdapter:
+    def __init__(self, pointer, dedicated, shared, uma):
+        self.pointer, self.dedicated, self.shared, self.uma = pointer, dedicated, shared, uma
+        budget, _ = self.memory_info()
+        self.mapping_limit = max(0, min(shared, budget - dedicated)) if uma else None
+        self._release = weakref.finalize(self, _com(pointer, 2, ctypes.c_ulong), pointer)
+
+    def memory_info(self):
+        info = _VideoMemoryInfo()
+        # UMA's DXGI LOCAL segment includes both GPU allocations and mapped host memory.
+        _check(_com(self.pointer, 14, ctypes.c_long, ctypes.c_uint32, ctypes.c_int,
+                    ctypes.POINTER(_VideoMemoryInfo))(
+                        self.pointer, 0, 0, ctypes.byref(info)))
+        return int(info.budget), int(info.usage)
+
+
 def _guid(value):
     return (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID(value).bytes_le)
 
@@ -162,7 +200,7 @@ def _check(hr):
 
 
 @functools.cache
-def _dedicated_vram(device: int) -> int:
+def _windows_adapter(device: int):
     runtimes = hip_runtimes()
     if len(runtimes) != 1:
         raise RuntimeError("GPU memory query requires one loaded HIP runtime")
@@ -184,7 +222,7 @@ def _dedicated_vram(device: int) -> int:
         # IDXGIFactory4::EnumAdapterByLuid: identity comes from the visible HIP device.
         _check(_com(factory, 26, ctypes.c_long, _Luid, ctypes.c_void_p,
                     ctypes.POINTER(ctypes.c_void_p))(
-            factory, luid, _guid("29038f61-3839-4626-91fd-086879011a05"), ctypes.byref(adapter)))
+            factory, luid, _guid("645967a4-1392-4310-a798-8053ce3e93fd"), ctypes.byref(adapter)))
         try:
             desc = _AdapterDesc()
             _check(_com(adapter, 10, ctypes.c_long, ctypes.POINTER(_AdapterDesc))(
@@ -201,13 +239,118 @@ def _dedicated_vram(device: int) -> int:
             try:
                 if _com(native, 7, ctypes.c_uint32)(native) != 1:
                     raise RuntimeError("GPU memory query does not support linked GPU nodes")
+                architecture = _Architecture()
+                # ID3D12Device::CheckFeatureSupport, D3D12_FEATURE_ARCHITECTURE1.
+                _check(_com(native, 13, ctypes.c_long, ctypes.c_int, ctypes.c_void_p,
+                            ctypes.c_uint32)(native, 16, ctypes.byref(architecture),
+                                             ctypes.sizeof(architecture)))
             finally:
                 _com(native, 2, ctypes.c_ulong)(native)
-            return desc.dedicated
-        finally:
+            return _WindowsAdapter(adapter, int(desc.dedicated), int(desc.shared),
+                                   bool(architecture.uma))
+        except BaseException:
             _com(adapter, 2, ctypes.c_ulong)(adapter)
+            raise
     finally:
         _com(factory, 2, ctypes.c_ulong)(factory)
+
+
+def _dedicated_vram(device: int) -> int:
+    return _windows_adapter(device).dedicated
+
+
+def _mapped_host_bytes() -> int:
+    # Avoid importing ops while its HIP runtime bindings are being initialized.
+    common = sys.modules.get('snowllm.ops._common')
+    allocation = sys.modules.get('snowllm.host_alloc')
+    capacity = sys.modules.get('snowllm.capacity')
+    return (getattr(common, '_host_pinned', 0)
+            + (allocation.allocated_bytes() if allocation is not None else 0)
+            + getattr(capacity, '_host_reserved', 0))
+
+
+@dataclass(frozen=True)
+class DeviceMemory:
+    total: int
+    resident: int
+    reusable: int
+    os_budget: int
+    os_usage: int
+
+    @property
+    def in_use(self):
+        return max(0, self.resident - self.reusable)
+
+    def allowance(self, limit):
+        # Cache reuse needs no new OS backing; host mappings still count against os_usage.
+        if self.resident > self.total or self.os_usage > self.os_budget:
+            return -max(self.resident - self.total, self.os_usage - self.os_budget)
+        return min(limit - self.in_use, self.os_budget - self.os_usage + self.reusable)
+
+    def legacy_info(self, limit):
+        # Preserve limit-(total-free) without charging the unused GPU fraction to the OS budget.
+        return max(0, min(self.total, self.total - limit + self.allowance(limit))), self.total
+
+
+def _windows_memory(device, reserved, reusable=0):
+    adapter = _windows_adapter(device)
+    budget, usage = adapter.memory_info()
+    mapped = _mapped_host_bytes() if adapter.uma else 0
+    resident = max(0, usage - mapped, reserved)
+    return DeviceMemory(adapter.dedicated, resident,
+                        max(0, min(reusable, reserved)), budget, max(usage, resident + mapped))
+
+
+def _windows_device_mem_info(device, reserved, reusable=0):
+    from .capacity import budget
+    memory = _windows_memory(device, reserved, reusable)
+    return memory.legacy_info(budget.gpu_limit(memory.total))
+
+
+def _windows_host_mapping_limit(device):
+    adapter = _windows_adapter(device)
+    if not adapter.uma:
+        return None
+    budget, usage = adapter.memory_info()
+    # Charge the changing OS budget against actual usage within the initial shared window.
+    device_used = max(0, usage - _mapped_host_bytes())
+    return max(0, min(adapter.mapping_limit, budget - device_used))
+
+
+def host_mapping_room():
+    if not WINDOWS:
+        return None
+    import torch
+    if not torch.version.hip:
+        return None
+    limit = _windows_host_mapping_limit(torch.cuda.current_device())
+    return None if limit is None else max(0, limit - _mapped_host_bytes())
+
+
+def retain_device_cache():
+    import torch
+    from . import host_alloc
+    return WINDOWS and bool(torch.version.hip) and not host_alloc.enabled()
+
+
+def release_device_cache():
+    import torch
+    # Keep reusable blocks tracked by Torch while PAL's release accounting can lag.
+    if retain_device_cache():
+        return
+    torch.cuda.empty_cache()
+
+
+def device_memory_snapshot():
+    import torch
+    from . import host_alloc
+    if not WINDOWS or not torch.version.hip:
+        free, total = torch.cuda.mem_get_info()
+        return DeviceMemory(total, total-free, 0, total, total-free)
+    device = torch.cuda.current_device()
+    reserved = 0 if host_alloc.enabled() else torch.cuda.memory_reserved(device)
+    reusable = 0 if host_alloc.enabled() else max(0, reserved - torch.cuda.memory_allocated(device))
+    return _windows_memory(device, reserved, reusable)
 
 
 def gpu_mem_info() -> tuple[int, int]:
@@ -219,11 +362,11 @@ def gpu_mem_info() -> tuple[int, int]:
 
 def device_mem_info() -> tuple[int, int]:
     import torch
-    cap = (_dedicated_vram(torch.cuda.current_device())
-           if WINDOWS and torch.version.hip else None)
-    free, total = torch.cuda.mem_get_info()
-    if cap is not None:
-        used = total - free
-        total = min(total, cap)
-        free = max(0, total - used)
-    return free, total
+    if WINDOWS and torch.version.hip:
+        from . import host_alloc
+        device = torch.cuda.current_device()
+        # Torch reservations bound lagging DXGI usage; host-alloc uses separate host pools.
+        reserved = 0 if host_alloc.enabled() else torch.cuda.memory_reserved(device)
+        reusable = 0 if host_alloc.enabled() else max(0, reserved - torch.cuda.memory_allocated(device))
+        return _windows_device_mem_info(device, reserved, reusable)
+    return torch.cuda.mem_get_info()

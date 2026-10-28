@@ -8,6 +8,7 @@ import torch
 
 from ... import ops
 from ..._capi import SnowLLMError, check, lib
+from ..._platform import release_device_cache
 from ..reader import FileReader, note_bytes
 from . import GGUF, part_number
 from . import qwen4exp as qwen4exp_names
@@ -167,7 +168,7 @@ class GGUFReader(FileReader):
         if self._slab is not None:
             self._slab = None
             if ops.drying() is None:
-                torch.cuda.empty_cache()
+                release_device_cache()
 
     def tensor(self, name: str, dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
         t = self.gguf[name]

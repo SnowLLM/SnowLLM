@@ -11,6 +11,7 @@ import time
 
 from . import term
 from ._version import __version__
+from ._platform import release_device_cache
 from .defaults import DEFAULT_GPU_UTIL, DEFAULT_PREFILL_CHUNK
 from .telemetry import enabled as telemetry_enabled
 
@@ -218,8 +219,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
             gpu_memory_utilization=kv['util'],
             prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft)
     from ._platform import device_mem_info
-    import torch
-    torch.cuda.empty_cache()
+    release_device_cache()
     free, total = device_mem_info()
     if total-free > limits.gpu_limit(total):
         engine.runner._discard_pools()

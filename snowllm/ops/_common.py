@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator, Sequence
 from .. import _capi
 from .. import _hip_memory
 from .._capi import SnowLLMError, check, lib
-from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, prepare_gpu_commit
+from .._platform import WINDOWS, WINDOWS_PAGEFILE_HINT, prepare_gpu_commit, prepare_host_commit
 
 try:
     import torch
@@ -199,9 +199,11 @@ def _host_buffer(n: int) -> tuple[mmap.mmap | _THPBuffer, int, int]:
         size = _host_buffer_size(n)
         buf = _THPBuffer(size)
         return buf, buf.address, size
-    buf = mmap.mmap(-1, _host_buffer_size(n))
+    size = _host_buffer_size(n)
+    prepare_host_commit(size)
+    buf = mmap.mmap(-1, size)
     base = ctypes.addressof(ctypes.c_char.from_buffer(buf))
-    return buf, base, _host_buffer_size(n)
+    return buf, base, size
 
 
 def _register(n: int) -> torch.Tensor:

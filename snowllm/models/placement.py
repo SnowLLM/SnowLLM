@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from .. import ops
 from .._capi import SnowLLMError
+from .._platform import release_device_cache
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -105,9 +106,8 @@ def ensure_room(model, shortage: int, *, budget: int | None = None) -> bool:
         return False
     apply_device_map(model, model._placement_allocations, revised)
     model.device_map = revised
-    import torch
     from .. import term
-    torch.cuda.empty_cache()
+    release_device_cache()
     print(f'{term.stamp()} measured placement adjustment: {revised.describe()}', flush=True)
     return True
 
