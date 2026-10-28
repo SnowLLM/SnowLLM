@@ -15,6 +15,7 @@ from ...engine.forward_context import PLAN_DRAFT, Batch, Dsv4Walker
 from ..geometry import DSparkGeometry
 from . import deepseek4_weights
 from ...engine.cache import CacheStorage
+from ...engine.resources import ActivationProbe, DraftWorkspace
 from .pools import create_cache
 from .deepseek4 import DeepSeekV4ForCausalLM
 from .layers import RMSNorm
@@ -40,7 +41,6 @@ class DSparkDraft:
         self.conf_bias = conf_bias
         self.cache: CacheStorage | None = None
         self._table = None
-        self._context_ws = self._markov_ws = None
 
     def pools(self, raw_blocks: int, block_size: int, slots: int = 1) -> CacheStorage:
         self.cache = create_cache(self.geo.stack, raw_blocks, {}, block_size, slots)
@@ -56,18 +56,17 @@ class DSparkDraft:
                                f"{self.geo.stack.hidden} ({self.geo.fc_k} in all), the runner "
                                f"offered {taps.shape[1]}")
         ctx = self.walker.bare_context(self.stack, taps.shape[0])
-        if self.geo.stack.v41:
-            # Persisted taps start a new stage after the target logits are consumed.
-            ctx.begin_plan()
-            out = ctx.arena.new(taps.shape[0], self.geo.stack.hidden)
-            with ctx.arena.frame():
+        # Persisted taps start a new stage after the target logits are consumed.
+        ctx.begin_plan()
+        out = ctx.arena.new(taps.shape[0], self.geo.stack.hidden)
+        with ctx.arena.frame():
+            if self.geo.stack.v41:
                 self.fc(ctx, taps, out)
-                return self.enc_norm(ctx, out, out)
-        out = ctx.arena.new(taps.shape[0], self.fc.shape[0])
-        need = ops.dspark_context_workspace_bytes(taps.shape[0], *self.fc.shape)
-        if self._context_ws is None or self._context_ws.numel() < need:
-            self._context_ws = torch.empty(need, dtype=torch.uint8, device=taps.device)
-        ops.dspark_context(taps, self.fc, out, self._context_ws)
+                self.enc_norm(ctx, out, out)
+            else:
+                need = ops.dspark_context_workspace_bytes(taps.shape[0], *self.fc.shape)
+                scratch = ctx.arena.flat(need, torch.uint8)
+                ops.dspark_context(taps, self.fc, out, scratch)
         return out
 
     def write_context(self, feat: torch.Tensor, positions: torch.Tensor,
@@ -123,18 +122,21 @@ class DSparkDraft:
             raise SnowLLMError("the confidence head needs conf_proj.weight and the pre-norm "
                                "hidden state; this drafter has "
                                + ("no conf_proj" if self.conf_proj is None else "no pre_head"))
-        need = ops.dspark_markov_workspace_bytes(B, self.markov_w1.shape[0],
-                                                 self.geo.markov_rank, block)
-        if self._markov_ws is None or self._markov_ws.numel() < need:
-            self._markov_ws = torch.empty(need, dtype=torch.uint8, device=base.device)
-        return ops.dspark_markov(base, self.markov_w1, self.markov_w2, anchor, block,
-                                pre_head=pre_head, conf_weight=self.conf_proj,
-                                conf_bias=self.conf_bias, confidence=conf,
-                                workspace=self._markov_ws, fp32_bias=True)
+        ctx = self.walker.bare_context(self.stack, B * block)
+        ctx.begin_plan()
+        out = ctx.arena.new(B, block, dtype=torch.int64)
+        with ctx.arena.frame():
+            need = ops.dspark_markov_workspace_bytes(B, self.markov_w1.shape[0],
+                                                     self.geo.markov_rank, block)
+            scratch = ctx.arena.flat(need, torch.uint8)
+            return ops.dspark_markov(base, self.markov_w1, self.markov_w2, anchor, block,
+                                    pre_head=pre_head, conf_weight=self.conf_proj,
+                                    conf_bias=self.conf_bias, confidence=conf,
+                                    workspace=scratch, out=out, fp32_bias=True)
 
 
 
-def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int]:
+def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int, DraftWorkspace]:
     # The target's embedding and LM head are shared and own no storage in this plan.
     shared = torch.empty(0, dtype=torch.bfloat16, device="meta")
     target = SimpleNamespace(embed=SimpleNamespace(weight=shared), head=object(),
@@ -142,8 +144,48 @@ def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int]:
     with ops.dry_load() as dry:
         draft = load(rd, geo, target, Dsv4Walker())
         sizes = dry.device, dry.peak_device
-    del draft
-    return sizes
+    return *sizes, Workspace(draft)
+
+
+class Workspace(DraftWorkspace):
+    def context_rows(self, rows):
+        geo = self.draft.geo.stack
+        return max(rows, geo.sliding_window) if geo.v41 else rows
+
+    def prepare(self, draft, arena, context_rows, slots, num_spec, block_size, decode_rows):
+        draft.walker = Dsv4Walker(arena, decode_rows)
+        blocks = ops.kv_blocks_for(max(context_rows, decode_rows) + num_spec, block_size)
+        draft.cache = create_cache(draft.geo.stack, slots * blocks, {}, block_size, slots)
+
+    def cases(self, draft, context_rows, slots, num_spec, block_size, decode_rows):
+        geo = draft.geo
+        block = num_spec
+        for rows in sorted({context_rows, decode_rows}):
+            taps = torch.empty(rows, geo.fc_k, dtype=torch.bfloat16, device='cuda')
+            positions = torch.arange(rows, dtype=torch.int64, device='cuda')
+            mapping = torch.arange(rows, dtype=torch.int32, device='cuda')
+            def context(taps=taps, positions=positions, mapping=mapping):
+                feat = draft.context_feature(taps)
+                draft.write_context(feat, positions, mapping)
+            yield ActivationProbe(('dspark_context', rows), rows, context)
+        for count in sorted({1, slots}):
+            rows = count * block
+            noise = torch.empty(rows, geo.stack.hidden, dtype=torch.bfloat16, device='cuda')
+            positions = torch.arange(rows, dtype=torch.int64, device='cuda')
+            mapping = torch.arange(rows, dtype=torch.int32, device='cuda')
+            tables = torch.arange(draft.cache.plan.raw_blocks, dtype=torch.int32, device='cuda').view(slots, -1)[:count]
+            lengths = torch.full((count,), block, dtype=torch.int32, device='cuda')
+            yield ActivationProbe(('dspark_forward', count), rows,
+                lambda noise=noise, positions=positions, mapping=mapping, tables=tables, lengths=lengths:
+                    draft.forward(noise, positions, mapping, tables, lengths))
+            base = torch.empty(rows, geo.stack.vocab_size, dtype=torch.float32, device='cuda')
+            anchor = torch.zeros(count, dtype=torch.int64, device='cuda')
+            pre = torch.empty_like(noise)
+            confidence = torch.empty(count, block, dtype=torch.float32, device='cuda')
+            yield ActivationProbe(('dspark_markov', count), rows,
+                lambda base=base, anchor=anchor, pre=pre, confidence=confidence:
+                    draft.markov(base, anchor, block, pre,
+                                 confidence if draft.conf_proj is not None else None))
 
 
 def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,

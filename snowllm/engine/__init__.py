@@ -22,7 +22,7 @@ from .runner import (
     DraftGeometry,
     BaseRunner,
 )
-from .resources import allocate_draft_pool, draft_pool_bytes, draft_table_blocks
+from .resources import DraftWorkspace, allocate_draft_pool, draft_pool_bytes, draft_table_blocks
 from .qwen_runner import QwenRunner
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, SpecDecoder
@@ -190,6 +190,7 @@ class DraftPlan:
     geo: DraftGeometry
     device_bytes: int = 0
     load_peak_bytes: int = 0
+    workspace: DraftWorkspace | None = None
 
 
 def plan_draft(path: str | None, geo: DraftGeometry = None) -> DraftPlan:
@@ -208,7 +209,7 @@ def draft_load_peak_bytes(path: str | None, geo: DraftGeometry = None) -> int:
     return plan_draft(path, geo).load_peak_bytes
 
 
-def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int]:
+def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int, DraftWorkspace | None]:
     import pathlib
 
     from ..checkpoint.gguf.source import GGUFReader, find_dspark_gguf
@@ -217,7 +218,7 @@ def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int]:
     p = pathlib.Path(path).expanduser()
     side = find_dspark_gguf(p) if p.is_dir() else (p if p.suffix == ".gguf" else None)
     if side is None:
-        return 0, 0
+        return 0, 0, None
     with GGUFReader(side) as rd:
         return dspark.weight_plan(rd, geo)
 
@@ -248,21 +249,22 @@ def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
     return dflash_gguf.DictDraftSource(sd)
 
 
-def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int]:
+def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int, DraftWorkspace | None]:
     from .. import ops
     from ..models.qwen3_5 import dflash_draft
 
     src = _draft_source(path)
     if src is None:
-        return 0, 0
+        return 0, 0, None
     none = torch.empty(0, dtype=torch.bfloat16, device="meta")
-    with ops.dry_load() as d:
-        draft = dflash_draft.load(src, geo, [(none, none)] * geo.num_layers,
-                                  ops.Arena(), ops.KV_BLOCK_SIZES[0])
-        n = d.device, d.peak_device
-    del draft
-    src.close()
-    return n
+    try:
+        with ops.dry_load() as d:
+            draft = dflash_draft.load(src, geo, [(none, none)] * geo.num_layers,
+                                      ops.Arena(), ops.KV_BLOCK_SIZES[0])
+            sizes = d.device, d.peak_device
+        return *sizes, dflash_draft.Workspace(draft)
+    finally:
+        src.close()
 
 
 def draft_num_spec(geo: DraftGeometry, block: int) -> int:
@@ -307,7 +309,8 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=resident,
         load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
-        prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False)
+        prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False,
+        draft_workspace=kv.get("draft_workspace"))
     loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - available)
     from .capacity import auxiliary_bytes
     aux = auxiliary_bytes(r, kv)
@@ -362,6 +365,7 @@ class Engine:
                              tap_layers=(self.dflash_geo.tap_layers if dflash_path
                                          else ()),
                              draft_geo=self.dflash_geo,
+                             draft_workspace=draft_plan.workspace,
                              prefix_memory_ratio=prefix_memory_ratio,
                              plan_activations=plan_activations)
         try:
@@ -488,8 +492,6 @@ class Engine:
         f = find_dspark_gguf(p) if p.is_dir() else p
         with GGUFReader(f) as rd:
             draft = dspark.load(rd, self.dflash_geo, self.runner.model, self.runner.walker)
-        draft._context_ws = self.runner.draft_context_ws
-        draft._markov_ws = self.runner.draft_markov_ws
         release_device_cache()
         need = self.dflash_blocks
         def allocate(slabs, blocks):

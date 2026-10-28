@@ -158,6 +158,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
               util=gpu_memory_utilization,
               chunk=prefill_chunk, reserve=draft.load_peak_bytes,
               taps=draft.geo.tap_layers if dflash else (), draft_geo=draft.geo,
+              draft_workspace=draft.workspace,
               prefix_ratio=prefix_memory_ratio, kv_int8=kv_int8,
               num_spec=draft_num_spec(draft.geo, dflash_block) if dflash else num_spec,
               host_taken=_draft_bytes(dflash, draft.geo), blocks=num_kv_blocks,

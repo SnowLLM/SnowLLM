@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ... import ops
+from ...engine.resources import ActivationProbe, DraftWorkspace, allocate_draft_pool
 from ..geometry import DFlashGeometry
 
 if TYPE_CHECKING:
@@ -33,13 +34,21 @@ def _context_buffers(arena, geo, rows):
     return kv, scratch, cos, sin
 
 
-def context_workspace_bytes(geo, rows):
-    with ops.dry_load():
-        arena = ops.Arena()
-        _feature_buffers(arena, geo, rows)
-        with arena.frame():
-            _context_buffers(arena, geo, rows)
-        return arena.high
+class Workspace(DraftWorkspace):
+    def prepare(self, draft, arena, context_rows, slots, num_spec, block_size, decode_rows):
+        draft.arena, draft.block_size = arena, block_size
+        blocks = ops.kv_blocks_for(max(context_rows, decode_rows), block_size)
+        draft.pools = allocate_draft_pool(draft.geo, blocks, block_size, ops.Slabs())
+
+    def cases(self, draft, context_rows, slots, num_spec, block_size, decode_rows):
+        rows = max(context_rows, decode_rows)
+        taps = torch.empty(rows, draft.geo.fc_k, dtype=torch.bfloat16, device='cuda')
+        positions = torch.arange(rows, dtype=torch.int64, device='cuda')
+        mapping = torch.arange(rows, dtype=torch.int32, device='cuda')
+        def context():
+            feat = draft.context_feature(taps)
+            draft.write_context(feat, positions, mapping)
+        yield ActivationProbe(('draft_context', rows), rows, context, retain_inputs=True)
 
 
 class DFlashDraft:

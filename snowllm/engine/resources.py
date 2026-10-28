@@ -2,6 +2,7 @@
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import contextlib
+import copy
 
 import torch
 
@@ -133,12 +134,34 @@ class ActivationProbe:
     key: tuple
     rows: int
     run: Callable
+    retain_inputs: bool = False
 
 
 @dataclass
 class ProbeGroup:
     probes: Iterable[ActivationProbe]
     patience: int = 0
+
+
+class DraftWorkspace:
+    def __init__(self, draft):
+        self.draft = draft
+
+    def context_rows(self, rows):
+        return rows
+
+    def probes(self, arena, context_rows, slots, num_spec, block_size, decode_rows):
+        draft = copy.copy(self.draft)
+        context_rows = self.context_rows(context_rows)
+        with ops.dry_load():
+            self.prepare(draft, arena, context_rows, slots, num_spec, block_size, decode_rows)
+            return list(self.cases(draft, context_rows, slots, num_spec, block_size, decode_rows))
+
+    def prepare(self, draft, arena, context_rows, slots, num_spec, block_size, decode_rows):
+        raise NotImplementedError
+
+    def cases(self, draft, context_rows, slots, num_spec, block_size, decode_rows):
+        raise NotImplementedError
 
 
 @dataclass
@@ -153,7 +176,16 @@ def plan_activations(arena, groups):
     for group in groups:
         stale = 0
         for probe in group.probes:
-            changed = arena.plan(probe.key, probe.rows, probe.run)
+            if probe.retain_inputs:
+                # The model's live tail is external to this trace and must keep its existing offsets.
+                with torch.no_grad(), ops.dry_load():
+                    arena.planner.end()
+                    arena.at = arena.tail_high
+                    with arena.frame():
+                        probe.run()
+                changed = True
+            else:
+                changed = arena.plan(probe.key, probe.rows, probe.run)
             stale = 0 if changed else stale + 1
             if group.patience and stale >= group.patience:
                 break

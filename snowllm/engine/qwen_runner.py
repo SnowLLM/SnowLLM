@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import torch
@@ -107,14 +107,7 @@ class QwenRunner(GraphRunner):
         )
 
     def _act_statics(self, rows: int) -> int:
-        return (self.resources.outputs.bytes_for(max(rows, self.decode_rows))
-                + self._draft_context_bytes(rows))
-
-    def _draft_context_bytes(self, rows: int) -> int:
-        if self.draft_geo is None:
-            return 0
-        from ..models.qwen3_5.dflash_draft import context_workspace_bytes
-        return context_workspace_bytes(self.draft_geo, max(rows, self.decode_rows))
+        return self.resources.outputs.bytes_for(max(rows, self.decode_rows))
 
     def fixed_bytes(self, chunk: int = 0) -> int:
         return (self.resources.states.bytes_for() + self.resources.statics.bytes_for()
@@ -122,11 +115,6 @@ class QwenRunner(GraphRunner):
                 + self._cache_bytes(self._cache_blocks())
                 + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
                    if self.prefix_memory_ratio else 0))
-
-    @contextlib.contextmanager
-    def _walk_scope(self, rows: int) -> Iterator[Callable[[], torch.Tensor]]:
-        with self._probe_pools():
-            yield lambda: self._forward_eager(self._probe_batch(rows, True))
 
     @contextlib.contextmanager
     def _probe_pools(self) -> Iterator[None]:
@@ -148,7 +136,7 @@ class QwenRunner(GraphRunner):
     def _activation_scope(self, rows):
         with self._probe_pools(), self.resources.planning():
             yield ActivationReservation([ProbeGroup(self._activation_cases(rows, self.decode_rows))],
-                                        extra_bytes=self._draft_context_bytes(rows), zero=True)
+                                        zero=True)
 
     def _activation_cases(self, chunk, decode):
         modes = [(PLAN_MAIN, chunk, True, False), (PLAN_DECODE, decode, False, False)]

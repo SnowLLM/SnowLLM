@@ -3,7 +3,7 @@
 
 import contextlib
 import ctypes
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import torch
@@ -22,7 +22,7 @@ from .forward_context import (
 from .host_io import HostArena, host_view
 from .inputs import synthetic_batch
 from .graphs import GraphCase, GraphInputs
-from .resources import ActivationProbe, ActivationReservation, PoolPlan, ProbeGroup, draft_pool_bytes, draft_table_blocks, plan_activations
+from .resources import ActivationProbe, ActivationReservation, PoolPlan, ProbeGroup, draft_pool_bytes, draft_table_blocks
 from .runner import (
     GraphRunner,
     ForwardResult,
@@ -32,9 +32,6 @@ if TYPE_CHECKING:
     from .cache import CacheStorage
     from .prefix_cache import Pages, Residue
     from .request import Request
-
-BF16 = 2
-
 
 class Dsv4Runner(GraphRunner):
     @property
@@ -128,30 +125,19 @@ class Dsv4Runner(GraphRunner):
     def arena(self) -> ops.Arena:
         return self.walker.arena
 
+    @arena.setter
+    def arena(self, arena: ops.Arena) -> None:
+        self.walker.arena = arena
+
     @property
     def taps(self):
         return self.walker.taps
 
     def _act_statics(self, chunk: int) -> int:
-        return self._arena_after() + self.resources.outputs.bytes_for(chunk)
-
-    def act_bytes_for(self, rows: int) -> int:
-        if not self.geo.v41:
-            return super().act_bytes_for(rows)
-        if rows not in self._act:
-            previous = self.walker.arena
-            arena = self.walker.arena = ops.Arena()
-            try:
-                with self._activation_scope(rows) as allocation:
-                    plan_activations(arena, allocation.groups)
-                self._act[rows] = (max(arena.high, arena.planner.high) + self._act_statics(rows)
-                                   + allocation.outside_bytes)
-            finally:
-                self.walker.arena = previous
-        return self._act[rows]
+        return self.resources.outputs.bytes_for(chunk)
 
     def _arena_after(self) -> int:
-        return self.lm_rows * self.geo.hidden * BF16
+        return ops.lm_head_scratch_bytes(self.lm_rows)
 
     def fixed_bytes(self, chunk: int) -> int:
         tokens = self._cache_blocks()*self.block_size
@@ -175,15 +161,6 @@ class Dsv4Runner(GraphRunner):
                 yield self.cache
         finally:
             self.walker.tap_at = was
-
-    @contextlib.contextmanager
-    def _walk_scope(self, chunk: int) -> Iterator[Callable[[], torch.Tensor]]:
-        with self._probe_cache(chunk) as cache:
-            yield lambda: self.model(self.walker.context(
-                self.model,
-                cache.plan.batch(torch.zeros(chunk, dtype=torch.int64, device="cuda"),
-                            torch.arange(chunk, dtype=torch.int64, device="cuda"),
-                            [0], [chunk], [0]), cache))
 
     def _ring_blocks(self, chunk: int) -> int:
         return ops.dsv4_mla_raw_ring_blocks(self.geo.sliding_window, chunk, self.block_size)

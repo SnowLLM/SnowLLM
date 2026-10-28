@@ -20,6 +20,7 @@ class Arena:
         self.buf = None
         self.at = 0
         self.high = 0
+        self.tail_high = 0
         self.planner = Planner()
 
     def reset(self) -> None:
@@ -87,11 +88,15 @@ class Arena:
             held = walk()
         plan = pack(trace, rows)
         del held
-        if planner.buf is not None and plan.high + after > planner.buf.numel():
+        if planner.buf is not None and max(plan.high, plan.live_high + after) > planner.buf.numel():
             planner.plans.pop(key, None)
             return False
         planner.install(key, plan)
+        self.tail_high = max(self.tail_high, self.at, plan.live_high)
         return True
+
+    def bytes_after(self, extra: int = 0) -> int:
+        return max(self.high, self.planner.high, self.tail_high + extra)
 
     def freeze(self, planned: int = 0) -> int:
         if self.buf is None:
@@ -100,6 +105,6 @@ class Arena:
 
     def release(self) -> None:
         self.buf = None
-        self.at = self.high = 0
+        self.at = self.high = self.tail_high = 0
         self.planner = Planner()
 

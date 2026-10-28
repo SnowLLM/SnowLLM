@@ -21,7 +21,7 @@ from ..trace import span
 from .host_io import SchedulerInputs
 from .graphs import CapturedGraph, GraphBudget, GraphInputs, capture_graph
 from .inputs import prefill_batch
-from .resources import plan_activations
+from .resources import DraftWorkspace, ProbeGroup, plan_activations
 from .forward_context import (
     Batch,
     DecodeShape,
@@ -57,7 +57,7 @@ class BaseRunner:
                  max_num_seqs=DEFAULT_MAX_NUM_SEQS, max_prefill_tokens=DEFAULT_PREFILL_CHUNK, num_spec=0,
                  kv_int8=False, block_size=None, gpu_memory_utilization=DEFAULT_GPU_UTIL,
                  reserve_bytes=0, tap_layers=(), draft_geo=None, prefix_memory_ratio=0.,
-                 plan_activations=True, load_peak_bytes=0):
+                 plan_activations=True, load_peak_bytes=0, draft_workspace: DraftWorkspace | None = None):
         self._check_seqs(max_num_seqs)
         if num_spec < 0:
             raise SnowLLMError('num_spec must be nonnegative')
@@ -74,6 +74,7 @@ class BaseRunner:
         self.load_peak_bytes = int(load_peak_bytes)
         self.prefix_memory_ratio, self.prefix_slots = prefix_memory_ratio, 0
         self.tap_layers, self.draft_geo = tuple(tap_layers), draft_geo
+        self.draft_workspace = draft_workspace
         self.num_taps = len(self.tap_layers)
         self._want_blocks = None if num_kv_blocks is None else int(num_kv_blocks)
         self._want_chunk, self._act = max_prefill_tokens, {}
@@ -308,22 +309,26 @@ class BaseRunner:
         return 0
 
     def _walk_high(self, rows: int) -> int:
-        a = self.arena
-        was, a.high = a.high, 0
-        walk = None
+        previous = self.arena
+        arena = self.arena = ops.Arena()
+        hidden, eager = getattr(self, 'last_hidden', None), self.n_eager_forwards
+        draft_eager = self.n_draft_eager
         try:
-            with self._walk_scope(rows) as walk, ops.dummy_run():
-                walk()
-            return a.high
+            with ops.dry_load(), self._activation_scope(rows) as allocation:
+                self._plan_activations(rows, allocation)
+            return arena.bytes_after(allocation.extra_bytes) + allocation.outside_bytes
         finally:
-            a.high, a.at = was, 0
-            self.n_eager_forwards = 0
-            walk = None
+            self.arena = previous
+            self.last_hidden, self.n_eager_forwards = hidden, eager
+            self.n_draft_eager = draft_eager
             release_device_cache()
 
-    @contextlib.contextmanager
-    def _walk_scope(self, rows: int) -> Iterator[Callable[[], torch.Tensor]]:
-        raise NotImplementedError
+    def _plan_activations(self, rows, allocation):
+        plan_activations(self.arena, allocation.groups)
+        if self.draft_workspace is not None:
+            probes = self.draft_workspace.probes(self.arena, rows, self.max_num_seqs,
+                self.num_spec, self.block_size, self.max_num_seqs * self.T)
+            plan_activations(self.arena, [ProbeGroup(probes)])
 
     def _pick_block_size(self, block_size: int | None) -> int:
         if block_size is None:
@@ -351,7 +356,7 @@ class BaseRunner:
 
     def _freeze_arena(self, extra: int = 0) -> int:
         a = self.arena
-        n = a.freeze(max(a.high, a.planner.high) + extra)
+        n = a.freeze(a.bytes_after(extra))
         if self.plan_activations:
             a.planner.buf = a.buf
         release_device_cache()
@@ -360,7 +365,7 @@ class BaseRunner:
     def _reserve_activations(self, rows=None):
         rows = self.max_prefill_tokens if rows is None else rows
         with self._activation_scope(rows) as allocation:
-            plan_activations(self.arena, allocation.groups)
+            self._plan_activations(rows, allocation)
         self.n_eager_forwards = 0
         self.arena_after = allocation.extra_bytes
         self.arena_bytes = self._freeze_arena(self.arena_after)
