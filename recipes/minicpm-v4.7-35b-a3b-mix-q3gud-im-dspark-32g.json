@@ -1,0 +1,54 @@
+{
+  "id": "minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark-32g",
+  "model": "MiniCPM-V-4.7-35B-A3B",
+  "family": "MiniCPM",
+  "modalities": ["text", "image"],
+  "precision": "mix_q3gud_im",
+  "dir": "MiniCPM-V-4.7-35B-A3B-mix_q3gud_im",
+  "bytes": 17048100913,
+  "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-gguf",
+  "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+  "include": [
+    "MiniCPM-V-4_7-35B-A3B-mix_q3gud_im.gguf",
+    "mmproj-model-f16.gguf"
+  ],
+  "priority": 54,
+  "requires": "0.3.19",
+  "summary": "MiniCPM-V 4.7 mixed Q3 with DSpark and a 132K BF16 context for 32 GiB RAM.",
+  "serve_as": "MiniCPM-V-4.7-35B-A3B",
+  "sources": [
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B",
+      "revision": "896c2d454672476a7b45dcc5e3f0c700a0218577",
+      "include": [
+        "chat_template.jinja"
+      ]
+    },
+    {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-DSpark-gguf",
+      "revision": "2c8f6931e5fba8a01bcc74b2964f330c62056b5e",
+      "subdir": "dspark",
+      "include": [
+        "dspark-MiniCPM-V-4_7-35B-A3B-Q8_0.gguf"
+      ]
+    }
+  ],
+  "defaults": {
+    "num_spec": 0,
+    "dflash": "@model/dspark",
+    "dflash_block": 8,
+    "max_num_seqs": 1,
+    "max_model_len": 135168,
+    "max_num_batched_tokens": 4096,
+    "kv_cache_dtype": "bf16",
+    "max_gpu_mem_util": 0.95,
+    "max_host_mem_gib": 7,
+    "host_offload": "7040MiB",
+    "host_alloc": false,
+    "prefix_memory_ratio": 0,
+    "enforce_eager": true,
+    "limit_mm_per_prompt": 1
+  },
+  "note": "Windows Radeon 780M profile for 32 GiB RAM, 16 GiB BIOS UMA and a 32 GiB page file; shares the base recipe's model files.",
+  "spec": "DSpark"
+}

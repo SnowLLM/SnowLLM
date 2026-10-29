@@ -35,7 +35,7 @@ MANIFEST = "snowllm-recipe.json"
 SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
             "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "max_gpu_mem_util", "max_gpu_mem_gib", "max_host_mem_util", "max_host_mem_gib", "max_disk_mem_gib",
             "prefix_memory_ratio", "mtp_window", "mtp_sinks", "moe_cache_experts", "moe_cache_mode",
-            "offload_ratio", "host_offload", "host_alloc")
+            "offload_ratio", "host_offload", "host_alloc", "enforce_eager", "limit_mm_per_prompt")
 TIMEOUT = 30.0
 SUPPORTED = "supported"
 COMING_SOON = "coming soon"
