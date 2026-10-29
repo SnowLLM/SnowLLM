@@ -19,7 +19,11 @@
 
 ## BIOS UMA 设置 {#bios-uma}
 
-**非 Ryzen AI Max+ 395 / 495 平台需要留意此项。** 显存不足时，将 UMA 调到厂商允许的最大值。常见 BIOS 路径为：
+::: warning 其他 APU 请特别注意 UMA 设置
+**Ryzen AI Max+ 395 和 [Ryzen AI Max+ PRO 495](https://www.amd.com/en/products/processors/laptop/ryzen-pro/ai-max-pro-400-series/amd-ryzen-ai-max-plus-pro-495.html) 一般无需特别调整 UMA。** 使用**其他 APU** 时，请重点检查 BIOS 中的 UMA 分配；默认分配过低可能限制推理可用的显存。
+:::
+
+显存不足时，将 UMA 调到厂商允许的最大值。常见 BIOS 路径为：
 
 **Advanced → AMD CBS → NBIO Common Options → GFX Configuration → UMA Frame Buffer Size**
 
@@ -33,6 +37,6 @@
 
 普通 APU 通常最多能把 **50%** 的内存分给 UMA，GPU 还能使用剩余内存的一半，合计约 **75%**。
 
-AI Max+ 395 / 495 支持更高的 UMA 比例；如果出厂已设为 **75%**，一般不用调整。具体以厂商设置为准。
+Ryzen AI Max+ 395 和 Ryzen AI Max+ PRO 495 支持更高的 UMA 比例；如果出厂已设为 **75%**，一般不用调整。具体以厂商设置为准。
 
 我们的 **7940HS / Radeon 780M、32G 内存**将 UMA 设为最大值 **16G**：剩余 16G 的一半约为 **8G 共享内存**，合计 **16 + 8 = 24G**。测试使用的 **MiniCPM-V 4.7 35B-A3B Q3（`mix_q3gud_im`）需要准备约 24G 推理显存预算**，具体占用随上下文等配置变化。实际可用量以任务管理器和引擎报告为准。
