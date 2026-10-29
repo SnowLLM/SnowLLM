@@ -267,17 +267,15 @@ class Model(nn.Module):
         lo, hi = (cut, len(self.layers)) if replay else (0, cut if b.ced_stage == "encoder" else len(self.layers))
         for i in range(lo, hi):
             layer = self.layers[i]
-            j = ctx.tap_at.get(i) if ctx.embedded is None else None
-            if j is not None:
-                ops.dspark_tap_mean(streams, ctx.taps[:ctx.M, j * g.hidden:(j + 1) * g.hidden])
+            if ctx.embedded is None:
+                ctx.tap_streams(streams, i)
             streams = layer(ctx, ctx.cache.layers[i], streams)
         if b.ced_stage == "encoder":
             # Decoder layers share global KV, so build it before discarding encoder rows.
             self.layers[cut].write_kv(ctx, ctx.cache.layers[cut], streams)
             ctx.cache.plan.ced.append(ctx, streams)
-        for ratio, plan in (() if replay else b.plans.items()):
-            if plan.inplace and plan.keep_dst is not None:
-                ctx.cache.plan.slide(ratio, plan)
+        if not replay:
+            ctx.cache.plan.slide(b.plans)
         if b.ced_stage == "encoder":
             out = streams[-1:, 0]
             ctx.close()
@@ -300,7 +298,7 @@ class Model(nn.Module):
 
 def load(rd, geo, progress=None, device_map=None, *, target=None):
     from .. import placement
-    from .deepseek4_weights import _bf16, _f32, _moe, KQUANT
+    from .deepseek4_weights import _bf16, _f32, _moe, _output_a, KQUANT
     from .engram import Engram, Tables
     for i in range(geo.num_layers):
         if f"blk.{i}.ffn_exps_vq.blob" not in rd.gguf:
@@ -326,18 +324,16 @@ def load(rd, geo, progress=None, device_map=None, *, target=None):
                                      geo.compress_ratios[i]) if source else None)
             o_a = []
             name = p + "attn_output_a.weight"
+            group_k = geo.q_dim // geo.o_groups
             if rd.gguf[name].quant.name == "Q4_K":
-                raw = rd.raw(name)
-                group_k = geo.q_dim // geo.o_groups
-                for group in range(geo.o_groups):
-                    quant = pack_kquant(raw, 4, geo.o_lora_rank, group_k, group * geo.o_lora_rank)
-                    o_a.append(Linear(None, geo.o_lora_rank, group_k, quant=quant))
-                del raw
+                o_a = [Linear(None, geo.o_lora_rank, group_k, quant=quant)
+                       for quant in _output_a(rd, p, geo)]
             else:
                 weight = rd.tensor(name, torch.bfloat16)
-                for group in range(8):
-                    o_a.append(Linear(ops.gemm_bf16_shuffle_b(weight[group * 1024:(group + 1) * 1024],
-                                                            1024, 4096), 1024, 4096))
+                for group in range(geo.o_groups):
+                    start = group * geo.o_lora_rank
+                    packed, n, k, live = pack_bf16(weight[start:start + geo.o_lora_rank])
+                    o_a.append(Linear(packed, n, k, live=live))
                 del weight
             attn = Attention(geo, i, linear(rd, p + "attn_q_a.weight", which=ops.Dsv4Proj.Q_A),
                 linear(rd, p + "attn_q_b.weight", which=ops.Dsv4Proj.Q_B),

@@ -35,14 +35,12 @@ class DeepSeekV4Model(nn.Module):
             ops.dsv4_hc_broadcast(ctx.hidden, streams)
 
         for i, layer in enumerate(self.layers):
-            self._tap(ctx, streams, i)
+            ctx.tap_streams(streams, i)
             streams = layer(ctx, cache.layers[i], streams)
 
-        self._tap(ctx, streams, len(self.layers))
+        ctx.tap_streams(streams, len(self.layers))
 
-        for r, plan in b.plans.items():
-            if plan.inplace and plan.keep_dst is not None:
-                cache.plan.slide(r, plan)
+        cache.plan.slide(b.plans)
 
         if b.last_row is not None:
             picked = ctx.arena.new(b.last_row.numel(), self.geo.hc_mult, self.geo.hidden)
@@ -51,13 +49,6 @@ class DeepSeekV4Model(nn.Module):
         out = self.head_fold(ctx, streams, ctx.pre_head)
         ctx.close()
         return out
-
-    def _tap(self, ctx: Dsv4Context, streams: torch.Tensor, i: int) -> None:
-        j = ctx.tap_at.get(i)
-        if j is None:
-            return
-        t, h = ctx.M, self.geo.hidden
-        ops.dspark_tap_mean(streams, ctx.taps[:t, j * h:(j + 1) * h])
 
 
 class DeepSeekV4ForCausalLM(nn.Module):

@@ -40,13 +40,10 @@ class Qwen4ExpModel(nn.Module):
             ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True,
                              mscale=ctx.mscale)
 
-        H = self.geo.hidden
         for i, layer in enumerate(self.layers):
             layer(ctx, streams)
-            if ctx.tap_at is not None and i in ctx.tap_at:
-                j = ctx.tap_at[i]
-                # The drafter reads completed layer outputs averaged over the residual streams.
-                ops.dspark_tap_mean(streams, ctx.taps[:, j * H:(j + 1) * H])
+            # The drafter reads completed layer outputs averaged over the residual streams.
+            ctx.tap_streams(streams, i)
 
         if b.last_row is not None:
             ctx.take_xn()

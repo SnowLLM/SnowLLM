@@ -11,6 +11,7 @@ from ...checkpoint.gguf.source import GGUFReader
 from ..._capi import SnowLLMError
 from .. import placement
 from ..geometry import DeepSeekV4Geometry
+from ..projection import pack_kquant
 from .deepseek4 import DeepSeekV4ForCausalLM
 from .layers import (
     Attention,
@@ -30,12 +31,17 @@ Progress = Callable[[int, int], None] | None
 KQUANT = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8}
 
 
-def _kquant(rd: GGUFReader, which: ops.Dsv4Proj, name: str, n: int, k: int,
-            row0: int = 0) -> ProjWeight:
-    from ..projection import pack_kquant
+def _kquant(rd: GGUFReader, which: ops.Dsv4Proj, name: str, n: int, k: int) -> ProjWeight:
     fmt = KQUANT[rd.gguf[name].quant.name]
-    weight = pack_kquant(rd.raw(name), fmt, n, k, row0)
-    return ProjWeight.kquant(which, fmt, weight.quant, weight.meta, n, k)
+    return ProjWeight.kquant(which, pack_kquant(rd.raw(name), fmt, n, k), n, k)
+
+
+def _output_a(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry) -> list[ops.KQuantProjWeight]:
+    name = p + "attn_output_a.weight"
+    fmt = KQUANT[rd.gguf[name].quant.name]
+    raw = rd.raw(name)
+    return [pack_kquant(raw, fmt, geo.o_lora_rank, geo.q_dim // geo.o_groups,
+                        group * geo.o_lora_rank) for group in range(geo.o_groups)]
 
 
 def _f32(rd: GGUFReader, name: str) -> torch.Tensor:
@@ -171,8 +177,8 @@ def _attention(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, layer: int,
                rope: Rope) -> Attention:
     ratio = geo.compress_ratios[layer]
     group_k = geo.q_dim // geo.o_groups
-    wo_a = [_kquant(rd, ops.Dsv4Proj.O_A_GROUP, p + "attn_output_a.weight", geo.o_lora_rank,
-                    group_k, g * geo.o_lora_rank) for g in range(geo.o_groups)]
+    wo_a = [ProjWeight.kquant(ops.Dsv4Proj.O_A_GROUP, weight, geo.o_lora_rank, group_k)
+            for weight in _output_a(rd, p, geo)]
     compressor = indexer = proj = None
     indexed = bool(ratio) and geo.is_indexed(layer)
     if ratio:

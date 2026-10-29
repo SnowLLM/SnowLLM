@@ -155,6 +155,12 @@ class ForwardContext:
         self.cos.mul_(self.mscale)
         self.sin.mul_(self.mscale)
 
+    def tap_streams(self, streams: torch.Tensor, layer: int) -> None:
+        j = self.tap_at.get(layer) if self.tap_at is not None else None
+        if j is not None:
+            hidden = streams.shape[-1]
+            ops.dspark_tap_mean(streams, self.taps[:self.M, j * hidden:(j + 1) * hidden])
+
 
 class QsaStep(NamedTuple):
     resume: torch.Tensor

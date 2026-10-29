@@ -68,11 +68,13 @@ class Compression:
     def bank(self, ratio: int) -> int:
         return self.stride(ratio) + self.spec_rows
 
-    def slide(self, ratio: int, plan: RatioPlan) -> None:
-        for kind in (False, True):
-            g = self.carries.get((ratio, kind))
-            if g is not None:
-                g.slide(plan.keep_dst, plan.keep_src)
+    def slide(self, plans: dict[int, RatioPlan]) -> None:
+        for ratio, plan in plans.items():
+            if plan.inplace and plan.keep_dst is not None:
+                for kind in (False, True):
+                    g = self.carries.get((ratio, kind))
+                    if g is not None:
+                        g.slide(plan.keep_dst, plan.keep_src)
 
     def commit(self, slot, n_tokens):
         for r in self.ratios:
@@ -215,7 +217,7 @@ class Compression:
             keep_new=(new_keep_dst,new_keep_src) if kdn else None,
             comp_lens=lens_t, table=table, stride=stride,
             mask=(None if self.indexed[ratio]
-                  else _causal_compress_mask(positions, lens_t, seq_of_row, ratio, stride)),
+                  else ops.causal_compress_mask(positions, lens_t, seq_of_row, ratio, stride)),
             n_new=n_new, max_n_comp=reach, n_comp_now=max(comp_lens),
             n_work_dev=n_work_dev, inplace=inplace,
             stride_cap=self.mask_cap[ratio],
@@ -234,8 +236,3 @@ def _pad_pairs(dst: list, src: list, want: int, dst_pad: int, src_pad: int) -> t
 def mask_stride(n_comp: int) -> int:
     q = ops.COMP_MASK_QUANTUM
     return max(q, ((n_comp + q - 1) // q) * q)
-
-
-def _causal_compress_mask(positions: torch.Tensor, comp_lens: torch.Tensor,
-                          seq_of_row: torch.Tensor, ratio: int, stride: int) -> torch.Tensor:
-    return ops.causal_compress_mask(positions,comp_lens,seq_of_row,ratio,stride)

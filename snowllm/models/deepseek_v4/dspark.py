@@ -10,16 +10,14 @@ from ... import _capi, ops
 from ..._capi import SnowLLMError
 from ...checkpoint.gguf import dspark as dspark_gguf
 from ...checkpoint.gguf.source import GGUFReader
-from ...engine.block_manager import pad_table
+from ...engine.cache import CacheStorage
 from ...engine.forward_context import PLAN_DRAFT, Batch, Dsv4Walker
+from ...engine.resources import ActivationProbe, DraftWorkspace
 from ..geometry import DSparkGeometry
 from . import deepseek4_weights
-from ...engine.cache import CacheStorage
-from ...engine.resources import ActivationProbe, DraftWorkspace
-from .pools import create_cache
 from .deepseek4 import DeepSeekV4ForCausalLM
 from .layers import RMSNorm
-
+from .pools import create_cache
 
 
 class DSparkDraft:
@@ -40,15 +38,6 @@ class DSparkDraft:
         self.conf_proj = conf_proj
         self.conf_bias = conf_bias
         self.cache: CacheStorage | None = None
-        self._table = None
-
-    def pools(self, raw_blocks: int, block_size: int, slots: int = 1) -> CacheStorage:
-        self.cache = create_cache(self.geo.stack, raw_blocks, {}, block_size, slots)
-        self._table = pad_table([list(range(raw_blocks))])
-        return self.cache
-
-    def reserve(self, m: int) -> None:
-        pass
 
     def context_feature(self, taps: torch.Tensor) -> torch.Tensor:
         if taps.shape[1] != self.geo.fc_k:
@@ -99,7 +88,7 @@ class DSparkDraft:
             seq_of_row=seq_of_row,
             cu_seqlens=cu,
             seq_lens=seq_lens,
-            block_tables=block_tables if block_tables is not None else self._table,
+            block_tables=block_tables,
             slot_mapping=slots,
             total_q_blocks=total_q, q_block_map=qmap, plans={}, block_q=True,
             is_prefill=True, num_tokens=M,
@@ -133,7 +122,6 @@ class DSparkDraft:
                                     pre_head=pre_head, conf_weight=self.conf_proj,
                                     conf_bias=self.conf_bias, confidence=conf,
                                     workspace=scratch, out=out, fp32_bias=True)
-
 
 
 def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int, DraftWorkspace]:
@@ -205,7 +193,7 @@ def load(rd: GGUFReader, geo: DSparkGeometry, target: DeepSeekV4ForCausalLM,
             RMSNorm(deepseek4_weights._bf16(rd, "mtp.main_norm.weight")),
             rd.tensor("mtp.markov_embd.weight"), rd.tensor("mtp.markov_head.weight"),
             rd.tensor("mtp.confidence.weight", torch.float32).flatten())
-    _capi.select_geometry(_capi.GEO_DEEPSEEK_V4_FLASH)
+    ops.select_geometry(_capi.GEO_DEEPSEEK_V4_FLASH)
     with ops.host_memory() if host else contextlib.nullcontext():
         stack = deepseek4_weights.load(rd, geo.stack, embed=target.embed.weight,
                                       head=target.head)

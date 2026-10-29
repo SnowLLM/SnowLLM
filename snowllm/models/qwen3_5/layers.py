@@ -8,6 +8,7 @@ from torch import nn
 from ... import ops
 from ...engine.forward_context import ForwardContext
 from ...trace import span
+from ..embedding import VocabEmbedding
 from ..geometry import ModelGeometry
 
 ProjWeight = torch.Tensor | ops.KQuantProjWeight
@@ -26,18 +27,6 @@ class RMSNorm(nn.Module):
     def add_residual(self, ctx: ForwardContext, x: torch.Tensor, residual: torch.Tensor,
                      out: torch.Tensor) -> None:
         ops.rmsnorm_residual(x, residual, self.gamma, out, ctx.eps)
-
-
-class VocabEmbedding(nn.Module):
-    def __init__(self, weight: torch.Tensor, quant: int = 0) -> None:
-        super().__init__()
-        self.weight, self.quant = weight, quant
-
-    def forward(self, input_ids: torch.Tensor, out: torch.Tensor) -> None:
-        if self.quant == 4:
-            ops.gather_embedding_q4_k(input_ids, self.weight, out)
-        else:
-            ops.gather_embedding(input_ids, self.weight, out)
 
 
 class QKVProj(nn.Module):

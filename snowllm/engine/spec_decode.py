@@ -30,6 +30,20 @@ def context_len(r: Request) -> int:
 class DSparkScheduling:
     windowed = False
 
+    def rows_needed(self, rows: int) -> int:
+        return rows
+
+    def grow(self, r: Request, rows: int) -> bool:
+        need = (self.max_blocks_per_seq if self.windowed else
+                ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
+        return self.blocks.ensure(r.draft_blocks, need)
+
+    def release(self, r: Request) -> None:
+        self.blocks.release(r.draft_blocks)
+        r.draft_blocks = []
+        self.confidence.pop(r, None)
+        self.scheduler.reset()
+
     def _draft_table(self, batch: list[Request]) -> torch.Tensor:
         for r in batch:
             if not self.grow(r, 0):
@@ -67,6 +81,20 @@ class DSparkScheduling:
                         row = row[:j]
                         break
             r.drafts = row
+
+    def _write_prefixes(self, batch: list[Request], accepted: list[int], lengths: list[int]):
+        bt = self._draft_table(batch)
+        rows, seqs, cache_pos, rope_pos = [], [], [], []
+        offset = 0
+        for i, (r, kept, width) in enumerate(zip(batch, accepted, lengths)):
+            first = r.num_cached - kept
+            rows.extend(range(offset, offset + kept))
+            seqs.extend([i] * kept)
+            cache_pos.extend(range(first, r.num_cached))
+            rope_pos.extend(p + r.pos_delta for p in range(first, r.num_cached))
+            offset += width
+        self._write_ctx(rows, seqs, cache_pos, rope_pos, bt)
+        return bt
 
     def after_decode(self, batch: list[Request], pos: list[int]) -> None:
         bt = self._draft_table(batch)
@@ -448,9 +476,6 @@ class DFlashDecoder(DSparkScheduling):
 
     step_rows = SpecDecoder.step_rows
 
-    def rows_needed(self, rows: int) -> int:
-        return rows
-
     def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
         if isinstance(T, list):
             b, kept = self.verify_prefixes(batch, T)
@@ -514,19 +539,7 @@ class DFlashDecoder(DSparkScheduling):
     def release(self, r: Request) -> None:
         if self.sampling is not None:
             self.sampling.release(r)
-        self.blocks.release(r.draft_blocks)
-        r.draft_blocks = []
-        self.confidence.pop(r, None)
-        self.scheduler.reset()
-
-    def grow(self, r: Request, rows: int) -> bool:
-        need = ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size)
-        while need > len(r.draft_blocks):
-            more = self.blocks.alloc(1)
-            if more is None:
-                return False
-            r.draft_blocks += more
-        return True
+        super().release(r)
 
     def _stage_rows(self, batch: list[Request], accepted: list[int] | None) -> None:
         B = len(batch)
@@ -609,17 +622,7 @@ class DFlashDecoder(DSparkScheduling):
             self.sampling.remember(batch, drafts)
 
     def _propose_prefixes(self, batch, accepted, lengths):
-        bt = self._draft_table(batch)
-        rows, seqs, cache_pos, rope_pos = [], [], [], []
-        offset = 0
-        for i, (r, kept, width) in enumerate(zip(batch, accepted, lengths)):
-            first = r.num_cached - kept
-            rows.extend(range(offset, offset + kept))
-            seqs.extend([i]*kept)
-            cache_pos.extend(range(first, r.num_cached))
-            rope_pos.extend(p + r.pos_delta for p in range(first, r.num_cached))
-            offset += width
-        self._write_ctx(rows, seqs, cache_pos, rope_pos, bt)
+        self._write_prefixes(batch, accepted, lengths)
         self._draft_blocks(batch)
 
     def _draft_blocks(self, batch):

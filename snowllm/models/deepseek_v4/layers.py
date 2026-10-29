@@ -13,6 +13,7 @@ from torch import nn
 from ... import ops
 from ...engine.forward_context import Dsv4Context
 from ...trace import span
+from ..embedding import VocabEmbedding
 from ..geometry import COFF, DeepSeekV4Geometry
 from ..projection import pack_bf16
 from .compression import RatioPlan, mask_stride
@@ -48,18 +49,6 @@ class RMSNorm(nn.Module):
         return out
 
 
-class VocabEmbedding(nn.Module):
-    def __init__(self, weight: torch.Tensor, quant: int = 0) -> None:
-        super().__init__()
-        self.weight, self.quant = weight, quant
-
-    def forward(self, input_ids: torch.Tensor, out: torch.Tensor) -> None:
-        if self.quant == 4:
-            ops.gather_embedding_q4_k(input_ids, self.weight, out)
-        else:
-            ops.gather_embedding(input_ids, self.weight, out)
-
-
 class ProjWeight:
     def __init__(self, which: ops.Dsv4Proj, n: int, k: int, rows: int) -> None:
         self.which, self.n, self.k, self.rows = which, n, k, rows
@@ -67,10 +56,10 @@ class ProjWeight:
         self.w = self.narrow = None
 
     @classmethod
-    def kquant(cls, which: ops.Dsv4Proj, fmt: int, quant: torch.Tensor, meta: torch.Tensor,
+    def kquant(cls, which: ops.Dsv4Proj, weight: ops.KQuantProjWeight,
                n: int, k: int) -> "ProjWeight":
         self = cls(which, n, k, n)
-        self.kq = ops.KQuantProjWeight(quant, meta, fmt)
+        self.kq = weight
         return self
 
     @classmethod

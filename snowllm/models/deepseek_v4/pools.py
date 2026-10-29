@@ -28,9 +28,6 @@ class IndexPool:
         rows = blocks * block_size
         self.k = tensor(slabs, (rows, dim), torch.bfloat16)
 
-    def _bytes(self, blocks: int) -> int:
-        return blocks * self.block_size * self.dim * 2
-
     def write(self, rows: torch.Tensor, slots: torch.Tensor) -> None:
         ops.copy_rows(self.k,rows,dst_index=slots)
 

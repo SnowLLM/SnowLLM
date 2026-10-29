@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from itertools import accumulate
 from typing import TYPE_CHECKING
 
 import torch
@@ -12,7 +11,7 @@ from .. import ops
 from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
 from .forward_context import i32, i64, positions
 from .request import Request
-from .spec_decode import SPEC_MAX_STEP_ROWS, DSparkScheduling, SpecDecoder, context_len
+from .spec_decode import SPEC_MAX_STEP_ROWS, DSparkScheduling, SpecDecoder
 
 if TYPE_CHECKING:
     from ..models.deepseek_v4.dspark import DSparkDraft
@@ -61,18 +60,9 @@ class DSparkDecoder(DSparkScheduling):
         T = self.verify_rows(n)
         return (1, T) if T >= 2 else (1,)
 
-    def rows_needed(self, rows: int) -> int:
-        return rows
-
     accept_hist: list = []
     _accept = SpecDecoder._accept
     _note_accept = SpecDecoder._note_accept
-
-    def release(self, r: Request) -> None:
-        self.blocks.release(r.draft_blocks)
-        r.draft_blocks = []
-        self.confidence.pop(r, None)
-        self.scheduler.reset()
 
     def capture(self, runner: "GraphRunner") -> list[int]:
         return []
@@ -90,17 +80,7 @@ class DSparkDecoder(DSparkScheduling):
         live = [i for i, r in enumerate(batch) if not r.done]
         if not live:
             return
-        bt = self._draft_table(batch)
-        rows, seqs, cpos, rpos = [], [], [], []
-        offsets = [0, *accumulate(lengths)]
-        for i, r in enumerate(batch):
-            first = r.num_cached - kept[i]
-            for t in range(kept[i]):
-                rows.append(offsets[i] + t)
-                seqs.append(i)
-                cpos.append(first + t)
-                rpos.append(first + t + r.pos_delta)
-        self._write_ctx(rows, seqs, cpos, rpos, bt)
+        bt = self._write_prefixes(batch, kept, lengths)
         self._block([batch[i] for i in live], ops.gather_rows(bt,i64(live)) if len(live) < len(batch) else bt)
 
     def after_prefill(self, r: Request, lo: int, hi: int, M: int, propose: bool) -> None:
@@ -114,16 +94,6 @@ class DSparkDecoder(DSparkScheduling):
                         [p + r.pos_delta for p in range(lo, hi)], bt)
         if propose and not r.done:
             self._block([r], bt)
-
-    def grow(self, r: Request, rows: int) -> bool:
-        need = (self.max_blocks_per_seq if self.windowed else
-                ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
-        while need > len(r.draft_blocks):
-            more = self.blocks.alloc(1)
-            if more is None:
-                return False
-            r.draft_blocks += more
-        return True
 
     def _block(self, batch: list[Request], bt: torch.Tensor) -> None:
         B, blk = len(batch), self.block
