@@ -3,6 +3,7 @@
 from pathlib import Path
 import contextlib
 import io
+import shlex
 import subprocess
 import sys
 import unittest
@@ -36,6 +37,70 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['max_gpu_mem_util'],defaults.max_gpu_mem_util)
         self.assertEqual(kw['prefix_memory_ratio'],defaults.prefix_memory_ratio)
         self.assertEqual(kw['device_map'],defaults.device_map)
+
+    @patch('snowllm.cli.sys.platform', 'linux')
+    def test_recipe_prints_equivalent_command_with_effective_options(self):
+        from snowllm.cli import parser
+        recipe = SimpleNamespace(id='local-flash', serve_as='Flash Next', defaults=dict(
+            max_model_len=409600, max_num_seqs=4, max_gpu_mem_util=.95,
+            dflash='@model/dflash2', dflash_block=4, dspark_adaptive=True))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-seqs', '2',
+                '--max-gpu-mem', '.92', '--no-dspark-adaptive', '--dflash-block', '8',
+                '--port', '9123', '--seed', '0', '--profile-dir', "/tmp/profile's directory",
+                '--served-model-name', 'custom name=2', '--served-model-name', 'second'), recipe)
+        command = shlex.split(output.getvalue().split('[snowllm] run ', 1)[1])
+        parsed = parser().parse_args(command[1:])
+        self.assertEqual(command[0], 'snowllm')
+        self.assertEqual(parsed.model, args[0])
+        self.assertEqual((parsed.max_model_len, parsed.max_num_seqs), (args[2], args[1]))
+        self.assertEqual(parsed.max_gpu_mem_util, kw['max_gpu_mem_util'])
+        self.assertEqual(parsed.max_num_batched_tokens, kw['prefill_chunk'])
+        self.assertEqual(parsed.prefix_memory_ratio, kw['prefix_memory_ratio'])
+        self.assertEqual(parsed.kv_cache_dtype, 'bf16')
+        self.assertEqual(parsed.dflash, str(Path(args[0]) / 'dflash2'))
+        self.assertEqual(parsed.dflash_block, kw['dflash_block'])
+        self.assertEqual(parsed.dspark_adaptive, kw['dspark_adaptive'])
+        self.assertIn('--no-dspark-adaptive', command)
+        self.assertEqual(parsed.served_model_name, ['custom name=2', 'second'])
+        self.assertEqual(parsed.profile_dir, kw['profile_dir'])
+        self.assertEqual((parsed.port, parsed.seed), (9123, 0))
+
+    @patch('snowllm.cli.sys.platform', 'linux')
+    def test_equivalent_command_preserves_capacity_bytes_and_recipe_alias(self):
+        from snowllm.capacity import MemoryBudget
+        from snowllm.cli import parser
+        recipe = SimpleNamespace(id='local', serve_as='Model name', defaults=dict(
+            num_spec=0, max_gpu_mem_gib=16, max_disk_mem_gib=8))
+        for value, expected in (('1B', 1), ('12.5GiB', 25 << 29), ('20GB', 20_000_000_000)):
+            with self.subTest(value=value):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.launch_options(('--max-gpu-mem', value, '--max-host-mem', value,
+                                         '--max-disk-offload', value), recipe)
+                command = shlex.split(output.getvalue().split('[snowllm] run ', 1)[1])
+                parsed = parser().parse_args(command[1:])
+                budget = MemoryBudget(**{k: v for k, v in vars(parsed).items()
+                                          if k.startswith('max_') and '_mem_' in k})
+                self.assertEqual(budget.gpu_limit(32 << 30), expected)
+                self.assertEqual(budget.host_limit(32 << 30), expected)
+                self.assertEqual(budget.disk_limit(), expected)
+                self.assertEqual(parsed.served_model_name, ['Model name'])
+                self.assertEqual(parsed.num_spec, 0)
+
+    @patch('snowllm.cli.sys.platform', 'linux')
+    def test_recipe_without_defaults_prints_equivalent_command(self):
+        from snowllm.cli import parser
+        recipe = SimpleNamespace(id='local', serve_as='Model', defaults={})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.launch_options(recipe=recipe)
+        command = shlex.split(output.getvalue().split('[snowllm] run ', 1)[1])
+        parsed = parser().parse_args(command[1:])
+        self.assertEqual(parsed.max_gpu_mem_util, .9)
+        self.assertEqual((parsed.max_model_len, parsed.max_num_seqs, parsed.max_num_batched_tokens),
+                         (409600, 4, 8192))
 
     def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
         from snowllm.capacity import memory_shortage

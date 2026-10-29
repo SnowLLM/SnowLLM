@@ -6,6 +6,8 @@ import json
 import os
 import pathlib
 import re
+import shlex
+import subprocess
 import sys
 import time
 
@@ -452,6 +454,46 @@ def parser() -> argparse.ArgumentParser:
     return p
 
 
+def _equivalent_command(p, a, model, recipe):
+    from .capacity import gibibytes
+
+    def capacity_arg(gib):
+        nbytes = gibibytes(gib) if gib else 0
+        return f'{nbytes / (1 << 30)}GiB' if nbytes % (1 << 20) == 0 else f'{nbytes}B'
+
+    values = vars(a).copy()
+    for pool in ('gpu', 'host'):
+        gib = values[f'max_{pool}_mem_gib']
+        values[f'max_{pool}_mem'] = (capacity_arg(gib) if gib is not None
+                                     else values[f'max_{pool}_mem_util'])
+    if values['max_gpu_mem'] is None:
+        values['max_gpu_mem'] = DEFAULT_GPU_UTIL
+    if values['max_disk_mem_gib'] is not None:
+        values['max_disk_mem_gib'] = capacity_arg(values['max_disk_mem_gib'])
+    if not values['served_model_name'] and recipe.serve_as:
+        values['served_model_name'] = [recipe.serve_as]
+    important = set(recipe.defaults) | {'max_model_len', 'max_num_seqs',
+        'max_num_batched_tokens', 'num_spec', 'kv_cache_dtype', 'prefix_memory_ratio'}
+    command = ['snowllm', str(pathlib.Path(model).resolve())]
+    for action in p._actions:
+        if not action.option_strings or action.dest in (
+                'model_flag', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
+            continue
+        value = values.get(action.dest)
+        if value is None or (value == action.default and action.dest not in important):
+            continue
+        flag = action.option_strings[0]
+        if isinstance(action, argparse.BooleanOptionalAction):
+            command.append(flag if value else '--no-' + flag[2:])
+        elif action.nargs == 0:
+            if value:
+                command.append(flag)
+        else:
+            for item in value if isinstance(value, list) else [value]:
+                command.extend((flag, str(item)))
+    return subprocess.list2cmdline(command) if sys.platform == 'win32' else shlex.join(command)
+
+
 def main() -> None:
     argv = sys.argv[1:]
     if argv and argv[0] in ("webui", "load", "unload", "status"):
@@ -529,22 +571,12 @@ def main() -> None:
             used.pop('host_alloc', None)
         for k, v in used.items():
             setattr(a, k, v)
-        if used:
-            shown = []
-            for k, v in sorted(used.items()):
-                if k.endswith(('_mem_util', '_mem_gib')):
-                    v = f'{v}GiB' if k.endswith('_gib') else v
-                    k = k.rsplit('_', 1)[0]
-                if k == 'max_disk_mem':
-                    k = 'max_disk_offload'
-                shown.append(f"--{k.replace('_', '-')} {v}")
-            print(f"{term.stamp()} {recipe.id} sets " +
-                  ", ".join(shown),
-                  flush=True)
 
     if a.max_model_len <= 0 or a.max_num_batched_tokens <= 0:
         p.error('context and prefill chunk must be positive')
     check_allocation()
+    if recipe:
+        print(f'{term.stamp()} run {_equivalent_command(p, a, model, recipe)}', flush=True)
 
     import uvicorn
     from .serve.api import app
