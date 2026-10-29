@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 const source = await readFile(new URL('../snowllm/daemon/static/stream.js', import.meta.url), 'utf8');
 const { parseOptions, readEvents } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
@@ -30,4 +31,35 @@ test('malformed events fail visibly and close the stream', async () => {
   const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('data: invalid\n\n')); }, cancel() { canceled = true; } });
   await assert.rejects(readEvents(stream, () => {}), SyntaxError);
   assert.equal(canceled, true);
+});
+
+test('switching to bundled recipes completes while the server is pending and ignores its late response', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const refresh = app.slice(app.indexOf('async function refreshCatalog('), app.indexOf('function renderRecipeOptions('));
+  const elements = new Map(['refresh-recipes', 'load-recipe', 'catalog-error', 'local-list'].map(id => [id, { value: '', disabled: false }]));
+  const requests = [];
+  let finishServer;
+  const server = new Promise(resolve => { finishServer = resolve; });
+  const context = vm.createContext({
+    $: id => elements.get(id),
+    api: async path => {
+      requests.push(path);
+      if (path === '/daemon/local-models') return { models: [] };
+      if (path.includes('bundle=true')) return { recipes: [{ id: 'b/bundled' }] };
+      return server;
+    },
+    renderRecipeOptions() {}, renderRecipes() {}, recipeDescription() {}, renderLocal() {},
+  });
+  vm.runInContext(`let catalogLoading = false, catalogRequest = 0, bundleCatalog = false;
+    let status = {models_dir: '/models'}, recipes = [], localModels = [];
+    ${refresh}`, context);
+  const pending = vm.runInContext('refreshCatalog(false)', context);
+  await vm.runInContext('bundleCatalog = true; refreshCatalog(false, true)', context);
+  assert.equal(vm.runInContext('recipes[0].id', context), 'b/bundled');
+  assert.equal(elements.get('refresh-recipes').disabled, false);
+  finishServer({ recipes: [{ id: 'server' }] });
+  await pending;
+  assert.equal(vm.runInContext('recipes[0].id', context), 'b/bundled');
+  assert.ok(requests.includes('/daemon/recipes?refresh=false&bundle=false'));
+  assert.ok(requests.includes('/daemon/recipes?refresh=false&bundle=true'));
 });

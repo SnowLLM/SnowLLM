@@ -7,6 +7,12 @@ snowllm recipes                      # what there is
 snowllm pull qwen3.6-35b-a3b-fp8     # or just `snowllm pull`, and pick from the list
 ```
 
+默认使用服务器上的配方目录。`snowllm recipes --bundle` 查看随当前 wheel
+发布的内置配方；`snowllm pull --bundle RECIPE` 和 `snowllm --bundle RECIPE`
+使用内置配方，也可写成 `snowllm pull b/RECIPE` 和 `snowllm b/RECIPE`。
+内置的是配方定义，下载模型时仍会获取模型文件。在 WebUI 的概览或模型页面，
+将「配方来源」切换为「内置」即可。
+
 - 多连接并行下载，支持断点续传。
 - 仓库或目录提供摘要时，校验文件的 SHA-256。
 - 如果方案要求更新的 SnowLLM，仍可下载，并会提示所需版本。

@@ -48,6 +48,9 @@ readme = { file = ["README.md", "CHANGELOG.md"], content-type = "text/markdown" 
 where = ["."]
 include = ["snowllm*"]
 
+[tool.setuptools.cmdclass]
+build_py = "snowllm._build.BundleRecipes"
+
 [tool.setuptools.package-data]
 "snowllm.models.deepseek_v4" = ["LICENSE-DeepSeek.txt"]
 "snowllm.daemon" = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/locales/*.json"]

@@ -31,7 +31,7 @@ class ModelPath(BaseModel):
 
 
 class Pull(BaseModel):
-    recipe: str = Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    recipe: str = Field(min_length=1, pattern=r"^(?:b/)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def storage_bytes(path):
@@ -80,16 +80,16 @@ def create_app(manager: DaemonManager):
     app.mount("/ui", StaticFiles(directory=assets), name="ui")
 
     @app.get("/daemon/recipes")
-    async def catalogue(refresh: bool = False):
+    async def catalogue(refresh: bool = False, bundle: bool = False):
         from ..hub import recipes
         from ..errors import SnowLLMError
 
         def inventory():
             root = Path(manager.models_dir)
             rows = []
-            for recipe in recipes.catalogue(url=manager.status()["recipes_url"], refresh=refresh):
+            for recipe in recipes.catalogue(url=manager.status()["recipes_url"], refresh=refresh, bundle=bundle):
                 path = recipe.path(root)
-                rows.append({**recipe.raw, "path": str(path), "servable": recipe.servable,
+                rows.append({**recipe.raw, "id": recipe.ref, "path": str(path), "servable": recipe.servable,
                              "loadable": recipes.loadable(path),
                              "downloaded": (path / recipes.MANIFEST).is_file(),
                              "exists": path.is_dir()})

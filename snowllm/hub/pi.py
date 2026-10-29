@@ -35,13 +35,15 @@ def main(cmd: str, argv: list[str]) -> int:
                         f"or $SNOWLLM_RECIPES_URL). A path works too.")
     p.add_argument("--refresh", action="store_true",
                    help="refetch the catalogue instead of reusing the cached copy")
+    p.add_argument("--bundle", action="store_true",
+                   help="use recipes bundled with this wheel")
     p.add_argument("--api", choices=("openai-completions", "openai-responses"),
                    default="openai-responses",
                    help="Pi wire API for the endpoint (default: openai-responses)")
     a = p.parse_args(argv)
 
     try:
-        known = recipes.catalogue(a.catalogue, a.refresh)
+        known = recipes.catalogue(a.catalogue, a.refresh, bundle=a.bundle)
     except SnowLLMError as e:
         print(f"snowllm {cmd}: {e}", file=sys.stderr)
         return 1

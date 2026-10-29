@@ -41,7 +41,7 @@ class PiTests(unittest.TestCase):
             dict(id='qwen-alternative', repo='test/qwen-alternative', serve_as='Qwen3.8-Flash-Next'),
             dict(id='directory-model', repo='test/directory')])
         self.assertEqual(code, 0, error)
-        self.assertEqual(error, '')
+        self.assertIn(recipes.BUNDLE_HELP, error.splitlines()[0])
         provider = data['providers']['snowllm']
         self.assertEqual(provider['baseUrl'], 'http://localhost:8000/v1')
         self.assertEqual(provider['api'], 'openai-responses')
@@ -76,6 +76,11 @@ class PiTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(data, existing)
         self.assertIn('the catalogue names no model to serve', error)
+
+    def test_bundle_uses_packaged_recipes_instead_of_the_override(self):
+        code, data, error = self.configure([], ('--bundle',))
+        self.assertEqual(code, 0, error)
+        self.assertTrue(data['providers']['snowllm']['models'])
 
 
 if __name__ == '__main__':

@@ -216,6 +216,27 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("data: [DONE]", response.text)
             self.assertEqual(self.manager.active, 0)
 
+    async def test_bundle_catalogue_references_survive_download_and_load(self):
+        from snowllm.hub import recipes
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
+                                     base_url="http://127.0.0.1") as client:
+            with patch.object(recipes, '_fetch_json', side_effect=AssertionError('network')):
+                response = await client.get('/daemon/recipes?bundle=true&refresh=true')
+            self.assertEqual(response.status_code, 200, response.text)
+            rows = response.json()['recipes']
+            self.assertTrue(rows)
+            self.assertTrue(all(row['id'].startswith('b/') for row in rows))
+            ref = next(row['id'] for row in rows if row['servable'])
+            with patch.object(self.manager, 'pull', return_value={}) as pull:
+                self.assertEqual((await client.post('/daemon/pull', json={'recipe': ref})).status_code, 200)
+                pull.assert_called_once_with(ref)
+            with patch.object(self.manager, 'spawn', side_effect=self.spawn) as spawn:
+                self.assertEqual((await client.post('/daemon/load', json={'model': ref})).status_code, 200)
+                await self.manager.task
+                self.assertEqual(spawn.call_args.args[0][0], ref)
+            for invalid in ('b/../model', 'b/b/model', '../model'):
+                self.assertEqual((await client.post('/daemon/pull', json={'recipe': invalid})).status_code, 422)
+
     async def test_update_notes_are_exposed_only_on_the_management_listener(self):
         self.manager.update.latest = "99.0.0"
         self.manager.update.changelog = "# Changelog\n\n- Example / 示例。"

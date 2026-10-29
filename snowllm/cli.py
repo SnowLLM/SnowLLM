@@ -362,6 +362,8 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("model", nargs="?", metavar="PATH", default=argparse.SUPPRESS,
                    help='Checkpoint directory or downloaded recipe.')
     g.add_argument("--model", dest="model_flag", metavar="PATH", help=argparse.SUPPRESS)
+    g.add_argument("--bundle", action="store_true",
+                   help="Use recipes bundled with this wheel (also available as b/RECIPE).")
     g.add_argument("--host", default="127.0.0.1", help="API listener address.")
     g.add_argument("--port", type=int, default=8000, help="API listener port.")
     g.add_argument("--served-model-name", action="append", metavar="NAME=FACTOR",
@@ -477,7 +479,7 @@ def _equivalent_command(p, a, model, recipe):
     command = ['snowllm', str(pathlib.Path(model).resolve())]
     for action in p._actions:
         if not action.option_strings or action.dest in (
-                'model_flag', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
+                'model_flag', 'bundle', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
             continue
         value = values.get(action.dest)
         if value is None or (value == action.default and action.dest not in important):
@@ -535,7 +537,7 @@ def main() -> None:
 
     from .hub import recipes
     try:
-        found, recipe = recipes.locate(model)
+        found, recipe = recipes.locate(model, bundle=a.bundle)
         model = str(found)
     except SnowLLMError as e:
         p.exit(2, f"{term.paint('snowllm:', term.BOLD, term.RED, stream=sys.stderr)} {e}\n")

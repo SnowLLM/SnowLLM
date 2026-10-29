@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
@@ -99,6 +100,9 @@ class PublicWheelInputTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'snowllm').mkdir()
         (self.root / 'snowllm/__init__.py').write_text('VALUE = 1\n')
+        (self.root / 'recipes').mkdir()
+        (self.root / 'recipes/example.json').write_text('{"id": "example", "repo": "a/b"}\n')
+        (self.root / 'MANIFEST.in').write_text('recursive-include recipes *.json\n')
         (self.root / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/build-wheel.sh', self.root / 'scripts/build-wheel.sh')
         (self.root / 'README.md').write_text('# Test package\n')
@@ -162,6 +166,57 @@ class PublicWheelInputTests(unittest.TestCase):
         result = self.build()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('uncommitted changes or untracked files', result.stderr)
+
+    def test_modified_recipe_blocks_build(self):
+        (self.root / 'recipes/example.json').write_text('{"id": "changed", "repo": "a/b"}\n')
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('uncommitted changes or untracked files', result.stderr)
+
+
+class BundledRecipeWheelTests(unittest.TestCase):
+    def test_wheel_and_sdist_include_recipes_readable_without_the_source_tree(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            source = base / 'source'
+            shutil.copytree(ROOT / 'snowllm', source / 'snowllm',
+                            ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+            shutil.copytree(ROOT / 'recipes', source / 'recipes')
+            for name in ('pyproject.toml', 'MANIFEST.in', 'README.md', 'CHANGELOG.md', 'LICENSE'):
+                shutil.copyfile(ROOT / name, source / name)
+            expected = {path.name: json.loads(path.read_text()) for path in (source / 'recipes').glob('*.json')}
+            result = subprocess.run([sys.executable, '-c',
+                'from setuptools.build_meta import build_sdist; build_sdist("sdist")'],
+                cwd=source, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            sdist, = (source / 'sdist').glob('*.tar.gz')
+            for label, target in (('direct', source), ('sdist', sdist)):
+                with self.subTest(build=label):
+                    wheels = base / label
+                    result = subprocess.run([sys.executable, '-m', 'pip', 'wheel', str(target),
+                        '--no-deps', '--no-build-isolation', '-w', str(wheels)],
+                        cwd=base, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    wheel, = wheels.glob('snowllm-*.whl')
+                    with zipfile.ZipFile(wheel) as archive:
+                        actual = {Path(name).name: json.loads(archive.read(name)) for name in archive.namelist()
+                                  if name.startswith('snowllm/hub/bundle/') and name.endswith('.json')}
+                        self.assertEqual(actual, expected)
+                        installed = wheels / 'installed'
+                        archive.extractall(installed)
+                    code = '''
+import json, sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+from snowllm.hub import recipes
+with patch.object(recipes, 'recipes_source', side_effect=AssertionError('server config')):
+    print(json.dumps([r.raw for r in recipes.catalogue(bundle=True)]))
+'''
+                    result = subprocess.run([sys.executable, '-I', '-c', code, str(installed)],
+                                            cwd=base, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual({r['id'] for r in json.loads(result.stdout)},
+                                     {r['id'] for r in expected.values()})
 
 
 if __name__ == '__main__':

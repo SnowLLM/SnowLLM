@@ -416,6 +416,19 @@ main()
                     self.assertNotIn('--gpu-memory-utilization', result.stdout)
                     self.assertIn('--dflash', result.stdout)
 
+    def test_bundle_flag_and_prefix_resolve_without_gpu_or_server_catalogue(self):
+        from snowllm.hub import recipes
+        with contextlib.redirect_stderr(io.StringIO()):
+            entry = next(r for r in recipes.catalogue(bundle=True) if r.servable)
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {
+                'SNOWLLM_MODELS': root, 'SNOWLLM_RECIPES_URL': str(Path(root) / 'missing.json')}):
+            for args in (('--bundle', entry.id), (entry.ref,)):
+                with self.subTest(args=args):
+                    result = self.run_cli(*args)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn(recipes.BUNDLE_HELP, result.stderr.splitlines()[0])
+                    self.assertIn(f'snowllm pull {entry.ref}', result.stderr)
+
     def test_model_help_without_gpu(self):
         result = self.run_cli('MODEL', '--help')
         self.assertEqual(result.returncode, 0, result.stderr)

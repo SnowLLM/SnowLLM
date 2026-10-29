@@ -7,6 +7,12 @@ snowllm recipes                      # what there is
 snowllm pull qwen3.6-35b-a3b-fp8     # or just `snowllm pull`, and pick from the list
 ```
 
+The catalogue comes from the server by default. Use `snowllm recipes --bundle` to
+view recipes shipped with the installed wheel. `snowllm pull --bundle RECIPE`
+and `snowllm --bundle RECIPE` use that bundled catalogue, as do
+`snowllm pull b/RECIPE` and `snowllm b/RECIPE`. Only the recipe definitions are
+bundled; pulling still downloads model files. In the WebUI, select **Bundled** under **Recipe source** on Overview or Models.
+
 - Fetches over several connections at once, and resumes where it stopped
 - Verifies SHA-256 for files whose repository or catalogue provides a digest
 - A recipe that wants a newer snowllm downloads anyway and says which version it wants

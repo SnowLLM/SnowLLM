@@ -321,7 +321,8 @@ class DaemonManager:
                     active = self.model if Path(self.model).is_absolute() else str(root / self.model)
                     from ..hub import recipes
                     try:
-                        match = next((r for r in recipes.catalogue(url=self.status()["recipes_url"]) if r.id == self.model), None)
+                        match = next((r for r in recipes.catalogue(url=self.status()["recipes_url"],
+                            bundle=self.model.startswith("b/")) if r.ref == self.model), None)
                         if match:
                             active = str(match.path(root))
                     except Exception:

@@ -25,6 +25,7 @@
 .recipe-card h3{font-weight:500}.recipe-card.local h3{font-weight:750}
 
 #load-recipe option{font-weight:400}#load-recipe option.local,#load-recipe.local-selected{font-weight:750}
+.catalog-source{max-width:420px;margin-bottom:22px}.catalog-source label{margin-top:0}
 
 #update-notice summary{cursor:pointer;font-weight:600}.update-changelog{white-space:pre-wrap;font:inherit;line-height:1.7;overflow-wrap:anywhere;margin:14px 0}
 

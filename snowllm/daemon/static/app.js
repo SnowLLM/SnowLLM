@@ -7,8 +7,10 @@ const $ = (id) => document.getElementById(id);
 const stateLabels = () => ({ idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
 let savedRecipesUrl, savedLibraryPath;
 let status = null, recipes = [], localModels = [], source = 'recipe', page = 'workspace';
+let bundleCatalog = false;
 let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
 let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit = null;
+let catalogRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
 let preferredThinkingLevel = '';
@@ -271,13 +273,15 @@ async function showLogs(kind) {
   await refreshLogs();
   $('logs').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
-async function refreshCatalog(refresh) {
-  if (catalogLoading) return;
+async function refreshCatalog(refresh, sourceChanged = false) {
+  if (catalogLoading && !sourceChanged) return;
+  const request = ++catalogRequest;
   catalogLoading = true; $('refresh-recipes').disabled = true;
   const selected = $('load-recipe').value;
   const root = status?.models_dir;
   try {
-    const [catalog, local] = await Promise.allSettled([api(`/daemon/recipes?refresh=${refresh}`), api('/daemon/local-models')]);
+    const [catalog, local] = await Promise.allSettled([api(`/daemon/recipes?refresh=${refresh}&bundle=${bundleCatalog}`), api('/daemon/local-models')]);
+    if (request !== catalogRequest) return;
     if (root !== status?.models_dir) return;
     if (catalog.status === 'fulfilled') {
       recipes = catalog.value.recipes; $('catalog-error').hidden = true;
@@ -290,8 +294,10 @@ async function refreshCatalog(refresh) {
     if (local.status === 'fulfilled') { localModels = local.value.models; renderLocal(); }
     else $('local-list').replaceChildren(element('p', 'muted', local.reason.message));
   } finally {
-    catalogLoading = false; $('refresh-recipes').disabled = false;
-    if (root !== status?.models_dir) refreshCatalog(false);
+    if (request === catalogRequest) {
+      catalogLoading = false; $('refresh-recipes').disabled = false;
+      if (root !== status?.models_dir) refreshCatalog(false);
+    }
   }
 }
 function renderRecipeOptions(selected = $('load-recipe').value) {
@@ -522,6 +528,12 @@ $('local-model').addEventListener('change', () => { if ($('local-model').value) 
 $('model-search').addEventListener('input', renderRecipes); $('installed-only').addEventListener('change', renderRecipes);
 $('refresh-state').addEventListener('click', () => action($('refresh-state'), refreshStatus));
 $('refresh-recipes').addEventListener('click', () => refreshCatalog(true));
+document.querySelectorAll('[data-catalog-source]').forEach(select => select.addEventListener('change', () => {
+  bundleCatalog = select.value === 'bundle';
+  document.querySelectorAll('[data-catalog-source]').forEach(control => { control.value = select.value; });
+  recipes = []; renderRecipeOptions(); renderRecipes(); recipeDescription(); restoreLoadSettings();
+  refreshCatalog(false, true);
+}));
 $('refresh-logs').addEventListener('click', () => action($('refresh-logs'), refreshLogs)); $('log-kind').addEventListener('change', () => refreshLogs().catch(error => toast(error.message)));
 $('adjust-load-settings').addEventListener('click', () => {
   location.hash = 'workspace';

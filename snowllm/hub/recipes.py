@@ -28,6 +28,8 @@ from ..config import DEFAULT_RECIPES_URL
 
 CATALOGUE_URL = DEFAULT_RECIPES_URL
 CATALOGUE_TTL = 3600.0
+BUNDLE_HELP = ("To view recipes bundled with this wheel, use `snowllm recipes --bundle`; "
+               "use `b/RECIPE` to pull or run a bundled recipe.")
 DEFAULT_CONTEXT = DEFAULT_CONTEXT_TARGET
 DEFAULT_SLOTS = DEFAULT_MAX_NUM_SEQS
 SCHEMA = 2
@@ -96,8 +98,9 @@ class Source:
 
 
 class Recipe:
-    def __init__(self, raw: dict) -> None:
+    def __init__(self, raw: dict, *, bundle: bool = False) -> None:
         self.raw = raw
+        self.bundle = bundle
         self.id = raw["id"]
         self.serve_as = raw.get("serve_as", "")
         self.model = raw.get("model", self.id)
@@ -144,6 +147,10 @@ class Recipe:
         self.revision = self.sources[0].revision if self.sources else "main"
         if "/" in self.dir or self.dir in ("", ".", ".."):
             raise SnowLLMError(f"recipe {self.id!r} has an unusable dir {self.dir!r}")
+
+    @property
+    def ref(self) -> str:
+        return f"b/{self.id}" if self.bundle else self.id
 
     @property
     def servable(self) -> bool:
@@ -208,7 +215,20 @@ def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
     return out
 
 
-def catalogue(url: str | None = None, refresh: bool = False) -> list[Recipe]:
+def catalogue(url: str | None = None, refresh: bool = False, *, bundle: bool = False) -> list[Recipe]:
+    print(f"{term.stamp()} {BUNDLE_HELP}", file=sys.stderr, flush=True)
+    if bundle:
+        directory = pathlib.Path(__file__).with_name("bundle")
+        if not directory.is_dir():
+            directory = pathlib.Path(__file__).resolve().parents[2] / "recipes"
+        try:
+            entries = [json.loads(path.read_text(encoding="utf-8"))
+                       for path in sorted(directory.glob("*.json"))]
+        except (OSError, ValueError) as exc:
+            raise SnowLLMError(f"bundled recipes: {exc}") from exc
+        if not entries:
+            raise SnowLLMError("no bundled recipes found; reinstall snowllm")
+        return _catalogue({"recipes": entries}, "bundled recipes", bundle=True)
     try:
         url = recipes_source(override=url)[0]
     except (OSError, ValueError) as exc:
@@ -248,11 +268,15 @@ def catalogue(url: str | None = None, refresh: bool = False) -> list[Recipe]:
         except (OSError, ValueError) as e:
             raise SnowLLMError(f"{url}: {e}") from e
 
+    return _catalogue(raw, url)
+
+
+def _catalogue(raw: dict, url: str, *, bundle: bool = False) -> list[Recipe]:
     if int(raw.get("schema", 0)) > SCHEMA:
         raise SnowLLMError(
             f"{url} is schema {raw['schema']}, this snowllm understands {SCHEMA}. "
             f"Upgrade: pip install --upgrade snowllm")
-    out = [Recipe(r) for r in raw.get("recipes", [])]
+    out = [Recipe(r, bundle=bundle) for r in raw.get("recipes", [])]
     seen = {r.id for r in out}
     if len(seen) != len(out):
         raise SnowLLMError(f"{url} lists the same recipe id twice")
@@ -260,8 +284,11 @@ def catalogue(url: str | None = None, refresh: bool = False) -> list[Recipe]:
 
 
 def find(name: str, recipes: list[Recipe]) -> Recipe:
+    if name.startswith("b/"):
+        recipes = [r for r in recipes if r.bundle]
+        name = name[2:]
     for r in recipes:
-        if r.id == name:
+        if name in (r.id, r.ref):
             return r
     near = [r.id for r in recipes if name.lower() in r.id.lower()]
     if len(near) == 1:
@@ -470,7 +497,7 @@ def _rows(recipes: list[Recipe], root: pathlib.Path) -> list[tuple[str, ...]]:
     rows = [("RECIPE", "PRECISION", "SIZE", "CONTEXT", "SLOTS", "SPEC", "STATUS", "LOCAL COPY",
              "DIRECTORY")]
     for r in recipes:
-        rows.append((r.id, r.precision, human(r.bytes) if r.bytes else "-",
+        rows.append((r.ref, r.precision, human(r.bytes) if r.bytes else "-",
                      str(r.defaults.get("max_model_len", DEFAULT_CONTEXT)),
                      str(r.defaults.get("max_num_seqs", DEFAULT_SLOTS)), r.spec or "-",
                      r.state, _on_disk(r, root), _where(r, root)))
@@ -499,10 +526,10 @@ def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout)
     if picks:
         print(term.paint("Recommended:", term.BOLD, stream=stream), file=stream)
         for use, got in picks:
-            names = " or ".join(term.paint(r.id, term.BOLD, stream=stream) for r in got)
+            names = " or ".join(term.paint(r.ref, term.BOLD, stream=stream) for r in got)
             print(f"  {names} for {use}", file=stream)
         print(file=stream)
-    recommended = {r.id for _, got in picks for r in got}
+    recommended = {r.ref for _, got in picks for r in got}
     rows = _rows(book, root)
     width = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     head, *rest = rows
@@ -519,7 +546,7 @@ def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
         here = "  (already downloaded)" if installed(r, root) else ""
         size = human(r.bytes) if r.bytes else "?"
         flag = "" if r.servable else f"  [{r.state}]"
-        print(f"  {i:2d})  {r.id:<32} {size:>9}{flag}{here}")
+        print(f"  {i:2d})  {r.ref:<32} {size:>9}{flag}{here}")
         if r.summary:
             print(f"       {r.summary}")
     try:
@@ -530,6 +557,8 @@ def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
         raise SnowLLMError("nothing chosen")
     if answer.isdigit() and 1 <= int(answer) <= len(recipes):
         return recipes[int(answer) - 1]
+    if answer.startswith("b/"):
+        return find(answer, catalogue(bundle=True))
     return find(answer, recipes)
 
 
@@ -544,6 +573,8 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
     p.add_argument("--refresh", action="store_true",
                    help=f"refetch the catalogue instead of reusing the copy cached for "
                         f"{CATALOGUE_TTL / 60:.0f} minutes")
+    p.add_argument("--bundle", action="store_true",
+                   help="use recipes bundled with this wheel instead of fetching the catalogue")
     p.add_argument("--models-dir", metavar="DIR", default=None,
                    help="where checkpoints live (otherwise $SNOWLLM_MODELS, JSON config, or ~/models)")
     if cmd == "recipes":
@@ -574,7 +605,9 @@ def main(cmd: str, argv: list[str]) -> int:
     a = _parser(cmd).parse_args(argv)
     try:
         root = pathlib.Path(a.models_dir).expanduser() if a.models_dir else models_root()
-        recipes = catalogue(a.catalogue, a.refresh)
+        name = getattr(a, "recipe", None)
+        bundle = a.bundle or bool(name and name.startswith("b/"))
+        recipes = catalogue(a.catalogue, a.refresh, bundle=bundle)
         if not recipes:
             raise SnowLLMError("the catalogue is empty")
         if cmd == "recipes":
@@ -585,7 +618,7 @@ def main(cmd: str, argv: list[str]) -> int:
                 show(recipes, root)
             return 0
 
-        recipe = find(a.recipe, recipes) if a.recipe else choose(recipes, root)
+        recipe = find(name, recipes) if name else choose(recipes, root)
         dest = pathlib.Path(a.dir).expanduser() if a.dir else recipe.path(root)
         if not recipe.servable and not a.dry_run:
             print(f"{term.stamp()} {why(recipe)}\n{term.stamp()} the weights download either way.",
@@ -593,7 +626,7 @@ def main(cmd: str, argv: list[str]) -> int:
         pull(recipe, dest, jobs=a.jobs, verify=not a.no_verify, force=a.force,
              dry_run=a.dry_run)
         if recipe.servable and not a.dry_run:
-            print(f"{term.stamp()} serve it: snowllm {recipe.id}")
+            print(f"{term.stamp()} serve it: snowllm {recipe.ref}")
         return 0
     except KeyboardInterrupt:
         print("\n[snowllm] stopped. The same command picks up where this left off.",
@@ -608,15 +641,20 @@ def checkpoint(name: str) -> pathlib.Path:
     return locate(name)[0]
 
 
-def locate(name: str) -> tuple[pathlib.Path, "Recipe | None"]:
+def locate(name: str, *, bundle: bool = False) -> tuple[pathlib.Path, "Recipe | None"]:
+    if name.startswith("b/"):
+        bundle = True
+        name = name[2:]
+    else:
+        here = pathlib.Path(name).expanduser()
+        if here.is_dir():
+            return here, None
     here = pathlib.Path(name).expanduser()
-    if here.is_dir():
-        return here, None
     if os.sep in name or name.startswith("~"):
         raise SnowLLMError(f"no checkpoint directory at {here}")
 
     root = models_root()
-    recipe = find(name, catalogue())
+    recipe = find(name, catalogue(bundle=bundle))
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
     dest = installed(recipe, root)
@@ -625,8 +663,8 @@ def locate(name: str) -> tuple[pathlib.Path, "Recipe | None"]:
             short = shortfall(recipe, dest)
             size = f" and is {human(short)} short" if short else ""
             print(f"{term.stamp()} {dest} is an incomplete copy of {recipe.id}{size}; "
-                  f"`snowllm pull {recipe.id}` fetches the rest", file=sys.stderr)
+                  f"`snowllm pull {recipe.ref}` fetches the rest", file=sys.stderr)
         return dest, recipe
     dest = recipe.path(root)
     raise SnowLLMError(f"{recipe.id} is not in {dest}. "
-                       f"Run `snowllm pull {recipe.id}` to download it.")
+                       f"Run `snowllm pull {recipe.ref}` to download it.")
