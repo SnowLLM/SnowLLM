@@ -3,6 +3,9 @@
 
 from ._version import __version__
 from .errors import SnowLLMError
+from ._rocm import configure_kpack_search as _configure_kpack_search
+
+_configure_kpack_search()
 
 __all__ = ["ABI_VERSION", "ModelGeometry", "SnowLLMError", "__version__", "synchronize"]
 
