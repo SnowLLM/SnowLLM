@@ -94,4 +94,4 @@ export SNOWLLM_MODELS='D:\models'
 
 ## 9. Windows 出现 malloc 或 GPU 内存分配失败怎么办？ {#_9-why-does-windows-report-malloc-or-gpu-allocation-failures}
 
-先检查系统提交内存和分页文件容量，设置步骤见 [Windows 分页文件](./guides/windows-pagefile)。
+先检查 BIOS UMA 划分、系统提交内存和分页文件容量，设置步骤见 [Windows 额外设置](./guides/windows-pagefile)。

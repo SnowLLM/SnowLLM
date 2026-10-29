@@ -70,7 +70,7 @@ python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "tor
 python -m pip install snowllm snowllm-kernels
 ```
 
-遇到内存分配失败时，先检查 [Windows 分页文件](../guides/windows-pagefile)配置。
+原生 Windows 用户请注意 [Windows 额外设置](../guides/windows-pagefile#bios-uma)，包括 BIOS UMA 划分和分页文件。普通 APU 可以通过增大 UMA，提高推理引擎可用的内存容量。
 
 如果在 Windows 上使用 WSL2，请在 WSL2 内按照上面的 Linux / WSL2 步骤安装。
 

@@ -905,4 +905,4 @@ html:lang(zh-CN) .lede em { display: block; }
 html:lang(zh-CN) .eyebrow { letter-spacing: .06em; }
 
   .home #webui { padding-top: 2.75rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--hair); }
-  .webui-tagline { font-size: 1.75rem; line-height: 1.35; margin: 0 0 1rem; font-weight: 600; }
+  .webui-tagline { font-size: var(--fs-h3); line-height: var(--lh-heading); margin: 0 0 1rem; font-weight: 600; }

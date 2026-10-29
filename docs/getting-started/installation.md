@@ -72,7 +72,7 @@ python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "tor
 python -m pip install snowllm snowllm-kernels
 ```
 
-If memory allocation fails, check the [Windows page file](../guides/windows-pagefile) configuration.
+Native Windows users should note the [Windows additional settings](../guides/windows-pagefile#bios-uma), including BIOS UMA allocation and the page file. On ordinary APUs, increasing UMA can make more memory available to inference.
 
 If you are using WSL2 on a Windows machine, follow the Linux / WSL2 instructions above inside WSL2 instead.
 

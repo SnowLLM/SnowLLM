@@ -1,34 +1,38 @@
-# Windows 分页文件 {#windows-page-file}
+# Windows 额外设置 {#windows-page-file}
 
-在 Windows 上加载模型时，如果出现“页面文件太小”或内存分配失败，可以先检查分页文件；容量不足时，即使显存仍有余量，也可能无法分配内存。
+## 分页文件 {#page-file}
 
-## 应该设置多大？ {#choose-the-size}
+<span id="choose-the-size"></span>
 
-我们推荐将**虚拟内存（分页文件）的大小设置为与物理内存容量相同**，初始大小和最大值填写相同数值。例如，物理内存为 128 GiB 时，两项均填写 `131072` MB。
+建议将分页文件的初始大小和最大值都设为整机物理内存容量：32G 填 `32768` MB，128G 填 `131072` MB。
 
-所选磁盘需要有足够空间容纳这份文件。
+<span id="configure-windows-11"></span>
 
-## Windows 11 设置步骤 {#configure-windows-11}
+1. 按 **Win + R**，输入 `sysdm.cpl`。
+2. 打开“**高级 → 性能设置 → 高级 → 虚拟内存 → 更改**”。
+3. 取消自动管理，选择空间充足的磁盘，填写自定义大小，点击“**设置**”。
+4. 确认并重启 Windows。
 
-1. 按 **Win + R**，输入 `sysdm.cpl`，打开“**高级**”选项卡。
-2. 依次打开“**性能 → 设置 → 高级 → 虚拟内存 → 更改**”。
-3. 取消“**自动管理所有驱动器的分页文件大小**”，选择空间充足的磁盘，选中“**自定义大小**”。
-4. 将初始大小和最大值都设为物理内存容量，点击“**设置**”。
-5. 确认各对话框，**重启 Windows**，再重新加载模型。
+<span id="verify-after-restarting"></span>
 
-## 重启后如何确认？ {#verify-after-restarting}
+重启后，在“**任务管理器 → 性能 → 内存 → 已提交**”检查额度。分页文件可缓解提交额度不足，但不会增加物理显存。参见[微软说明](https://learn.microsoft.com/zh-cn/troubleshoot/windows-client/performance/introduction-to-the-page-file)。
 
-加载模型时，查看“**任务管理器 → 性能 → 内存 → 已提交**”。左侧是已用额度，右侧是上限；若左侧接近右侧，可继续增大分页文件或关闭其他程序。提交额度仍充足时，继续检查[内存预算](./memory-management)。
+## BIOS UMA 设置 {#bios-uma}
 
-<details>
-<summary>可选：用 PowerShell 查看实际分页文件容量</summary>
+**非 Ryzen AI Max+ 395 / 495 平台需要留意此项。** 显存不足时，将 UMA 调到厂商允许的最大值。常见 BIOS 路径为：
 
-```powershell
-Get-CimInstance Win32_PageFileUsage | Select-Object Name, AllocatedBaseSize
+**Advanced → AMD CBS → NBIO Common Options → GFX Configuration → UMA Frame Buffer Size**
+
+部分 BIOS 需先将 `UMA Mode` 或 `iGPU Configuration` 设为 `UMA_SPECIFIED` 才能调整。菜单因厂商而异，参见[厂商示例](https://www.asrock.com/support/faq.asp?id=464)。保存后重启。
+
+任务管理器显示的**专用 GPU 内存**对应 UMA，**共享 GPU 内存**通常约为扣除 UMA 后剩余内存的一半，具体取决于厂商和驱动：
+
+```text
+推理可用显存上限 ≈ 专用内存（UMA）+ 共享内存
 ```
 
-`AllocatedBaseSize` 是实际已分配容量，单位为 MB；有多个文件时将各行相加。
+普通 APU 通常最多能把 **50%** 的内存分给 UMA，GPU 还能使用剩余内存的一半，合计约 **75%**。
 
-分页文件用于扩大系统提交额度；自动扩容也可能来不及响应大块分配，参见微软的[分页文件说明](https://learn.microsoft.com/zh-cn/troubleshoot/windows-client/performance/introduction-to-the-page-file)和[自动扩容导致分配失败的说明](https://learn.microsoft.com/zh-cn/troubleshoot/windows-client/performance/slow-page-file-growth-memory-allocation-errors)。
+AI Max+ 395 / 495 支持更高的 UMA 比例；如果出厂已设为 **75%**，一般不用调整。具体以厂商设置为准。
 
-</details>
+我们的 **7940HS / Radeon 780M、32G 内存**将 UMA 设为最大值 **16G**：剩余 16G 的一半约为 **8G 共享内存**，合计 **16 + 8 = 24G**。测试使用的 **MiniCPM-V 4.7 35B-A3B Q3（`mix_q3gud_im`）需要准备约 24G 推理显存预算**，具体占用随上下文等配置变化。实际可用量以任务管理器和引擎报告为准。

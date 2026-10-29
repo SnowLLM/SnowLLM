@@ -1,17 +1,20 @@
-import { t, onLanguageChange } from "./i18n.js"
+import { t, onLanguageChange, applyTranslations } from "./i18n.js"
 
   var TORCH_LINE = '<span class="p">$</span>python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ '
     + '"torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"\n';
   var SNOWLLM_LINE = '<span class="p">$</span>python -m pip install snowllm snowllm-kernels';
   var CURL_LINE = '<span class="p">$</span>curl -fsSL https://snowllm.dev/install.sh | sh';
 
-  var choice = { os: "linux", how: "script", gpu: "gfx1151", apu: "ryzen-ai-max" };
+  var platform = [navigator.userAgentData?.platform, navigator.platform, navigator.userAgent]
+    .filter(Boolean).join(" ");
+  var choice = { os: /Windows|Win32|Win64/i.test(platform) ? "windows" : "linux",
+    how: "script", gpu: "gfx1151", apu: "ryzen-ai-max" };
   var cmdEl = document.getElementById("install-cmd");
   var noteEl = document.getElementById("install-note");
   var targetEl = document.getElementById("install-target");
   var params = new URLSearchParams(location.search);
   var apus = Array.from(targetEl.options);
-  var axes = { os: ["linux", "wsl2", "windows"], how: ["script", "pip"],
+  var axes = { os: ["linux", "windows", "wsl2"], how: ["script", "pip"],
     gpu: apus.map(function (option) { return option.dataset.target; }) };
   Object.keys(axes).forEach(function (axis) {
     var value = params.get(axis === "gpu" ? "target" : axis);
@@ -50,8 +53,10 @@ import { t, onLanguageChange } from "./i18n.js"
       : CURL_LINE + " -s -- --target " + choice.gpu;
     cmdEl.innerHTML = choice.how === "script" ? curl
       : TORCH_LINE.replace("device-gfx1151", "device-" + choice.gpu) + SNOWLLM_LINE;
-    noteEl.hidden = choice.os !== "wsl2";
-    noteEl.textContent = choice.os === "wsl2" ? t("install.wsl") : "";
+    noteEl.hidden = choice.os === "linux";
+    noteEl.innerHTML = choice.os === "wsl2" ? t("install.wsl")
+      : windows ? t("install.windows") : "";
+    applyTranslations(noteEl);
   }
 
   document.querySelectorAll(".opts[data-axis] .opt").forEach(function (button) {
