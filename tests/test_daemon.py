@@ -55,6 +55,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_worker_failure_exposes_the_cause_and_retry_clears_it(self):
         errors = (
             ('snowllm: the configured context/chunk/concurrency exceeds the GPU budget by 1024 bytes', 'capacity'),
+            ('snowllm: GPU memory budget is short by 1.07 GiB', 'capacity'),
             ('torch.OutOfMemoryError: failed to allocate a tensor', 'capacity'),
             ('FileNotFoundError: model weights are missing', None),
             ('', None))

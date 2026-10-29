@@ -108,6 +108,8 @@ class CLITests(unittest.TestCase):
         oom = type('OutOfMemoryError', (RuntimeError,), {})
         for error, expected, forbidden in (
             (memory_shortage(1024), '--max-model-len 4096 --max-num-seqs 1 --max-num-batched-tokens 32', 'Traceback'),
+            (memory_shortage(1149259259), 'GPU memory budget is short by 1.07 GiB', '1149259259 bytes'),
+            (memory_shortage(369434297), 'GPU memory budget is short by 352.32 MiB', '369434297 bytes'),
             (SnowLLMError('GPU memory budget exceeds physical device memory'),
              'Lower --max-gpu-mem or --max-host-mem', 'Try smaller workload'),
             (MemoryError('allocation failed'), 'Out of memory: allocation failed', 'Traceback'),

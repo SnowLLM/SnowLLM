@@ -202,7 +202,14 @@ def largest_fitting(fits, maximum, *, unit=1):
 
 
 def memory_shortage(nbytes):
+    size = max(0, nbytes)
+    for unit in ('B', 'KiB', 'MiB', 'GiB', 'TiB'):
+        if size < 1024 or unit == 'TiB':
+            break
+        size /= 1024
+    missing = f'{size:.2f} {unit}' if unit != 'B' else f'{size:g} B'
     return SnowLLMError(
-        f'the configured context/chunk/concurrency exceeds the GPU budget by {max(0, nbytes)} bytes; '
+        f'GPU memory budget is short by {missing} for the configured context/chunk/concurrency; '
+        'increase --max-gpu-mem if GPU memory is available, '
         'set or increase --max-host-mem or --max-disk-offload, '
         'or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')
