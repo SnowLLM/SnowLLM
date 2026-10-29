@@ -55,7 +55,7 @@
 .usage-tooltip .tooltip-partial { margin: .65rem 0 0; color: var(--faint); font-size: var(--fs-label); }
 .chart-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; color: var(--faint); font-size: .875rem; }
 .partial-dot { background: transparent; border: 1px solid var(--faint); width: .55em; height: .55em; }
-.freshness { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; margin-top: 1.4rem; color: var(--muted); font-size: .875rem; }
+.freshness { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .4rem 1rem; margin: 1.4rem 0; color: var(--muted); font-size: .875rem; }
 .freshness time { font-family: var(--mono); font-size: .88em; }
 .usage .note { margin: 1rem 0 2rem; font-size: 1rem; }
 .usage-table { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }

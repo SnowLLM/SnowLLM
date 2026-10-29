@@ -102,6 +102,33 @@ class CLITests(unittest.TestCase):
         self.assertEqual((parsed.max_model_len, parsed.max_num_seqs, parsed.max_num_batched_tokens),
                          (409600, 4, 8192))
 
+    def test_runtime_buffers_need_no_mode_flag(self):
+        from snowllm.cli import parser
+        self.assertNotIn('--static-runtime', parser().format_help())
+        _, kw = self.launch_options()
+        self.assertNotIn('static_runtime', kw)
+        self.assertFalse(kw['enforce_eager'])
+
+    def test_32g_recipe_applies_its_profile_and_allows_explicit_capacity_overrides(self):
+        import json
+        from snowllm.hub.recipes import Recipe
+        raw = json.loads((Path(__file__).parents[1] / 'recipes' /
+            'minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark-32g.json').read_text())
+        recipe = Recipe(raw)
+        args, kw = self.launch_options(recipe=recipe)
+        self.assertEqual(args[1:3], (1, 135168))
+        self.assertEqual((kw['prefill_chunk'], kw['kv_int8']), (4096, False))
+        self.assertEqual((kw['max_gpu_mem_util'], kw['max_host_mem_gib']), (.95, 7))
+        self.assertEqual(kw['host_offload'], 7040 << 20)
+        self.assertFalse(kw['host_alloc'])
+        self.assertEqual((kw['enforce_eager'], kw['limit_mm_per_prompt']), (True, 1))
+        self.assertEqual((kw['dflash_block'], kw['prefix_memory_ratio']), (8, 0))
+        self.assertEqual(Path(kw['dflash']), Path(args[0]) / 'dspark')
+        args, kw = self.launch_options(('--max-model-len', '8192', '--max-host-mem', '8GiB',
+                                        '--limit-mm-per-prompt', '2'), recipe)
+        self.assertEqual(args[2], 8192)
+        self.assertEqual((kw['max_host_mem_gib'], kw['limit_mm_per_prompt']), (8, 2))
+
     def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
         from snowllm.capacity import memory_shortage
         from snowllm.errors import SnowLLMError

@@ -95,4 +95,4 @@ These settings only affect the current terminal session. On Linux, add the setti
 ## 9. Why does Windows report malloc or GPU allocation failures?
 
 Check system commit and page file capacity.
-See [Windows page file](./guides/windows-pagefile) for sizing, configuration and verification steps.
+See [Windows additional settings](./guides/windows-pagefile) for UMA allocation, page file sizing and verification steps.

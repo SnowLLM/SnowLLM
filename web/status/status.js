@@ -2,7 +2,6 @@ import { t, getLanguage, onLanguageChange } from '../i18n.js'
 import { localDate, localTimestamp, bucket, advance, selectedRange } from './time.js'
 
 const tr = key => t('status.' + key)
-const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const url = new URL(location.href)
 url.searchParams.delete('theme')
 const api = document.body.dataset.apiBase.replace(/\/$/, '')
@@ -97,7 +96,7 @@ loadSources().then(sources => {
       activeBar?.removeAttribute('aria-describedby');
       activeBar = bar;
       bar.setAttribute('aria-describedby', tooltip.id);
-      tooltip.querySelector('.tooltip-date').textContent = localTimestamp(point.period_start, { offset: true });
+      tooltip.querySelector('.tooltip-date').textContent = localTimestamp(point.period_start);
       for (const [key, value] of Object.entries({ prefill: point.prefill_tokens, decode: point.decode_tokens,
         total: point.prefill_tokens + point.decode_tokens })) {
         tooltip.querySelector(`[data-tooltip-value="${key}"]`).textContent = value.toLocaleString('en-US');
@@ -182,10 +181,9 @@ loadSources().then(sources => {
       const value = [prefill + decode, prefill, decode][i];
       dd.textContent = compact(value); dd.title = value.toLocaleString('en-US');
     });
-    document.querySelector('.range').textContent = custom ? `${localTimestamp(from, { offset: true })} — ${localTimestamp(until - 1, { offset: true })}` : tr('range.' + period);
-    document.querySelector('.timezone').textContent = t('status.timezone', { timezone });
+    document.querySelector('.range').textContent = custom ? `${localTimestamp(from)} — ${localTimestamp(until - 1)}` : tr('range.' + period);
     const coverage = document.querySelector('.coverage');
-    coverage.textContent = `${tr('coverage')} ${localTimestamp(data.available_from, { offset: true })} — ${localTimestamp(data.generated_at, { offset: true })} · ${tr('coarseHint')}`;
+    coverage.textContent = `${tr('coverage')} ${localDate(data.available_from)} — ${localDate(data.generated_at)}`;
     coverage.hidden = false;
     document.querySelectorAll('.periods a').forEach(anchor => {
       const key = new URL(anchor.href).searchParams.get('period');
@@ -200,12 +198,12 @@ loadSources().then(sources => {
     plot.innerHTML = prefill || decode ? chart(points, 960) + chart(points, 400)
       : `<div class="empty"><h3>${tr('empty')}</h3><p>${tr('emptyDesc')}</p></div>`;
     document.querySelector('.usage-table tbody').innerHTML = points.slice().reverse().map(p => {
-      const moment = localTimestamp(p.period_start, { offset: true });
+      const moment = localTimestamp(p.period_start);
       return `<tr><th scope="row">${moment}${p.partial ? '<span class="partial">' + tr('partial') + '</span>' : ''}</th><td>${p.prefill_tokens.toLocaleString('en-US')}</td><td>${p.decode_tokens.toLocaleString('en-US')}</td><td>${(p.prefill_tokens + p.decode_tokens).toLocaleString('en-US')}</td></tr>`;
     }).join('');
     document.querySelectorAll('.freshness time').forEach((time, i) => {
       const value = i ? data.next_update_at : data.generated_at;
-      time.dateTime = value; time.textContent = localTimestamp(value, { seconds: !i, offset: true });
+      time.dateTime = value; time.textContent = localTimestamp(value);
     });
     document.querySelector('.all-time strong').textContent = compact(data.all_time.prefill_tokens + data.all_time.decode_tokens);
     url.searchParams.set('period', period);

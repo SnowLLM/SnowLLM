@@ -124,11 +124,18 @@ class BaseRunner:
         self._allocate_pools(self.resources.probe_units())
 
     def create_inputs(self):
+        rows = max(self.max_prefill_tokens, self.max_num_seqs*self.T)
+        capacity = 8*rows + 4*self.max_num_seqs
         if not self.host_messages:
             from .block_manager import Staging, TableMirror
             self.inputs = None
-            return TableMirror(self.max_num_seqs, self.max_blocks_per_seq), Staging()
+            stage = Staging()
+            stage.reserve(capacity)
+            return TableMirror(self.max_num_seqs, self.max_blocks_per_seq), stage
         self.inputs = SchedulerInputs(self.max_num_seqs, self.max_blocks_per_seq)
+        self.inputs.reserve('stage64', capacity)
+        self.inputs.reserve('stage32', capacity, torch.int32)
+        self.inputs.reserve('prefill_qmap', 2*rows, torch.int32)
         return self.inputs.tables, self.inputs
 
     def _input_scope(self):

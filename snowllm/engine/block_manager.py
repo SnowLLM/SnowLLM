@@ -39,7 +39,8 @@ def block_tables(batch: list[Request]) -> torch.Tensor:
 
 class TableMirror:
     def __init__(self, rows: int, width: int) -> None:
-        self.host = torch.zeros(rows, width, dtype=torch.int32).pin_memory()
+        from .host_io import pinned_tensor
+        self.host = pinned_tensor((rows,width),torch.int32).zero_()
         self.dev = torch.zeros(rows, width, dtype=torch.int32, device="cuda")
         self.done = torch.cuda.Event()
         self.forget()
@@ -69,18 +70,21 @@ class Staging:
         self.cap = 0
         self.done = torch.cuda.Event()
 
+    def reserve(self, n):
+        if n <= self.cap:
+            return
+        self.cap = max(n,2*self.cap)
+        from .host_io import pinned_tensor
+        self.h64 = pinned_tensor((self.cap,),torch.int64)
+        self.h32 = pinned_tensor((self.cap,),torch.int32)
+        self.d64 = torch.empty(self.cap,dtype=torch.int64,device='cuda')
+        self.d32 = torch.empty(self.cap,dtype=torch.int32,device='cuda')
+
     def __call__(self, i64s: tuple[list[int], ...],
                  i32s: tuple[list[int], ...]) -> list[torch.Tensor]:
         n = max(sum(map(len, i64s)), sum(map(len, i32s)))
         self.done.synchronize()
-        if n > self.cap:
-            self.cap = max(n, 2 * self.cap)
-            self.h64 = torch.zeros(self.cap, dtype=torch.int64).pin_memory()
-            self.h32 = torch.zeros(self.cap, dtype=torch.int32).pin_memory()
-            # Every returned view is filled by the flat host copy below. Avoid
-            # Torch fill kernels when a serving batch first grows this buffer.
-            self.d64 = torch.empty(self.cap, dtype=torch.int64, device="cuda")
-            self.d32 = torch.empty(self.cap, dtype=torch.int32, device="cuda")
+        self.reserve(n)
         out = []
         for h, d, parts, code in ((self.h64, self.d64, i64s, "q"),
                                   (self.h32, self.d32, i32s, "i")):

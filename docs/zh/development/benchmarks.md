@@ -1,6 +1,6 @@
 # 测试方法 {#benchmark-methodology}
 
-使用 Ryzen AI Max+ 395，每组测试只运行一个客户端和一个服务端。每组数据标明引擎、模型和草稿方案。
+测试结果按硬件分组：先展示 Ryzen AI Max+ 395（gfx1151），再展示 Radeon 780M / Ryzen 9 7940HS（gfx1103）。每组测试只运行一个客户端和一个服务端，并标明引擎、模型和草稿方案。
 
 ## 运行单项测试 {#running-a-benchmark}
 
@@ -44,6 +44,25 @@ Ms/step = 1000 × AL / Decode tok/s
 图表和对比数据对两种引擎统一使用 AL。llama.cpp 原始数据将接受率存为 0–1 的小数，因此换算为 `AL = 1 + N × accept_mean`。图表使用配置的最大草稿长度估算；实际提出的草稿更短时，所得 AL 和每步耗时为上界，并非直接测量值。
 
 公开数据位于 [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs)。[性能测试页](https://snowllm.dev/benchmark/)读取 [benchmarks.json](https://snowllm.dev/benchmarks.json)。
+
+## Radeon 780M MiniCPM 对比（2026-10-29） {#radeon-780m}
+
+使用 Windows 10、Ryzen 9 7940HS / Radeon 780M（gfx1103）、32 GiB 物理内存及 16 GiB BIOS UMA。网页在 AI Max+ 395 图表下方单独展示这组结果，两组硬件共用相同的模型、推理方案、阶段、指标及视图控件，各自保留独立选择。
+
+双方使用相同的 MiniCPM-V 4.7 35B-A3B `mix_q3gud_im` 目标 GGUF 和 Q8_0 DSpark 草稿 GGUF，草稿块长为 8，目标和草稿 KV 均为 BF16，上下文容量为 135,168 token，关闭提示词缓存。复用未修改的 `benchmarks/bench_context.py`，PG-19 精确聊天输入长度为 1,024、8,192、32,768 和 122,880 token。每档预热 1 次、正式测试 4 次，单客户端，temperature 0，关闭思考，最多输出 256 token 并遵循 EOS。生成速度取中位数，首 token 延迟及预填充速度取首次正式请求。
+
+| 输入 | SnowLLM 生成 tok/s | llama.cpp 生成 tok/s | SnowLLM 加速比 | SnowLLM 首 token 延迟 s | llama.cpp 首 token 延迟 s |
+| --- | --- | --- | --- | --- | --- |
+| 1K | 27.64 | 16.47 | 1.68× | 1.188 | 2.291 |
+| 8K | 19.62 | 12.02 | 1.63× | 7.863 | 19.544 |
+| 32K | 11.87 | 6.29 | 1.89× | 40.313 | 93.119 |
+| 120K | 6.96 | 2.70 | 2.58× | 273.508 | 534.737 |
+
+运行配置存在差异。SnowLLM 0.3.19.dev1 使用静态 eager 运行时、4,096 token 预填充分块、7,040 MiB 权重主机卸载、0.95 GPU 内存利用率，并保留固定视觉工作区。测试基于 `9e14177a3d6bd982e3995765c98871ec66d767bc` 和未提交改动。llama.cpp 0.7.0-dev build 11941（`19ff817fb`）全层运行于 ROCm，使用原生 graph，batch 为 4,096、microbatch 为 512；更大的 microbatch 启动失败。文本测试未加载视觉投影模型。以上结果对应各自的配置。
+
+双方各完成 20 次请求，无截断，客户端和语料哈希一致。这组数据中，llama.cpp 的 AL 取四次正式请求服务端日志中已四舍五入的 `mean len` 的均值，未使用原始接受率换算；其每步耗时由 AL 和生成速度估算。
+
+正式数据为 `benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_gfx1103_{snowllm,llama}.json`，包含原始测量字段和运行配置。
 
 ## Qwen3.8-Flash-Next MTP 对比（2026-10-20）
 

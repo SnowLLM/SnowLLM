@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/palette.css">
 <link rel="stylesheet" href="/site.css">
 <link rel="stylesheet" href="/site-header.css">
-<link rel="stylesheet" href="/status/status.css?v=bar-tooltip">
+<link rel="stylesheet" href="/status/status.css?v=stats-clean-1">
 <script>
 try {
   const theme = localStorage.getItem('snowllm-theme');
@@ -45,17 +45,17 @@ try {
     </div>
     <form class="date-filter" novalidate hidden>
       <div class="date-field">
-        <label for="usage-from" data-i18n="status.from">From (local time)</label>
+        <label for="usage-from" data-i18n="status.from">From</label>
         <div class="date-input">
           <input id="usage-from" name="from" type="text" placeholder="YYYY-MM-DD" autocomplete="off" maxlength="10" required>
-          <span class="date-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg><input type="date" data-date-input="usage-from" data-i18n-aria-label="status.from" aria-label="From (local time)"></span>
+          <span class="date-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg><input type="date" data-date-input="usage-from" data-i18n-aria-label="status.from" aria-label="From"></span>
         </div>
       </div>
       <div class="date-field">
-        <label for="usage-to" data-i18n="status.to">To (local time)</label>
+        <label for="usage-to" data-i18n="status.to">To</label>
         <div class="date-input">
           <input id="usage-to" name="to" type="text" placeholder="YYYY-MM-DD" autocomplete="off" maxlength="10" required>
-          <span class="date-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg><input type="date" data-date-input="usage-to" data-i18n-aria-label="status.to" aria-label="To (local time)"></span>
+          <span class="date-picker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg><input type="date" data-date-input="usage-to" data-i18n-aria-label="status.to" aria-label="To"></span>
         </div>
       </div>
       <button type="submit" data-i18n="status.apply">Apply</button>
@@ -64,18 +64,17 @@ try {
     </form>
     <p class="coverage" hidden></p>
     <dl class="stats">
-      <div class="stat"><dt data-i18n="status.total">Total tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
-      <div class="stat"><dt data-i18n="status.prefill">Prefill tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
-      <div class="stat"><dt data-i18n="status.decode">Decode tokens</dt><dd>—</dd><span data-i18n="status.window">in this range</span></div>
+      <div class="stat"><dt data-i18n="status.total">Total tokens</dt><dd>—</dd></div>
+      <div class="stat"><dt data-i18n="status.prefill">Prefill tokens</dt><dd>—</dd></div>
+      <div class="stat"><dt data-i18n="status.decode">Decode tokens</dt><dd>—</dd></div>
     </dl>
     <section class="visual">
       <div class="chart-heading"><h2 data-i18n="status.chart">Reported inference volume</h2><div class="legend"><span class="key key-prefill">Prefill</span><span class="key key-decode">Decode</span></div></div>
       <div class="plot-container"></div>
-      <div class="chart-foot"><span class="timezone"></span><span><i class="partial-dot"></i><span data-i18n="status.partial">Current period · partial</span></span></div>
+      <div class="chart-foot"><span><i class="partial-dot"></i><span data-i18n="status.partial">Current period</span></span></div>
     </section>
     <div class="freshness"><span><span data-i18n="status.updated">Updated</span> <time></time></span><span><span data-i18n="status.next">Next update</span> <time></time></span></div>
-    <p class="note" data-i18n="status.note">Usage is assigned to the time a report arrives. The current period includes data up to the last update. Snapshots refresh hourly.</p>
-    <details class="usage-table"><summary><span data-i18n="status.table">View the numbers</span><span aria-hidden="true">＋</span></summary><div class="scroll"><table><thead><tr><th data-i18n="status.period">Period starting (local time)</th><th>Prefill</th><th>Decode</th><th data-i18n="status.total">Total tokens</th></tr></thead><tbody></tbody></table></div></details>
+    <details class="usage-table"><summary><span data-i18n="status.table">View the numbers</span><span aria-hidden="true">＋</span></summary><div class="scroll"><table><thead><tr><th data-i18n="status.period">Period</th><th>Prefill</th><th>Decode</th><th data-i18n="status.total">Total tokens</th></tr></thead><tbody></tbody></table></div></details>
     <div class="all-time"><span data-i18n="status.allTime">All-time reported tokens</span><strong>—</strong></div>
     <p class="usage-disclosure"><span data-i18n="status.foot">Community-reported counts; not independently verified.</span> <a href="/docs/reference/telemetry"><span data-i18n="status.privacy">Usage statistics</span> ↗</a></p>
   </div>
@@ -89,8 +88,8 @@ try {
     <dt class="key key-decode" data-i18n="status.decode">Decode tokens</dt><dd data-tooltip-value="decode"></dd>
     <dt data-i18n="status.total">Total tokens</dt><dd data-tooltip-value="total"></dd>
   </dl>
-  <p class="tooltip-partial" data-i18n="status.partial" hidden>Current period · partial</p>
+  <p class="tooltip-partial" data-i18n="status.partial" hidden>Current period</p>
 </div>
-<script type="module" src="/site-shell.js?v=status"></script>
+<script type="module" src="/site-shell.js?v=stats-clean-1"></script>
 </body>
 </html>

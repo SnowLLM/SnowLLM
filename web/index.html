@@ -48,7 +48,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="/site.css?v=apu-targets">
+<link rel="stylesheet" href="/site.css?v=webui-type-1">
 <link rel="stylesheet" href="/site-header.css">
 <script>
 (function () {
@@ -76,8 +76,8 @@
         <span class="axis-label" data-i18n="home.os">OS</span>
         <div class="opts" data-axis="os">
           <button class="opt" type="button" data-value="linux" aria-pressed="true">Linux</button>
-          <button class="opt" type="button" data-value="wsl2" aria-pressed="false">WSL2</button>
           <button class="opt" type="button" data-value="windows" aria-pressed="false">Windows</button>
+          <button class="opt" type="button" data-value="wsl2" aria-pressed="false" data-i18n="install.wslLabel">WSL2 (not recommended)</button>
         </div>
       </div>
       <div class="axis">
@@ -130,8 +130,8 @@
       </div>
     </div>
 
-    <p class="note" id="target-note" data-i18n="install.targets">APU targets: gfx1103, gfx1150, gfx1151, gfx1152 and gfx1153. Tested on Ryzen AI Max+ 395; validation of other APUs is in progress.</p>
-    <p class="note" id="install-note" hidden></p>
+    <p class="note" id="target-note" data-i18n-html="install.targets">Official testing covers Ryzen AI Max+ 395 / Ryzen 9 7940HS only. If you run into problems, please <a href="https://github.com/SnowLLM/SnowLLM/issues">open an issue ↗</a>.</p>
+    <p class="note" id="install-note" aria-live="polite" hidden></p>
   </div>
 
   <div class="destinations">
@@ -189,6 +189,6 @@ snowllm qwen3.8-flash-next-q3-k-xl</pre>
 </div>
 
 
-<script type="module" src="/site-shell.js?v=i18n"></script>
+<script type="module" src="/site-shell.js?v=install-os-1"></script>
 </body>
 </html>
