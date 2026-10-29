@@ -1,6 +1,23 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.19.dev2 — 2026-10-29
+
+Fix DeepSeek V4.1 prefix reuse and DSpark startup, add a Qwen Q4_K_XL MTP recipe, and improve CLI diagnostics.
+
+- Complete DeepSeek V4.1 prefix caching, including Engram history and encoder replay state; enable prefix reuse in both V4.1 recipes, including native DSpark.
+  补齐 DeepSeek V4.1 前缀缓存中的 Engram 历史和 Encoder 回放状态，在两个 V4.1 方案中启用前缀复用，兼容原生 DSpark。
+- Fix V4.1 DSpark startup memory planning and adjust automatic weight placement after adaptive profiling to respect the configured memory budget.
+  修复 V4.1 DSpark 启动内存规划，并在自适应 profiling 后调整自动权重放置，遵守配置的内存预算。
+- Add a dedicated Qwen3.6-35B-A3B Q4_K_XL MTP recipe with an embedded MTP head at depth 2; keep MTP disabled in the plain Q4_K_XL recipe.
+  新增 Qwen3.6-35B-A3B Q4_K_XL MTP 独立方案，使用内嵌 MTP 预测头和深度 2；普通 Q4_K_XL 方案继续关闭 MTP。
+- Print the equivalent startup command after applying recipe defaults and user overrides.
+  应用 recipe 默认值及用户覆盖参数后，打印等价的完整启动命令。
+- Show GPU memory shortfalls in readable units with actionable startup diagnostics.
+  使用易读单位显示 GPU 内存缺口，并提供可操作的启动诊断。
+- Remove the SNOWLLM_HF_TOKEN override; use HF_TOKEN, HUGGING_FACE_HUB_TOKEN or the saved Hugging Face token.
+  移除 SNOWLLM_HF_TOKEN 覆盖变量，改用 HF_TOKEN、HUGGING_FACE_HUB_TOKEN 或已保存的 Hugging Face token。
+
 ## 0.3.19.dev1 — 2026-10-28
 
 Add MiniCPM mixed-Q3 DSpark, reduce memory use, improve Windows compatibility and simplify Pi setup.
@@ -13,12 +30,8 @@ Add MiniCPM mixed-Q3 DSpark, reduce memory use, improve Windows compatibility an
   优化自动权重放置，减少不必要的主机卸载。
 - Remove the implicit 90% host memory ceiling when no host budget is configured; automatic host weight offload remains disabled by default.
   未配置主机预算时不再施加隐含的 90% 主机内存上限，自动主机权重卸载仍默认关闭。
-- Fix Windows compatibility for DeepSeek V4 Flash 0731, GLM 5.3 Flash and DeepSeek V4.1 Flash 1017.
-  修复 DeepSeek V4 Flash 0731、GLM 5.3 Flash 和 DeepSeek V4.1 Flash 1017 的 Windows 兼容性。
-- Complete DeepSeek V4.1 prefix caching, including Engram history, encoder replay state and native DSpark; enable it in both V4.1 recipes.
-  补齐 DeepSeek V4.1 前缀缓存，包括 Engram 历史、Encoder 回放状态及原生 DSpark 支持，并在两个 V4.1 方案中默认启用。
-- Fix V4.1 DSpark startup planning and adjust automatic weight placement after adaptive profiling to stay within the configured memory budget.
-  修复 V4.1 DSpark 启动规划，并在自适应 profiling 后调整自动权重放置，遵守配置的显存预算。
+- Fix Windows compatibility for DeepSeek V4 Flash 0731 and GLM 5.3 Flash. DeepSeek V4.1 Flash 1017 also runs, but prefix caching still needs fixes.
+  修复 DeepSeek V4 Flash 0731 和 GLM 5.3 Flash 的 Windows 兼容性。DeepSeek V4.1 Flash 1017 也可运行，但前缀缓存仍有待修复。
 - Configure Pi with all named models and context limits from the recipe catalogue without requiring a running inference service.
   Pi 配置直接读取 recipe 目录中的全部具名模型及上下文上限，无需提前启动推理服务。
 - Require SnowLLM-Kernels 0.3.11. Existing expert disk caches can no longer be reused.
