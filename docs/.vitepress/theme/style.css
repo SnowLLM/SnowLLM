@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --snow-accent-soft: var(--palette-light-accent-soft);
   --snow-ground: var(--palette-light-ground);
   --snow-panel: var(--palette-light-panel);
@@ -35,6 +36,7 @@
   --vp-local-search-result-selected-border: var(--snow-accent);
 }
 .dark {
+  color-scheme: dark;
   --snow-accent-soft: var(--palette-dark-accent-soft);
   --snow-ground: var(--palette-dark-ground);
   --snow-panel: var(--palette-dark-panel);
