@@ -20,7 +20,7 @@ After restarting, check **Task Manager → Performance → Memory → Committed*
 ## BIOS UMA settings {#bios-uma}
 
 ::: warning Other APUs: check UMA settings
-**Ryzen AI Max+ 395 and [Ryzen AI Max+ PRO 495](https://www.amd.com/en/products/processors/laptop/ryzen-pro/ai-max-pro-400-series/amd-ryzen-ai-max-plus-pro-495.html) generally need no special UMA adjustment.** On **other APUs**, pay particular attention to BIOS UMA allocation: a low default can limit the GPU memory available for inference.
+**Ryzen AI Max+ 395 and Ryzen AI Max+ PRO 495 generally need no special UMA adjustment.** On **other APUs**, pay particular attention to BIOS UMA allocation: a low default can limit the GPU memory available for inference.
 :::
 
 If GPU memory is insufficient, increase UMA to the manufacturer's supported maximum. A common BIOS path is:

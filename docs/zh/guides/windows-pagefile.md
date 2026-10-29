@@ -20,7 +20,7 @@
 ## BIOS UMA 设置 {#bios-uma}
 
 ::: warning 其他 APU 请特别注意 UMA 设置
-**Ryzen AI Max+ 395 和 [Ryzen AI Max+ PRO 495](https://www.amd.com/en/products/processors/laptop/ryzen-pro/ai-max-pro-400-series/amd-ryzen-ai-max-plus-pro-495.html) 一般无需特别调整 UMA。** 使用**其他 APU** 时，请重点检查 BIOS 中的 UMA 分配；默认分配过低可能限制推理可用的显存。
+**Ryzen AI Max+ 395 和 Ryzen AI Max+ PRO 495 一般无需特别调整 UMA。** 使用**其他 APU** 时，请重点检查 BIOS 中的 UMA 分配；默认分配过低可能限制推理可用的显存。
 :::
 
 显存不足时，将 UMA 调到厂商允许的最大值。常见 BIOS 路径为：
