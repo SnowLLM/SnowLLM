@@ -3,8 +3,16 @@
 
 ## 0.3.19.dev2 — 2026-10-29
 
-Fix DeepSeek V4.1 prefix reuse and DSpark startup, add a Qwen Q4_K_XL MTP recipe, and improve CLI diagnostics.
+Add bundled recipes and a MiniCPM 32 GiB profile, improve runtime allocation and Windows startup, and fix DeepSeek V4.1 prefix reuse and DSpark startup.
 
+- Bundle recipe definitions with the wheel. Use `--bundle` or `b/RECIPE` to select them; the Web UI can switch between snowllm.dev and bundled recipes.
+  wheel 内置配方定义，可通过 `--bundle` 或 `b/RECIPE` 使用；Web UI 支持在 snowllm.dev 与内置配方之间切换。
+- Add a MiniCPM-V 4.7 mixed-Q3 DSpark profile for 32 GiB Windows hosts with a 132K BF16 context, and publish Radeon 780M benchmark comparisons and setup guidance.
+  新增面向 32 GiB Windows 主机的 MiniCPM-V 4.7 混合 Q3 DSpark 方案，提供 132K BF16 上下文，并补充 Radeon 780M 对比测试和配置指南。
+- Reserve scheduler and sampling buffers at startup, reuse speculative penalty storage, and account for pinned host memory over its storage lifetime.
+  启动时预分配调度与采样缓冲，复用推测解码的惩罚计算存储，并按存储生命周期核算锁页主机内存。
+- Discover Windows Torch ROCm kernel archives before GPU startup while preserving explicit user search paths.
+  Windows 上在 GPU 启动前发现 Torch 的 ROCm 内核归档，并保留用户显式配置的搜索路径。
 - Complete DeepSeek V4.1 prefix caching, including Engram history and encoder replay state; enable prefix reuse in both V4.1 recipes, including native DSpark.
   补齐 DeepSeek V4.1 前缀缓存中的 Engram 历史和 Encoder 回放状态，在两个 V4.1 方案中启用前缀复用，兼容原生 DSpark。
 - Fix V4.1 DSpark startup memory planning and adjust automatic weight placement after adaptive profiling to respect the configured memory budget.
