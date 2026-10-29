@@ -37,6 +37,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['prefix_memory_ratio'],defaults.prefix_memory_ratio)
         self.assertEqual(kw['device_map'],defaults.device_map)
 
+    def test_runtime_buffers_need_no_mode_flag(self):
+        from snowllm.cli import parser
+        self.assertNotIn('--static-runtime', parser().format_help())
+        _, kw = self.launch_options()
+        self.assertNotIn('static_runtime', kw)
+        self.assertFalse(kw['enforce_eager'])
+
+
     def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
         from snowllm.capacity import memory_shortage
         from snowllm.errors import SnowLLMError

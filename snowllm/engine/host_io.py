@@ -4,6 +4,7 @@ import array
 import contextlib
 import ctypes
 import itertools
+import math
 import weakref
 
 import torch
@@ -37,6 +38,19 @@ def _mapped_view(host):
 
 
 _mapped_hosts = {}
+
+
+def pinned_tensor(shape, dtype):
+    from ..capacity import reserve_host, release_host
+    nbytes = math.prod(shape)*torch.empty((),dtype=dtype).element_size()
+    reserve_host(nbytes)
+    try:
+        tensor = torch.empty(shape,dtype=dtype,pin_memory=True)
+    except BaseException:
+        release_host(nbytes)
+        raise
+    weakref.finalize(tensor.untyped_storage(),release_host,nbytes)
+    return tensor
 
 
 def host_view(tensor):

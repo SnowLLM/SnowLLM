@@ -382,7 +382,9 @@ class Engine:
                                     self.runner.dummy_slot)
             self.sampler = Sampler(frozenset(stop_token_ids),seed,
                                    native_rng=isinstance(model.geo, DeepSeekV4Geometry) and model.geo.v41)
-            self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size)
+            self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size,
+                                 max_tokens=max_model_len+self.T,
+                                 max_requests=max_num_seqs)
             self.tables, self.stage = self.runner.create_inputs()
             self.dflash = None
             if dflash_path and _dspark(self.dflash_geo):

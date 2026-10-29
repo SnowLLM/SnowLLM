@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 from collections import Counter
+import array
 import ctypes
 
 import torch
 
 from .. import ops
 from ..trace import span
+from ..errors import SnowLLMError
 from ..ops.sampling import penalties, probabilities, sample_workspace_bytes
 from .host_io import HostArena, MappedBuffer
 from .request import Request
@@ -34,9 +36,24 @@ class Sampler:
             return torch.rand(n, generator=self.rng, out=self.uniforms[:n])
         return torch.rand(n,dtype=torch.float32,device="cuda",generator=self.rng)
 
-    def reserve(self, rows, vocab):
+    def reserve(self, rows, vocab, *, max_tokens=None, max_requests=None):
         self.reserve_device(rows, vocab)
         self.output.reserve(rows)
+        for name, dtype in (("top_k", torch.int32), ("top_p", torch.float32),
+                            ("temperature", torch.float32)):
+            self.inputs.reserve(name, rows, dtype)
+        limit = vocab if max_tokens is None else min(vocab, max_tokens)
+        requests = rows if max_requests is None else max_requests
+        if not 0 < requests <= rows or limit <= 0:
+            raise SnowLLMError('invalid penalty buffer dimensions')
+        # IDs are shared by verification rows of the same request. Counts
+        # remain distinct until all asynchronous penalty kernels finish.
+        self._penalty_rows, self._penalty_requests, self._penalty_limit = rows,requests,limit
+        self._penalty_id_bytes = requests*limit*8
+        self._penalty_slab = MappedBuffer(torch.uint8)
+        self._penalty_slab.reserve(self._penalty_id_bytes+rows*limit*4,exact=True)
+        self._penalty_ids = self._penalty_slab.device[:self._penalty_id_bytes].view(torch.int64).view(requests,limit)
+        self._penalty_counts = self._penalty_slab.device[self._penalty_id_bytes:].view(torch.int32).view(rows,limit)
 
     def reserve_device(self, rows, vocab):
         self.uniforms = torch.empty(rows,dtype=torch.float32,device="cuda")
@@ -53,6 +70,8 @@ class Sampler:
         return top_k, top_p, temp, min(max(ks), vocab)
 
     def sample(self, logits, rows, *, out=None):
+        if out is None and self.output.device is not None:
+            out = self.output.device[:len(rows)]
         with span("sample"):
             self.inputs.begin()
             try:
@@ -108,22 +127,52 @@ class Sampler:
         if not prepared:
             self.inputs.begin()
         try:
-            depth = {}
-            for i,r in enumerate(rows):
-                t=depth.get(id(r),0);depth[id(r)]=t+1
-                p=r.params
-                if not p.penalized():
-                    continue
-                counts=Counter(r.out);counts.update(r.drafts[:t])
-                if not hasattr(r,"_sample_prompt_tokens"):
-                    r._sample_prompt_tokens=set(r.prompt)
-                tokens=sorted(r._sample_prompt_tokens | counts.keys())
-                ids=self.inputs.tensor(("penalty_ids",i),tokens)
-                cnt=self.inputs.tensor(("penalty_counts",i),[counts.get(v,0) for v in tokens],torch.int32)
-                penalties(logits[i],ids,cnt,p.presence_penalty,p.frequency_penalty,p.repetition_penalty)
+            self._penalize_rows(logits,rows)
         finally:
             if not prepared:
                 self.inputs.used()
+
+    def _penalty_write(self, values, code, offset):
+        if len(values)>self._penalty_limit:
+            raise SnowLLMError('penalty token capacity exceeded')
+        data = array.array(code,values)
+        if data:
+            ctypes.memmove(self._penalty_slab.host.data_ptr()+offset,
+                           data.buffer_info()[0],len(data)*data.itemsize)
+
+    def _penalize_rows(self, logits, rows):
+        if len(rows)>self._penalty_rows:
+            raise SnowLLMError('penalty row capacity exceeded')
+        groups = {}
+        for i,r in enumerate(rows):
+            if r.params.penalized():
+                groups.setdefault(id(r),(r,[]))[1].append(i)
+        if len(groups)>self._penalty_requests:
+            raise SnowLLMError('penalty request capacity exceeded')
+        for slot,(r,indices) in enumerate(groups.values()):
+            if not hasattr(r,'_sample_prompt_tokens'):
+                r._sample_prompt_tokens=set(r.prompt)
+            counts=Counter(r.out)
+            tokens=sorted(r._sample_prompt_tokens | counts.keys())
+            seen=set(tokens)
+            ends=[len(tokens)]
+            # New draft IDs are appended in first-occurrence order. Each row's
+            # prefix view excludes tokens appearing only in future draft rows.
+            for token in r.drafts[:len(indices)-1]:
+                if token not in seen:
+                    tokens.append(token)
+                    seen.add(token)
+                ends.append(len(tokens))
+            self._penalty_write(tokens,'q',slot*self._penalty_limit*8)
+            p=r.params
+            for depth,i in enumerate(indices):
+                if depth and depth<=len(r.drafts):
+                    counts[r.drafts[depth-1]]+=1
+                n=ends[min(depth,len(ends)-1)]
+                values=[counts.get(t,0) for t in tokens[:n]]
+                self._penalty_write(values,'i',self._penalty_id_bytes+i*self._penalty_limit*4)
+                penalties(logits[i],self._penalty_ids[slot,:n],self._penalty_counts[i,:n],
+                          p.presence_penalty,p.frequency_penalty,p.repetition_penalty)
 
     def __del__(self):
         if hasattr(self, "inputs"):
