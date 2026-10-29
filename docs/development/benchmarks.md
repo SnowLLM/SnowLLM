@@ -1,6 +1,6 @@
 # Benchmark methodology
 
-Measurements use a Ryzen AI Max+ 395, with one client and one server per arm. Each arm identifies an engine, model and drafter.
+Measurements are grouped by hardware: Ryzen AI Max+ 395 (gfx1151), followed by Radeon 780M / Ryzen 9 7940HS (gfx1103). Each arm uses one client and one server and identifies its engine, model and drafter.
 
 ## Running a benchmark
 
@@ -44,6 +44,25 @@ Ms/step = 1000 × AL / Decode tok/s
 The chart and comparison data use AL for both engines. Raw llama.cpp runs store acceptance rates as fractions from 0 to 1, so the conversion is `AL = 1 + N × accept_mean`. The chart estimates llama.cpp AL using its configured maximum draft width. If fewer tokens are proposed, this is an upper bound on AL and derived ms/step, not a direct measurement.
 
 Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs). The [Benchmark page](https://snowllm.dev/benchmark/) reads [benchmarks.json](https://snowllm.dev/benchmarks.json).
+
+## Radeon 780M MiniCPM comparison (2026-10-29) {#radeon-780m}
+
+This comparison uses Windows 10, Ryzen 9 7940HS / Radeon 780M (gfx1103), 32 GiB physical RAM and 16 GiB BIOS UMA. It appears below the AI Max+ 395 charts and uses the same model, variant, phase, metric and view controls, with independent selections for each hardware group.
+
+Both engines use the same MiniCPM-V 4.7 35B-A3B `mix_q3gud_im` target GGUF and Q8_0 DSpark draft GGUF, draft block 8, BF16 target/draft KV, a 135,168-token context capacity, and no prompt caching. The unchanged `benchmarks/bench_context.py` client uses PG-19 with exact chat input lengths of 1,024, 8,192, 32,768 and 122,880 tokens. Each length has one warm-up and four retained requests, one client, temperature 0, thinking disabled, a 256-token output cap and EOS honored. Decode uses the median; TTFT and prefill use the first retained request.
+
+| Input | SnowLLM decode tok/s | llama.cpp decode tok/s | SnowLLM speedup | SnowLLM TTFT s | llama.cpp TTFT s |
+| --- | --- | --- | --- | --- | --- |
+| 1K | 27.64 | 16.47 | 1.68× | 1.188 | 2.291 |
+| 8K | 19.62 | 12.02 | 1.63× | 7.863 | 19.544 |
+| 32K | 11.87 | 6.29 | 1.89× | 40.313 | 93.119 |
+| 120K | 6.96 | 2.70 | 2.58× | 273.508 | 534.737 |
+
+The configurations differ. SnowLLM 0.3.19.dev1 uses a static eager runtime, 4,096-token prefill chunks, 7,040 MiB host weight offload, GPU memory utilization 0.95, and a fixed vision workspace. Its source was dirty at commit `9e14177a3d6bd982e3995765c98871ec66d767bc`. llama.cpp 0.7.0-dev build 11941 (`19ff817fb`) uses all layers on ROCm with native graphs, batch 4,096 and microbatch 512; larger microbatches failed startup. Its text benchmark does not load a vision projector. These timings describe those configurations.
+
+Both arms completed all 20 requests without truncation, using identical client and corpus hashes. For this comparison, llama.cpp AL is the mean of the rounded server-log `mean len` values over the four retained requests, rather than a conversion of its raw acceptance percentage. Its step time is estimated from AL and decode rate.
+
+Published arms are `benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_gfx1103_{snowllm,llama}.json`. These files include the original measured fields and the runtime configurations.
 
 ## Qwen3.8-Flash-Next MTP comparison (2026-10-20)
 

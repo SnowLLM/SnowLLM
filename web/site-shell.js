@@ -18,7 +18,7 @@ setupHeader(host)
 applyTranslations()
 if (current === '/') await import('./install-ui.js')
 else if (current === '/status/') await import('./status/status.js')
-else if (current === '/benchmark/') await import('./site.js?v=benchmark-static-2')
+else if (current === '/benchmark/') await import('./site.js?v=benchmark-unified-1')
 else await import('./site.js')
 if (current === '/') {
   function legacyAnchor() {

@@ -20,11 +20,15 @@ class ResultsParser(HTMLParser):
         self.cell = None
         self.inline = ""
         self.in_inline = False
+        self.result_id = None
+        self.result_rows = {}
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if "id" in attrs:
             self.elements[attrs["id"]] = attrs
+        if tag == "details":
+            self.result_id = attrs.get("id")
         if tag == "tr" and "data-series-key" in attrs:
             self.current = (attrs["data-series-key"], int(attrs["data-isl-target"]))
             self.cells = []
@@ -47,17 +51,40 @@ class ResultsParser(HTMLParser):
             if self.current in self.rows:
                 raise AssertionError(f"duplicate measurement: {self.current}")
             self.rows[self.current] = self.cells
+            self.result_rows[self.current] = self.result_id
             self.current = None
+        elif tag == "details":
+            self.result_id = None
         elif tag == "script":
             self.in_inline = False
 
 
 class BenchmarkPageTests(unittest.TestCase):
+    def test_hardware_groups_keep_their_own_measurements(self):
+        series, skipped = BUILDER["build_series"](BUILDER["merged_rows"]())
+        self.assertFalse(set(skipped) & BUILDER["GFX1103_LABELS"])
+        parser = ResultsParser()
+        content = BUILDER["render_benchmark_content"]({"series": series}, MESSAGES)
+        parser.feed(content)
+        secondary = [s for s in series if s["platform"] == "gfx1103"]
+        self.assertEqual({s["key"] for s in secondary}, BUILDER["GFX1103_LABELS"])
+        self.assertEqual({s["engine"] for s in secondary}, {"SnowLLM", "llama.cpp"})
+        for s in series:
+            expected = "benchmark-results-780m" if s["platform"] == "gfx1103" else "benchmark-results"
+            for p in s["points"]:
+                self.assertEqual(parser.result_rows[s["key"], p["isl_target"]], expected)
+        self.assertLess(content.index('id="benchmark-results"'), content.index('id="benchmarks-780m"'))
+        for s in secondary:
+            self.assertEqual([p["isl_target"] for p in s["points"]], [1024, 8192, 32768, 122880])
+
     def test_cached_scripts_can_render_charts_without_removing_hidden_attributes(self):
         parser = ResultsParser()
         parser.feed((ROOT / "web" / "benchmark" / "index.html").read_text())
-        for element in ["benchmarks-picker", "benchmarks-charts"]:
+        for element in ["benchmarks-picker", "benchmarks-charts", "benchmarks-780m-picker", "benchmarks-780m-charts"]:
             self.assertNotIn("hidden", parser.elements[element])
+        for element, platform in [("benchmarks-picker", "gfx1151"), ("benchmarks-780m-picker", "gfx1103")]:
+            self.assertIn("benchmark-picker", parser.elements[element]["class"].split())
+            self.assertEqual(parser.elements[element]["data-platform"], platform)
 
     def test_every_published_measurement_is_readable_without_javascript(self):
         series, _ = BUILDER["build_series"](BUILDER["merged_rows"]())

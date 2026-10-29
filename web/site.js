@@ -251,7 +251,6 @@ function buildSeriesCatalog(data) {
 function mountSeriesPicker(container, series, opts) {
   var selSeries = series.filter(function (s) { return s.featured; })
     .map(function (s) { return s.key; });
-  if (!selSeries.length && series.length) selSeries = [series[0].key];
 
   var phases = [];
   METRIC_SPECS.forEach(function (m) {
@@ -332,6 +331,8 @@ function mountSeriesPicker(container, series, opts) {
       return choices.find(function (s) { return s.engine === engine && (!common || s.arm === common.arm); }).key;
     });
   }
+
+  if (!selSeries.length && models.length) selSeries = comparisonKeys(models[0]);
 
   var groups = [];
   models.forEach(function (model) {
@@ -844,17 +845,21 @@ function loadTable(id, build) {
     });
 }
 
-loadTable("benchmarks-picker", function (container, data) {
-  var series = buildSeriesCatalog(data);
-  var host = document.getElementById("benchmarks-charts");
-  mountSeriesPicker(container, series, {
-    onChange: function (keys, metrics, view) {
-      renderMetricCharts(host, series, keys, metrics, view);
-    },
+document.querySelectorAll(".benchmark-picker").forEach(function (picker) {
+  loadTable(picker.id, function (container, data) {
+    var series = buildSeriesCatalog({ series: (data.series || []).filter(function (s) {
+      return (s.platform || "gfx1151") === container.dataset.platform;
+    }) });
+    var host = document.getElementById(container.dataset.charts);
+    mountSeriesPicker(container, series, {
+      onChange: function (keys, metrics, view) {
+        renderMetricCharts(host, series, keys, metrics, view);
+      },
+    });
+    host.hidden = false;
+    var results = document.getElementById(container.dataset.results);
+    if (results) results.open = false;
   });
-  host.hidden = false;
-  var results = document.getElementById("benchmark-results");
-  if (results) results.open = false;
 });
 
 function humanBytes(n) {

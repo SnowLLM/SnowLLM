@@ -11,6 +11,14 @@ OUT = ROOT / "web" / "benchmarks.json"
 PAGE = ROOT / "web" / "benchmark" / "index.html"
 START = "<!-- BEGIN GENERATED BENCHMARK DATA -->"
 END = "<!-- END GENERATED BENCHMARK DATA -->"
+GFX1103_LABELS = {
+    "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http",
+    "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http",
+}
+
+
+def platform_of(label: str) -> str:
+    return "gfx1103" if label in GFX1103_LABELS else "gfx1151"
 
 
 def merged_rows() -> list[dict]:
@@ -21,6 +29,14 @@ def merged_rows() -> list[dict]:
     return list(rows.values())
 
 COMPARISONS = [
+    {
+        "model": "MiniCPM-V 4.7 35B-A3B mix_q3gud_im",
+        "snow_label": "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http",
+        "llama_label": "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http",
+        "snow_arm": "DSpark block 8, static eager, HTTP",
+        "llama_arm": "DSpark block 8, ROCm, HTTP",
+        "rungs": [(1024, "1K"), (8192, "8K"), (32768, "32K"), (122880, "120K")],
+    },
     {
         "model": "GLM-5.3-Flash UD-IQ2_XXS",
         "snow_label": "glm5_3_flash_iq2_xxs_mtp_snowllm",
@@ -48,6 +64,10 @@ COMPARISONS = [
 
 
 ARMS = {
+    "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, static eager, HTTP"),
+    "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http":
+        ("llama.cpp", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, ROCm, HTTP", None),
     "glm5_3_flash_iq2_xxs_mtp_snowllm":
         ("SnowLLM", "GLM-5.3-Flash UD-IQ2_XXS", "MTP k=2"),
     "glm5_3_flash_iq2_xxs_mtp_llama":
@@ -94,6 +114,8 @@ ARMS = {
 
 
 def al_of(row: dict, n_max: int | None) -> tuple[float | None, bool]:
+    if row.get("accept_length_mean") is not None:
+        return row["accept_length_mean"], False
     if row.get("accept_unit") == "AL" and row.get("accept_mean") is not None:
         return row["accept_mean"], False
     if n_max == 0:
@@ -147,6 +169,7 @@ def build_series(rows: list[dict]) -> tuple[list[dict], list[str]]:
             continue
         out.append({
             "key": label,
+            "platform": got[0].get("platform", platform_of(label)),
             "engine": engine,
             "model": model,
             "arm": arm,
@@ -187,6 +210,7 @@ def build_rows(rows: list[dict]) -> list[dict]:
                 continue
             row = {
                 "model": cmp["model"],
+                "platform": s.get("platform", platform_of(cmp["snow_label"])),
                 "isl_target": isl,
                 "isl_short": short,
                 "isl": s["isl"],
@@ -214,7 +238,8 @@ def build_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-def render_benchmark_content(data: dict, messages: dict) -> str:
+def render_results(series_list: list[dict], messages: dict, result_id: str,
+                   note_key: str = "benchmark.resultsNote") -> str:
     def text(key: str) -> str:
         return f'data-i18n="{key}">{html.escape(messages[key])}'
 
@@ -226,11 +251,11 @@ def render_benchmark_content(data: dict, messages: dict) -> str:
         ("al", "metric.al.label"),
     ]
     parts = [
-        '<details id="benchmark-results" class="benchmark-results" open>',
+        f'<details id="{result_id}" class="benchmark-results" open>',
         f'<summary {text("benchmark.allResults")}</summary>',
-        f'<p class="note" {text("benchmark.resultsNote")}</p>',
+        f'<p class="note" {text(note_key)}</p>',
     ]
-    models = dict.fromkeys(series["model"] for series in data["series"])
+    models = dict.fromkeys(series["model"] for series in series_list)
     for model in models:
         parts.extend([
             '<div class="scroll"><table>',
@@ -238,7 +263,7 @@ def render_benchmark_content(data: dict, messages: dict) -> str:
             '<thead><tr>' + ''.join(f'<th scope="col" {text(key)}</th>' for _, key in columns) + '</tr></thead>',
             '<tbody>',
         ])
-        for series in data["series"]:
+        for series in series_list:
             if series["model"] != model:
                 continue
             for point in series["points"]:
@@ -260,10 +285,31 @@ def render_benchmark_content(data: dict, messages: dict) -> str:
                     cells.append(f'<{tag}>{content}</{tag.split()[0]}>')
                 parts.append(f'<tr data-series-key="{html.escape(series["key"], quote=True)}" data-isl-target="{point["isl_target"]}">' + ''.join(cells) + '</tr>')
         parts.extend(['</tbody></table></div>'])
-    if any(point.get("derived") for series in data["series"] for point in series["points"]):
+    if any(point.get("derived") for series in series_list for point in series["points"]):
         parts.append(f'<p class="note" {text("benchmark.derived")}</p>')
+    parts.append('</details>')
+    return '\n'.join(parts)
+
+
+def render_benchmark_content(data: dict, messages: dict) -> str:
+    def text(key: str) -> str:
+        return f'data-i18n="{key}">{html.escape(messages[key])}'
+
+    primary = [s for s in data["series"] if s.get("platform", "gfx1151") == "gfx1151"]
+    secondary = [s for s in data["series"] if s.get("platform") == "gfx1103"]
+    parts = [render_results(primary, messages, "benchmark-results")]
+    if secondary:
+        parts.extend([
+            '<section id="benchmarks-780m" class="benchmark-platform" aria-labelledby="benchmarks-780m-heading">',
+            '<h2 id="benchmarks-780m-heading" class="benchmark-hardware-heading">Radeon 780M / Ryzen 9 7940HS</h2>',
+            f'<p class="benchmark-hardware-spec" {text("benchmark.gfx1103.hardware")}</p>',
+            '<div id="benchmarks-780m-picker" class="benchmark-picker" data-src="/benchmarks.json" data-inline="benchmarks-data" data-platform="gfx1103" data-charts="benchmarks-780m-charts" data-results="benchmark-results-780m"></div>',
+            '<div id="benchmarks-780m-charts"></div>',
+            render_results(secondary, messages, "benchmark-results-780m", "benchmark.gfx1103.resultsNote"),
+            f'<p class="note"><a href="/docs/development/benchmarks#radeon-780m" {text("benchmark.gfx1103.details")}</a></p>',
+            '</section>',
+        ])
     parts.extend([
-        '</details>',
         '<script type="application/json" id="benchmarks-data">',
         json.dumps(data, ensure_ascii=False, separators=(',', ':')).replace('<', '\\u003c'),
         '</script>',

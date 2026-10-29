@@ -776,9 +776,9 @@
     flex: none;
   }
 
-  #benchmarks-picker:empty, #benchmarks-charts:empty { display: none; }
+  .benchmark-picker:empty, #benchmarks-charts:empty, #benchmarks-780m-charts:empty { display: none; }
 
-  #benchmarks-picker {
+  .benchmark-picker {
     position: relative;
     z-index: 2;
     background: var(--ground);
@@ -792,6 +792,10 @@
   .benchmark-results .scroll { margin-top: 1.5rem; }
   .benchmark-results caption { text-align: left; font-weight: 600; color: var(--ink); padding-bottom: .75rem; }
   .benchmark-results td { white-space: nowrap; }
+
+  .benchmark-platform { margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 2rem; }
+  .benchmark-hardware-heading { font-size: 1.6rem; line-height: var(--lh-heading); margin: 0 0 .6rem; }
+  .benchmark-hardware-spec { margin: 0 0 1.5rem; color: var(--muted); }
 
   .toolbar .opt { padding: 0.35rem 0.7rem; font-size: var(--fs-ui); }
 

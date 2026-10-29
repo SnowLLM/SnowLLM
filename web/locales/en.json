@@ -46,7 +46,7 @@
   "home.runDesc": "Choose a model that fits your memory. <a href=\"/docs/getting-started/quick-start\">Quick start ↗</a> · <a href=\"/docs/reference/models\">Supported models ↗</a> · <a href=\"/docs/faq#_1-how-do-i-run-a-custom-fine-tuned-model\">Custom models (FAQ) ↗</a>",
   "home.webuiDesc": "Download models, chat and monitor inference in your browser. <a href=\"/docs/webui\">Web UI guide ↗</a>",
   "install.wsl": "Set up ROCm in WSL2 first.",
-  "benchmark.description": "Measured performance on Ryzen AI Max+ 395. Compare engines, models and context lengths with the full results behind every chart.",
+  "benchmark.description": "Performance comparisons across models and context lengths.",
   "benchmark.heading": "Benchmarks",
   "benchmark.methodology": "Measured on Ryzen AI Max+ 395. <a href=\"/docs/development/benchmarks\">Methodology ↗</a>",
   "benchmark.compare": "Compare models",
@@ -228,5 +228,9 @@
   "status.periodLabel": "Aggregation period",
   "status.pageTitle": "Inference usage — SnowLLM",
   "home.target": "Target",
-  "install.targets": "APU targets: gfx1103, gfx1150, gfx1151, gfx1152 and gfx1153. Tested on Ryzen AI Max+ 395; validation of other APUs is in progress."
+  "install.targets": "APU targets: gfx1103, gfx1150, gfx1151, gfx1152 and gfx1153. Tested on Ryzen AI Max+ 395; validation of other APUs is in progress.",
+  "benchmark.gfx1103.hardware": "DDR5 5600 MT/s / 32G",
+  "benchmark.gfx1103.resultsNote": "Complete Radeon 780M measurements. Rates are in tokens per second; TTFT is in seconds and step time is in milliseconds. llama.cpp AL uses the retained server-log mean length; its step time is estimated from AL and decode rate. K = 1024 tokens.",
+  "benchmark.gfx1103.details": "Methodology ↗",
+  "benchmark.gfx1151.hardware": "LPDDR5X 8000 MT/s / 128G"
 }
