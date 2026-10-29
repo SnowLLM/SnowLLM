@@ -69,7 +69,6 @@ snowllm webui config --library-path ""
 | `SNOWLLM_NO_USAGE_STATS` | 启动服务前设为 `1`，关闭[使用统计遥测](./telemetry)。 |
 | `DO_NOT_TRACK` | 启动服务前设为 `1`，关闭使用统计遥测。 |
 | `HF_ENDPOINT` | Hugging Face 地址或镜像；下载凭据会发送到该主机。 |
-| `SNOWLLM_HF_TOKEN` | 下载 token，优先于 `HF_TOKEN`。 |
 | `HF_TOKEN` | 下载 token；还会回退到 `HUGGING_FACE_HUB_TOKEN` 和已保存的 HF token。 |
 | `SNOWLLM_HOME` | 安装目录，默认为 `$XDG_DATA_HOME/snowllm` 或 `~/.local/share/snowllm`。 |
 | `SNOWLLM_BIN_DIR` | 安装命令目录，默认为 `$XDG_BIN_HOME` 或 `~/.local/bin`。 |

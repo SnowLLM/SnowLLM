@@ -133,11 +133,6 @@ snowllm status
 snowllm unload
 ```
 
-Configure model storage and the recipe catalogue in the Web UI's Settings.
-Settings are saved to `~/.config/snowllm/config.json` on Linux
-(or `$XDG_CONFIG_HOME/snowllm/config.json`) and `%APPDATA%\SnowLLM\config.json`
-on Windows. The same configuration applies to `snowllm pull` and direct serving.
-
 See [the Web UI guide](docs/webui.md) for configuration overrides, CLI commands,
 monitoring, and Web UI details.
 
@@ -163,19 +158,17 @@ or override it with `SNOWLLM_MODELS`. `snowllm <recipe>` looks there;
 | `SNOWLLM_MODELS`       | checkpoint directory (`~/models`)                     |
 | `SNOWLLM_RECIPES_URL`  | your own catalogue; a path works as well as a URL     |
 | `HF_ENDPOINT`          | mirror to fetch from                                  |
-| `HF_TOKEN`             | gated repositories; `SNOWLLM_HF_TOKEN` overrides it   |
-| `SNOWLLM_HOME`         | `install.sh` target (`~/.local/share/snowllm`)        |
-| `SNOWLLM_BIN_DIR`      | where `install.sh` links `snowllm` (`~/.local/bin`)   |
-| `SNOWLLM_PYTHON`       | interpreter `install.sh` builds the venv with         |
+| `HF_TOKEN`             | token for gated repositories                         |
 
-Or fetch it yourself. A local Hugging Face `safetensors` directory is all `snowllm` wants:
+Use `SNOWLLM_RECIPES_URL` to select a catalogue:
 
 ```sh
-hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
-```
+# Catalogue compatible with an older SnowLLM version
+SNOWLLM_RECIPES_URL=https://snowllm.dev/recipes/0.3.13.json snowllm recipes --refresh
 
-A GGUF works too — `snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash` gets the UD-Q4_K_XL quant with
-its DFlash drafter beside it: a smaller download, and llama.cpp serves the same file.
+# Local catalogue JSON file
+SNOWLLM_RECIPES_URL="$HOME/recipes.json" snowllm recipes
+```
 
 ## Run
 
@@ -189,17 +182,17 @@ Common flags (`snowllm --help` lists every option):
 | Flag                       | What it does                                                 |
 | -------------------------- | ------------------------------------------------------------ |
 | `--host` `--port`          | Where the OpenAI-compatible API listens. `127.0.0.1:8000` by default — loopback, so reaching it from another machine takes `--host 0.0.0.0`. |
-| `--max-num-seqs`           | Concurrency ceiling, up to 256. A memory choice, not a kernel limit: each request pins linear-attention state for its whole life. |
+| `--max-num-seqs`           | Maximum concurrent requests, up to 256. |
 | `--max-model-len`          | Context length, e.g. `32k`. A per-request ceiling, not a reservation: the KV pool is shared, and a request that outgrows it is preempted and re-prefilled. |
 | `--max-gpu-mem` | GPU memory ceiling: a fraction (default `0.9`) or capacity (`20GB`, `20GiB`). Caches do not expand to fill unused memory. |
 | `--max-host-mem` | Host buffer ceiling as a RAM fraction or capacity; explicitly enables automatic host weight offload. |
-| `--max-disk-offload` | Maximum expert weights automatically offloaded to disk; no cache file quota. |
-| `--prefix-memory-ratio`    | The share of the memory budget that goes to remembering shared prompt prefixes, `0.08` by default, `0` to disable. A repeat behind a 16K prefix costs 0.36 s instead of 5.1 s; the first one pays ~1%. |
+| `--max-disk-offload` | Maximum expert weights automatically offloaded to disk, currently supported only for DeepSeek V4 Flash GGUF. |
+| `--prefix-memory-ratio`    | Prefix snapshot budget as a fraction of base cache memory (`0.08` by default, `0` to disable). |
 | `--max-num-batched-tokens` | Prefill chunk size, e.g. `8k`. The default is a fixed `2048` tokens. |
-| `--num-spec`               | Speculative depth off the MTP head. The optimum is workload-dependent; 2 is a robust default. |
-| `--dflash`                 | Speculate with a separate draft model instead of the MTP head: it proposes a whole block in one forward. Point it at the draft checkpoint, or at the model directory when the drafter ships beside the weights — a recipe that ships one sets this for you. Replaces `--num-spec`. Its weights and KV pool come out of the budget first, so the ceiling holds either way. |
-| `--device-map`             | Move weight groups into host RAM to leave the GPU more room, e.g. `experts:20`. Automatic placement uses an explicit `--max-host-mem` budget for the configured context. Costs a slightly slower decode step. |
-| `--kv-cache-dtype`         | `bf16` or `int8`. int8 halves KV bytes: more decode throughput at long context, less prefill. |
+| `--num-spec`               | MTP draft tokens per step (`2` by default, `0` to disable). |
+| `--dflash`                 | Path to a DFlash or DSpark draft checkpoint, replacing MTP. |
+| `--device-map`             | Offload model weights to host RAM; see the [memory placement options](docs/reference/cli.md#capacity). |
+| `--kv-cache-dtype`         | `bf16` (default) or experimental `int8`. INT8 supports Qwen3.6-27B, Qwen3.6-35B-A3B, Qwen3.8-27B and MiniCPM-V 4.7 35B-A3B. |
 | `--limit-mm-per-prompt`    | Images one request may carry.                                |
 
 ## Roadmap

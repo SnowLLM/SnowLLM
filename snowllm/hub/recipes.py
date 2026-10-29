@@ -61,7 +61,7 @@ def cache_dir() -> pathlib.Path:
 
 
 def token() -> str | None:
-    for name in ("SNOWLLM_HF_TOKEN", "HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
         if v := os.environ.get(name):
             return v.strip()
     home = os.environ.get("HF_HOME") or "~/.cache/huggingface"

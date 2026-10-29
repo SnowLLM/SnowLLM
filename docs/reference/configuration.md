@@ -69,7 +69,6 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | `SNOWLLM_NO_USAGE_STATS` | Set to `1` before service startup to disable [usage telemetry](./telemetry). |
 | `DO_NOT_TRACK` | Set to `1` before service startup to disable usage telemetry. |
 | `HF_ENDPOINT` | Hugging Face endpoint or mirror; download credentials are sent to this host. |
-| `SNOWLLM_HF_TOKEN` | Download token; takes precedence over `HF_TOKEN`. |
 | `HF_TOKEN` | Download token; also falls back to `HUGGING_FACE_HUB_TOKEN` and the saved HF token. |
 | `SNOWLLM_HOME` | Installer directory; defaults to `$XDG_DATA_HOME/snowllm` or `~/.local/share/snowllm`. |
 | `SNOWLLM_BIN_DIR` | Installer command directory; defaults to `$XDG_BIN_HOME` or `~/.local/bin`. |
