@@ -27,6 +27,8 @@ V4.1 预填充采用 CED：全部提示词 token 经过前 20 层 Encoder，并�
 
 `qwen3.6-35b-a3b-q4-k-xl` 是 35B MoE 的 GGUF 版本，常驻权重约 24.2 GiB，适合无法容纳 FP8 文件的机器。附带草稿模型的权重有独立的 `-dflash` 或 `-dflash2` 方案；`qwen3.6-35b-a3b-fp8-mtp` 则使用 FP8 权重中已有的 MTP 预测头。
 
+Q4_K_XL 普通方案关闭 MTP；选择 `qwen3.6-35b-a3b-q4-k-xl-mtp` 可使用 MTP k=2。后者将内嵌 MTP 预测头的 GGUF 权重下载到独立目录。
+
 Flash-Next 默认使用 MTP k=2；选择 `qwen3.8-flash-next-q3-k-xl-no-mtp` 可通过 `--num-spec 0` 使用普通解码，两个方案共用主模型目录。
 
 Flash-Next 配置的上下文上限超过 262144 tokens 时，SnowLLM 会在加载模型时自动启用静态 YaRN。直接启动服务或使用 `snowllm load` 时设置 `--max-model-len`，Web UI 则填写 **上下文长度**，无需额外的 YaRN 开关或修改模型配置文件。倍率跟随容量规划后打印的最终上下文；`--max-model-len 512k` 按 `max_model_len / 262144` 自动选择 2 倍。

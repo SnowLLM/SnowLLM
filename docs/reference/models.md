@@ -50,6 +50,9 @@ hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash`
 recipe of its own, and `qwen3.6-35b-a3b-fp8-mtp` is the FP8 weights decoding through the MTP
 head that checkpoint already carries.
 
+The Q4_K_XL recipe disables MTP. Choose `qwen3.6-35b-a3b-q4-k-xl-mtp` for MTP k=2;
+it downloads the GGUF release with an embedded MTP head into a separate directory.
+
 Flash-Next uses MTP k=2 by default. Choose `qwen3.8-flash-next-q3-k-xl-no-mtp`
 for plain decoding with `--num-spec 0`; both recipes share the same target directory.
 

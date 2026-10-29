@@ -62,6 +62,9 @@ hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash`
 recipe of its own, and `qwen3.6-35b-a3b-fp8-mtp` is the FP8 weights decoding through the MTP
 head that checkpoint already carries.
 
+The Q4_K_XL recipe disables MTP. Choose `qwen3.6-35b-a3b-q4-k-xl-mtp` for MTP k=2;
+it downloads the GGUF release with an embedded MTP head into a separate directory.
+
 Resident is weights only; KV capacity follows the configured context and concurrency.
 DeepSeek wants a 128 GiB machine with a large carve-out, and an explicit host/disk offload budget at long context.
 Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table

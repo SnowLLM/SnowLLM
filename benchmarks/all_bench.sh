@@ -16,7 +16,7 @@ CTX=227328 ISL=225280 COOL=60 benchmarks/run.sh snowllm qwen3.8-27b-q4-k-xl-dfla
 
 ISL=1024,8192,32768,131072 COOL=60 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl & wait $!
 
-LABEL=qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm ISL=1024,8192,32768,131072 COOL=60 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl --num-spec 2 & wait $!
+LABEL=qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm ISL=1024,8192,32768,131072 COOL=60 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl-mtp & wait $!
 
 ISL=1024,8192,32768,131072 COOL=60 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl-dflash & wait $!
 

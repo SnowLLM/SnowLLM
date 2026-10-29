@@ -25,9 +25,10 @@
   "priority": 58,
   "requires": "0.3.0",
   "summary": "Qwen3.6-35B-A3B in UD-Q4_K_XL with vision; MTP is not included.",
-  "note": "For speculative decoding, use the DFlash recipe.",
+  "note": "For speculative decoding, use the MTP or DFlash recipe.",
   "serve_as": "Qwen3.6-35B-A3B",
   "defaults": {
+    "num_spec": 0,
     "max_num_seqs": 4
   }
 }

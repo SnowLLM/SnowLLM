@@ -178,6 +178,7 @@
   "recipe.summary.qwen3.6-35b-a3b-fp8": "FP8 精度的 Qwen3.6-35B-A3B，关闭推测解码。",
   "recipe.summary.qwen3.6-35b-a3b-q4-k-xl-dflash": "UD-Q4_K_XL 精度的 Qwen3.6-35B-A3B，搭配外部 DFlash 草稿模型。",
   "recipe.summary.qwen3.6-35b-a3b-q4-k-xl": "UD-Q4_K_XL 精度的 Qwen3.6-35B-A3B，支持视觉，不含 MTP 预测头。",
+  "recipe.summary.qwen3.6-35b-a3b-q4-k-xl-mtp": "UD-Q4_K_XL 精度的 Qwen3.6-35B-A3B，支持视觉，使用内嵌 MTP 预测头，推测深度为 2。",
   "recipe.summary.qwen3.8-27b-q4-k-xl-dflash2": "UD-Q4_K_XL 精度的 Qwen3.8-27B，搭配 Q8_0 DFlash 2 草稿模型。",
   "recipe.summary.qwen3.8-27b-q4-k-xl": "UD-Q4_K_XL 精度的 Qwen3.8-27B，支持视觉和 MTP。",
   "recipe.summary.qwen3.8-flash-next-iq4-xs": "UD-IQ4_XS 精度的 Qwen3.8-Flash-Next，支持视觉，使用 MTP 深度 2。",
