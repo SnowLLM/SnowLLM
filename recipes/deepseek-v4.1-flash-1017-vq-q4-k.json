@@ -23,16 +23,16 @@
   "priority": 10,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
   "summary": "DeepSeek-V4.1-Flash-1017 text inference with VQ + Q4_K weights, one request and an 8192-token context.",
-  "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Vision and prefix reuse are not enabled.",
+  "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Vision is not enabled.",
   "defaults": {
     "max_num_seqs": 1,
     "num_spec": 0,
-    "prefix_memory_ratio": 0,
+    "prefix_memory_ratio": 0.08,
     "max_model_len": 8192,
     "max_num_batched_tokens": 8192,
     "device_map": "auto",
     "max_gpu_mem_util": 0.94,
     "max_host_mem_util": 0.75
   },
-  "requires": "0.3.14"
+  "requires": "0.3.19"
 }

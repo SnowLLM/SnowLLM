@@ -81,21 +81,21 @@ class Tables:
         trace = ops.tracing()
         if trace is not None and not trace.launch:
             return None
-        b, plan = ctx.batch, ctx.cache.plan
+        b, state = ctx.batch, ctx.cache.plan.engram
         if b.batch_size != 1:
             raise SnowLLMError("V4.1 currently requires one request at a time")
         first = b.host_seq_lens[0] - ctx.M
-        previous = () if first == 0 else getattr(plan, "engram_recent", ())
+        previous = () if first == 0 else state["recent"][0]
         if first == 0:
-            plan.engram_pending = None
-        if first and getattr(plan, "engram_next", -1) != first:
-            raise SnowLLMError("Engram history is discontinuous; prefix reuse is not supported yet")
+            state["pending"][0] = None
+        if first and state["next"][0] != first:
+            raise SnowLLMError("Engram history is discontinuous")
         ids = b.host_ids if b.host_ids is not None else b.input_ids.tolist()
         hashes, recent = self.hash_tokens(ids, previous)
         if not b.is_prefill and ctx.M > 1:
-            plan.engram_pending = (first, tuple(previous),
-                                   tuple(self.constants["token_map"][token] for token in ids))
-        plan.engram_next, plan.engram_recent = first + ctx.M, recent
+            state["pending"][0] = (first, tuple(previous),
+                                    tuple(self.constants["token_map"][token] for token in ids))
+        state["next"][0], state["recent"][0] = first + ctx.M, tuple(recent)
         return hashes
 
 

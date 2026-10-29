@@ -18,16 +18,18 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB |
 
 `deepseek-v4.1-flash-1017-vq-q4-k` supports text inference with the 1017 VQ + Q4_K checkpoint.
-Use `deepseek-v4.1-flash-1017-vq-q4-k-dspark` in SnowLLM 0.3.17 or later to enable DSpark by default with the same model directory and downloads.
+Use `deepseek-v4.1-flash-1017-vq-q4-k-dspark` to enable DSpark by default with the same model directory and downloads.
 The base recipe defaults are one active request, an 8192-token context and 8192-token prefill chunks, with
-speculative decoding and prefix reuse disabled. It supports thinking mode, numeric reasoning
+speculative decoding disabled. From SnowLLM 0.3.19, both recipes enable prefix reuse with
+`--prefix-memory-ratio 0.08`; use `0` to disable it. Prefix snapshots retain compressor state,
+Engram history and the encoder tail, and work with native DSpark. It supports thinking mode, numeric reasoning
 effort from 1 to 100, and the V4.1 tool-call format. Add `--dflash MODEL_DIR` to use the three
 embedded DSpark towers with their native five-token block; no separate draft checkpoint is needed.
 Both recipes cap GPU memory at 94% and host memory at 75%.
 The draft retains a 128-token target window. `--max-model-len 1m --max-num-batched-tokens 8192`
 keeps 1M context capacity and 8K prefill chunks; automatic placement accounts for the extra
 draft weights and may offload more target experts. Vision is not connected yet. The kernel
-library requires ABI 75.
+library requires ABI 80.
 
 With updated kernels, V4.1 keeps token embeddings in their original Q4_K storage and restores
 only the requested rows directly into BF16 activations. The target and DSpark share this table.

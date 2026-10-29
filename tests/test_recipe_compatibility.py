@@ -126,7 +126,9 @@ class RecipeCompatibilityTests(unittest.TestCase):
         self.assertEqual(draft['defaults']['max_num_batched_tokens'], 8192)
         self.assertEqual(draft['defaults']['max_gpu_mem_util'], .94)
         self.assertEqual(draft['defaults']['max_host_mem_util'], .75)
-        self.assertEqual(draft['requires'], '0.3.17')
+        self.assertEqual(draft['requires'], '0.3.19')
+        self.assertEqual(base['requires'], '0.3.19')
+        self.assertEqual(draft['defaults']['prefix_memory_ratio'], .08)
         self.assertEqual(recipes.Recipe(draft).stale, builder.needs_newer(draft))
         self.assertNotIn(draft['id'], {r['id'] for r in builder.for_client(book, '0.3.13')})
 

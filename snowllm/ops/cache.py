@@ -34,12 +34,14 @@ def reshape_and_cache_int8(k: torch.Tensor, v: torch.Tensor, k_cache: torch.Tens
 
 
 def resolve_slots(block_tables: torch.Tensor, row_seq: torch.Tensor, row_pos: torch.Tensor,
-                  block_size: int) -> torch.Tensor:
+                  block_size: int, *, out: torch.Tensor | None = None) -> torch.Tensor:
     M = row_seq.numel()
     _chk(block_tables, "block_tables", torch.int32)
     _chk(row_seq, "row_seq", torch.int32)
     _chk(row_pos, "row_pos", torch.int32)
-    out = torch.empty(M, dtype=torch.int32, device="cuda")
+    if out is None:
+        out = torch.empty(M, dtype=torch.int32, device="cuda")
+    _chk(out, "slot_mapping", torch.int32, M)
     check(lib.snowllm_resolve_slots(_p(block_tables), block_tables.shape[1], _p(row_seq),
                                     _p(row_pos), _p(out), M, block_size, _stream()),
           "resolve_slots")

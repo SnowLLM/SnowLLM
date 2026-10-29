@@ -90,16 +90,12 @@ def profile(decoder):
                     with contextlib.closing(runner._graph_cases(shape)) as cases:
                         for case in cases:
                             rows = sum(shape.lengths)
-                            if getattr(runner.geo, "v41", False):
-                                plan = runner.cache.plan
-                                saved = {key: getattr(plan, key, None) for key in
-                                         ("engram_next", "engram_recent", "engram_pending")}
-                                def run():
-                                    for key, value in saved.items():
-                                        setattr(plan, key, value)
-                                    return case.run()
-                            else:
-                                run = case.run
+                            state = runner.cache.state
+                            saved = [state.save(slot) for slot in range(B)]
+                            def run():
+                                for slot, metadata in enumerate(saved):
+                                    state.load(slot, metadata)
+                                return case.run()
                             eager[rows] = elapsed(run)
                             record = runner.graphs.get(case.key)
                             if record is not None:

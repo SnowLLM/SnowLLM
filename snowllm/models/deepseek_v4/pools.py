@@ -118,15 +118,18 @@ def create_cache(geo, raw_blocks, capacities, block_size, slots=1, spec_rows=1, 
                 lp.comp, lp.index_k = source.comp, source.index_k
     parts = [StateRows(t, axis=1, width=2*g.bank)
              for g in sorted(carries.values(), key=id) for t in (g.kv, g.score)]
+    ced = None
+    if getattr(geo, "v41", False) and geo.kv_source_layers:
+        from .ced import EncoderTail
+        ced = EncoderTail(geo, slots, slabs, block_size)
+        parts.extend(ced.snapshot_parts())
     state = RequestState(parts=parts)
+    plan = Compression(geo, raw_blocks, block_size, slots, spec_rows, ctx_cap,
+                       history, state, carries)
+    plan.ced = ced
     window = -(-geo.sliding_window//block_size) if ratios else 0
     snapshots = CheckpointLayout(
         [PageWindow(lp.raw.k.view(raw_blocks, -1), window, block_size) for lp in layers if window] + parts)
-    plan = Compression(geo, raw_blocks, block_size, slots, spec_rows, ctx_cap,
-                       history, state, carries)
-    if getattr(geo, "v41", False) and geo.kv_source_layers:
-        from .ced import EncoderTail
-        plan.ced = EncoderTail(geo, slots, slabs)
     return CacheStorage(layers, block_size, slabs=slabs, history=history,
                         state=state, snapshots=snapshots, plan=plan)
 

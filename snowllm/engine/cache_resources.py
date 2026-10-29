@@ -228,15 +228,15 @@ class Dsv4Resources(ResourceSet):
     def probe_units(self):
         return self.r._capture_tokens()
 
-    def checkpoint_bytes(self):
+    def checkpoint_bytes(self, rows=1):
         with dry_alloc(), self.cache.temporary(self.r.ctx_cap):
-            return self.checkpoints.bytes_for(1)
+            return self.checkpoints.bytes_for(rows)
 
     def allocate_cache(self, slabs, tokens, chunk=None, sweep=0, probe=False):
         from ..models.deepseek_v4.pools import make_cache
         r = self.r
         chunk = r.max_prefill_tokens if chunk is None else chunk
-        ring = ops.dsv4_mla_raw_ring_blocks(r.geo.sliding_window, chunk, r.block_size)
+        ring = r._ring_blocks(chunk)
         r.cache = make_cache(r.geo, tokens, r.block_size, r.max_num_seqs,
             raw_blocks=(ops.kv_blocks_for(tokens, r.block_size) if probe else r.max_num_seqs*ring),
             slabs=slabs, spec_rows=1 if probe else r.T, ctx_cap=max(r.ctx_cap, tokens) if probe else r.ctx_cap)

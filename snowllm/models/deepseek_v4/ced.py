@@ -4,22 +4,27 @@ from dataclasses import replace
 
 import torch
 
-from ...engine.cache import tensor
+from ...engine.cache import StateRows, tensor
 from ... import ops
 from ..geometry import V41_MOE_CHUNK
 
 
 class EncoderTail:
-    def __init__(self, geo, slots, slabs):
+    def __init__(self, geo, slots, slabs, block_size):
         self.window = geo.sliding_window
+        self.block_size = block_size
         self.streams = tensor(slabs, (slots, self.window, geo.hc_mult, geo.hidden), torch.bfloat16)
         self.pre = tensor(slabs, (slots, self.window, geo.hc_mult), torch.float32)
         self.ids = tensor(slabs, (slots, self.window), torch.int64)
         self.positions = tensor(slabs, (slots, self.window), torch.int64)
         self.mapping = tensor(slabs, (slots, self.window), torch.int32)
+        self.logical = tensor(slabs, (self.window,), torch.int32)
         self.sequences = tensor(slabs, (self.window,), torch.int32)
         self.cumulative = tensor(slabs, (2,), torch.int32)
         self.last = tensor(slabs, (1,), torch.int32)
+
+    def snapshot_parts(self):
+        return tuple(StateRows(t) for t in (self.streams, self.pre, self.ids, self.positions))
 
     def append(self, ctx, streams):
         b, a = ctx.batch, ctx.arena
@@ -30,8 +35,7 @@ class EncoderTail:
         trace = ops.tracing()
         launch = trace is None or trace.launch
         for dest, source in ((self.streams[slot], streams), (self.pre[slot], ctx.pre_mix),
-                             (self.ids[slot], b.input_ids), (self.positions[slot], b.positions),
-                             (self.mapping[slot], b.slot_mapping)):
+                             (self.ids[slot], b.input_ids), (self.positions[slot], b.positions)):
             if keep:
                 # The retained prefix overlaps its destination; stage it inside the planned arena.
                 with a.frame():
@@ -49,7 +53,10 @@ class EncoderTail:
     def batch(self, source):
         end = source.host_seq_lens[0]
         rows = min(end, self.window)
-        ops.fill_ranges_(((self.sequences, 0, 0), (self.cumulative, 0, rows), (self.last, rows - 1, 0)))
+        ops.fill_ranges_(((self.sequences, 0, 0), (self.cumulative, 0, rows),
+                          (self.last, rows - 1, 0), (self.logical[:rows], end - rows, 1)))
+        ops.resolve_slots(source.block_tables, self.sequences[:rows], self.logical[:rows],
+                          self.block_size, out=self.mapping[0, :rows])
         return replace(source, input_ids=self.ids[0, :rows], positions=self.positions[0, :rows],
                        slot_mapping=self.mapping[0, :rows], seq_of_row=self.sequences[:rows],
                        cu_seqlens=self.cumulative, host_cu_seqlens=[0, rows], host_ids=None,

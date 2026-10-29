@@ -23,18 +23,18 @@
   "priority": 10,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
   "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
-  "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Vision and prefix reuse are not enabled.",
+  "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Vision is not enabled.",
   "defaults": {
     "max_num_seqs": 1,
     "num_spec": 0,
     "dflash": "@model",
     "dflash_block": 5,
-    "prefix_memory_ratio": 0,
+    "prefix_memory_ratio": 0.08,
     "max_model_len": 8192,
     "max_num_batched_tokens": 8192,
     "device_map": "auto",
     "max_gpu_mem_util": 0.94,
     "max_host_mem_util": 0.75
   },
-  "requires": "0.3.17"
+  "requires": "0.3.19"
 }

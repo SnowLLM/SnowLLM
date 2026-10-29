@@ -13,8 +13,12 @@ Add MiniCPM mixed-Q3 DSpark, reduce memory use, improve Windows compatibility an
   优化自动权重放置，减少不必要的主机卸载。
 - Remove the implicit 90% host memory ceiling when no host budget is configured; automatic host weight offload remains disabled by default.
   未配置主机预算时不再施加隐含的 90% 主机内存上限，自动主机权重卸载仍默认关闭。
-- Fix Windows compatibility for DeepSeek V4 Flash 0731 and GLM 5.3 Flash. DeepSeek V4.1 Flash 1017 also runs, but prefix caching still needs fixes.
-  修复 DeepSeek V4 Flash 0731 和 GLM 5.3 Flash 的 Windows 兼容性。DeepSeek V4.1 Flash 1017 也可运行，但前缀缓存仍有待修复。
+- Fix Windows compatibility for DeepSeek V4 Flash 0731, GLM 5.3 Flash and DeepSeek V4.1 Flash 1017.
+  修复 DeepSeek V4 Flash 0731、GLM 5.3 Flash 和 DeepSeek V4.1 Flash 1017 的 Windows 兼容性。
+- Complete DeepSeek V4.1 prefix caching, including Engram history, encoder replay state and native DSpark; enable it in both V4.1 recipes.
+  补齐 DeepSeek V4.1 前缀缓存，包括 Engram 历史、Encoder 回放状态及原生 DSpark 支持，并在两个 V4.1 方案中默认启用。
+- Fix V4.1 DSpark startup planning and adjust automatic weight placement after adaptive profiling to stay within the configured memory budget.
+  修复 V4.1 DSpark 启动规划，并在自适应 profiling 后调整自动权重放置，遵守配置的显存预算。
 - Configure Pi with all named models and context limits from the recipe catalogue without requiring a running inference service.
   Pi 配置直接读取 recipe 目录中的全部具名模型及上下文上限，无需提前启动推理服务。
 - Require SnowLLM-Kernels 0.3.11. Existing expert disk caches can no longer be reused.

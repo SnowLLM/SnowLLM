@@ -144,15 +144,18 @@ class RequestState:
         self.layout = CheckpointLayout(tuple(StateRows(t) for t in tensors)
                                        if parts is None else parts)
         self.counters = {}
+        self.defaults = {}
 
     def counter(self, name, keys, slots):
-        values = self.counters[name] = {k: [0]*slots for k in keys}
+        defaults = dict(keys) if isinstance(keys, dict) else dict.fromkeys(keys, 0)
+        self.defaults[name] = defaults
+        values = self.counters[name] = {k: [value]*slots for k, value in defaults.items()}
         return values
 
     def reset(self, slot):
-        for values in self.counters.values():
-            for v in values.values():
-                v[slot] = 0
+        for name, values in self.counters.items():
+            for key, v in values.items():
+                v[slot] = self.defaults[name][key]
 
     def save(self, slot):
         return {name: {key: values[slot] for key, values in group.items()}

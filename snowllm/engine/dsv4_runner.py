@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
-import ctypes
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -62,8 +61,6 @@ class Dsv4Runner(GraphRunner):
                 raise SnowLLMError("DeepSeek V4.1 speculation requires its native DSpark towers")
             if any(i < max(self.geo.kv_source_layers) or i >= self.geo.num_layers for i in self.tap_layers):
                 raise SnowLLMError("DeepSeek V4.1 DSpark taps must be decoder layer inputs")
-            if self.prefix_memory_ratio:
-                raise SnowLLMError("DeepSeek V4.1 currently requires --prefix-memory-ratio 0")
         if self.num_spec and not self.tap_layers:
             raise SnowLLMError(
                 f"num_spec={self.num_spec}: this checkpoint ships no MTP head of its own. Its drafter "
@@ -95,9 +92,10 @@ class Dsv4Runner(GraphRunner):
     def _capture_tokens(self) -> int:
         return self.max_num_seqs * (self.block_size + self.spec_rows)
 
-    def _cache_bytes(self, tokens):
+    def _cache_bytes(self, tokens, chunk=None):
+        chunk = self.max_prefill_tokens if chunk is None else chunk
         blocks = self._draft_pool_blocks(ops.kv_blocks_for(tokens, self.block_size))
-        return (self.resources.cache.bytes_for(tokens, self.max_prefill_tokens)
+        return (self.resources.cache.bytes_for(tokens, chunk)
                 + draft_pool_bytes(self.draft_geo, blocks, self.block_size))
 
     def _pool_plan(self, graph_bytes):
@@ -141,10 +139,8 @@ class Dsv4Runner(GraphRunner):
 
     def fixed_bytes(self, chunk: int) -> int:
         tokens = self._cache_blocks()*self.block_size
-        return (self.resources.cache.bytes_for(tokens, chunk)
-                + draft_pool_bytes(self.draft_geo,
-                    self._draft_pool_blocks(ops.kv_blocks_for(tokens, self.block_size)), self.block_size)
-                + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
+        return (self._cache_bytes(tokens, chunk)
+                + (self.resources.checkpoint_bytes(2*self.max_num_seqs)
                    if self.prefix_memory_ratio else 0))
 
     def _loading_cache_bytes(self, rows: int) -> int:
@@ -218,6 +214,10 @@ class Dsv4Runner(GraphRunner):
     def prefix_pages(self, alloc: BlockAllocator) -> "Pages":
         from .prefix_cache import HistoryPages
         return HistoryPages(self.cache.history)
+
+    def prefix_store(self, alloc, draft=None, *, lookahead=0):
+        # V4.1 rebuilds the windowed draft KV from target replay taps after prefill.
+        return super().prefix_store(alloc, None if self.geo.v41 else draft, lookahead=lookahead)
 
     def prefix_residue(self) -> "Residue":
         from .prefix_cache import SnapshotResidue
@@ -293,12 +293,7 @@ class Dsv4Runner(GraphRunner):
     def _spans(self, b: Batch) -> tuple[list[int], list[int], list[int]]:
         state = b.state_indices[:b.batch_size]
         host = host_view(state)
-        if host is None:
-            slots = state.tolist()
-        else:
-            scalar = {torch.int32: ctypes.c_int32, torch.int64: ctypes.c_int64}[host.dtype]
-            slots = [scalar.from_address(host.data_ptr()+i*host.stride(0)*host.element_size()).value
-                     for i in range(host.numel())]
+        slots = (state if host is None else host).tolist()
         bad = [s for s in slots if not 0 <= s < self.max_num_seqs]
         if bad:
             raise SnowLLMError(f"state slot {bad[0]} is outside [0, {self.max_num_seqs}); this "

@@ -52,6 +52,8 @@ class Compression:
         self.n_comp = state.counter('n_comp', self.ratios, slots)
         self.carry_at = state.counter('carry_at', self.ratios, slots)
         self.carry_bank = state.counter('carry_bank', self.ratios, slots)
+        self.engram = (state.counter('engram', dict(next=-1, recent=(), pending=None), slots)
+                       if getattr(geo, "v41", False) else None)
         self.max_len, self._identity, self.messages = 0, None, None
         self.n_comp_cap = {r: -(-self._ctx_cap//r) for r in self.ratios}
         self.table_cap = {r: ops.kv_blocks_for(self.n_comp_cap[r], block_size) for r in self.ratios}
@@ -79,15 +81,15 @@ class Compression:
     def commit(self, slot, n_tokens):
         for r in self.ratios:
             self.n_comp[r][slot] = min(self.n_comp[r][slot], n_tokens//r)
-        pending = getattr(self, "engram_pending", None)
+        pending = self.engram["pending"][slot] if self.engram is not None else None
         if pending is not None:
             first, previous, tokens = pending
             kept = n_tokens - first
-            if slot != 0 or not 0 <= kept <= len(tokens):
+            if not 0 <= kept <= len(tokens):
                 raise ops.SnowLLMError("Engram commit is outside the verified token prefix")
-            self.engram_next = n_tokens
-            self.engram_recent = list((*previous, *tokens[:kept])[-3:])
-            self.engram_pending = None
+            self.engram["next"][slot] = n_tokens
+            self.engram["recent"][slot] = tuple((*previous, *tokens[:kept])[-3:])
+            self.engram["pending"][slot] = None
 
     def batch(self, tokens: torch.Tensor, positions: torch.Tensor, firsts: list[int],
               lens: list[int], slots: list[int], raw_table: torch.Tensor | None = None,

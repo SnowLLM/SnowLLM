@@ -223,6 +223,13 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from ._platform import device_mem_info
     release_device_cache()
     free, total = device_mem_info()
+    if dspark_adaptive and getattr(model.geo, "v41", False):
+        # V4.1 has no captured target graphs, so post-profile weight moves are safe.
+        from .models.placement import ensure_room
+        while total-free > limits.gpu_limit(total) and ensure_room(
+                model, total-free-limits.gpu_limit(total)):
+            release_device_cache()
+            free, total = device_mem_info()
     if total-free > limits.gpu_limit(total):
         engine.runner._discard_pools()
         from .capacity import memory_shortage

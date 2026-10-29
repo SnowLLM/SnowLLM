@@ -423,7 +423,7 @@ def main() -> int:
                   and r.get("status") == "supported"
                   and r["defaults"]["max_num_seqs"] == 1
                   and r["defaults"]["num_spec"] == 0
-                  and r["defaults"]["prefix_memory_ratio"] == 0 for r in book))
+                  and r["defaults"]["prefix_memory_ratio"] == .08 for r in book))
     finally:
         httpd.shutdown()
         shutil.rmtree(tmp, ignore_errors=True)
