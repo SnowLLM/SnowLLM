@@ -124,7 +124,7 @@ class DSparkDraft:
                                     workspace=scratch, out=out, fp32_bias=True)
 
 
-def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int, DraftWorkspace]:
+def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int, DraftWorkspace, int]:
     # The target's embedding and LM head are shared and own no storage in this plan.
     shared = torch.empty(0, dtype=torch.bfloat16, device="meta")
     target = SimpleNamespace(embed=SimpleNamespace(weight=shared), head=object(),
@@ -132,7 +132,8 @@ def weight_plan(rd: GGUFReader, geo: DSparkGeometry) -> tuple[int, int, DraftWor
     with ops.dry_load() as dry:
         draft = load(rd, geo, target, Dsv4Walker())
         sizes = dry.device, dry.peak_device
-    return *sizes, Workspace(draft)
+        host_peak = dry.peak_host + rd._io_bytes
+    return *sizes, Workspace(draft), host_peak
 
 
 class Workspace(DraftWorkspace):

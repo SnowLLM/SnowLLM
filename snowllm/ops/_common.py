@@ -265,6 +265,7 @@ class DryLoad:
         self._storages: dict[int, int] = {}
         self._aliases: dict[int, set[int]] = {}
         self._peak_device = 0
+        self._peak_host = 0
 
     def note(self, t: torch.Tensor, host: bool = False) -> torch.Tensor:
         storage = t.untyped_storage()
@@ -280,6 +281,7 @@ class DryLoad:
             self._live[tag] = (storage.nbytes(), host)
         elif host:
             self._live[tag] = (storage.nbytes(), True)
+        self._peak_host = max(self._peak_host, self.pinned_host)
         if id(t) not in self._tag:
             self._tag[id(t)] = tag
             self._aliases[tag].add(id(t))
@@ -314,6 +316,14 @@ class DryLoad:
     @property
     def host(self) -> int:
         return sum(n for n, h in self._live.values() if h)
+
+    @property
+    def pinned_host(self) -> int:
+        return sum(_host_buffer_size(n) for n, host in self._live.values() if host)
+
+    @property
+    def peak_host(self) -> int:
+        return max(self._peak_host, self.pinned_host)
 
     @property
     def mapped_host_bytes(self) -> int:

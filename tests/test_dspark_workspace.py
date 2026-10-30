@@ -8,13 +8,34 @@ import torch
 import _harness
 from snowllm import ops
 from snowllm.engine.forward_context import Dsv4Walker
-from snowllm.models.deepseek_v4.dspark import DSparkDraft, Workspace
+from snowllm.models.deepseek_v4.dspark import DSparkDraft, Workspace, weight_plan
 from snowllm.models.deepseek_v4.layers import RMSNorm
 from snowllm.models.deepseek_v4.v41 import Linear
 from snowllm.models.projection import pack_bf16
 
 
 class DSparkWorkspaceTests(unittest.TestCase):
+    def test_draft_host_plan_tracks_allocation_lifetimes_and_reader_buffers(self):
+        from snowllm.ops._common import _host_buffer_size
+        geo = SimpleNamespace(tap_layers=())
+        reader = SimpleNamespace(_io_bytes=48 << 20)
+
+        def load(*args):
+            with ops.host_memory():
+                temporary = ops.empty_bytes(8192)
+                weight = ops.empty_bytes(4096)
+                del temporary
+            return SimpleNamespace(weight=weight)
+
+        before = ops.host_pinned_bytes()
+        with patch('snowllm.models.deepseek_v4.dspark.load', side_effect=load):
+            device, peak, workspace, host = weight_plan(reader, geo)
+        self.assertEqual(device, 0)
+        self.assertEqual(host, _host_buffer_size(8192) + _host_buffer_size(4096) + reader._io_bytes)
+        self.assertEqual(workspace.draft.weight.numel(), 4096)
+        self.assertEqual(ops.host_pinned_bytes(), before)
+
+
     def check_stages(self, v41, graph):
         torch.manual_seed(78)
         rows, hidden, width, vocab, rank, block = 17, 256, 512, 512, 64, 5

@@ -73,18 +73,6 @@ def _log(msg: str) -> None:
     print(f"{term.stamp(time.strftime('%H:%M:%S'))} {msg}", flush=True)
 
 
-def _draft_bytes(dflash: str | None, geo: object) -> int:
-    from .engine import _dspark
-    if not dflash or not _dspark(geo):
-        return 0
-    if geo.stack.v41:
-        return 0
-    from .checkpoint.gguf.source import find_dspark_gguf
-    p = pathlib.Path(dflash).expanduser()
-    side = find_dspark_gguf(p) if p.is_dir() else p
-    return side.stat().st_size if side else 0
-
-
 def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks: int | None,
           default_max_tokens: int | None, seed: int | None, profile_dir: str | None,
           enforce_eager: bool = False, num_spec: int = 0, kv_int8: bool = False,
@@ -164,7 +152,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
               draft_workspace=draft.workspace,
               prefix_ratio=prefix_memory_ratio, kv_int8=kv_int8,
               num_spec=draft_num_spec(draft.geo, dflash_block) if dflash else num_spec,
-              host_taken=_draft_bytes(dflash, draft.geo), blocks=num_kv_blocks,
+              host_taken=draft.host_load_peak_bytes, blocks=num_kv_blocks,
               dflash_block=dflash_block,
               dflash_p_min=DEFAULT_DSPARK_P_MIN if dflash_p_min is None else dflash_p_min,
               dspark_adaptive=dspark_adaptive, mtp_window=mtp_window, mtp_sinks=mtp_sinks,

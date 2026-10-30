@@ -191,6 +191,7 @@ class DraftPlan:
     device_bytes: int = 0
     load_peak_bytes: int = 0
     workspace: DraftWorkspace | None = None
+    host_load_peak_bytes: int = 0
 
 
 def plan_draft(path: str | None, geo: DraftGeometry = None) -> DraftPlan:
@@ -209,7 +210,7 @@ def draft_load_peak_bytes(path: str | None, geo: DraftGeometry = None) -> int:
     return plan_draft(path, geo).load_peak_bytes
 
 
-def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int, DraftWorkspace | None]:
+def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int, DraftWorkspace | None, int]:
     import pathlib
 
     from ..checkpoint.gguf.source import GGUFReader, find_dspark_gguf
@@ -218,7 +219,7 @@ def _dspark_weight_plan(path: str, geo: DraftGeometry) -> tuple[int, int, DraftW
     p = pathlib.Path(path).expanduser()
     side = find_dspark_gguf(p) if p.is_dir() else (p if p.suffix == ".gguf" else None)
     if side is None:
-        return 0, 0, None
+        return 0, 0, None, 0
     with GGUFReader(side) as rd:
         return dspark.weight_plan(rd, geo)
 
