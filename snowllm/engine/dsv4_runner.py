@@ -101,7 +101,6 @@ class Dsv4Runner(GraphRunner):
     def _pool_plan(self, graph_bytes):
         return PoolPlan(self._cache_bytes, self.ctx_cap,
             requested=self._cache_blocks()*self.block_size,
-            maximum=self.max_num_seqs*self.ctx_cap if self._want_blocks is None else None,
             checkpoint_bytes=(self.resources.checkpoint_bytes() + self._draft_checkpoint_bytes()
                               if self.prefix_memory_ratio else 0),
             future_bytes=graph_bytes, minimum_snapshots=2*self.max_num_seqs)

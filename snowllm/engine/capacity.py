@@ -39,7 +39,9 @@ def auxiliary_bytes(r, kv):
             spec = decoder(r, sampler, None, tables, stage, num_spec=r.num_spec,
                            window=kv.get('mtp_window', 0), sinks=kv.get('mtp_sinks', 64))
         if r.auto_yarn:
-            native = int(r.model.config['max_position_embeddings'])
-            inv, _ = yarn_rope_table(r.model.config, max(1., r.ctx_cap/native))
+            from ..context import ContextCapacity
+            capacity = r.context_capacity or ContextCapacity.for_model(r.model, r.ctx_cap)
+            inv, _ = yarn_rope_table(r.model.config, capacity.rope_factor,
+                                    orig_max_pos=capacity.original)
             inv = inv.cuda()
         return dry.device

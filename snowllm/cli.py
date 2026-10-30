@@ -232,7 +232,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     if host_offload is not None:
         _log(f'Host offload: {dmap.host_bytes} bytes ({dmap.host_bytes / (1 << 30):.3f} GiB); '
              f'host target {host_offload} bytes')
-    _log(f'capacity: context {max_model_len} tokens (input + output), '
+    _log(f'capacity: shared KV {engine.kv_capacity_tokens} tokens, '
+         f'context {engine.max_model_len} tokens per request (input + output), '
          f'offload {actual_offload:.4%}, '
          f'{max_num_seqs} concurrent requests; chunk {engine.prefill_chunk}')
     engine.runtime_config = dict(model_path=str(root.resolve()), moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
@@ -241,6 +242,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  host_offload=host_offload,
                                  host_alloc=host_alloc,
                                  max_model_len=engine.max_model_len,
+                                 kv_capacity_tokens=engine.kv_capacity_tokens,
+                                 model_context_limit=engine.model_context_limit,
                                  max_num_seqs=engine.max_num_seqs, kv_cache_dtype="int8" if engine.runner.kv_int8 else "bf16",
                                  max_gpu_mem_util=((limits.max_gpu_mem_util or DEFAULT_GPU_UTIL) if limits.max_gpu_mem_gib is None else None),
                                  max_gpu_mem_gib=limits.max_gpu_mem_gib,
@@ -259,7 +262,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
          f"(engine init + capture {time.time() - t1:.1f}s total)")
 
-    orig_max = int(model.config.get("max_position_embeddings", 262144))
+    orig_max = engine._rope_orig_max
     aliases = {}
     for s in served_names or [serve_as or root.name]:
         name, _, fac = s.partition("=")
@@ -270,7 +273,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                 f"is built at load out of one table per compression flavour, with the ramp already "
                 f"folded into the frequencies, and the engine has no handle on it. Drop the "
                 f"=FACTOR.")
-        aliases[name] = Alias(factor, min(max_model_len, int(factor * orig_max)))
+        aliases[name] = Alias(factor, min(engine.max_model_len, int(factor * orig_max)))
     proc = None
     if model.visual is not None:
         proc = loader.load_processor(root, tok)
@@ -298,7 +301,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
          f"{engine.runner.kv_bytes / (1 << 30):.1f} GiB of KV in all, "
          f"prefill chunk {engine.prefill_chunk}"
          f"{f' ({act / (1 << 30):.1f} GiB of activations, allocated up front)' if act else ''}, "
-         f"ctx {max_model_len}, stop {eos}")
+         f"ctx/request {engine.max_model_len}, shared capacity {engine.kv_capacity_tokens}, stop {eos}")
     if engine.dflash is not None:
         pool = engine.dflash.blocks
         g = engine.dflash_geo
@@ -363,8 +366,8 @@ def parser() -> argparse.ArgumentParser:
     g = p.add_argument_group('capacity')
     g.add_argument("--max-num-seqs", type=int, default=DEFAULT_MAX_NUM_SEQS, metavar="N",
                    help='Maximum concurrent requests (up to 256).')
-    g.add_argument("--max-model-len", type=_size, default=DEFAULT_CONTEXT_TARGET, metavar="N",
-                   help='Maximum context input + output tokens; never increased to fill memory.')
+    g.add_argument("--max-model-len", "--max-ctx-len", type=_size, default=DEFAULT_CONTEXT_TARGET, metavar="N",
+                   help='Shared KV token capacity; each request is capped at the model context limit. Never increased to fill memory.')
     p.set_defaults(max_gpu_mem_util=None, max_gpu_mem_gib=None,
                    max_host_mem_util=None, max_host_mem_gib=None)
     budget = g.add_mutually_exclusive_group()

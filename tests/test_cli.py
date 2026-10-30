@@ -13,6 +13,10 @@ from unittest.mock import Mock, patch
 
 
 class CLITests(unittest.TestCase):
+    def test_context_capacity_alias_reaches_build(self):
+        args, _ = self.launch_options(('--max-ctx-len', '2M'))
+        self.assertEqual(args[2], 2 << 20)
+
     def launch_options(self, extra=(), recipe=None, failure=None):
         from snowllm import cli
         from snowllm.errors import SnowLLMError

@@ -58,7 +58,8 @@ class BaseRunner:
                  max_num_seqs=DEFAULT_MAX_NUM_SEQS, max_prefill_tokens=DEFAULT_PREFILL_CHUNK, num_spec=0,
                  kv_int8=False, block_size=None, gpu_memory_utilization=DEFAULT_GPU_UTIL,
                  reserve_bytes=0, tap_layers=(), draft_geo=None, prefix_memory_ratio=0.,
-                 plan_activations=True, load_peak_bytes=0, draft_workspace: DraftWorkspace | None = None):
+                 plan_activations=True, load_peak_bytes=0, draft_workspace: DraftWorkspace | None = None,
+                 context_capacity=None):
         self._check_seqs(max_num_seqs)
         if num_spec < 0:
             raise SnowLLMError('num_spec must be nonnegative')
@@ -66,6 +67,11 @@ class BaseRunner:
         self.max_num_seqs, self.max_blocks_per_seq = max_num_seqs, max_blocks_per_seq
         self.block_size = self._pick_block_size(block_size)
         self.ctx_cap = max_blocks_per_seq * self.block_size
+        self.context_capacity = context_capacity
+        self.total_kv_blocks = (max_blocks_per_seq if context_capacity is None else
+                                ops.kv_blocks_for(context_capacity.tokens, self.block_size))
+        if context_capacity is not None:
+            self.auto_yarn = self.tunable_rope and context_capacity.auto_yarn
         self.num_spec = num_spec
         self.kv_int8, self.plan_activations = kv_int8, plan_activations
         self.gpu_util, self.reserve_bytes = gpu_memory_utilization, int(reserve_bytes)
@@ -259,7 +265,7 @@ class BaseRunner:
 
     def _cache_blocks(self):
         # All request slots share this total KV pool.
-        return (self.max_blocks_per_seq
+        return (getattr(self, 'total_kv_blocks', self.max_blocks_per_seq)
                 if self._want_blocks is None else self._want_blocks)
 
     def _draft_pool_blocks(self, blocks, *, prefix_slots=0):

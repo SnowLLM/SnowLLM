@@ -300,18 +300,23 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     ctx = int(kv.get("ctx") or 0)
     if ctx <= 0:
         return 0
+    from ..context import ContextCapacity
+    capacity = ContextCapacity.for_model(model, ctx)
+    chunk = kv.get('chunk', 'auto')
+    if chunk != 'auto':
+        chunk = min(int(chunk), capacity.per_request)
     free, total = gpu_mem_info()
     resident = int(kv.get("draft_resident", kv.get("reserve")) or 0)
     available = int(total * float(kv.get("util") or DEFAULT_GPU_UTIL)) - (total - free)
     room = available - resident + int(kv.get("loaded_weight_bytes") or 0)
     r = _runner_for(model)(
-        model, None, ops.kv_blocks_for(ctx, ops.KV_BLOCK_SIZES[0]), max(1, int(kv.get("slots") or 1)),
-        max_prefill_tokens=kv.get("chunk", "auto"), num_spec=int(kv.get("num_spec") or 0),
+        model, kv.get('blocks'), ops.kv_blocks_for(capacity.per_request, ops.KV_BLOCK_SIZES[0]), max(1, int(kv.get("slots") or 1)),
+        max_prefill_tokens=chunk, num_spec=int(kv.get("num_spec") or 0),
         kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=resident,
         load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
         prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=True,
-        draft_workspace=kv.get("draft_workspace"))
+        draft_workspace=kv.get("draft_workspace"), context_capacity=capacity)
     loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - available)
     from .capacity import auxiliary_bytes
     aux = auxiliary_bytes(r, kv)
@@ -348,6 +353,11 @@ class Engine:
             raise ValueError('--dspark-adaptive requires --dflash-p-min 0')
         if dflash_path:
             _check_dflash_target(model, self.dflash_geo)
+        from ..context import ContextCapacity
+        capacity = ContextCapacity.for_model(model, max_model_len)
+        self.kv_capacity_tokens = capacity.tokens
+        self.model_context_limit = capacity.model_limit
+        max_model_len = capacity.per_request
         self.max_blocks = ops.kv_blocks_for(max_model_len, ops.KV_BLOCK_SIZES[0])
         mpt = "auto" if prefill_chunk == "auto" else min(int(prefill_chunk), max_model_len)
         self.dflash_block = dflash_block = draft_block(self.dflash_geo, dflash_block)
@@ -368,7 +378,7 @@ class Engine:
                              draft_geo=self.dflash_geo,
                              draft_workspace=draft_plan.workspace,
                              prefix_memory_ratio=prefix_memory_ratio,
-                             plan_activations=plan_activations)
+                             plan_activations=plan_activations, context_capacity=capacity)
         try:
             self.prefill_chunk = self.runner.max_prefill_tokens
             self.dflash_blocks = self.runner.draft_blocks
@@ -418,9 +428,8 @@ class Engine:
             self._active_factor: float | None = None
             self._loaded_rope_factor: float | None = None
             self._rope_cache: dict[float, tuple] = {}
-            self._rope_orig_max = int(model.config.get("max_position_embeddings", 262144))
-            self.default_rope_factor = (max(1.0, max_model_len / self._rope_orig_max)
-                                        if self.runner.auto_yarn else 1.0)
+            self._rope_orig_max = capacity.original
+            self.default_rope_factor = capacity.rope_factor if self.runner.auto_yarn else 1.0
 
             self.runner.resources.add(lambda slabs: None, [(self, ('dflash', 'spec', 'sampler',
                 'cache', 'tables', 'stage'))]).allocate()
