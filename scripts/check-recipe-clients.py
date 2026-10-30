@@ -18,15 +18,25 @@ from snowllm._version import __version__
 from snowllm.hub import recipes
 assert __version__ == sys.argv[2], __version__
 book = recipes.catalogue(sys.argv[3], refresh=True)
-target = recipes.find('deepseek-v4-flash-iq2-xxs-400k', book)
-key = 'gpu_memory_utilization' if __version__ == '0.3.13' else 'max_gpu_mem_util'
-assert target.servable and target.defaults[key] == .95
-assert all(set(recipe.defaults) <= set(recipes.SETTABLE) for recipe in book)
-print(json.dumps(dict(version=__version__, recipes=len(book), gpu_fraction=target.defaults[key])))
+current = json.loads(pathlib.Path(sys.argv[4]).read_text())['recipes']
+expected = {r['id']: r for r in current
+            if recipes.version(str(r.get('requires') or '0')) <= recipes.version(__version__)}
+assert expected, 'no recipes compatible with this client'
+assert {r.id for r in book} == set(expected), 'catalogue does not match client version requirements'
+for raw in expected.values():
+    target = recipes.find(raw['id'], book)
+    defaults = dict(raw.get('defaults') or {})
+    if __version__ == '0.3.13' and 'max_gpu_mem_util' in defaults:
+        defaults['gpu_memory_utilization'] = defaults.pop('max_gpu_mem_util')
+    assert target.defaults == defaults, (target.id, target.defaults, defaults)
+    assert set(target.defaults) <= set(recipes.SETTABLE), target.id
+    assert target.servable == (raw.get('status', 'supported') == 'supported'), target.id
+print(json.dumps(dict(version=__version__, recipes=len(book))))
 '''
 
 
 def check(wheels, web):
+    current_catalogue = web/'recipe-v2.json'
     with tempfile.TemporaryDirectory() as folder:
         base = Path(folder)
         env = dict(os.environ, SNOWLLM_CONFIG=str(base/'config.json'),
@@ -43,19 +53,20 @@ def check(wheels, web):
                 archive.extractall(source)
             catalogue = web/'recipes'/f'{client}.json'
             result = subprocess.run([sys.executable, '-c', PROBE, str(source), client,
-                                     str(catalogue.resolve())], env=env, cwd=base,
+                                     str(catalogue.resolve()), str(current_catalogue.resolve())], env=env, cwd=base,
                                     capture_output=True, text=True)
             if result.returncode:
                 raise ValueError(f'published client {client} failed:\n{result.stderr}')
             print(result.stdout.strip())
             if client == '0.3.13':
                 result = subprocess.run([sys.executable, '-c', PROBE, str(source), client,
-                                         str((web/'recipe.json').resolve())], env=env, cwd=base,
+                                         str((web/'recipe.json').resolve()),
+                                         str(current_catalogue.resolve())], env=env, cwd=base,
                                         capture_output=True, text=True)
                 if result.returncode:
                     raise ValueError(f'the unversioned catalogue broke 0.3.13:\n{result.stderr}')
         from snowllm.hub import recipes
-        book = recipes.catalogue(str(web/'recipe-v2.json'))
+        book = recipes.catalogue(str(current_catalogue))
         print(f'current client: {len(book)} recipes, schema {recipes.SCHEMA} PASS')
 
 
