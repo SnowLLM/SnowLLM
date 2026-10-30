@@ -76,7 +76,7 @@ function renderEffectiveSettings(next) {
   $('effective-settings').replaceChildren();
   const config = next.runtime_config;
   if (!config) { $('effective-settings').append(element('div', 'muted', '—')); return; }
-  const entries = [['Context length', config.max_model_len], ['Maximum concurrent requests', config.max_num_seqs],
+  const entries = [['Context per request', config.max_model_len], ['Shared KV capacity', config.kv_capacity_tokens], ['Maximum concurrent requests', config.max_num_seqs],
     ['GPU memory fraction', Number.isFinite(config.max_gpu_mem_util) ? config.max_gpu_mem_util.toFixed(4) : '—'], ['KV cache precision', config.kv_cache_dtype],
     ['Offload ratio', Number.isFinite(config.offload_ratio) ? `${(config.offload_ratio * 100).toFixed(2)}%` : '—'],
     ['MTP depth', config.num_spec], ['DFlash drafter', config.dflash_path || '—'], ['DFlash block', config.dflash_block ?? '—'],

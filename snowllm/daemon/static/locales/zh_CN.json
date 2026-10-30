@@ -34,6 +34,8 @@
   "Inference settings": "推理设置",
   "Optional overrides": "可选覆盖项",
   "Context length": "上下文长度",
+  "Context per request": "单请求上下文上限",
+  "Shared KV capacity": "共享 KV 总容量",
   "Recipe default · e.g. 32k": "配方默认值，如 32k",
   "GPU memory fraction": "GPU 显存使用比例",
   "Default · 0.9": "默认值 · 0.9",

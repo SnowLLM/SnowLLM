@@ -34,6 +34,8 @@
   "Inference settings": "Inference settings",
   "Optional overrides": "Optional overrides",
   "Context length": "Context length",
+  "Context per request": "Context per request",
+  "Shared KV capacity": "Shared KV capacity",
   "Recipe default · e.g. 32k": "Recipe default · e.g. 32k",
   "GPU memory fraction": "GPU memory fraction",
   "Default · 0.9": "Default · 0.9",
