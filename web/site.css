@@ -537,7 +537,9 @@
   .recipe-status.supported { color: var(--accent); }
   .recipe-card h3 { margin: 0 0 .4rem; font-size: var(--fs-h3); font-weight: 600; letter-spacing: var(--heading-tracking); line-height: 1.4; overflow-wrap: anywhere; }
   .recipe-id { font-family: var(--mono); font-size: var(--fs-small); color: var(--muted); overflow-wrap: anywhere; }
-  .recipe-card > .recipe-id { margin-bottom: 1.25rem; }
+  .recipe-card > .recipe-id { margin-bottom: .4rem; }
+  .recipe-vendor { color: var(--muted); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .recipe-card > .recipe-vendor { margin-bottom: 1.25rem; }
   .recipe-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--hair); }
   .recipe-size { color: var(--muted); font-size: var(--fs-label); }
   .recipe-open { min-height: 2.375rem; max-width: 100%; border: 1px solid transparent; border-radius: 7px; padding: .5rem .75rem; background: var(--accent); color: var(--panel); font: inherit; font-size: var(--fs-code); font-weight: 600; cursor: pointer; }

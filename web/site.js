@@ -887,6 +887,16 @@ function needsNewer(requires, have) {
 loadTable("recipes-catalogue", function (container, data) {
   var query = "", filters = {};
   var fields = ["family", "modality"];
+  function vendorOf(recipe) {
+    var owner = (recipe.repo || "").split("/")[0];
+    return { unsloth: "Unsloth", openbmb: "OpenBMB" }[owner] || owner;
+  }
+  function vendorLine(recipe) {
+    return el("div", { class: "recipe-vendor" }, [
+      el("span", { text: t("recipe.vendor") + ": " }),
+      el("a", { href: recipe.url, text: vendorOf(recipe) }),
+    ]);
+  }
   function statusKey(recipe) {
     return recipe.status === "coming soon" ? "recipe.comingSoon"
       : needsNewer(recipe.requires, data.version) ? "recipe.newer" : "recipe.supported";
@@ -906,6 +916,7 @@ loadTable("recipes-catalogue", function (container, data) {
       el("h2", { id: "recipe-detail-title", text: recipe.model }), close,
     ]));
     dialog.appendChild(el("p", { class: "recipe-id", text: recipe.id }));
+    dialog.appendChild(vendorLine(recipe));
     dialog.appendChild(el("p", { class: "recipe-summary", text: t("recipe.autoContext") }));
     if (recipe.summary) {
       var summaryKey = "recipe.summary." + recipe.id;
@@ -958,6 +969,7 @@ loadTable("recipes-catalogue", function (container, data) {
       ]),
       el("h3", { text: recipe.model }),
       el("div", { class: "recipe-id", text: recipe.id }),
+      vendorLine(recipe),
       el("div", { class: "recipe-footer" }, [
         el("span", { class: "recipe-size", text: humanBytes(recipe.bytes) || "—", title: t("recipe.size") }), details,
       ]),
@@ -965,7 +977,7 @@ loadTable("recipes-catalogue", function (container, data) {
   }
   function renderCards() {
     var visible = data.recipes.filter(function (recipe) {
-      return [recipe.model, recipe.id, recipe.precision].join(" ").toLowerCase().includes(query)
+      return [recipe.model, recipe.id, recipe.precision, vendorOf(recipe)].join(" ").toLowerCase().includes(query)
         && fields.every(function (field) { return !filters[field] || valueOf(recipe, field) === filters[field]; });
     });
     count.textContent = t("recipe.count", { count: visible.length });
