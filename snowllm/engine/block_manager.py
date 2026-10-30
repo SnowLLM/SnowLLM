@@ -38,11 +38,12 @@ def block_tables(batch: list[Request]) -> torch.Tensor:
 
 
 class TableMirror:
-    def __init__(self, rows: int, width: int) -> None:
+    def __init__(self, rows: int, width: int, *, allow_holes: bool = False) -> None:
         from .host_io import pinned_tensor
         self.host = pinned_tensor((rows,width),torch.int32).zero_()
         self.dev = torch.zeros(rows, width, dtype=torch.int32, device="cuda")
         self.done = torch.cuda.Event()
+        self.allow_holes = allow_holes
         self.forget()
 
     def forget(self) -> None:
@@ -58,6 +59,9 @@ class TableMirror:
                     self.done.synchronize()
                     synced = True
                 self.host[i, lo:len(x)] = i32_row(x[lo:])
+                if self.allow_holes:
+                    # Masked native attention loads still need an addressable page.
+                    self.host[i, lo:len(x)].clamp_min_(0)
                 self.dev[i, lo:len(x)].copy_(self.host[i, lo:len(x)], non_blocking=True)
             self.owner[i], self.n[i] = x, len(x)
         if synced:

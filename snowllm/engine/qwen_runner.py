@@ -72,7 +72,7 @@ class QwenRunner(GraphRunner):
         return self.x[:rows]
 
     def _checkpoint_bytes(self):
-        return self.resources.checkpoints.bytes_for(1)
+        return self.resources.checkpoints.bytes_for(1) + self._draft_checkpoint_bytes()
 
     def _cache_bytes(self, blocks):
         return (self.resources.cache.bytes_for(blocks)
@@ -116,7 +116,7 @@ class QwenRunner(GraphRunner):
         return (self.resources.states.bytes_for() + self.resources.statics.bytes_for()
                 + self.resources.messages.bytes_for()
                 + self._cache_bytes(self._cache_blocks())
-                + (self.resources.checkpoints.bytes_for(2*self.max_num_seqs)
+                + (self._checkpoint_bytes() * 2*self.max_num_seqs
                    if self.prefix_memory_ratio else 0))
 
     @contextlib.contextmanager

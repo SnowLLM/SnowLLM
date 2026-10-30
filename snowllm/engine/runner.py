@@ -182,7 +182,8 @@ class BaseRunner:
         from .prefix_cache import PrefixStore, WithDraft
         pages = self.prefix_pages(alloc)
         if draft is not None:
-            pages = WithDraft(pages, draft, self.block_size)
+            from .resources import draft_cache_window
+            pages = WithDraft(pages, draft, self.block_size, draft_cache_window(self.draft_geo))
         return PrefixStore(pages, self.prefix_residue(), self.prefix_slots, lookahead=lookahead)
 
     def prefix_pages(self, alloc: "BlockAllocator") -> "Pages":
@@ -250,11 +251,28 @@ class BaseRunner:
         return (self.max_blocks_per_seq
                 if self._want_blocks is None else self._want_blocks)
 
-    def _draft_pool_blocks(self, blocks):
+    def _draft_pool_blocks(self, blocks, *, prefix_slots=0):
         if self.draft_geo is None:
             return 0
         width = self.num_spec if isinstance(self.draft_geo, DSparkGeometry) else self.T
+        from .resources import draft_cache_window
+        window = draft_cache_window(self.draft_geo)
+        if window:
+            window = min(window, self.ctx_cap)
+            each = ops.kv_blocks_for(window + self.T + width + self.block_size - 1, self.block_size)
+            active = self.max_num_seqs * each + ops.kv_blocks_for(self.max_prefill_tokens, self.block_size)
+            return active + prefix_slots * ops.kv_blocks_for(window, self.block_size)
         return max(blocks, ops.kv_blocks_for(self.ctx_cap+width, self.block_size))
+
+    def _draft_checkpoint_bytes(self):
+        from .resources import draft_cache_window, draft_pool_bytes
+        window = draft_cache_window(self.draft_geo)
+        if not window:
+            return 0
+        blocks = self._draft_pool_blocks(0)
+        extra = ops.kv_blocks_for(min(window, self.ctx_cap), self.block_size)
+        return (draft_pool_bytes(self.draft_geo, blocks + extra, self.block_size)
+                - draft_pool_bytes(self.draft_geo, blocks, self.block_size))
 
     def _prepare_pools(self):
         self.resources.checkpoints.release()
@@ -276,7 +294,7 @@ class BaseRunner:
                 self._prepare_pools()
                 plan.future_bytes += shortage
             if self.draft_geo is not None:
-                self.draft_blocks = self._draft_pool_blocks(self.draft_blocks)
+                self.draft_blocks = self._draft_pool_blocks(self.draft_blocks, prefix_slots=self.prefix_slots)
             return self.num_kv_blocks
         except BaseException:
             self._discard_pools()

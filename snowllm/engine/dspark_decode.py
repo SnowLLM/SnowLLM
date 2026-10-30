@@ -12,6 +12,7 @@ from .block_manager import BlockAllocator, StateSlots, Staging, TableMirror
 from .forward_context import i32, i64, positions
 from .request import Request
 from .spec_decode import SPEC_MAX_STEP_ROWS, DSparkScheduling, SpecDecoder
+from .resources import draft_cache_window
 
 if TYPE_CHECKING:
     from ..models.deepseek_v4.dspark import DSparkDraft
@@ -35,6 +36,7 @@ class DSparkDecoder(DSparkScheduling):
         self.mask = self.geo.mask_token_id
         self.max_blocks_per_seq = max_blocks_per_seq
         self.windowed = self.geo.stack.v41
+        self.cache_window = draft_cache_window(self.geo)
         self.p_min = p_min if draft.conf_proj is not None else 0.0
         self.init_adaptive(adaptive, p_min, draft.conf_proj is not None)
 
@@ -42,7 +44,7 @@ class DSparkDecoder(DSparkScheduling):
         M = S * self.block
         runner.walker.tap_at = {layer: j for j, layer in enumerate(draft.tap_layers)}
         self.noise = torch.empty(M, H, dtype=torch.bfloat16, device="cuda")
-        self.draft_tables = TableMirror(S, max_blocks_per_seq)
+        self.draft_tables = TableMirror(S, max_blocks_per_seq, allow_holes=bool(self.cache_window))
         self.dlogits = torch.empty(M, self.geo.stack.vocab_size, dtype=torch.float32,
                                    device="cuda")
         self.pre = (torch.empty(M, H, dtype=torch.bfloat16, device="cuda")

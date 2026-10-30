@@ -112,6 +112,15 @@ def draft_table_blocks(geo, context, block, block_size):
     return ops.kv_blocks_for(context + block, block_size)
 
 
+def draft_cache_window(geo):
+    from ..models.geometry import DSparkGeometry
+    if isinstance(geo, DSparkGeometry):
+        return geo.stack.sliding_window if geo.windowed_only and not geo.stack.v41 else 0
+    if geo is not None and geo.num_sliding_layers == geo.num_layers:
+        return geo.sliding_window
+    return 0
+
+
 def allocate_draft_pool(geo, blocks, block_size, slabs):
     from ..models.geometry import DSparkGeometry
     if isinstance(geo, DSparkGeometry):

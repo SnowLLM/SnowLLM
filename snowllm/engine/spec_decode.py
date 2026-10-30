@@ -16,6 +16,7 @@ from .request import Request
 from .host_io import HostArena
 from .dflash_sampling import DFlashSampling
 from .dspark_schedule import PrefixScheduler
+from .resources import draft_cache_window
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
@@ -30,18 +31,39 @@ def context_len(r: Request) -> int:
 
 class DSparkScheduling:
     windowed = False
+    cache_window = 0
 
     def rows_needed(self, rows: int) -> int:
         return rows
 
     def grow(self, r: Request, rows: int) -> bool:
+        if self.cache_window:
+            page = self.runner.block_size
+            position = context_len(r)
+            # Keep the just-written chunk until its intermediate checkpoints have been published.
+            start = r.draft_start
+            if rows:
+                start = max(start, max(0, position - self.cache_window) // page)
+            planned_rows = rows if r.prefilled else min(rows, self.runner.max_prefill_tokens)
+            end = ops.kv_blocks_for(position + planned_rows + self.block, page)
+            extra = max(0, end - len(r.draft_blocks))
+            released = r.draft_blocks[r.draft_start:start]
+            if extra > len(self.blocks.free) + sum(self.blocks.ref[b] == 1 for b in released):
+                return False
+            self.blocks.release(released)
+            r.draft_blocks[r.draft_start:start] = [-1] * len(released)
+            r.draft_start = start
+            if extra:
+                r.draft_blocks.extend(self.blocks.alloc(extra))
+            return True
         need = (self.max_blocks_per_seq if self.windowed else
                 ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
         return self.blocks.ensure(r.draft_blocks, need)
 
     def release(self, r: Request) -> None:
-        self.blocks.release(r.draft_blocks)
+        self.blocks.release(r.draft_blocks[r.draft_start:])
         r.draft_blocks = []
+        r.draft_start = 0
         self.confidence.pop(r, None)
         self.scheduler.reset()
 
@@ -427,6 +449,7 @@ class DFlashDecoder(DSparkScheduling):
         self.max_blocks_per_seq = max_blocks_per_seq
         H = runner.model.geo.hidden
         self.geo = draft.geo
+        self.cache_window = draft_cache_window(self.geo)
         self.dspark = self.geo.dspark
         self.p_min = p_min if self.dspark else 0.0
         self.init_adaptive(adaptive, p_min, self.dspark and "conf_weight" in draft.w)
@@ -441,7 +464,7 @@ class DFlashDecoder(DSparkScheduling):
         self.d_i64 = torch.zeros(3 * M, dtype=torch.int64, device="cuda")
         self.d_i32 = torch.zeros(4 * M, dtype=torch.int32, device="cuda")
         self.d_len = torch.zeros(S, dtype=torch.int32, device="cuda")
-        self.draft_tables = TableMirror(S, max_blocks_per_seq)
+        self.draft_tables = TableMirror(S, max_blocks_per_seq, allow_holes=bool(self.cache_window))
         self.d_bt = self.draft_tables.dev
         self.d_draft = torch.zeros(S, block if self.dspark else max(block - 1, 1),
                                    dtype=torch.int64, device="cuda")

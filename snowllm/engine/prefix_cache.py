@@ -114,11 +114,38 @@ class HistoryPages:
         return fresh
 
 
+class WindowPages(BlockPages):
+    def __init__(self, alloc, block_size, window):
+        super().__init__(alloc, block_size)
+        self.window = window
+
+    def prefix(self, blocks, n_tokens):
+        first = max(0, n_tokens - self.window) // self.align
+        last = n_tokens // self.align
+        offset, pages = blocks if isinstance(blocks, tuple) else (0, blocks)
+        if first < offset or last > offset + len(pages):
+            return None
+        selected = pages[first-offset:last-offset]
+        return (first, selected) if all(b >= 0 for b in selected) else None
+
+    def retain(self, blocks):
+        first, pages = blocks
+        return first, self.alloc.retain(pages)
+
+    def release(self, blocks):
+        self.alloc.release(blocks[1])
+
+    def own(self, alloc, blocks, fresh, r):
+        first, pages = blocks
+        r.draft_start = first
+        return [-1] * first + self.alloc.retain(pages)
+
+
 class WithDraft:
     def __init__(self, inner: Pages, alloc: "BlockAllocator",
-                 block_size: int) -> None:
+                 block_size: int, window: int = 0) -> None:
         self.inner = inner
-        self.draft = BlockPages(alloc, block_size)
+        self.draft = WindowPages(alloc, block_size, window) if window else BlockPages(alloc, block_size)
         self.align = math.lcm(inner.align, block_size)
         self.is_ring = inner.is_ring
 
@@ -151,7 +178,7 @@ class WithDraft:
 
     def own(self, alloc: "BlockAllocator", blocks: Pair, fresh: list[int],
             r: "Request") -> list[int]:
-        r.draft_blocks = self.draft.retain(blocks[1])
+        r.draft_blocks = self.draft.own(self.draft.alloc, blocks[1], [], r)
         return self.inner.own(alloc, blocks[0], fresh, r)
 
 

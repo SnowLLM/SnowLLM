@@ -45,6 +45,7 @@ class Request:
 
 
     draft_blocks: list[int] = field(default_factory=list)
+    draft_start: int = 0
     slot: int = -1
     state_head: int = -1
 

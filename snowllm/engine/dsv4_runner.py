@@ -102,7 +102,8 @@ class Dsv4Runner(GraphRunner):
         return PoolPlan(self._cache_bytes, self.ctx_cap,
             requested=self._cache_blocks()*self.block_size,
             maximum=self.max_num_seqs*self.ctx_cap if self._want_blocks is None else None,
-            checkpoint_bytes=self.resources.checkpoint_bytes() if self.prefix_memory_ratio else 0,
+            checkpoint_bytes=(self.resources.checkpoint_bytes() + self._draft_checkpoint_bytes()
+                              if self.prefix_memory_ratio else 0),
             future_bytes=graph_bytes, minimum_snapshots=2*self.max_num_seqs)
 
     def _allocate_pools(self, tokens):
@@ -113,11 +114,11 @@ class Dsv4Runner(GraphRunner):
         if getattr(getattr(self.draft_geo, "stack", None), "v41", False):
             self.draft_blocks = self._draft_pool_blocks(0)
 
-    def _draft_pool_blocks(self, blocks):
+    def _draft_pool_blocks(self, blocks, *, prefix_slots=0):
         if getattr(getattr(self.draft_geo, "stack", None), "v41", False):
             return self.max_num_seqs * draft_table_blocks(
                 self.draft_geo, self.ctx_cap, self.num_spec, self.block_size)
-        return super()._draft_pool_blocks(blocks)
+        return super()._draft_pool_blocks(blocks, prefix_slots=prefix_slots)
 
     @property
     def arena(self) -> ops.Arena:
@@ -141,6 +142,7 @@ class Dsv4Runner(GraphRunner):
         tokens = self._cache_blocks()*self.block_size
         return (self._cache_bytes(tokens, chunk)
                 + (self.resources.checkpoint_bytes(2*self.max_num_seqs)
+                   + 2*self.max_num_seqs*self._draft_checkpoint_bytes()
                    if self.prefix_memory_ratio else 0))
 
     def _loading_cache_bytes(self, rows: int) -> int:
