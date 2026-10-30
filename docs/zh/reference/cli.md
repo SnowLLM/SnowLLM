@@ -24,7 +24,7 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--max-num-seqs` | `4` | 最大并发请求数，最多 256；每个请求持有注意力状态。 |
-| `--max-model-len` | `409600` | 单请求的输入与输出 token 总数。Flash-Next 超过 256K 时自动启用静态 YaRN，见[模型说明](./models)。KV 内存共享。 |
+| `--max-model-len` / `--max-ctx-len` | `409600` | 所有请求共享的 KV token 总容量。单请求的输入与输出总长度不超过该值和模型支持上限中的较小值；YaRN 按单请求上限配置，见[模型说明](./models)。 |
 | `--max-gpu-mem` | `0.9` | GPU 内存上限：比例（`0.9`）或容量（`20GB`、`20GiB`）。 |
 | `--max-host-mem` | 未设置，不自动 host 卸载 | host 缓冲上限：比例或容量；显式设置后允许自动 host 权重卸载。未设置上限时，主机缓冲受可用 RAM 和平台映射限制约束。 |
 | `--host-alloc` | 关闭 | 通过映射的 `hipHostMalloc` 分配 GPU Tensor：权重、KV、workspace 和临时 Tensor 均使用主机 RAM；与 host/disk offload 互斥。 |
@@ -62,7 +62,7 @@ snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
 
 内存参数只设置上限，不是需要占满的目标。context 默认 409600 tokens，prefill chunk 默认 2048 tokens；recipe 可以提供明确的默认值。CLI 不再反推或替换 context、util 或显式 offload 比例。配置 host 或 disk 上限后，自动按 GPU → host → disk 放置；未配置下一层预算时不会自动卸载。详见[内存管理](../guides/memory-management.md)。
 
-默认 KV 容量根据 context × 并发数确定，并使用对应模型的状态和滑动窗口布局；`--num-kv-blocks` 可显式覆盖。前缀 checkpoint 空间按这份缓存需求核算，不按空闲显存扩大。提高预算不会自动扩张缓存；预算不足时报错，不自动缩短 context 或调整 chunk。
+默认 KV 总容量为 `--max-model-len` 指定的 token 数，由所有请求共享，并使用对应模型的状态和滑动窗口布局；并发数不会乘到总容量上。单请求上限为共享容量与模型支持上限中的较小值。`--num-kv-blocks` 可显式覆盖缓存池大小。前缀 checkpoint 空间按这份缓存需求核算，不按空闲显存扩大。提高预算不会自动扩张缓存；预算不足时报错，不自动缩短 context 或调整 chunk。
 
 ```bash
 snowllm MODEL --max-gpu-mem 0.8 --max-host-mem 0.5

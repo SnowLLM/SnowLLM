@@ -56,18 +56,27 @@ it downloads the GGUF release with an embedded MTP head into a separate director
 Flash-Next uses MTP k=2 by default. Choose `qwen3.8-flash-next-q3-k-xl-no-mtp`
 for plain decoding with `--num-spec 0`; both recipes share the same target directory.
 
-For Flash-Next, SnowLLM automatically enables static YaRN at model load when the configured
-context limit exceeds 262144 tokens. Set `--max-model-len` when serving or using `snowllm load`,
+For Flash-Next and Qwen3.6, SnowLLM automatically enables static YaRN at model load when the
+per-request context limit exceeds the native 262144 tokens. Set `--max-model-len` (alias
+`--max-ctx-len`) when serving or using `snowllm load`,
 or set **Context length** in the Web UI. No separate YaRN flag or model configuration edit is
-needed. The factor follows the final context printed after automatic capacity planning;
+needed. This sets total KV token capacity shared by all requests. The factor follows
+`min(shared capacity, supported model limit)`, the per-request limit printed at startup;
 `--max-model-len 512k` selects factor 2 using
-`max_model_len / 262144`.
+`524288 / 262144`.
+
+[Flash-Next supports](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)
+1,000,000 tokens with YaRN; [Qwen3.6 supports](https://huggingface.co/Qwen/Qwen3.6-35B-A3B#best-practices)
+1,010,000. With `--max-ctx-len 2M --max-num-seqs 2`, the shared pool holds 2M tokens and
+each request remains capped at its model's supported limit. Increasing shared capacity does
+not extend YaRN further or multiply the pool by concurrency. CLI `1M` means 1,048,576 tokens.
+Other models retain the context limit and position encoding configured in their checkpoint.
 
 Every alias without an explicit factor inherits this setting. Its factor stays fixed for short
 and long requests; changing the configured context limit requires reloading the model. An explicit
 `--served-model-name NAME=FACTOR` overrides that alias, whose context limit is
-`min(max_model_len, FACTOR * 262144)`. For example, `native=1` keeps a 256K limit even in a 512K
-server. Extended contexts require a kernel library with scaled QSA keys and support for block
+`min(per_request_limit, FACTOR * native_length)`. For example, `native=1` keeps a 256K limit even in a 512K
+server. Extended Flash-Next contexts require a kernel library with scaled QSA keys and support for block
 indices beyond 256K; an incompatible library causes a load error.
 
 The [official YaRN guidance](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)

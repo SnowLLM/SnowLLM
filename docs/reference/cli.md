@@ -24,7 +24,7 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 | Option | Default | Description |
 | --- | --- | --- |
 | `--max-num-seqs` | `4` | Maximum concurrent requests, up to 256; each request holds attention state. |
-| `--max-model-len` | `409600` | Input + output tokens per request. Flash-Next automatically enables static YaRN above 256K; see [model details](./models). KV memory is shared. |
+| `--max-model-len` / `--max-ctx-len` | `409600` | Total KV token capacity shared by all requests. Input + output per request is capped at the smaller of this capacity and the model's supported context limit. YaRN follows that per-request limit; see [model details](./models). |
 | `--max-gpu-mem` | `0.9` | GPU memory ceiling: fraction (`0.9`) or capacity (`20GB`, `20GiB`). |
 | `--max-host-mem` | Unset; no automatic host weight offload | Host buffer ceiling: fraction or capacity; explicitly enables automatic host weight offload. Without a configured ceiling, host buffers are constrained by available RAM and platform mapping limits. |
 | `--host-alloc` | Disabled | Allocate GPU tensors with mapped `hipHostMalloc` memory. Weights, KV, workspace and temporary tensors use host RAM; excludes host/disk offload. |
@@ -64,7 +64,7 @@ dual-NVMe DIRECT I/O sweep, with no runtime profiling; optimality on other quant
 
 Memory ceilings are limits, not allocation targets. Context defaults to 409600 tokens and prefill chunks to 2048 tokens; recipes may provide explicit defaults. The CLI does not calculate or replace context, utilization or an explicit offload ratio. Automatic placement uses GPU, then explicitly enabled host/disk budgets without changing the workload. See the [memory management](../zh/guides/memory-management.md).
 
-KV capacity defaults to the configured context times concurrency, with model-specific state/window layouts. An explicit `--num-kv-blocks` overrides that size. Prefix checkpoint space is based on the workload-sized cache rather than spare VRAM. Raising a ceiling does not expand either cache to fill the device. An insufficient budget produces an error instead of reducing context or chunk size.
+KV capacity is shared across all requests and defaults to the configured `--max-model-len` token count, with model-specific state/window layouts. Concurrency does not multiply this capacity. Each request is capped at the smaller of the shared capacity and the model's supported context limit. An explicit `--num-kv-blocks` overrides the pool size. Prefix checkpoint space is based on the workload-sized cache rather than spare VRAM. Raising a ceiling does not expand either cache to fill the device. An insufficient budget produces an error instead of reducing context or chunk size.
 
 ```bash
 snowllm MODEL --max-gpu-mem 0.8 --max-host-mem 0.5

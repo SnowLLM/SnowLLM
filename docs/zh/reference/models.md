@@ -31,9 +31,11 @@ Q4_K_XL 普通方案关闭 MTP；选择 `qwen3.6-35b-a3b-q4-k-xl-mtp` 可使用 
 
 Flash-Next 默认使用 MTP k=2；选择 `qwen3.8-flash-next-q3-k-xl-no-mtp` 可通过 `--num-spec 0` 使用普通解码，两个方案共用主模型目录。
 
-Flash-Next 配置的上下文上限超过 262144 tokens 时，SnowLLM 会在加载模型时自动启用静态 YaRN。直接启动服务或使用 `snowllm load` 时设置 `--max-model-len`，Web UI 则填写 **上下文长度**，无需额外的 YaRN 开关或修改模型配置文件。倍率跟随容量规划后打印的最终上下文；`--max-model-len 512k` 按 `max_model_len / 262144` 自动选择 2 倍。
+Flash-Next 和 Qwen3.6 的单请求上下文上限超过原生 262144 tokens 时，SnowLLM 会在加载模型时自动启用静态 YaRN。直接启动服务或使用 `snowllm load` 时设置 `--max-model-len`（别名 `--max-ctx-len`），Web UI 则填写 **上下文长度**，无需额外的 YaRN 开关或修改模型配置文件。该参数指定所有请求共享的 KV token 总容量；单请求上限为 `min(共享容量, 模型支持的扩展上限)`，倍率按该单请求上限除以原生长度计算。例如，`--max-model-len 512k` 自动选择 2 倍。
 
-没有显式指定倍数的模型别名都会继承该设置，长短请求均使用相同倍数。修改配置的上下文上限后需重新加载模型。显式设置 `--served-model-name 名称=倍数` 可覆盖对应别名，其上下文上限为 `min(max_model_len, 倍数 * 262144)`；例如 `native=1` 在 512K 服务中仍限制为 256K。扩展上下文需要支持 QSA key 缩放和 256K 以上块编号的内核库，内核不兼容时加载会报错。
+[Flash-Next 官方支持](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices)扩展至 1,000,000 tokens，[Qwen3.6 官方支持](https://huggingface.co/Qwen/Qwen3.6-35B-A3B#best-practices)扩展至 1,010,000 tokens。设为 `--max-ctx-len 2M --max-num-seqs 2` 时，2M 是共享 KV 总容量，两条请求各自最多使用模型支持的上下文上限；YaRN 不会按 2M 延拓。其他模型使用 checkpoint 配置的上下文上限，不因共享容量增大而修改其位置编码。
+
+没有显式指定倍数的模型别名都会继承该设置，长短请求均使用相同倍数。修改配置的上下文上限后需重新加载模型。显式设置 `--served-model-name 名称=倍数` 可覆盖对应别名，其上下文上限为 `min(单请求上限, 倍数 * 原生长度)`；例如 `native=1` 在 512K 服务中仍限制为 256K。Flash-Next 扩展上下文需要支持 QSA key 缩放和 256K 以上块编号的内核库，内核不兼容时加载会报错。
 
 [官方长上下文说明](https://huggingface.co/Qwen/Qwen3.8-Flash-Next#best-practices) 提醒，静态缩放可能影响短文本效果，因此应按实际需要设置扩展上限。例如，添加 `--max-model-len 512k` 可将上限设为 512K。
 
