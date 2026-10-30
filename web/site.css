@@ -257,6 +257,8 @@
     min-width: 0;
   }
 
+  .selector .opt { min-width: 0; overflow-wrap: anywhere; }
+
   .opt {
     display: flex;
     align-items: center;
@@ -282,6 +284,9 @@
 
   .opt[disabled] { color: var(--hair); cursor: not-allowed; }
   .opt[disabled]:hover { color: var(--hair); }
+
+  .build-opt { flex-wrap: wrap; gap: 0.25rem 0.6rem; }
+  .build-version { overflow-wrap: anywhere; }
 
   .target-picker { min-width: 0; background: var(--panel); padding: 0.4rem 0.7rem; }
   .target-picker select {
@@ -371,6 +376,15 @@
   }
 
   .copy:hover { color: var(--accent); border-color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .selector { grid-template-columns: 4.5rem minmax(0, 1fr); }
+    .selector .opt { padding-inline: 0.4rem; }
+    .selector [data-axis="os"] { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .selector [data-axis="os"] .opt:last-child { grid-column: 1 / -1; }
+    .selector .cmd { flex-direction: column-reverse; align-items: stretch; }
+    .selector .copy { align-self: flex-end; }
+  }
 
   pre.block {
     font-family: var(--mono);

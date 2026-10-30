@@ -85,9 +85,15 @@ read off disk per batch, so keep it on the SSD you serve from. Only the Qwens ta
 curl -fsSL https://snowllm.dev/install.sh | sh
 ```
 
+The default channel is Stable. For Dev:
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --channel dev
+```
+
 - Checks the machine before downloading anything: GPU, driver access, Python, disk, network
 - Installs into `~/.local/share/snowllm`, links `snowllm` into `~/.local/bin`
-- Re-run to upgrade; `sh -s -- --uninstall` to remove
+- Re-run the same command to upgrade; use `--channel stable` to switch back to Stable, or `--uninstall` to remove
 
 Or do it by hand — torch and torchvision must come from AMD's index:
 
@@ -96,8 +102,11 @@ Or do it by hand — torch and torchvision must come from AMD's index:
 pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
     "torch[device-gfx1151]==2.12.0+rocm7.14.0" \
     "torchvision==0.27.0+rocm7.14.0"
-pip install snowllm snowllm-kernels
+python -m pip install --upgrade snowllm
 ```
+
+For Dev, use `python -m pip install --upgrade --pre snowllm` instead.
+See [switching channels with pip](docs/getting-started/installation.md#change-channels-with-pip).
 
 ## Integrations
 

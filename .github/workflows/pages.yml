@@ -23,6 +23,7 @@ on:
       - scripts/build-benchmarks.py
       - tests/test_benchmark_page.py
       - tests/test_install_targets.py
+      - tests/test_install_ui.mjs
       - .github/workflows/pages.yml
   pull_request:
     paths: *site
@@ -74,6 +75,9 @@ jobs:
 
       - name: APU install targets match the website
         run: python -m unittest discover -s tests -p test_install_targets.py
+
+      - name: Install channels select published releases
+        run: node --test tests/test_install_ui.mjs
 
   publish:
     needs: check

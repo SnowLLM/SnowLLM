@@ -28,5 +28,6 @@
 .catalog-source{max-width:420px;margin-bottom:22px}.catalog-source label{margin-top:0}
 
 #update-notice summary{cursor:pointer;font-weight:600}.update-changelog{white-space:pre-wrap;font:inherit;line-height:1.7;overflow-wrap:anywhere;margin:14px 0}
+.update-release{margin:14px 0}.update-release+.update-release{border-top:1px solid var(--line);padding-top:14px}.update-command{white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 
 #model-error{border-left:4px solid #b93b35}#model-error-title{display:block;font-size:16px}#model-error-detail{white-space:pre-wrap;overflow-wrap:anywhere;max-height:12em;overflow-y:auto;margin:10px 0}#model-error-hint{margin:10px 0}.load-error-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}

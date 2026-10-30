@@ -3,6 +3,7 @@
 #
 # Options:
 #   --target GFX       APU target (default: gfx1151)
+#   --channel CHANNEL stable or dev (default: stable)
 #   --uninstall        remove SnowLLM
 #   --help
 #
@@ -20,6 +21,7 @@ TORCHVISION="torchvision==0.27.0+rocm7.14.0"
 ROCM_INDEX="https://repo.amd.com/rocm/whl-multi-arch/"
 GFX_TARGET=110501
 TARGET=gfx1151
+CHANNEL=stable
 NEED_GIB=15
 
 SNOWLLM_HOME="${SNOWLLM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/snowllm}"
@@ -38,6 +40,7 @@ Install SnowLLM into $VENV and link it into $BIN_DIR.
 
     --uninstall    remove both
     --target GFX   gfx1103, gfx1150, gfx1151, gfx1152 or gfx1153 (default: gfx1151)
+    --channel NAME stable or dev (default: stable)
     --help         this
 
 Env: SNOWLLM_HOME SNOWLLM_BIN_DIR SNOWLLM_PYTHON
@@ -178,10 +181,51 @@ pip_install() {
     "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$@"
 }
 
+install_snowllm() {
+    if [ "$CHANNEL" = dev ]; then
+        pip_install --upgrade --pre snowllm
+        return
+    fi
+    stable=$("$VENV/bin/python" - <<'PY'
+import re
+import subprocess
+import sys
+from pip._vendor.packaging.version import InvalidVersion, Version
+
+result = subprocess.run([sys.executable, "-m", "pip", "index", "versions", "snowllm",
+                         "--disable-pip-version-check", "--no-input", "--no-color"],
+                        stdout=subprocess.PIPE, encoding="utf-8", errors="replace")
+if result.returncode:
+    sys.exit(result.returncode)
+match = re.search(r"^Available versions: (.+)$", result.stdout, re.MULTILINE)
+versions = []
+for text in match[1].split(",") if match else ():
+    try:
+        version = Version(text.strip())
+    except InvalidVersion:
+        continue
+    if not version.is_prerelease:
+        versions.append(version)
+if not versions:
+    sys.exit("No stable SnowLLM release is available from the configured package index.")
+print(max(versions))
+PY
+    ) || die "could not resolve the latest stable SnowLLM release."
+    pip_install --upgrade "snowllm==$stable"
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --help|-h) usage; exit 0 ;;
         --uninstall) uninstall ;;
+        --channel)
+            [ "$#" -ge 2 ] || die "--channel requires stable or dev."
+            CHANNEL=$2
+            case "$CHANNEL" in
+                stable|dev) ;;
+                *) die "unsupported channel: $CHANNEL (expected stable or dev)." ;;
+            esac
+            shift ;;
         --target)
             [ "$#" -ge 2 ] || die "--target requires a gfx target."
             TARGET=$2
@@ -220,8 +264,8 @@ pip_install --upgrade pip
 say "installing torch from repo.amd.com (a few gigabytes)"
 pip_install --index-url "$ROCM_INDEX" "$TORCH" "$TORCHVISION"
 
-say "installing snowllm"
-pip_install --upgrade snowllm snowllm-kernels
+say "installing snowllm ($CHANNEL)"
+install_snowllm
 
 mkdir -p "$BIN_DIR"
 ln -sf "$VENV/bin/snowllm" "$BIN_DIR/snowllm"

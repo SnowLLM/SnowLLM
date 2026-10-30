@@ -141,15 +141,33 @@ function renderLoadError(next) {
   $('model-error-hint').hidden = next.error_kind !== 'capacity';
   $('model-error-hint').textContent = t('Check Context length and memory limits in Inference settings. Reduce context, or set --max-num-seqs 1 in Additional options, then load the model again.');
 }
+function renderUpdate(update) {
+  const releases = update?.releases?.length ? update.releases : update?.latest
+    ? [{ version: update.latest, changelog: update.changelog,
+      command: `python -m pip install --upgrade "snowllm==${update.latest}"` }] : [];
+  $('update-notice').hidden = !releases.length;
+  if (!releases.length) return;
+  $('update-title').textContent = releases.length === 1
+    ? t('SnowLLM {0} is available (installed: {1}).', releases[0].version, update.current)
+    : t('SnowLLM updates are available (installed: {0}).', update.current);
+  const key = JSON.stringify([releases, update.checking, t('Stable'), t('Dev')]);
+  const list = $('update-releases');
+  if (list.dataset.update === key) return;
+  list.dataset.update = key;
+  list.replaceChildren(...releases.map(release => {
+    const row = element('section', 'update-release');
+    const label = release.channel ? `${t(release.channel === 'dev' ? 'Dev' : 'Stable')} (${release.version})` : release.version;
+    row.append(element('strong', '', label), element('pre', 'update-changelog', release.changelog
+      || t(update.checking ? 'Loading release notes…' : 'Release notes are not available for this version.')),
+      element('pre', 'update-command', release.command));
+    return row;
+  }));
+}
 function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
   status = next;
-  $('update-notice').hidden = !next.update?.latest;
-  if (next.update?.latest) {
-    $('update-title').textContent = t('SnowLLM {0} is available (installed: {1}).', next.update.latest, next.update.current);
-    $('update-changelog').textContent = next.update.changelog || t(next.update.checking ? 'Loading release notes…' : 'Release notes are not available for this version.');
-  }
+  renderUpdate(next.update);
   renderEffectiveSettings(next);
   const inferenceUrl = `${next.inference_url}/v1`;
   $('api-address').textContent = inferenceUrl.replace(/^https?:\/\//, '');

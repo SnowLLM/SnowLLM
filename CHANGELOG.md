@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.19.dev3 — 2026-10-30
+
+Add Stable / Dev installation channels and update checks, with published PyPI versions shown on the homepage.
+
+- Select Stable or Dev on the homepage, with version numbers from PyPI and installation commands for the selected system and APU.
+  官网支持选择 Stable / Dev，从 PyPI 获取版本号，并按系统与 APU 生成安装命令。
+- Add `--channel stable|dev` to the installer, including switching back from a development build to the latest stable release.
+  安装脚本新增 `--channel stable|dev`，支持从开发版切回最新稳定版。
+- Stable builds only report newer stable releases; development builds report newer stable and development releases, with separate notes and upgrade commands in the terminal and Web UI.
+  稳定版只提示更新的稳定版；开发版同时检查两类更新，终端与 Web UI 分别展示更新说明和升级命令。
+
 ## 0.3.19.dev2 — 2026-10-29
 
 Add bundled recipes and a MiniCPM 32 GiB profile, improve runtime allocation and Windows startup, and fix DeepSeek V4.1 prefix reuse and DSpark startup.

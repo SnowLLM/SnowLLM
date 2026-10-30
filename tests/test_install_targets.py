@@ -14,6 +14,8 @@ SOURCE = INSTALL.replace(
     '\nprintf "%s\\n" "$TARGET" "$GFX_TARGET" "$TORCH"\nreturn 0\n',
     1,
 )
+CHANNEL_SOURCE = INSTALL.replace(
+    "\ncheck_machine\n", '\nprintf "%s\\n" "$CHANNEL" "$TARGET"\nreturn 0\n', 1)
 
 
 class InstallTargetsTest(unittest.TestCase):
@@ -47,6 +49,27 @@ class InstallTargetsTest(unittest.TestCase):
 
     def test_invalid_or_missing_target_fails_before_machine_checks(self):
         for args in [("--target",), ("--target", "gfx9999"), ("--unknown",)]:
+            with self.subTest(args=args):
+                result = self.run_selection(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+
+    def test_channel_defaults_and_combination_with_target(self):
+        cases = (
+            ((), ["stable", "gfx1151"]),
+            (("--channel", "dev", "--target", "gfx1103"), ["dev", "gfx1103"]),
+            (("--target", "gfx1150", "--channel", "stable"), ["stable", "gfx1150"]),
+            (("--channel", "stable", "--channel", "dev"), ["dev", "gfx1151"]),
+        )
+        for args, expected in cases:
+            with self.subTest(args=args):
+                result = subprocess.run(["sh", "-s", "--", *args], input=CHANNEL_SOURCE,
+                                        text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), expected)
+
+    def test_invalid_channel_and_version_option_fail_before_machine_checks(self):
+        for args in (("--channel",), ("--channel", "nightly"), ("--version", "0.3.19.dev3")):
             with self.subTest(args=args):
                 result = self.run_selection(*args)
                 self.assertNotEqual(result.returncode, 0)

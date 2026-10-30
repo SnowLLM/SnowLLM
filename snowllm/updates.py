@@ -3,7 +3,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 import re
@@ -18,14 +18,23 @@ TIMEOUT = 10
 
 
 @dataclass
+class Release:
+    version: str
+    channel: str
+    command: str
+    changelog: str | None = None
+
+
+@dataclass
 class Update:
     current: str = __version__
     latest: str | None = None
     changelog: str | None = None
     checking: bool = False
+    releases: list[Release] = field(default_factory=list)
 
 
-def _latest(output: str) -> Version | None:
+def _latest(output: str, *, dev: bool = False) -> Version | None:
     match = re.search(r"^Available versions: (.+)$", output, re.MULTILINE)
     if not match:
         return None
@@ -35,7 +44,7 @@ def _latest(output: str) -> Version | None:
             version = Version(text.strip())
         except InvalidVersion:
             continue
-        if not version.is_prerelease and not version.is_devrelease:
+        if (version.is_devrelease if dev else not version.is_prerelease):
             versions.append(version)
     return max(versions, default=None)
 
@@ -143,22 +152,35 @@ async def _pip(*args: str) -> str | None:
 async def check(update: Update | None = None) -> None:
     update = update if update is not None else Update(current=__version__)
     update.checking = True
+    update.latest = update.changelog = None
+    update.releases = []
     try:
         current = Version(update.current)
-        output = await _pip("index", "versions", "snowllm")
-        latest = _latest(output) if output else None
-        if latest is None or latest <= current:
+        channels = ("stable", "dev") if current.is_devrelease else ("stable",)
+        output = await _pip("index", "versions", "snowllm", *(("--pre",) if current.is_devrelease else ()))
+        if not output:
             return
-        update.latest = str(latest)
-        print(f"SnowLLM {latest} is available (installed: {update.current}). "
-              "Update: https://snowllm.dev/docs/getting-started/installation",
-              file=sys.stderr, flush=True)
-        output = await _pip("install", f"snowllm=={latest}", "--dry-run",
-                            "--ignore-installed", "--no-deps", "--only-binary=:all:",
-                            "--quiet", "--report", "-")
-        update.changelog = _changelog(output, latest) if output else None
-        if update.changelog:
-            print(update.changelog, file=sys.stderr, flush=True)
+        for channel in channels:
+            latest = _latest(output, dev=channel == "dev")
+            if latest is not None and latest > current:
+                update.releases.append(Release(str(latest), channel,
+                    f'python -m pip install --upgrade "snowllm=={latest}"'))
+        if not update.releases:
+            return
+        update.latest = max(update.releases, key=lambda release: Version(release.version)).version
+        for release in update.releases:
+            label = "Dev" if release.channel == "dev" else "Stable"
+            print(f"SnowLLM {release.version} is available (installed: {update.current}; {label}). "
+                  f"Update: {release.command}", file=sys.stderr, flush=True)
+        for release in update.releases:
+            output = await _pip("install", f"snowllm=={release.version}", "--dry-run",
+                                "--ignore-installed", "--no-deps", "--only-binary=:all:",
+                                "--quiet", "--report", "-")
+            release.changelog = _changelog(output, Version(release.version)) if output else None
+            if release.version == update.latest:
+                update.changelog = release.changelog
+            if release.changelog:
+                print(release.changelog, file=sys.stderr, flush=True)
     except InvalidVersion:
         pass
     finally:

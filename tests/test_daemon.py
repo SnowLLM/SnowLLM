@@ -17,6 +17,7 @@ import httpx
 
 from snowllm.daemon.api import create_app, create_inference_app
 from snowllm.daemon.manager import DaemonManager
+from snowllm.updates import Release
 
 # Real CPU child: proves readiness checks and process teardown without a GPU.
 WORKER = '''
@@ -238,16 +239,26 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.post('/daemon/pull', json={'recipe': invalid})).status_code, 422)
 
     async def test_update_notes_are_exposed_only_on_the_management_listener(self):
-        self.manager.update.latest = "99.0.0"
+        self.manager.update.latest = "100.0.0.dev1"
         self.manager.update.changelog = "# Changelog\n\n- Example / 示例。"
+        self.manager.update.releases = [
+            Release("99.0.0", "stable", 'python -m pip install --upgrade "snowllm==99.0.0"', "Stable notes"),
+            Release("100.0.0.dev1", "dev", 'python -m pip install --upgrade "snowllm==100.0.0.dev1"',
+                    self.manager.update.changelog),
+        ]
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
                                      base_url="http://127.0.0.1") as client:
             update = (await client.get("/daemon/status")).json()["update"]
-            self.assertEqual(update["latest"], "99.0.0")
+            self.assertEqual(update["latest"], "100.0.0.dev1")
             self.assertEqual(update["changelog"], self.manager.update.changelog)
+            self.assertEqual([(item["channel"], item["version"]) for item in update["releases"]],
+                             [("stable", "99.0.0"), ("dev", "100.0.0.dev1")])
+            self.assertEqual(update["releases"][0]["changelog"], "Stable notes")
+            self.assertEqual(update["releases"][1]["command"], self.manager.update.releases[1].command)
             self.assertFalse(update["checking"])
             page = await client.get("/")
             self.assertIn('id="update-notice"', page.text)
+            self.assertIn('id="update-releases"', page.text)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_inference_app(self.manager)),
                                      base_url="http://127.0.0.1") as client:
             self.assertEqual((await client.get("/daemon/status")).status_code, 404)

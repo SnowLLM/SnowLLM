@@ -1,0 +1,38 @@
+name: CPU checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.10", "3.14"]
+    env:
+      SNOWLLM_NO_USAGE_STATS: "1"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install CPU test dependencies
+        run: python -m pip install --upgrade pip packaging fastapi httpx uvicorn
+
+      - name: Update checker, management API and installer
+        run: scripts/run-tests.sh test_updates test_daemon test_install_channels test_install_targets
+
+      - name: Web UI and install selector
+        run: node --test tests/test_webui.mjs tests/test_install_ui.mjs

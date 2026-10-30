@@ -40,11 +40,25 @@ Run this command in your Linux or WSL2 shell. The install script does not suppor
 curl -fsSL https://snowllm.dev/install.sh | sh
 ```
 
+The default channel is Stable. To install or update Dev:
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --channel dev
+```
+
+To switch back to the latest Stable, including when it has a lower version number than the installed Dev:
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --channel stable
+```
+
 The default target is `gfx1151`. For another APU, pass its target, for example:
 
 ```sh
 curl -fsSL https://snowllm.dev/install.sh | sh -s -- --target gfx1150
 ```
+
+`--channel` and `--target` can be combined.
 
 - Checks the machine before downloading anything: GPU, driver access, Python, disk, network
 - Installs into `~/.local/share/snowllm`, links `snowllm` into `~/.local/bin` (XDG or `SNOWLLM_*` overrides can change these paths)
@@ -60,7 +74,7 @@ Alternatively, install manually. Replace `device-gfx1151` with your target's ext
 pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
     "torch[device-gfx1151]==2.12.0+rocm7.14.0" \
     "torchvision==0.27.0+rocm7.14.0"
-pip install snowllm snowllm-kernels
+python -m pip install --upgrade snowllm
 ```
 
 ## Windows: manual installation
@@ -69,12 +83,23 @@ Native Windows supports **manual installation only**. Replace `device-gfx1151` w
 
 ```powershell
 python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"
-python -m pip install snowllm snowllm-kernels
+python -m pip install --upgrade snowllm
 ```
 
 Native Windows users should note the [Windows additional settings](../guides/windows-pagefile#bios-uma), including BIOS UMA allocation and the page file. On ordinary APUs, increasing UMA can make more memory available to inference.
 
 If you are using WSL2 on a Windows machine, follow the Linux / WSL2 instructions above inside WSL2 instead.
+
+## Change channels with pip
+
+To install or update Dev on any supported system:
+
+```sh
+python -m pip install --upgrade --pre snowllm
+```
+
+To switch from Dev to Stable, select Stable and pip on the [homepage](https://snowllm.dev/?channel=stable&how=pip#install)
+and run its version-pinned SnowLLM command. This also works when switching requires a downgrade.
 
 ## Next step
 

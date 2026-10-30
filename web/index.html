@@ -48,7 +48,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="/site.css?v=webui-type-1">
+<link rel="stylesheet" href="/site.css?v=install-channels-1">
 <link rel="stylesheet" href="/site-header.css">
 <script>
 (function () {
@@ -72,6 +72,13 @@
 
   <div class="install" id="install">
     <div class="selector" id="panel-install">
+      <div class="axis">
+        <span class="axis-label" data-i18n="install.build">Build</span>
+        <div class="opts" data-axis="channel" aria-describedby="channel-note">
+          <button class="opt build-opt" type="button" data-value="stable" aria-pressed="true"><span>Stable</span><span class="build-version" id="stable-version" data-i18n="common.loading">Loading…</span></button>
+          <button class="opt build-opt" type="button" data-value="dev" aria-pressed="false"><span>Dev</span><span class="build-version" id="dev-version" data-i18n="common.loading">Loading…</span></button>
+        </div>
+      </div>
       <div class="axis">
         <span class="axis-label" data-i18n="home.os">OS</span>
         <div class="opts" data-axis="os">
@@ -130,6 +137,7 @@
       </div>
     </div>
 
+    <p class="note" id="channel-note" aria-live="polite" data-i18n="install.stable">Stable is recommended for everyday use.</p>
     <p class="note" id="target-note" data-i18n-html="install.targets">Official testing covers Ryzen AI Max+ 395 / Ryzen 9 7940HS only. If you run into problems, please <a href="https://github.com/SnowLLM/SnowLLM/issues">open an issue ↗</a>.</p>
     <p class="note" id="install-note" aria-live="polite" hidden></p>
   </div>
@@ -189,6 +197,6 @@ snowllm qwen3.8-flash-next-q3-k-xl</pre>
 </div>
 
 
-<script type="module" src="/site-shell.js?v=install-os-1"></script>
+<script type="module" src="/site-shell.js?v=install-channels-1"></script>
 </body>
 </html>

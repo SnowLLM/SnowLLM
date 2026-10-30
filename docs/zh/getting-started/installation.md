@@ -37,11 +37,25 @@
 curl -fsSL https://snowllm.dev/install.sh | sh
 ```
 
+默认渠道是 Stable。安装或更新 Dev：
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --channel dev
+```
+
+切回最新 Stable，支持稳定版版本号低于当前 Dev 的情况：
+
+```sh
+curl -fsSL https://snowllm.dev/install.sh | sh -s -- --channel stable
+```
+
 默认 target 为 `gfx1151`。其他 APU 请通过参数指定，例如：
 
 ```sh
 curl -fsSL https://snowllm.dev/install.sh | sh -s -- --target gfx1150
 ```
+
+`--channel` 和 `--target` 可以组合使用。
 
 - 下载前检查 GPU、驱动访问权限、Python、磁盘和网络。
 - 安装到 `~/.local/share/snowllm`，将 `snowllm` 链接到 `~/.local/bin`；XDG 或 `SNOWLLM_*` 设置可以覆盖这些路径。
@@ -58,7 +72,7 @@ curl -fsSL https://snowllm.dev/install.sh | sh -s -- --target gfx1150
 pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ \
     "torch[device-gfx1151]==2.12.0+rocm7.14.0" \
     "torchvision==0.27.0+rocm7.14.0"
-pip install snowllm snowllm-kernels
+python -m pip install --upgrade snowllm
 ```
 
 ## Windows：手动安装 {#windows-manual-installation}
@@ -67,12 +81,23 @@ pip install snowllm snowllm-kernels
 
 ```powershell
 python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ "torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"
-python -m pip install snowllm snowllm-kernels
+python -m pip install --upgrade snowllm
 ```
 
 原生 Windows 用户请注意 [Windows 额外设置](../guides/windows-pagefile#bios-uma)，包括 BIOS UMA 划分和分页文件。普通 APU 可以通过增大 UMA，提高推理引擎可用的内存容量。
 
 如果在 Windows 上使用 WSL2，请在 WSL2 内按照上面的 Linux / WSL2 步骤安装。
+
+## 使用 pip 切换渠道 {#change-channels-with-pip}
+
+在任意支持的系统上安装或更新 Dev：
+
+```sh
+python -m pip install --upgrade --pre snowllm
+```
+
+从 Dev 切回 Stable 时，在[官网](https://snowllm.dev/?lang=zh_cn&channel=stable&how=pip#install)选择 Stable 和 pip，
+执行其中指定精确版本的 SnowLLM 安装命令；需要降级时也能完成切换。
 
 ## 下一步 {#next-step}
 
