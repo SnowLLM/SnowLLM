@@ -296,7 +296,7 @@ def _runner_for(model: "TargetModel") -> type[BaseRunner]:
 
 
 def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
-                   weights: int, *, load_peak: int = 0) -> int:
+                   weights: int, *, load_peak: int = 0, host_weights: int = 0) -> int:
     ctx = int(kv.get("ctx") or 0)
     if ctx <= 0:
         return 0
@@ -325,6 +325,9 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         got = max(loading, weights + r.minimum_bytes(rows) + r.act_bytes_for(rows) + aux - room)
         if got <= budget:
             break
+    from .capacity import record_memory
+    record_memory(r, kv, weights=weights, host_weights=host_weights, load_peak=load_peak,
+                  room=room + resident)
     return got
 
 

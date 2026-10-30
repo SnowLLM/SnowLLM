@@ -209,6 +209,9 @@ class BaseRunner:
         from ..models.placement import ensure_room
         while required > self._allow:
             if not ensure_room(self.model, required - self._allow):
+                from ..memory_report import current
+                if current() is not None:
+                    current().shortfall(required - self._allow)
                 raise SnowLLMError(f'persistent state and workspace need {required/(1<<30):.2f} GiB; '
                                    'lower --max-num-seqs/--num-spec or offload more weights')
             self._allow = self._allowance()
@@ -220,6 +223,9 @@ class BaseRunner:
         shortage = -self._allowance()
         while shortage > 0:
             if not ensure_room(self.model, shortage):
+                from ..memory_report import current
+                if current() is not None:
+                    current().shortfall(shortage)
                 raise memory_shortage(shortage)
             release_device_cache()
             shortage = -self._allowance()
@@ -251,14 +257,30 @@ class BaseRunner:
         try:
             units, snapshots = plan.choose(allowance(), prefix_budget)
         except ValueError as exc:
-            checkpoint = (f' and {plan.minimum_snapshots} prefix snapshots'
-                          if plan.checkpoint_bytes else '')
+            from ..capacity import largest_fitting, memory_shortage
+            from ..memory_report import current
+            if floor < plan.minimum or (plan.maximum is not None and floor > plan.maximum):
+                raise CapacityError(
+                    f'{type(self).__name__}: the requested KV pool cannot carry one sequence '
+                    f'at max_model_len={self.ctx_cap}, or exceeds the supported pool capacity') from exc
+            room = allowance()
+            missing = max(0, plan.bytes_for(floor) + plan.snapshot_floor + plan.future_bytes - room)
+            report = current()
+            if report is not None:
+                report.shortfall(missing)
+                if getattr(self, '_want_blocks', None) is None:
+                    scale = self.ctx_cap // plan.minimum
+                    unit = self.block_size if scale == 1 else 1
+                    try:
+                        fitting = largest_fitting(
+                            lambda n: plan.bytes_for(n) + plan.snapshot_floor + plan.future_bytes <= room,
+                            floor - 1, unit=unit)
+                        report.suggestion = min(fitting * scale, report.values['context'] - 1)
+                    except SnowLLMError:
+                        pass
             raise CapacityError(
-                f'{type(self).__name__}: the KV pool cannot carry one sequence{checkpoint} at '
-                f'max_model_len={self.ctx_cap}, or the requested pool exceeds the budget. '
-                'Lower --max-model-len/--max-num-seqs, offload more weights, or raise '
-                '--max-gpu-mem, or enable/increase '
-                '--max-host-mem or --max-disk-offload.') from exc
+                f'{type(self).__name__}: '
+                f'{memory_shortage(missing, target="host" if enabled() else "GPU")}') from exc
         future = plan.future_bytes + snapshots * plan.checkpoint_bytes
         prepare_gpu_commit(plan.bytes_for(units) + future)
         return units, snapshots

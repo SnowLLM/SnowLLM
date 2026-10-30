@@ -11,6 +11,17 @@ from snowllm.engine.runner import BaseRunner, CapacityError
 
 
 class PlacementTests(unittest.TestCase):
+    def test_maximum_host_offload_uses_eligibility_and_frozen_groups(self):
+        sizes = {'experts': 24, 'dense': 6}
+        by = {'experts': {0: 8, 1: 8, 2: 8}, 'dense': {0: 6}}
+        current = placement.DeviceMap(frozenset(('experts',)), sizes,
+            layers={'experts': frozenset((0,))}, per_layer=by, total_bytes=40)
+        self.assertEqual(placement.max_host_bytes(current), 30)
+        self.assertEqual(placement.max_host_bytes(current, frozen=('experts',)), 14)
+        eligible = ({'experts': 16, 'dense': 0}, {'experts': {0: 8, 1: 8}})
+        self.assertEqual(placement.max_host_bytes(current, eligible), 16)
+        self.assertEqual(current.host_bytes, 8)
+
     def test_successful_greedy_choices_are_refined_for_each_group(self):
         for group in ('experts', 'dense', 'experts.gate_up', 'shared.down'):
             with self.subTest(group=group):

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Errors shared by CPU management commands and the inference runtime."""
 
+MEMORY_GUIDE_URL = 'https://snowllm.dev/docs/guides/memory-management#startup-memory-error'
+
 
 class SnowLLMError(RuntimeError):
     pass

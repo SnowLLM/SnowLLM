@@ -16,6 +16,7 @@ from ._version import __version__
 from ._platform import release_device_cache
 from .defaults import DEFAULT_GPU_UTIL, DEFAULT_PREFILL_CHUNK
 from .telemetry import enabled as telemetry_enabled
+from .memory_report import current as memory_report, startup_report
 
 SUBCOMMANDS = ("pull", "recipes", "pi")
 
@@ -73,6 +74,7 @@ def _log(msg: str) -> None:
     print(f"{term.stamp(time.strftime('%H:%M:%S'))} {msg}", flush=True)
 
 
+@startup_report
 def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks: int | None,
           default_max_tokens: int | None, seed: int | None, profile_dir: str | None,
           enforce_eager: bool = False, num_spec: int = 0, kv_int8: bool = False,
@@ -121,11 +123,14 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from ._capi import SnowLLMError
     from . import ops
     from ._platform import device_mem_info
-    _, physical = device_mem_info()
+    free, physical = device_mem_info()
     gpu_memory_utilization = 1. if host_alloc else limits.gpu_utilization(physical)
     host_limit = limits.host_limit(host_total())
-    host_ceiling = 'unset' if host_limit is None else f'{host_limit / (1 << 30):.3f} GiB'
-    _log(f'memory ceilings: GPU {limits.gpu_limit(physical) / (1 << 30):.3f} GiB; host {host_ceiling}')
+    from .capacity import host_room
+    report = memory_report()
+    if report is not None:
+        gpu_room = max(0, min(free, limits.gpu_limit(physical) - (physical-free)))
+        report.available(gpu_room, host_room(ops.host_pinned_bytes()))
     if host_alloc:
         _log('host allocation: hipHostMalloc-backed tensors; weights, KV and workspace use system RAM')
     if prefix_memory_ratio is None:
@@ -148,6 +153,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     kv = dict(ctx=max_model_len, slots=max_num_seqs,
               util=gpu_memory_utilization,
               chunk=prefill_chunk, reserve=draft.load_peak_bytes,
+              draft_weight_bytes=draft.device_bytes,
               taps=draft.geo.tap_layers if dflash else (), draft_geo=draft.geo,
               draft_workspace=draft.workspace,
               prefix_ratio=prefix_memory_ratio, kv_int8=kv_int8,
@@ -221,9 +227,18 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
             release_device_cache()
             free, total = device_mem_info()
     if total-free > limits.gpu_limit(total):
+        if memory_report() is not None:
+            memory_report().shortfall(total-free-limits.gpu_limit(total))
         engine.runner._discard_pools()
         from .capacity import memory_shortage
         raise memory_shortage(total-free-limits.gpu_limit(total))
+    report = memory_report()
+    if report is not None and report.values:
+        report.ready(weights=model.device_map.device_bytes + draft.device_bytes,
+                     host_weights=model.device_map.host_bytes, workspace=engine.runner.act_bytes,
+                     snapshot_count=engine.runner.prefix_slots, device_used=total-free)
+        if host_alloc:
+            report.values['host_allocated'] = allocation.allocated_bytes()
     if host_alloc:
         _log(f'Host allocation: {allocation.allocated_bytes() / (1 << 30):.3f} GiB in tensor pools; '
              f'physical VRAM in use {(total-free) / (1 << 20):.1f} MiB (driver/runtime included)')
@@ -598,7 +613,7 @@ def main() -> None:
               prefix_memory_ratio=a.prefix_memory_ratio,
               limit_mm_per_prompt=a.limit_mm_per_prompt)
     except (RuntimeError, MemoryError) as exc:
-        from .errors import is_capacity_error
+        from .errors import MEMORY_GUIDE_URL, is_capacity_error
         capacity_error = is_capacity_error(f'{type(exc).__name__}: {exc}')
         if not isinstance(exc, SnowLLMError) and not capacity_error:
             raise
@@ -608,11 +623,7 @@ def main() -> None:
                 message = f'Out of memory: {message}'
             if 'budget exceeds physical' in message:
                 message += ' Lower --max-gpu-mem or --max-host-mem to fit physical memory.'
-            else:
-                context = max(1, a.max_model_len // 2)
-                chunk = min(context, max(1, a.max_num_batched_tokens // 2))
-                message += (f' Try smaller workload options, for example: --max-model-len {context} '
-                            f'--max-num-seqs 1 --max-num-batched-tokens {chunk}.')
+            message += f' Help: {MEMORY_GUIDE_URL}'
         p.exit(2, f'snowllm: {message}\n')
     install(state)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")

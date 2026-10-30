@@ -135,10 +135,11 @@ class CLITests(unittest.TestCase):
 
     def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
         from snowllm.capacity import memory_shortage
-        from snowllm.errors import SnowLLMError
+        from snowllm.errors import MEMORY_GUIDE_URL, SnowLLMError, is_capacity_error
         oom = type('OutOfMemoryError', (RuntimeError,), {})
         for error, expected, forbidden in (
-            (memory_shortage(1024), '--max-model-len 4096 --max-num-seqs 1 --max-num-batched-tokens 32', 'Traceback'),
+            (memory_shortage(1024), '--max-model-len, --max-num-seqs or --max-num-batched-tokens',
+             '--max-model-len 4096'),
             (memory_shortage(1149259259), 'GPU memory budget is short by 1.07 GiB', '1149259259 bytes'),
             (memory_shortage(369434297), 'GPU memory budget is short by 352.32 MiB', '369434297 bytes'),
             (SnowLLMError('GPU memory budget exceeds physical device memory'),
@@ -154,6 +155,8 @@ class CLITests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn(expected, output.getvalue())
                 self.assertNotIn(forbidden, output.getvalue())
+                self.assertEqual(MEMORY_GUIDE_URL in output.getvalue(),
+                                 is_capacity_error(f'{type(error).__name__}: {error}'))
         with self.assertRaisesRegex(RuntimeError, 'kernel contract mismatch'):
             self.launch_options(failure=RuntimeError('kernel contract mismatch'))
 

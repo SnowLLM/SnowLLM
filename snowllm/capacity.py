@@ -201,15 +201,27 @@ def largest_fitting(fits, maximum, *, unit=1):
     return lo * unit
 
 
-def memory_shortage(nbytes):
+def memory_shortage(nbytes, *, host_help=False, disk_help=False, target='GPU'):
     size = max(0, nbytes)
     for unit in ('B', 'KiB', 'MiB', 'GiB', 'TiB'):
         if size < 1024 or unit == 'TiB':
             break
         size /= 1024
     missing = f'{size:.2f} {unit}' if unit != 'B' else f'{size:g} B'
+    if target == 'host':
+        return SnowLLMError(
+            f'host memory budget is short by {missing} for the configured context/chunk/concurrency; '
+            'increase --max-host-mem if system RAM/mapping space is available, '
+            'or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')
+    offload = ('set or increase --max-host-mem if more host RAM/mapping space is available, '
+               if host_help else '')
+    if disk_help:
+        offload += 'increase --max-disk-offload if disk offload capacity is available, '
+    constraint = 'GPU-bound with the current placement'
+    if host_help:
+        constraint = 'GPU shortfall; host offload is limited by available host budget/space'
     return SnowLLMError(
         f'GPU memory budget is short by {missing} for the configured context/chunk/concurrency; '
+        f'{constraint}; '
         'increase --max-gpu-mem if GPU memory is available, '
-        'set or increase --max-host-mem or --max-disk-offload, '
-        'or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')
+        f'{offload}or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')

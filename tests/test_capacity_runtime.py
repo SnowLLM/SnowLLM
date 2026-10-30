@@ -11,6 +11,7 @@ from snowllm.engine.glm5_next_runner import Glm5NextRunner
 from snowllm.engine.dsv4_runner import Dsv4Runner
 from snowllm.checkpoint import loader
 from snowllm.models import placement
+from snowllm.memory_report import MemoryReport
 
 
 def main():
@@ -41,6 +42,48 @@ def main():
         ck('host budget errors identify the host ceiling', 'host memory budget' in str(exc))
     else:
         ck('host budget errors identify the host ceiling', False)
+    context, shortage = 227328, 61500000
+    kv = dict(ctx=context, chunk=8192, slots=1, host_offload_allowed=True)
+    errors, suggestions, limits = [], [], []
+    def build(dmap, offload=None):
+        return dmap
+    def need(build, cfg, options, budget):
+        return ((15 << 30) + shortage - build().host_bytes
+                - (context-options['ctx'])*4096)
+    for host_gib in (18, 20):
+        report = MemoryReport(values={'context': context})
+        with patch.object(placement, 'auto_budget', return_value=host_gib << 30), \
+             patch.object(loader, 'dry_need', side_effect=need), \
+             patch('snowllm.memory_report.current', return_value=report):
+            try:
+                loader._memory_device_map({}, kv, build, {'experts': 15 << 30},
+                                         {'experts': {i: 1 << 30 for i in range(15)}}, 25 << 30)
+            except RuntimeError as exc:
+                errors.append(str(exc))
+                suggestions.append(report.suggestion)
+                limits.append(report.max_host_offload)
+            else:
+                raise AssertionError('GPU-bound layout unexpectedly fit')
+    ck('host 18 to 20 GiB leaves the same GPU-bound error',
+       errors[0] == errors[1] and 'GPU-bound' in errors[0] and '--max-host-mem' not in errors[0])
+    ck('tiny GPU shortfall gets the same nearby context at both host ceilings',
+       suggestions == [212304, 212304] and suggestions[0] > context//2)
+    ck('both GPU-bound failures report the 15 GiB movable-weight ceiling', limits == [15 << 30]*2)
+    def host_need(build, cfg, options, budget):
+        return (19 << 30) - build().host_bytes
+    with patch.object(loader, 'dry_need', side_effect=host_need):
+        for host_gib in (18, 20):
+            with patch.object(placement, 'auto_budget', return_value=host_gib << 30):
+                try:
+                    dmap, _, _ = loader._memory_device_map({}, kv, build, {'experts': 24 << 30},
+                        {'experts': {i: 1 << 30 for i in range(24)}}, 30 << 30)
+                except RuntimeError as exc:
+                    ck('host-bound layout identifies increasing host memory as useful',
+                       host_gib == 18 and '--max-host-mem' in str(exc)
+                       and 'host offload is limited' in str(exc))
+                else:
+                    ck('raising host to 20 GiB resolves an actual host-bound layout',
+                       host_gib == 20 and dmap.host_bytes == 19 << 30)
     runner = object.__new__(BaseRunner)
     runner._want_blocks, runner.max_blocks_per_seq = None, 25600
     for slots in (1, 4, 16):
@@ -96,6 +139,49 @@ def main():
     ck('legacy auto chunk preserves the 8K default', runner.candidates() == [8192])
     runner._want_chunk = 512
     ck('explicit chunk is preserved', runner.candidates() == [512])
+    report = MemoryReport(values={'context': 227328})
+    kv = dict(ctx=227328, chunk=8192, slots=1)
+    with patch('snowllm.memory_report.current', return_value=report), \
+         patch.object(loader, 'dry_need', side_effect=lambda build, cfg, kv, budget: kv['ctx']-212992):
+        loader._planned_shortage(61 << 20, lambda: None, {}, kv)
+    ck('planner searches a nearby aligned context instead of halving it', report.suggestion == 212992)
+    ck('suggestion search preserves the configured context', kv['ctx'] == 227328)
+    from snowllm.engine.capacity import record_memory
+    from snowllm.models.geometry import Glm5NextGeometry
+    planned = SimpleNamespace(geo=object.__new__(Glm5NextGeometry),
+        _pool_plan=lambda n: PoolPlan(lambda n: 100+n*16, minimum=8),
+        sparse_state_bytes=lambda: 100, block_size=16, max_prefill_tokens=32,
+        resources=SimpleNamespace(linear=[]), act_bytes_for=lambda n: 32,
+        fixed_bytes=lambda n: 228, ctx_cap=128, max_num_seqs=1, slots_per_request=1)
+    with patch('snowllm.memory_report.current', return_value=report), \
+         patch('snowllm.engine.capacity.auxiliary_bytes', return_value=0):
+        record_memory(planned, {}, weights=1000, host_weights=0, load_peak=1200, room=2000)
+    ck('GLM carry buffers are fixed request overhead rather than token KV',
+       report.values['cache'] == 128 and report.values['other'] == 100)
+    ck('per-100K KV growth excludes fixed carry buffers', report.values['cache_100k'] == 100000)
+    ck('report categories add up without double counting', report.values['total'] == 1260)
+    planned.resources.checkpoints = SimpleNamespace(bytes_for=lambda n: 8)
+    planned._pool_plan = lambda n: PoolPlan(lambda n: 100+n*16, minimum=8,
+                                          checkpoint_bytes=16, minimum_snapshots=2)
+    planned.fixed_bytes = lambda n: 260
+    with patch('snowllm.memory_report.current', return_value=report), \
+         patch('snowllm.engine.capacity.auxiliary_bytes', return_value=0):
+        record_memory(planned, {}, weights=1000, host_weights=0, load_peak=1200, room=2000)
+    ck('prefix draft KV is separate from recurrent state snapshots',
+       report.values['snapshot_each'] == 8 and report.values['snapshots'] == 16
+       and report.values['cache'] == 144 and report.values['total'] == 1292)
+    import torch
+    planned.resources.linear = [SimpleNamespace(history=torch.empty(4, 1, dtype=torch.uint8, device='meta'),
+                                               state=torch.empty(4, 7, dtype=torch.uint8, device='meta'))]
+    planned.slots_per_request = 3
+    planned.fixed_bytes = lambda n: 292
+    with patch('snowllm.memory_report.current', return_value=report), \
+         patch('snowllm.engine.capacity.auxiliary_bytes', return_value=0):
+        record_memory(planned, {}, weights=1000, host_weights=0, load_peak=1200, room=2000)
+    ck('internal sink state moves to workspace without changing total storage',
+       report.values['linear'] == 24 and report.values['fixed_workspace'] == 8
+       and report.values['workspace'] == 40 and report.values['other'] == 100
+       and report.values['total'] == 1324)
     runner.model = SimpleNamespace()
     with patch.object(runner, '_allowance', side_effect=(-74, 128)), \
          patch.object(placement, 'ensure_room', return_value=True) as move, \

@@ -291,7 +291,25 @@ def dry_need(build: "Callable[[], TargetModel]", cfg: dict, kv: dict | None,
         return 0
     with ops.dry_load() as d:
         model = build()
-        return carve_out_need(model, cfg, kv, budget, d.device, load_peak=d.peak_device)
+        return carve_out_need(model, cfg, kv, budget, d.device, load_peak=d.peak_device,
+                              host_weights=d.host)
+
+
+def _planned_shortage(nbytes, build, cfg, kv, *, host_help=False, disk_help=False):
+    from ..capacity import largest_fitting, memory_shortage
+    from ..memory_report import current, suspended
+    report = current()
+    if report is not None and report.values and not kv.get('blocks'):
+        from .. import ops
+        unit = ops.KV_BLOCK_SIZES[0]
+        try:
+            with suspended():
+                report.suggestion = largest_fitting(
+                    lambda ctx: dry_need(build, cfg, dict(kv, ctx=ctx), 0) <= 0,
+                    int(kv['ctx']) - 1, unit=unit)
+        except SnowLLMError:
+            report.suggestion = None
+    return memory_shortage(nbytes, host_help=host_help, disk_help=disk_help)
 
 
 def _device_map(spec: str, cfg: dict, kv: dict | None,
@@ -343,6 +361,10 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
             by[group] = {i: n for i, n in by.get(group, {}).items() if i not in hash_layers}
             eligible[group] = sum(by[group].values())
     empty = placement.DeviceMap(frozenset(), sizes, per_layer=per_layer, total_bytes=total)
+    from ..memory_report import current
+    report = current()
+    if report is not None:
+        report.max_host_offload = placement.max_host_bytes(empty, (eligible, by))
     needed = dry_need(lambda: build(empty, offload=None), cfg, kv, 0)
     if needed <= 0:
         return empty, None, (eligible, by)
@@ -367,8 +389,11 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
                 continue
         if remaining <= 0:
             return dmap, None, (eligible, by)
+        expanded = planner(eligible, sum(eligible.values()), needed, by)
+        host_help = expanded.host_bytes > dmap.host_bytes
         if disk_limit is None:
-            raise memory_shortage(remaining)
+            raise _planned_shortage(remaining, lambda: build(dmap, offload=None), cfg, kv,
+                                    host_help=host_help)
         if cfg.get('model_type') != 'deepseek_v4':
             raise SnowLLMError('this model does not have a disk expert cache backend')
         target = max(target, remaining)
@@ -382,7 +407,8 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
             raise SnowLLMError(f'{memory_shortage(remaining)}; {exc}') from exc
         if weights > disk_limit:
             raise SnowLLMError(f'--max-disk-offload permits {disk_limit} bytes of offloaded expert '
-                               f'weights, but this layout needs {weights} bytes; {memory_shortage(remaining)}')
+                               f'weights, but this layout needs {weights} bytes; '
+                               f'{memory_shortage(remaining, host_help=host_help, disk_help=True)}')
         if dmap.host_bytes + padding + stage > host_room and allow_host and padding + stage > reserve:
             reserve = padding + stage
             continue
@@ -410,6 +436,14 @@ def _load_placed(build, cfg, kv, dmap, device_map, *, host_offload=None, eligibi
             peak = planned.peak_device
             host = planned.host + planned.mapped_host_bytes - sum(planned.placed_bytes().values())
             host += getattr(getattr(probe, "moe_offload_plan", None), "host_staging_bytes", 0)
+            from ..memory_report import current
+            if current() is not None and kv:
+                store = getattr(probe, 'moe_offload_plan', None)
+                frozen = ('experts', 'experts.gate_up', 'experts.down') if store is not None else ()
+                current().max_host_offload = placement.max_host_bytes(dmap, eligibility, frozen=frozen)
+                from ..engine import carve_out_need
+                carve_out_need(probe, cfg, kv, 0, planned.device, load_peak=peak,
+                               host_weights=planned.host)
         del probe
         check_host(host, ops.host_pinned_bytes())
         free, physical = gpu_mem_info()

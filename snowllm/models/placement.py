@@ -321,6 +321,12 @@ def plan_moe(sizes, budget, need, per_layer):
     return dataclasses.replace(result, sizes=dict(sizes), per_layer=per_layer)
 
 
+def max_host_bytes(dmap, eligibility=None, *, frozen=()):
+    sizes, by = eligibility if eligibility is not None else (dmap.sizes, dmap.per_layer)
+    ceiling = sum(sizes.values()) + dmap.host_bytes
+    return plan(sizes, ceiling, ceiling, by, previous=dmap, frozen=frozen).host_bytes
+
+
 def _layer_sizes(group, per_layer):
     by = dict(per_layer.get(group, {}))
     for part, parent in PROJECTIONS.items():
