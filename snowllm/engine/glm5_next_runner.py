@@ -34,6 +34,8 @@ class Glm5NextRunner(GraphRunner):
 
     def _setup_resources(self):
         from .cache_resources import GlmResources
+        # Startup graph capture can reuse request slots before serving begins.
+        self.dummy_slot = 0
         self.arena = ops.Arena() if self.plan_activations else None
         self._activation_plans, self._planning = {}, False
         self.num_kv_blocks = self._want_blocks
@@ -236,7 +238,8 @@ class Glm5NextRunner(GraphRunner):
         accepted_rows = messages.tensor('accepted', [t]*b, torch.int64) if accepted else [1]*b if not draft and t>1 else None
         batch = synthetic_batch([t]*b, self.max_blocks_per_seq, tensor=messages.tensor,
             slot_mapping=[-1]*m,
-            state_indices=[2*self.max_num_seqs-1 if draft else self.dummy_slot]*(b if draft or t==1 else m),
+            state_indices=([self.max_num_seqs+i for i in range(b)] if draft else
+                           [i for i in range(b) for _ in range(t)]),
             cu_seqlens=[i*t for i in range(b+1)] if t>1 else None,
             chunk_decode=not draft and t>1, num_accepted=accepted_rows,
             last_row=[(i+1)*t-1 for i in range(b)] if draft and accepted else None,

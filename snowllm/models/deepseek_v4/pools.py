@@ -51,7 +51,8 @@ class CarryGroup:
         self.stride = window + spare
         self.bank = self.stride + spare + 1
         self.dummy = slots * 2 * self.bank
-        shape = (layers, self.dummy + 1, width)
+        # The slide kernel skips the sentinel before accessing either buffer.
+        shape = (layers, self.dummy, width)
         self.kv = tensor(slabs, shape, torch.float32, zero=True)
         self.score = tensor(slabs, shape, torch.float32, zero=True)
         self.taken = 0

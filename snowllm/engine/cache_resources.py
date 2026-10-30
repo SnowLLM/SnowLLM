@@ -33,6 +33,7 @@ class QwenResources(ResourceSet):
     def __init__(self, runner):
         super().__init__()
         self.r = r = runner
+        self.draft_modules = frozenset(r.model.mtp.modules()) if r.model.mtp is not None else frozenset()
         pooled = pooled_modules(r.model, (FullAttention, GatedDeltaNet))
         r.full_mods = [(i, a) for i, a in pooled if isinstance(a, FullAttention)]
         r.linear_mods = [(i, a) for i, a in pooled if isinstance(a, GatedDeltaNet)]
@@ -80,23 +81,24 @@ class QwenResources(ResourceSet):
             return r._graph_inputs.tensor(name, values, dtype)
         b = synthetic_batch([r.T]*r.max_num_seqs, r.max_blocks_per_seq, tensor=message,
             slot_mapping=[-1]*r.decode_rows, seq_lens=[1]*r.max_num_seqs,
-            state_indices=[r.dummy_slot]*r.decode_rows, num_accepted=[1]*r.max_num_seqs)
+            state_indices=list(range(r.decode_rows)), num_accepted=[1]*r.max_num_seqs)
         r.d_ids, r.d_slot, r.d_seq = b.input_ids, b.slot_mapping, b.seq_lens
         r.d_bt, r.d_sidx, r.d_nacc = b.block_tables, b.state_indices, b.num_accepted
         r.d_pos, r.d_cu = {}, {}
 
     def allocate_states(self, slabs):
         r, g = self.r, self.r.geo
-        rows = r.dummy_slot + 1
+        rows = r.max_num_seqs*r.slots_per_request
         r.state = {}
         for i, a in r.linear_mods:
+            count = rows + (a in self.draft_modules)
             a.state = r.state[i] = (
-                tensor(slabs, (rows, g.lin_conv_state, g.lin_conv_dim), torch.bfloat16),
-                tensor(slabs, (rows, g.lin_num_v_heads, g.lin_head_k, g.lin_head_v), torch.float32))
+                tensor(slabs, (count, g.lin_conv_state, g.lin_conv_dim), torch.bfloat16),
+                tensor(slabs, (count, g.lin_num_v_heads, g.lin_head_k, g.lin_head_v), torch.float32))
             if r.roll_forward:
                 a.retain = tuple(slabs.take(n).span() for n in ops.linear_attn_retain_bytes(r.decode_rows))
         for a in r.ple_mods:
-            a.state = tensor(slabs, (rows, a.hist, g.hc_dim), torch.bfloat16)
+            a.state = tensor(slabs, (rows + (a in self.draft_modules), a.hist, g.hc_dim), torch.bfloat16)
         if r.ple_mods:
             r.prev_context = g.ngram_size - 1
             r.ple_fresh = tensor(slabs, (r.max_num_seqs,), torch.int32)
@@ -105,8 +107,9 @@ class QwenResources(ResourceSet):
             return RequestState([t for _, a in r.linear_mods for t in a.state]
                                 + [a.state for a in r.ple_mods])
         for a in self.indexers:
-            a.carry = tensor(slabs, (rows, g.index_ratio - 1, g.index_head_dim), torch.bfloat16)
-            a.carry_pos = tensor(slabs, (rows, g.index_ratio - 1, 3), torch.int64)
+            count = rows + (a in self.draft_modules)
+            a.carry = tensor(slabs, (count, g.index_ratio - 1, g.index_head_dim), torch.bfloat16)
+            a.carry_pos = tensor(slabs, (count, g.index_ratio - 1, 3), torch.int64)
         width = ops.qsa_decode_rows(r.decode_rows)
         pages = -(-(g.index_topk + g.index_ratio - 1) // r.block_size)
         compact = tuple(slabs.take(n).span().view(torch.bfloat16)
@@ -189,13 +192,14 @@ class GlmResources(ResourceSet):
 
     def allocate_states(self, slabs):
         for a in self.linear:
-            a.allocate(self.r.dummy_slot+1, slabs)
+            a.allocate(self.r.max_num_seqs*self.r.slots_per_request, slabs)
         return RequestState([t for a in self.linear for t in (a.history, a.state)])
 
     def allocate_cache(self, slabs, blocks):
         r = self.r
         for a in self.sparse:
-            slots = 2*r.max_num_seqs if a is getattr(r.model.mtp, 'attention', None) else r.dummy_slot+1
+            slots = (2*r.max_num_seqs if a is getattr(r.model.mtp, 'attention', None)
+                     else r.max_num_seqs*r.slots_per_request)
             a.allocate(blocks, r.block_size, slots, slabs)
         r.cache = CacheStorage(list(self.sparse), r.block_size, slabs=slabs, state=self.states.value)
         return r.cache
