@@ -13,7 +13,7 @@ function docsTheme(messages: Record<string, string>, prefix = ''): DefaultTheme.
       { text: text('gettingStarted'), items: [item('overview', '/'), item('installation', '/getting-started/installation'), item('quickStart', '/getting-started/quick-start')] },
       { text: text('guides'), items: [
         item('models', '/guides/models'), item('webui', '/webui'), item('integrations', '/guides/integrations'),
-        ...(prefix === '/zh' ? [item('memoryManagement', '/guides/memory-management')] : []),
+        item('memoryManagement', '/guides/memory-management'),
         item('performance', '/guides/performance'), item('windowsPagefile', '/guides/windows-pagefile'), item('faq', '/faq'),
       ] },
       { text: text('reference'), items: [item('cli', '/reference/cli'), item('configuration', '/reference/configuration'), item('supportedModels', '/reference/models'), item('telemetry', '/reference/telemetry')] },

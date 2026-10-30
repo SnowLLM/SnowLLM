@@ -60,7 +60,7 @@ snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
 例如，该 IQ2_XXS 检查点的 N=250 选择 `down=242`，N=192 选择 `all=192`。启动日志显示实际模式和容量。
 这是根据 DeepSeek V4 Flash 双盘 DIRECT I/O 测试选取的经验阈值，不做运行时 profiling；其他模型量化和存储配置未验证最优性。
 
-内存参数只设置上限，不是需要占满的目标。context 默认 409600 tokens，prefill chunk 默认 2048 tokens；recipe 可以提供明确的默认值。CLI 不再反推或替换 context、util 或显式 offload 比例。配置 host 或 disk 上限后，自动按 GPU → host → disk 放置；未配置下一层预算时不会自动卸载。详见[内存管理](../guides/memory-management.md)。
+内存参数只设置上限，不是需要占满的目标。context 默认 409600 tokens，prefill chunk 默认 8192 tokens；recipe 可以提供明确的默认值。CLI 不再反推或替换 context、util 或显式 offload 比例。配置 host 或 disk 上限后，自动按 GPU → host → disk 放置；未配置下一层预算时不会自动卸载。详见[内存管理](../guides/memory-management.md)。
 
 默认 KV 总容量为 `--max-model-len` 指定的 token 数，由所有请求共享，并使用对应模型的状态和滑动窗口布局；并发数不会乘到总容量上。单请求上限为共享容量与模型支持上限中的较小值。`--num-kv-blocks` 可显式覆盖缓存池大小。前缀 checkpoint 空间按这份缓存需求核算，不按空闲显存扩大。提高预算不会自动扩张缓存；预算不足时报错，不自动缩短 context 或调整 chunk。
 
@@ -83,7 +83,7 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置且限制最小值。 |
 | `--dflash-p-min` | `0.0` | DSpark 置信度阈值；`0` 禁用提前停止。 |
 | `--kv-cache-dtype` | `bf16` | `bf16`、`auto`（bf16）或实验性 `int8`。INT8 的支持[依赖模型](../guides/performance#long-contexts)。 |
-| `--max-num-batched-tokens` | `2048` | 固定预填充分块大小，如 `2k`。见[调优指南](../guides/performance#prefill-chunk-size)。 |
+| `--max-num-batched-tokens` | `8192` | 固定预填充分块大小，如 `2k`。见[调优指南](../guides/performance#prefill-chunk-size)。 |
 | `--batch-prefill` | 关闭 | 批量处理新提示词；要求 --num-spec 0，可能改变输出。 |
 | `--mtp-window` | `0` | MTP 可见的最近 token 数；`0` 使用完整上下文。 |
 | `--mtp-sinks` | `64` | 配合 --mtp-window 保留的开头 token 数。 |

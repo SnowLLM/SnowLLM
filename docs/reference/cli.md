@@ -62,7 +62,7 @@ For this IQ2_XXS checkpoint, N=250 selects `down=242`, while N=192 selects `all=
 Startup logs show the selected mode and capacity. This is a heuristic from the DeepSeek V4 Flash
 dual-NVMe DIRECT I/O sweep, with no runtime profiling; optimality on other quantizations and storage has not been established.
 
-Memory ceilings are limits, not allocation targets. Context defaults to 409600 tokens and prefill chunks to 2048 tokens; recipes may provide explicit defaults. The CLI does not calculate or replace context, utilization or an explicit offload ratio. Automatic placement uses GPU, then explicitly enabled host/disk budgets without changing the workload. See the [memory management](../zh/guides/memory-management.md).
+Memory ceilings are limits, not allocation targets. Context defaults to 409600 tokens and prefill chunks to 8192 tokens; recipes may provide explicit defaults. The CLI does not calculate or replace context, utilization or an explicit offload ratio. Automatic placement uses GPU, then explicitly enabled host/disk budgets without changing the workload. See [memory management](../guides/memory-management.md).
 
 KV capacity is shared across all requests and defaults to the configured `--max-model-len` token count, with model-specific state/window layouts. Concurrency does not multiply this capacity. Each request is capped at the smaller of the shared capacity and the model's supported context limit. An explicit `--num-kv-blocks` overrides the pool size. Prefix checkpoint space is based on the workload-sized cache rather than spare VRAM. Raising a ceiling does not expand either cache to fill the device. An insufficient budget produces an error instead of reducing context or chunk size.
 
@@ -85,7 +85,7 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). DSpark enforces its checkpoint minimum. |
 | `--dflash-p-min` | `0.0` | DSpark confidence threshold; 0 disables early stopping. |
 | `--kv-cache-dtype` | `bf16` | `bf16`, `auto` (bf16) or experimental `int8`. INT8 is [model-dependent](../guides/performance#long-contexts). |
-| `--max-num-batched-tokens` | `2048` | Fixed prefill chunk size, e.g. `2k`. See [tuning](../guides/performance#prefill-chunk-size). |
+| `--max-num-batched-tokens` | `8192` | Fixed prefill chunk size, e.g. `2k`. See [tuning](../guides/performance#prefill-chunk-size). |
 | `--batch-prefill` | Off | Batch fresh prompts; requires --num-spec 0, may change output. |
 | `--mtp-window` | `0` | Recent tokens visible to MTP; 0 uses full context. |
 | `--mtp-sinks` | `64` | Leading tokens retained with --mtp-window. |

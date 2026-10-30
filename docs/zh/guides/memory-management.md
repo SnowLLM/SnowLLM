@@ -75,6 +75,54 @@ snowllm MODEL --max-gpu-mem 20GB --max-host-mem 32GB
 
 内存上限不会改变你设置的上下文长度或并发数。预算不足时会提示内存不足，你可以降低运行需求，或增加可用预算。
 
+例如，GLM-5.3 Flash 使用 MTP=2、两路并发、8192-token KV Pool，成功启动时输出：
+
+```text
+[planner] available GPU=91.048 GiB, host=20.000 GiB
+[planner] weights 96.202 GiB, max host offload=94.351 GiB
+[planner] weights GPU=86.885 GiB, host=9.317 GiB
+[planner] ctx=8192, KV=102.000 MiB, 1.216 GiB per 100K tok
+[planner] reqs=2, state snapshots=1.375 GiB, 140.781 MiB per snapshot, 3 live + 2 cached per req
+[planner] workspace=575.076 MiB, extra/request~71.688 KiB
+[planner] ready GPU tensors=88.921 GiB (device=90.131 GiB)
+```
+
+- **可用预算**：规划开始时，GPU 可用 91.048 GiB，host 可用 20 GiB。
+- **权重放置**：86.885 GiB 放在 GPU，9.317 GiB 放在 host。
+- **卸载上限**：当前模型、后端和布局最多支持将 94.351 GiB 权重放到 host；实际还受本次 20 GiB host 预算及系统可用空间约束。
+- **KV Cache**：8192 tokens 共用 102 MiB；每增加 100,000 tokens，KV 约增加 1.216 GiB。
+- **状态快照**：每份 140.781 MiB；每请求 3 份运行状态、2 份缓存快照，两路并发共 10 份，合计 1.375 GiB。
+- **其他缓冲**：workspace 共用 575.076 MiB；其余固定缓冲均摊约 71.688 KiB/请求。
+- **启动结果**：GPU Tensor 规划总量 88.921 GiB；设备实测占用 90.131 GiB，包含驱动、graph、分配器及其他进程。
+
+### 启动失败时怎样调整 {#startup-memory-error}
+
+例如，Qwen3.6-35B 的 GPU 预算为 24 GiB、上下文为 140,000 tokens，启动失败的完整日志如下：
+
+```text
+[planner] available GPU=23.848 GiB, host=24.229 GiB
+[snowllm 09:08:56] loading qwen3.6-35b-memory-example-4b_bzzuc ...
+[planner] weights 21.217 GiB, max host offload=20.229 GiB
+[planner] weights GPU=21.217 GiB, host=0.000 B
+[planner] ctx=140000, KV=2.670 GiB, 1.907 GiB per 100K tok
+[planner] reqs=1, state snapshots=61.406 MiB, 61.406 MiB per snapshot, 1 live + 0 cached per req
+[planner] workspace=48.950 MiB, extra/request~970.648 KiB
+[planner] failed GPU tensors=23.996 GiB, short=152.115 MiB, --max-model-len 132208 (est)
+snowllm: GPU memory budget is short by 152.11 MiB for the configured context/chunk/concurrency; GPU shortfall; host offload is limited by available host budget/space; increase --max-gpu-mem if GPU memory is available, set or increase --max-host-mem if more host RAM/mapping space is available, or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens Help: https://snowllm.dev/docs/guides/memory-management#startup-memory-error
+```
+
+先按日志建议，将上下文从 140,000 调整为 132,208 tokens，缩短约 5.6%。在原启动命令中替换这一项，其余参数保持原值：
+
+```text
+--max-model-len 132208
+```
+
+该值标记为 `est`，实际加载和 graph 开销仍需启动校验；若仍不足，按新日志中更新的建议调整，不默认将上下文减半。
+
+- 要保留原上下文，且 GPU 仍有可用空间，可提高 `--max-gpu-mem`。
+- 如果 workspace 占用较大，可减小 `--max-num-batched-tokens`；如果并发状态占用较大，可减小 `--max-num-seqs`。
+- 提示 host 预算限制卸载时，可提高 `--max-host-mem`；如果已无可卸载权重，提高 host 上限无效。
+
 <details>
 <summary>SnowLLM 怎样计算内存需求？</summary>
 

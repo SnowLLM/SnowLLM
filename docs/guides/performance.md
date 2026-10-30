@@ -12,7 +12,7 @@ GPU memory covers:
 
 Resident sizes count weights only. Leave room for workspaces and caches. `--max-gpu-mem` sets a ceiling (CLI default: `0.9`); caches are sized for the configured context and concurrency. Recipes or model architectures may adjust defaults.
 
-Set `--max-host-mem` to allow automatic weight offload when the GPU budget is insufficient. DeepSeek V4 also accepts projection groups: for example, `--device-map experts.down:1` offloads the largest layer's routed down projection.
+Set `--max-host-mem` to allow automatic weight offload when the GPU budget is insufficient. See [memory management](./memory-management) for context, concurrency, memory ceilings and disk offload settings.
 
 ## Quantization
 
