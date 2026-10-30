@@ -289,6 +289,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                 f"folded into the frequencies, and the engine has no handle on it. Drop the "
                 f"=FACTOR.")
         aliases[name] = Alias(factor, min(engine.max_model_len, int(factor * orig_max)))
+    tok.model_max_length = max(alias.ctx for alias in aliases.values())
     proc = None
     if model.visual is not None:
         proc = loader.load_processor(root, tok)
