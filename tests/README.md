@@ -17,3 +17,6 @@ the default prefill chunk or adaptive DSpark profiling checks.
 `SNOWLLM_TEST_HOST_OFFLOAD` sets an explicit weight offload amount for these runs.
 Operator precision, weight-layout probes, runtime audits and model tuning
 reports belong in the private development workspace.
+
+`test_memory_plan.py` checks allocator interference and alignment, view aliases,
+retained outputs, unannotated uses, scratch scopes and graph replay.

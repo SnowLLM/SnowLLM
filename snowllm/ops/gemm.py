@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _p, _stream, empty_bytes, empty_shaped, empty_shaped_like
 
 
+@operator
 def gemm_bf16_shuffle_b(b: torch.Tensor, N: int, K: int) -> torch.Tensor:
     _chk(b, "b", torch.bfloat16, N, K)
     out = empty_shaped((N * K,), torch.bfloat16)
@@ -14,6 +16,7 @@ def gemm_bf16_shuffle_b(b: torch.Tensor, N: int, K: int) -> torch.Tensor:
     return out
 
 
+@operator
 def proj_scale_shuffle_fp8(scale_nk: torch.Tensor, n: int, k: int) -> torch.Tensor:
     out = empty_shaped_like(scale_nk)
     check(lib.snowllm_proj_scale_shuffle_fp8(_p(scale_nk), _p(out), n, k, _stream()),
@@ -21,10 +24,12 @@ def proj_scale_shuffle_fp8(scale_nk: torch.Tensor, n: int, k: int) -> torch.Tens
     return out
 
 
+@operator
 def gemm_bf16_a_ws_bytes(M: int, K: int) -> int:
     return lib.snowllm_gemm_bf16_a_ws_bytes(int(M), int(K))
 
 
+@operator
 def gemm_bf16_a(a: torch.Tensor, b_shuffled: torch.Tensor, c: torch.Tensor, M: int, N: int, K: int,
                 ws: torch.Tensor) -> None:
     _chk(a, "a", torch.bfloat16, M, K)
@@ -35,6 +40,7 @@ def gemm_bf16_a(a: torch.Tensor, b_shuffled: torch.Tensor, c: torch.Tensor, M: i
           "gemm_bf16_a")
 
 
+@operator
 def gemm_bf16_a2(a: torch.Tensor, b0_shuffled: torch.Tensor, b1_shuffled: torch.Tensor,
                  c0: torch.Tensor, c1: torch.Tensor, M: int, N0: int, N1: int, K: int,
                  ws: torch.Tensor) -> None:
@@ -48,11 +54,13 @@ def gemm_bf16_a2(a: torch.Tensor, b0_shuffled: torch.Tensor, b1_shuffled: torch.
                                    N1, K, bf16, _p(ws), _stream()), "gemm_bf16_a2")
 
 
+@operator
 def kquant_bytes(fmt: int, N: int, K: int) -> tuple[int, int, int]:
     return (lib.snowllm_kquant_quant_bytes(fmt, N, K), lib.snowllm_kquant_meta_bytes(fmt, N, K),
             lib.snowllm_kquant_gguf_bytes(fmt, N, K))
 
 
+@operator
 def gemm_kquant_shuffle_b(fmt: int, b_gguf: torch.Tensor, N: int,
                           K: int) -> tuple[torch.Tensor, torch.Tensor]:
     quant_bytes, meta_bytes, gguf_bytes = kquant_bytes(fmt, N, K)
@@ -66,10 +74,12 @@ def gemm_kquant_shuffle_b(fmt: int, b_gguf: torch.Tensor, N: int,
     return quant, meta
 
 
+@operator
 def gemm_kquant_a_ws_bytes(M: int, K: int) -> int:
     return lib.snowllm_gemm_kquant_a_ws_bytes(int(M), int(K))
 
 
+@operator
 def gemm_kquant_a(fmt: int, a: torch.Tensor, quant: torch.Tensor, meta: torch.Tensor,
                   c: torch.Tensor, M: int, N: int, K: int, ws: torch.Tensor) -> None:
     _chk(a, "a", torch.bfloat16, M, K)
@@ -80,5 +90,6 @@ def gemm_kquant_a(fmt: int, a: torch.Tensor, quant: torch.Tensor, meta: torch.Te
                                     _stream()), "gemm_kquant_a")
 
 
+@operator
 def shuffle_bytes(weight_bytes: int) -> int:
     return lib.snowllm_shuffle_bytes(weight_bytes)

@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from ... import ops
+from ...ops.allocation import active_arena
 from ...engine.forward_context import ForwardContext
 from ...trace import span
 from ..embedding import VocabEmbedding
@@ -119,10 +120,11 @@ class FullAttention(nn.Module):
                 attn_out: torch.Tensor, proj: torch.Tensor) -> None:
         b=ctx.batch
         with ctx.arena.frame():
+            decode_ws = ctx.arena.workspace(0 if b.is_prefill else ctx.decode_ws_bytes)
             scratch=ctx.arena.flat(ops.paged_attention_scratch_bytes(
                 b.batch_size,b.tokens_per_req,b.varlen_attn),torch.uint8)
             ops.paged_attention(q,pools,attn_out,b.cu_seqlens,b.block_tables,b.seq_lens,
-                b.q_block_map,b.total_q_blocks,ctx.decode_plan,ctx.decode_ws,ctx.num_slots,
+                b.q_block_map,b.total_q_blocks,ctx.decode_plan,decode_ws,ctx.num_slots,
                 b.tokens_per_req,ctx.block_size,self.attn_scale,b.varlen_attn,scratch,
                 self.shuf(ctx,proj))
 
@@ -196,10 +198,20 @@ class LMHead(nn.Module):
         super().__init__()
         self.w = w
         self.scratch: torch.Tensor | None = None
+        self.arena = None
 
-    def forward(self, last: torch.Tensor, buf: torch.Tensor) -> torch.Tensor:
+    def forward(self, last: torch.Tensor, buf: torch.Tensor, *, scratch=None) -> torch.Tensor:
         rows = last.shape[0]
-        ops.inference_head(last,self.w,buf[:rows],self.scratch)
+        arena = active_arena()
+        if scratch is None and arena is None and self.arena is not None:
+            with self.arena.frame():
+                self.arena.at = max(self.arena.at,self.arena.tail_high)
+                return self.forward(last,buf,
+                    scratch=self.arena.workspace(ops.lm_head_scratch_bytes(rows)))
+        if scratch is None:
+            scratch = (arena.workspace(ops.lm_head_scratch_bytes(rows))
+                       if arena is not None else self.scratch)
+        ops.inference_head(last,self.w,buf[:rows],scratch)
         return buf[:rows]
 
 

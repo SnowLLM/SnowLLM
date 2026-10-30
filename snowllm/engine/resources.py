@@ -135,6 +135,7 @@ class ActivationProbe:
     rows: int
     run: Callable
     retain_inputs: bool = False
+    lifetimes: str = 'references'
 
 
 @dataclass
@@ -172,7 +173,7 @@ class ActivationReservation:
     zero: bool = False
 
 
-def plan_activations(arena, groups):
+def plan_activations(arena, groups, *, after=0):
     for group in groups:
         stale = 0
         for probe in group.probes:
@@ -185,7 +186,8 @@ def plan_activations(arena, groups):
                         probe.run()
                 changed = True
             else:
-                changed = arena.plan(probe.key, probe.rows, probe.run)
+                changed = arena.plan(probe.key,probe.rows,probe.run,after,
+                                     lifetimes=probe.lifetimes)
             stale = 0 if changed else stale + 1
             if group.patience and stale >= group.patience:
                 break

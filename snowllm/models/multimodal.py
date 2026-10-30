@@ -48,7 +48,7 @@ def prepare(model: object, processor: object, messages: list[dict], images: list
         return {"prompt": ids}
 
     grid = enc["image_grid_thw"]
-    embeds = model.visual.forward(enc["pixel_values"], grid).to(torch.bfloat16, copy=True)
+    embeds = model.visual.forward(enc["pixel_values"], grid).to(torch.bfloat16)
     rows = image_rows(ids, model.image_token_id)
     if len(rows) != embeds.shape[0]:
         raise ValueError(f"{len(rows)} image placeholders but {embeds.shape[0]} vision rows -- the "

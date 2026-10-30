@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -8,11 +9,13 @@ from ._common import empty_bytes, _chk, _p, _shuffle, _passthru, _stream
 from .moe import KQuantExpertWeight
 
 
+@operator
 def lm_head_shuffle_weight(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "lm_head w", torch.bfloat16)
     return _shuffle(w, "lm_head_shuffle_weight")
 
 
+@operator
 def gather_embedding(input_ids: torch.Tensor, weight: torch.Tensor, out: torch.Tensor) -> None:
     M = input_ids.numel()
     _chk(input_ids, "input_ids", torch.int64)
@@ -22,6 +25,7 @@ def gather_embedding(input_ids: torch.Tensor, weight: torch.Tensor, out: torch.T
           "gather_embedding")
 
 
+@operator
 def gather_embedding_q4_k(input_ids: torch.Tensor, weight: torch.Tensor, out: torch.Tensor) -> None:
     if out.ndim != 2 or weight.ndim != 2 or out.shape[1] == 0 or weight.shape[0] == 0:
         raise SnowLLMError("Q4_K embedding needs matrix weights and a positive hidden size and vocabulary")
@@ -40,6 +44,7 @@ def gather_embedding_q4_k(input_ids: torch.Tensor, weight: torch.Tensor, out: to
 lm_head_scratch_bytes = _passthru("lm_head_scratch_bytes")
 
 
+@operator
 def lm_head_kquant_shuffle_weight(blocks: torch.Tensor, fmt: int) -> KQuantExpertWeight:
     from .moe import KQuantExpertWeight
     want = lib.snowllm_lm_head_kquant_gguf_bytes(fmt)
@@ -52,6 +57,7 @@ def lm_head_kquant_shuffle_weight(blocks: torch.Tensor, fmt: int) -> KQuantExper
     return KQuantExpertWeight(quant, meta, fmt)
 
 
+@operator
 def lm_head_kquant(hidden: torch.Tensor, w: KQuantExpertWeight, logits: torch.Tensor,
                    scratch: torch.Tensor | None) -> None:
     _chk(hidden, "hidden", torch.bfloat16)
@@ -59,6 +65,7 @@ def lm_head_kquant(hidden: torch.Tensor, w: KQuantExpertWeight, logits: torch.Te
                                      hidden.shape[0], _p(scratch), _stream()), "lm_head_kquant")
 
 
+@operator
 def lm_head(hidden: torch.Tensor, w: torch.Tensor, logits: torch.Tensor,
             scratch: torch.Tensor | None) -> None:
     _chk(hidden, "hidden", torch.bfloat16)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import contextlib
 import unittest
+from types import SimpleNamespace
 
 import torch
 
@@ -95,7 +96,7 @@ class ActivationWorkspaceTests(unittest.TestCase):
         arena.freeze(max(arena.high, arena.planner.high))
         arena.planner.buf = arena.buf
         changed = arena.plan(key, 2, forward, after=1024)
-        self.assertEqual(changed, not retain)
+        self.assertTrue(changed)
         if changed:
             output = forward()
             arena.flat(1024, torch.uint8).fill_(29)
@@ -104,7 +105,7 @@ class ActivationWorkspaceTests(unittest.TestCase):
     def test_replanning_reuses_transient_space(self):
         self.check_replanning(False)
 
-    def test_replanning_rejects_live_output_overlap(self):
+    def test_replanning_places_retained_output_below_postprocessing(self):
         self.check_replanning(True)
 
     def test_registered_phases_preserve_inputs_and_release_their_temporaries(self):
@@ -165,6 +166,8 @@ class ActivationWorkspaceTests(unittest.TestCase):
         hidden = runner.last_hidden = torch.ones(256, dtype=torch.bfloat16, device='cuda')
         runner.n_eager_forwards, runner.n_draft_eager = 7, 9
         runner.draft_workspace = None
+        runner.max_num_seqs,runner.T = 1,1
+        runner.geo = SimpleNamespace(vocab_size=8)
         runner._act = {}
         runner._act_statics = lambda _: 0
 

@@ -152,7 +152,7 @@ class Glm5NextRunner(GraphRunner):
                     resources.states.allocate()
                     resources.cache.allocate(1)
                     plan_activations(arena, [ProbeGroup(probe._activation_cases(rows))])
-                    capacity = probe.ws.numel()
+                    capacity = 0 if self.plan_activations else probe.ws.numel()
                 finally:
                     resources.close()
         plan = arena, capacity, static
@@ -167,7 +167,8 @@ class Glm5NextRunner(GraphRunner):
                     batch = self._probe_batch(width, prefill, last, draft)
                     walk = (lambda: self._draft_eager(self.hidden[:width], batch.input_ids, batch)
                             if draft else self._forward_eager(batch))
-                    yield ActivationProbe(self._plan_key(batch, draft), width, walk)
+                    yield ActivationProbe(self._plan_key(batch, draft), width, walk,
+                        lifetimes='uses' if self.plan_activations else 'references')
 
     @contextlib.contextmanager
     def _activation_scope(self, rows):
@@ -202,6 +203,7 @@ class Glm5NextRunner(GraphRunner):
             num_spec=self.num_spec, embedding_weight=self.model.embed,
             next_ids=ids, max_pools=max_pools,
             require_plan=self.plan_activations and not self._planning,
+            plan_workspace=self.plan_activations,
             hidden=getattr(self,"hidden",None), head_hidden=getattr(self,"head_hidden",None),
             draft_hidden=getattr(self,"draft_hidden",None), logits=getattr(self,"logits",None),
             scratch=self.workspace)

@@ -183,7 +183,8 @@ class Dsv4Runner(GraphRunner):
                 b.is_prefill = stage != "full" if self.geo.v41 else b.is_prefill
                 ctx = self.walker.context(self.model, b, cache)
                 pos += rows
-                yield ActivationProbe(ctx.plan_key, rows, lambda: self.model(ctx))
+                yield ActivationProbe(ctx.plan_key, rows, lambda: self.model(ctx),
+                    lifetimes='uses' if self.plan_activations else 'references')
         picked = torch.full((self.max_num_seqs,), chunk-1, dtype=torch.int32, device='cuda')
         for last in (None, picked):
             cache.reset(0)

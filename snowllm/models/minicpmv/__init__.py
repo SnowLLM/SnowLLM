@@ -49,8 +49,8 @@ class _Head(LMHead):
         super().__init__(head.w)
         self.vocab = vocab
 
-    def forward(self, last, buf):
-        out = super().forward(last, buf)
+    def forward(self, last, buf, *, scratch=None):
+        out = super().forward(last,buf,scratch=scratch)
         out[:, self.vocab:].fill_(float("-inf"))
         return out
 

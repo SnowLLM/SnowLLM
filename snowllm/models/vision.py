@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import torch
 
 from .. import ops
+from ..ops.allocation import active_arena
 from .._capi import SnowLLMError
 from .geometry import pad_gemm_n
 from .vision_layers import VisionBlock, VisionLinear
@@ -157,6 +158,9 @@ class VisionModel:
 
     def _buf(self, name: str, rows: int, cols: int,
              dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
+        arena = active_arena()
+        if arena is not None:
+            return arena.new(rows,cols,dtype=dtype,name='vision:'+name)
         n = rows * cols
         b = self._cache.get(name)
         if b is None or b.numel() < n or b.dtype != dtype:
@@ -165,6 +169,9 @@ class VisionModel:
         return b[:n].view(rows, cols)
 
     def _byte_buf(self, name: str, nbytes: int) -> torch.Tensor:
+        arena = active_arena()
+        if arena is not None:
+            return arena.workspace(nbytes,'workspace:vision:'+name)
         b = self._cache.get(name)
         if b is None or b.numel() < nbytes:
             b = torch.empty(int(nbytes), dtype=torch.uint8, device="cuda")
@@ -211,7 +218,8 @@ class VisionModel:
               K: int, out: torch.Tensor, act: int = 0,
               residual: torch.Tensor | None = None) -> torch.Tensor:
         m = a.shape[0]
-        scratch = self._byte_buf("agemm", ops.vision_gemm_scratch_bytes(m, K))
+        scratch = (None if active_arena() is not None else
+                   self._byte_buf("agemm",ops.vision_gemm_scratch_bytes(m,K)))
         return VisionLinear(w_shuffled, bias, N, K).forward(a, out, scratch, act, residual)
 
     @torch.no_grad()
@@ -234,20 +242,28 @@ class VisionModel:
         x = pixel_values.to(torch.bfloat16).cuda()
         M = x.shape[0]
 
-        hidden = self._buf("hidden", M, HIDDEN)
-        self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
         indices, weights = _bilinear_pos_inputs(grid_thw, g.grid_side, g.spatial_merge)
-        ops.vision_pos_embed_add(hidden, self.pos_embed, indices.to(x.device), weights.to(x.device))
-
+        indices,weights = indices.to(x.device),weights.to(x.device)
         cos, sin = _rope_cos_sin(grid_thw, "cuda", g)
         cu = [0]
         for length in _seg_lengths(grid_thw):
             cu.append(cu[-1] + length)
         cu = torch.tensor(cu, dtype=torch.int32, device=x.device)
-        scratch = max(ops.vision_gemm_scratch_bytes(M, k) for k in (HIDDEN, INTERMEDIATE_PAD))
-        buffers = dict(norm=self._buf("ln", M, HIDDEN), qkv=self._buf("qkv", M, 3 * HIDDEN),
-                       attention=self._buf("o", M, HIDDEN), ff=self._buf("h1", M, INTERMEDIATE_PAD),
-                       scratch=self._byte_buf("agemm", scratch))
+        out = torch.empty(M // MERGE_UNIT,OUT_HIDDEN,dtype=torch.bfloat16,device=x.device)
+        arena = ops.Arena()
+        return arena.execute(('vision',),M,
+            lambda: self._forward_gpu(x,indices,weights,cos,sin,cu,out))
+
+    def _forward_gpu(self,x,indices,weights,cos,sin,cu,out):
+        g = self.geo
+        HIDDEN,INTERMEDIATE_PAD = g.hidden,g.intermediate_pad
+        MERGE_IN,MERGE_UNIT,OUT_HIDDEN,PATCH_IN = g.merge_in,g.merge_unit,g.out_hidden,g.patch_in
+        M = x.shape[0]
+        hidden = self._buf("hidden", M, HIDDEN)
+        self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
+        ops.vision_pos_embed_add(hidden, self.pos_embed, indices.to(x.device), weights.to(x.device))
+
+        buffers = dict(scratch=None)
         for blk in self.blocks:
             blk.forward(hidden, cu, buffers, g.num_heads, g.head_dim, LN_EPS, cos, sin)
 
@@ -257,5 +273,4 @@ class VisionModel:
         merged_in = mnorm.reshape(M // MERGE_UNIT, MERGE_IN)
         h = self._buf("mh", M // MERGE_UNIT, MERGE_IN)
         self._gemm(merged_in, mg["fc1_w"], mg["fc1_b"], MERGE_IN, MERGE_IN, h, act=2)
-        out = self._buf("mout", M // MERGE_UNIT, OUT_HIDDEN)
         return self._gemm(h, mg["fc2_w"], mg["fc2_b"], OUT_HIDDEN, MERGE_IN, out, act=0)

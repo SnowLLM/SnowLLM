@@ -4,6 +4,7 @@
 from typing import TYPE_CHECKING
 
 import torch
+from ..ops.allocation import empty
 
 from ..defaults import SPEC_MAX_STEP_ROWS
 
@@ -450,24 +451,36 @@ class DFlashDecoder(DSparkScheduling):
         self.noise = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
         self.keep = i64([i * block + t for i in range(S) for t in range(1, block)])
         self.draft_rows = i64([i * self.width + t for i in range(S) for t in range(block)])
-        self.draft.reserve(M, S * (block - 1))
         self.sampling = (DFlashSampling(sampler, self.geo, S, block, runner.geo.vocab_size)
                          if self.geo.dflash2 and block > 1 else None)
         self.graphs: dict[int, torch.cuda.CUDAGraph] = {}
 
     def workspace_bytes(self) -> int:
+        arena = self.runner.arena
+        if self.graphs or self.runner.graphs:
+            raise SnowLLMError('draft workspace must be planned before graph capture')
         noise = self.noise
+        frozen = arena.planner.buf
+        before = arena.buf.numel() if arena.buf is not None else 0
+        arena.planner.buf = None
         try:
-            peak = 0
             for batch in range(1, self.runner.max_num_seqs + 1):
-                with ops.dry_load() as dry:
+                with ops.dry_load():
                     self.noise = torch.empty_like(noise, device="meta")
-                    held = dry.device
-                    self._blocks_dev(batch)
-                    peak = max(peak, dry.peak_device - held)
-            return peak
+                    arena.plan(('draft_blocks',batch),batch,
+                        lambda: self._blocks_dev(batch),
+                        lifetimes='uses' if self.runner.plan_activations else 'references')
         finally:
             self.noise = noise
+            arena.planner.buf = frozen
+        need = arena.bytes_after(self.runner.arena_after)
+        if need > before:
+            arena.buf = torch.empty(need,dtype=torch.uint8,device='cuda')
+            self.runner.arena_bytes = need
+            self.runner.act_bytes += need-before
+        if self.runner.plan_activations:
+            arena.planner.buf = arena.buf
+        return 0
 
     chunk_decode = True
 
@@ -567,6 +580,16 @@ class DFlashDecoder(DSparkScheduling):
                                   self.runner.block_size))
 
     def _blocks_dev(self, B: int) -> None:
+        arena = self.runner.arena
+        arena.planner.begin(('draft_blocks',B))
+        arena.reset()
+        try:
+            with arena.activate():
+                self._blocks_forward(B)
+        finally:
+            arena.end_plan()
+
+    def _blocks_forward(self, B: int) -> None:
         blk = self.block
         if self.dspark:
             self._dspark_blocks(B)
@@ -581,7 +604,7 @@ class DFlashDecoder(DSparkScheduling):
         kept = ops.gather_rows(hid,self.keep[:n])
         logits = self.runner.model.lm_head(kept, self.runner.draft_logits[:n])
         if self.geo.dflash2:
-            anchor=torch.empty(B,dtype=torch.int64,device="cuda")
+            anchor=empty(B,dtype=torch.int64,device="cuda")
             ops.copy_rows(anchor,self.d_i64[M:2*M].view(B,blk)[:,0])
             path = self.d_draft[:B, :blk - 1]
             if self.sampling is None:
@@ -601,7 +624,7 @@ class DFlashDecoder(DSparkScheduling):
         pos = gather(self.d_i64[2*W:3*W])
         seq = gather(self.d_i32[2*W:3*W])
         cache_pos = gather(self.d_i32[3*W:4*W])
-        lengths = torch.empty(B, dtype=torch.int32, device="cuda")
+        lengths = empty(B, dtype=torch.int32, device="cuda")
         ops.copy_rows(lengths, self.d_len[:B])
         lengths.sub_(1)
         self.runner.model.model.embed_tokens(ids, self.noise[:M])

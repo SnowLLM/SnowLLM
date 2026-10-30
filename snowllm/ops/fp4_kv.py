@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
+from .operation import operator
 import torch
 
 from ._common import _chk, _chk_rows, _p, _stream, check, lib, SnowLLMError
 
 
+@operator
 def dsv41_fp4_row_bytes(index: bool = False) -> int:
     return lib.snowllm_dsv41_fp4_row_bytes(int(index))
 
 
+@operator
 def dsv41_fp4_pack(x: torch.Tensor, cache: torch.Tensor, slots: torch.Tensor | None = None, *,
                     index: bool = False, count: torch.Tensor | None = None,
                     cos: torch.Tensor | None = None, sin: torch.Tensor | None = None) -> None:
@@ -33,6 +36,7 @@ def dsv41_fp4_pack(x: torch.Tensor, cache: torch.Tensor, slots: torch.Tensor | N
         cache.shape[0], rows, int(index), _p(count), _p(cos), _p(sin), _stream()), "dsv41_fp4_pack")
 
 
+@operator
 def dsv41_fp4_unpack(cache: torch.Tensor, out: torch.Tensor,
                       slots: torch.Tensor | None = None, *, index: bool = False) -> None:
     _chk(cache, "FP4 cache", torch.uint8, cache.shape[0], dsv41_fp4_row_bytes(index))

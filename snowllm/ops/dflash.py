@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import enum
 import ctypes
 import functools
 from typing import TYPE_CHECKING
 
+from .allocation import empty
 import torch
 
 from .. import _capi
@@ -31,6 +33,7 @@ class Proj(enum.IntEnum):
 _G = None
 
 
+@operator
 def select(geo: "DFlashGeometry") -> None:
     shape = _capi.DraftShape(*(getattr(geo, n) for n in _capi.DRAFT_SHAPE_FIELDS))
     if _capi.select_draft(shape) != 0:
@@ -51,6 +54,7 @@ def select(geo: "DFlashGeometry") -> None:
     _norm_rope_store_layout.cache_clear()
 
 
+@operator
 def selected() -> "DFlashGeometry":
     if _G is None:
         raise SnowLLMError("no DFlash draft is selected; ops.dflash.select(geometry) reads one "
@@ -59,6 +63,7 @@ def selected() -> "DFlashGeometry":
 
 
 @functools.lru_cache(None)
+@operator
 def proj_shape(which: Proj) -> tuple[int, int]:
     nk = (ctypes.c_int64*2)()
     check(lib.snowllm_draft_projection_shape(int(which),nk),'draft_projection_shape')
@@ -76,20 +81,24 @@ def _projection_plan(which: Proj, m: int, kind: int, fmt: int) -> tuple[int,int,
     return tuple(plan)
 
 
+@operator
 def proj_plan(which: Proj, w, m: int) -> tuple[int,int,int]:
     weight = _weight(w)
     return _projection_plan(which,m,weight.kind,weight.fmt)
 
 
+@operator
 def proj_workspace_bytes(which: Proj, w, m: int) -> int:
     return proj_plan(which,w,m)[2]
 
 
 @functools.lru_cache(None)
+@operator
 def projections_workspace_bytes(m: int) -> int:
     return lib.snowllm_draft_projections_workspace_bytes(m)
 
 
+@operator
 def proj_shuffle_w(which: Proj, w: torch.Tensor) -> torch.Tensor:
     n, k = proj_shape(which)
     _chk(w, f"draft {which.name} w", torch.bfloat16, n, k)
@@ -99,6 +108,7 @@ def proj_shuffle_w(which: Proj, w: torch.Tensor) -> torch.Tensor:
     return buf
 
 
+@operator
 def proj(which: Proj, a: torch.Tensor, w_shuffled: torch.Tensor | KQuantProjWeight,
          a_scratch: torch.Tensor | None, out: torch.Tensor) -> None:
     """One native projection entry for every supported weight storage and row count."""
@@ -116,6 +126,7 @@ def proj(which: Proj, a: torch.Tensor, w_shuffled: torch.Tensor | KQuantProjWeig
           _p(a_scratch),capacity,m,_stream()),'draft_projection')
 
 
+@operator
 def proj_shuffle_w_kquant(which: Proj, blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     n, k = proj_shape(which)
     _chk(blocks, f"draft {which.name} blocks", torch.uint8)
@@ -130,12 +141,14 @@ def proj_shuffle_w_kquant(which: Proj, blocks: torch.Tensor, fmt: int) -> KQuant
     return KQuantProjWeight(quant, meta, fmt)
 
 
+@operator
 def swiglu(gate_up: torch.Tensor, out: torch.Tensor) -> None:
     m, stride = gate_up.shape
     _chk(out, "out", torch.bfloat16, m, selected().intermediate)
     check(lib.snowllm_draft_swiglu(_p(gate_up), stride, _p(out), m, _stream()), "draft_swiglu")
 
 
+@operator
 def dyn_conv(h: torch.Tensor, dyn: torch.Tensor, base: torch.Tensor, out: torch.Tensor,
              blk: int, site: int) -> None:
     """One convolution site: site 0 runs on the sublayer's input, site 1 on its output."""
@@ -149,10 +162,12 @@ def dyn_conv(h: torch.Tensor, dyn: torch.Tensor, base: torch.Tensor, out: torch.
                                      _stream()), "draft_dyn_conv")
 
 
+@operator
 def select_scratch_bytes(n: int) -> int:
     return lib.snowllm_draft_select_scratch_bytes(int(n))
 
 
+@operator
 def select_path(hp: torch.Tensor, logits: torch.Tensor, pred_cb: torch.Tensor,
                 succ_cb: torch.Tensor, anchor: torch.Tensor, path: torch.Tensor,
                 scratch: torch.Tensor, *, temperature=None, uniform=None, slots=None,
@@ -189,6 +204,7 @@ def select_path(hp: torch.Tensor, logits: torch.Tensor, pred_cb: torch.Tensor,
         b, ell, v, g.selector_top_k, _stream()), "draft_sample")
 
 
+@operator
 def reject(probabilities, indices, drafts, candidate_ids, q, slots, valid, uniform, out, accepted):
     b, length = drafts.shape
     width = length + 1
@@ -209,6 +225,7 @@ def reject(probabilities, indices, drafts, candidate_ids, q, slots, valid, unifo
         "draft_reject")
 
 
+@operator
 def rope_cos_sin(position_ids: torch.Tensor, inv_freq: torch.Tensor, cos: torch.Tensor,
                  sin: torch.Tensor) -> None:
     m = position_ids.shape[0]
@@ -221,6 +238,7 @@ def rope_cos_sin(position_ids: torch.Tensor, inv_freq: torch.Tensor, cos: torch.
                                          _stream()), "draft_rope_cos_sin")
 
 
+@operator
 def qk_norm_rope(proj_buf: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tensor,
                  cos: torch.Tensor, sin: torch.Tensor, q: torch.Tensor, k: torch.Tensor,
                  eps: float) -> None:
@@ -235,6 +253,7 @@ def qk_norm_rope(proj_buf: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.T
           "draft_qk_norm_rope")
 
 
+@operator
 def k_norm_rope(ctx_kv: torch.Tensor, layer: int, k_gamma: torch.Tensor, cos: torch.Tensor,
                 sin: torch.Tensor, k: torch.Tensor, eps: float) -> None:
     g = selected()
@@ -257,6 +276,7 @@ def _norm_rope_store_layout(stride,layer,block_size):
     return tuple(layout)
 
 
+@operator
 def norm_rope_store(proj, q_gamma, k_gamma, cos, sin, q, k_cache, v_cache,
                      slots, eps, block_size, *, layer=None):
     m, stride = proj.shape
@@ -281,6 +301,7 @@ def norm_rope_store(proj, q_gamma, k_gamma, cos, sin, q, k_cache, v_cache,
         int(layer is not None),block_size,_stream()), "draft_norm_rope_store")
 
 
+@operator
 def reshape_and_cache(new_k: torch.Tensor, new_v: torch.Tensor, k_cache: torch.Tensor,
                       v_cache: torch.Tensor, slot_mapping: torch.Tensor,
                       block_size: int) -> None:
@@ -292,6 +313,7 @@ def reshape_and_cache(new_k: torch.Tensor, new_v: torch.Tensor, k_cache: torch.T
           "draft_reshape_and_cache")
 
 
+@operator
 def paged_attn(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
                v_cache: torch.Tensor, out: torch.Tensor, block_tables: torch.Tensor,
                plan: torch.Tensor, num_slots: int, workspace: torch.Tensor, scale: float,
@@ -306,10 +328,11 @@ def paged_attn(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
                                        q_tokens, block_size, window, int(causal), _stream()), "draft_paged_attn")
 
 
+@operator
 def paged_attn_plan(seq_lens: torch.Tensor, num_slots: int, block_size: int,
                     uniform: bool = False) -> torch.Tensor:
     num_seqs = seq_lens.shape[0]
-    plan = torch.empty(lib.snowllm_draft_paged_attn_plan_elems(num_seqs, num_slots),
+    plan = empty(lib.snowllm_draft_paged_attn_plan_elems(num_seqs, num_slots),
                        dtype=torch.int32, device="cuda")
     check(lib.snowllm_draft_paged_attn_plan(_p(seq_lens), _p(plan), num_seqs, num_slots,
                                             block_size, int(uniform), _stream()),
@@ -321,6 +344,7 @@ paged_attn_workspace_size = _passthru("draft_paged_attn_workspace_size")
 paged_attn_num_slots = _passthru("draft_paged_attn_num_slots")
 
 
+@operator
 def gated_delta_rule_advance(qkv: torch.Tensor, b_logit: torch.Tensor, a_logit: torch.Tensor,
                              ba_stride: int, a_log: torch.Tensor, dt_bias: torch.Tensor,
                              state_indices: torch.Tensor | None,
@@ -337,18 +361,20 @@ def _activation_workspace_bytes(m: int,packed: bool,fmt: int) -> int:
     return lib.snowllm_draft_mlp_activation_workspace_bytes(m,int(packed),fmt)
 
 
+@operator
 def gate_up_swiglu_workspace_bytes(m: int,w: torch.Tensor | KQuantProjWeight) -> int:
     packed=isinstance(w,KQuantProjWeight)
     return _activation_workspace_bytes(m,packed,w.fmt if packed else 8)
 
 
+@operator
 def gate_up_swiglu(x, w, out, scratch=None):
     """Native dispatch owns fused versus projection-plus-activation execution."""
     g=selected();m=x.shape[0]
     _chk(x,'draft MLP input',torch.bfloat16,m,g.hidden)
     _chk(out,'draft activation',torch.bfloat16,m,g.intermediate)
     need=gate_up_swiglu_workspace_bytes(m,w)
-    if need and scratch is None:scratch=torch.empty(need,dtype=torch.uint8,device=x.device)
+    if need and scratch is None:scratch=empty(need,dtype=torch.uint8,device=x.device)
     if scratch is not None:
         _chk(scratch,'draft activation scratch',scratch.dtype)
     if need and scratch.nbytes<need:

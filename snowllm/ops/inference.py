@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Marshal weight storage; execution selection belongs to SnowLLM-Kernels."""
+from .operation import operator, workspace_capacity
 import ctypes
 import torch
 from .._capi import check, lib, SnowLLMError
@@ -30,6 +31,7 @@ def _io(x,out):
     _chk(out,'output',torch.bfloat16,x.shape[0],out.shape[1])
 
 
+@operator
 def inference_qkv(x,w,scale,v,kv,scratch,out,path,residual=None,gamma=None,eps=0.,
                   *,index_w=None,index_out=None):
     from .attention_full import _norm, _index
@@ -41,6 +43,7 @@ def inference_qkv(x,w,scale,v,kv,scratch,out,path,residual=None,gamma=None,eps=0
         _p(out),x.shape[0],int(path),index_ptr,index_out_ptr,_stream()),'inference_qkv')
 
 
+@operator
 def inference_mlp(x,gate,down,out,scratch,decode,gate_scale=None,down_scale=None,up=None):
     _io(x,out)
     weights=_weights((gate,gate_scale),(up,None),(down,down_scale))
@@ -48,10 +51,13 @@ def inference_mlp(x,gate,down,out,scratch,decode,gate_scale=None,down_scale=None
                                     _stream()),'inference_mlp')
 
 
+@operator
 def inference_moe_workspace_bytes(rows: int) -> int:
-    return lib.snowllm_inference_moe_workspace_bytes(rows,0)
+    return workspace_capacity(('inference_moe',),rows,
+        lambda width:lib.snowllm_inference_moe_workspace_bytes(width,0))
 
 
+@operator
 def inference_moe(x,router,gate,down,shared_gate,shared_down,out,scratch,gate_scale=None,
                   down_scale=None,*,token_ids=None,tid2eid=None):
     _io(x,out)
@@ -70,6 +76,7 @@ def inference_moe(x,router,gate,down,shared_gate,shared_down,out,scratch,gate_sc
         _p(out),_p(scratch),capacity,x.shape[0],0,_stream()),'inference_moe')
 
 
+@operator
 def inference_head(x,w,out,scratch):
     _chk(x,'hidden',torch.bfloat16,x.shape[0],x.shape[1])
     _chk(out,'logits',torch.float32,x.shape[0],out.shape[1])
@@ -78,6 +85,7 @@ def inference_head(x,w,out,scratch):
                                      _stream()),'inference_head')
 
 
+@operator
 def inference_hc(x,gamma,down,up,lo,out,lr,eps,scratch,xn=None):
     # HC's dense wrapper exposes .w; quant wrappers expose quant/meta/fmt.
     weights=_weights((getattr(down,'w',down),None),(getattr(up,'w',up),None))
@@ -85,6 +93,7 @@ def inference_hc(x,gamma,down,up,lo,out,lr,eps,scratch,xn=None):
         x.shape[1],x.shape[2],lo.shape[1],lr,eps,_p(scratch),_p(xn),_stream()),'inference_hc')
 
 
+@operator
 def qkv_projection_blocks(w,v,kv,p):
     weights=_weights((w,None),(v,None),(kv,None))
     layout=(ctypes.c_int64*6)()
@@ -106,10 +115,12 @@ class _IndexerSelectStep(ctypes.Structure):
         'mask_stride','sel_stride','ratio','topk','pages','page')]
 
 
+@operator
 def indexer_select_scratch_bytes(rows,stride):
     return lib.snowllm_indexer_select_scratch_bytes(rows,stride)
 
 
+@operator
 def indexer_select(q,key,table,weights,comp,seq,pos,ratio,n_comp,topk,mask,selection,count,
                    scratch,score_stride,page):
     t,heads,dim=q.shape

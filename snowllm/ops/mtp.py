@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
 from ._common import geo, _chk, _p, _shuffle, _passthru, _stream
 
 
+@operator
 def mtp_fc_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "mtp fc w", torch.bfloat16, w.shape[0], 2 * w.shape[0])
     return _shuffle(w, "mtp_fc_shuffle_w")
@@ -15,6 +17,7 @@ def mtp_fc_shuffle_w(w: torch.Tensor) -> torch.Tensor:
 mtp_fc_scratch_bytes = _passthru("mtp_fc_scratch_bytes")
 
 
+@operator
 def mtp_pre_fc(embed: torch.Tensor, hidden: torch.Tensor, gamma_embed: torch.Tensor,
                gamma_hidden: torch.Tensor, out: torch.Tensor, eps: float, *,
                round_before_weight: bool = False) -> None:
@@ -31,6 +34,7 @@ def mtp_pre_fc(embed: torch.Tensor, hidden: torch.Tensor, gamma_embed: torch.Ten
                                  M, eps, round_before_weight, _stream()), "mtp_pre_fc")
 
 
+@operator
 def mtp_fc(x: torch.Tensor, w_shuffled: torch.Tensor, a_scratch: torch.Tensor | None,
            out: torch.Tensor, decode: bool) -> None:
     M, K = x.shape

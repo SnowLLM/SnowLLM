@@ -46,7 +46,15 @@ _capi.assert_single_hip_runtime()
 
 
 def _stream() -> int:
-    return torch.cuda.current_stream().cuda_stream
+    stream = torch.cuda.current_stream().cuda_stream
+    from .trace import tracing
+    from .allocation import active_arena
+    trace = tracing()
+    if trace is not None:
+        trace.check_stream(stream)
+    elif (arena := active_arena()) is not None:
+        arena.planner.check_stream(stream)
+    return stream
 
 
 def synchronize() -> None:
@@ -369,6 +377,10 @@ class _DryMode(torch.overrides.TorchFunctionMode):
                 out = self._to_device(args[0])
         if isinstance(out, torch.Tensor) and out.device.type == "meta":
             self.dry.note(out)
+        from .trace import tracing
+        trace = tracing()
+        if trace is not None:
+            trace.torch_call(func,args,kwargs,out)
         return out
 
 
@@ -402,6 +414,10 @@ def _device_bytes(allocate: Callable, n: int) -> torch.Tensor:
 
 
 def zero_bytes(n: int) -> torch.Tensor:
+    from .allocation import active_arena
+    arena = active_arena()
+    if arena is not None and not _host_alloc:
+        return arena.workspace(int(n)).zero_()
     if _dry is not None:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
@@ -410,6 +426,10 @@ def zero_bytes(n: int) -> torch.Tensor:
 
 
 def empty_bytes(n: int) -> torch.Tensor:
+    from .allocation import active_arena
+    arena = active_arena()
+    if arena is not None and not _host_alloc:
+        return arena.workspace(int(n))
     if _dry is not None:
         return _dry.meta((int(n),), torch.uint8, _host_alloc)
     if _host_alloc:
@@ -480,5 +500,10 @@ def _proj_shuffle_kquant(blocks: torch.Tensor, fmt: int, n: int, k: int,
 
 def _passthru(sym: str) -> Callable[..., int]:
     fn = getattr(lib, "snowllm_" + sym)
+    if sym.endswith(('_scratch_bytes','_workspace_bytes')):
+        def query(rows,*args):
+            from .operation import workspace_capacity
+            return workspace_capacity((sym,args),rows,lambda width:fn(width,*args))
+        return query
     return lambda *a: fn(*a)
 

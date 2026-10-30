@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import check, lib
@@ -8,6 +9,7 @@ from ._common import Path, _chk, _chk_rows, _p, _stream, empty_bytes, empty_shap
 from .gemm import kquant_bytes
 
 
+@operator
 def dsv4_hc_split_sinkhorn(mixes: torch.Tensor, scale: torch.Tensor, base: torch.Tensor,
                            out: torch.Tensor, n_hc: int, iters: int, eps: float) -> None:
     T = mixes.shape[0]
@@ -20,6 +22,7 @@ def dsv4_hc_split_sinkhorn(mixes: torch.Tensor, scale: torch.Tensor, base: torch
           "dsv4_hc_split_sinkhorn")
 
 
+@operator
 def dsv4_hc_gate(mixes: torch.Tensor, scale: torch.Tensor, base: torch.Tensor,
                  out: torch.Tensor, eps: float) -> None:
     T, n_hc = out.shape
@@ -31,6 +34,7 @@ def dsv4_hc_gate(mixes: torch.Tensor, scale: torch.Tensor, base: torch.Tensor,
                                    mixes.stride(0), bf16, eps, _stream()), "dsv4_hc_gate")
 
 
+@operator
 def dsv4_hc_broadcast(x: torch.Tensor, out: torch.Tensor) -> None:
     T, n_hc, E = out.shape
     _chk_rows(x, "x", torch.bfloat16)
@@ -39,6 +43,7 @@ def dsv4_hc_broadcast(x: torch.Tensor, out: torch.Tensor) -> None:
           "dsv4_hc_broadcast")
 
 
+@operator
 def dsv4_hc_weighted_sum(x: torch.Tensor, weights: torch.Tensor, out: torch.Tensor) -> None:
     T, n_hc, E = x.shape
     _chk(x, "x", torch.bfloat16)
@@ -48,6 +53,7 @@ def dsv4_hc_weighted_sum(x: torch.Tensor, weights: torch.Tensor, out: torch.Tens
                                            weights.stride(0), _stream()), "dsv4_hc_weighted_sum")
 
 
+@operator
 def dsv4_hc_expand(block: torch.Tensor, residual: torch.Tensor, post: torch.Tensor,
                    comb: torch.Tensor, out: torch.Tensor) -> None:
     T, n_hc, E = residual.shape
@@ -61,6 +67,7 @@ def dsv4_hc_expand(block: torch.Tensor, residual: torch.Tensor, post: torch.Tens
           "dsv4_hc_expand")
 
 
+@operator
 def qwen4exp_hc_up_prepare(weight: torch.Tensor, hc: int, hidden: int, lr: int,
                           fmt: int | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
     n = hc * hidden
@@ -77,6 +84,7 @@ def qwen4exp_hc_up_prepare(weight: torch.Tensor, hc: int, hidden: int, lr: int,
     return out, meta
 
 
+@operator
 def qwen4exp_hc_norm(x: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor, eps: float) -> None:
     T, n_hc, E = x.shape
     _chk(x, "x", torch.bfloat16, T, n_hc, E)
@@ -86,6 +94,7 @@ def qwen4exp_hc_norm(x: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor, ep
           "qwen4exp_hc_norm")
 
 
+@operator
 def qwen4exp_hc_lowrank_act(lo: torch.Tensor, out: torch.Tensor, n_hc: int) -> None:
     T, lr = out.shape
     bf16 = lo.dtype is torch.bfloat16
@@ -95,10 +104,12 @@ def qwen4exp_hc_lowrank_act(lo: torch.Tensor, out: torch.Tensor, n_hc: int) -> N
                                               _stream()), "qwen4exp_hc_lowrank_act")
 
 
+@operator
 def qwen4exp_hc_mix_ws_bytes(T: int, n_hc: int, E: int, lr: int) -> int:
     return lib.snowllm_qwen4exp_hc_mix_ws_bytes(int(T), int(n_hc), int(E), int(lr))
 
 
+@operator
 def qwen4exp_hc_mix(x: torch.Tensor, gamma: torch.Tensor, down_shuffled: torch.Tensor,
                     up_shuffled: torch.Tensor, lo: torch.Tensor, mixed: torch.Tensor, lr: int,
                     eps: float, ws: torch.Tensor, xn: torch.Tensor | None = None) -> None:
@@ -114,6 +125,7 @@ def qwen4exp_hc_mix(x: torch.Tensor, gamma: torch.Tensor, down_shuffled: torch.T
                                       _stream()), "qwen4exp_hc_mix")
 
 
+@operator
 def qwen4exp_hc_mix_kquant(fmt: int, x: torch.Tensor, gamma: torch.Tensor,
                            down_quant: torch.Tensor, down_meta: torch.Tensor,
                            up_quant: torch.Tensor, up_meta: torch.Tensor, lo: torch.Tensor,
@@ -132,6 +144,7 @@ def qwen4exp_hc_mix_kquant(fmt: int, x: torch.Tensor, gamma: torch.Tensor,
                                              _p(xn), _stream()), "qwen4exp_hc_mix_kquant")
 
 
+@operator
 def qwen4exp_hc_fold(xn: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> None:
     T, n_hc, E = xn.shape
     bf16 = up.dtype is torch.bfloat16
@@ -142,6 +155,7 @@ def qwen4exp_hc_fold(xn: torch.Tensor, up: torch.Tensor, out: torch.Tensor) -> N
                                        _stream()), "qwen4exp_hc_fold")
 
 
+@operator
 def qwen4exp_hc_combine(residual: torch.Tensor, block: torch.Tensor, inject: torch.Tensor,
                         out: torch.Tensor) -> None:
     T, n_hc, E = residual.shape
@@ -155,6 +169,7 @@ def qwen4exp_hc_combine(residual: torch.Tensor, block: torch.Tensor, inject: tor
           "qwen4exp_hc_combine")
 
 
+@operator
 def qwen4exp_hc_combine_norm(residual: torch.Tensor, block: torch.Tensor, inject: torch.Tensor,
                              out: torch.Tensor, gamma: torch.Tensor, xn: torch.Tensor,
                              eps: float) -> None:
@@ -183,14 +198,17 @@ class HcMixWeights:
                      int(fmt), int(down_n), int(lr), float(eps)]
 
 
+@operator
 def qwen4exp_hc_qkv_ws_bytes(M: int, lr: int) -> int:
     return lib.snowllm_qwen4exp_hc_qkv_ws_bytes(int(M), int(lr))
 
 
+@operator
 def qwen4exp_hc_linear_ws_bytes(M: int, lr: int) -> int:
     return lib.snowllm_qwen4exp_hc_linear_ws_bytes(int(M), int(lr))
 
 
+@operator
 def qwen4exp_hc_qkv_proj_kquant(streams: torch.Tensor, hc: HcMixWeights, lo: torch.Tensor,
                                 w: object, ws: torch.Tensor, proj: torch.Tensor, path: Path,
                                 index_w: torch.Tensor | None = None,
@@ -206,6 +224,7 @@ def qwen4exp_hc_qkv_proj_kquant(streams: torch.Tensor, hc: HcMixWeights, lo: tor
                                                   _stream()), "qwen4exp_hc_qkv_proj_kquant")
 
 
+@operator
 def qwen4exp_hc_linear_attn(streams: torch.Tensor, hc: HcMixWeights, lo: torch.Tensor,
                             w: object, cu_seqlens: torch.Tensor | None,
                             has_state: torch.Tensor | None,

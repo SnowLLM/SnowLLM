@@ -2,6 +2,7 @@
 from collections import Counter
 import array
 import ctypes
+import contextlib
 
 import torch
 
@@ -36,8 +37,8 @@ class Sampler:
             return torch.rand(n, generator=self.rng, out=self.uniforms[:n])
         return torch.rand(n,dtype=torch.float32,device="cuda",generator=self.rng)
 
-    def reserve(self, rows, vocab, *, max_tokens=None, max_requests=None):
-        self.reserve_device(rows, vocab)
+    def reserve(self, rows, vocab, *, max_tokens=None, max_requests=None, arena=None):
+        self.reserve_device(rows, vocab,arena=arena)
         self.output.reserve(rows)
         for name, dtype in (("top_k", torch.int32), ("top_p", torch.float32),
                             ("temperature", torch.float32)):
@@ -55,11 +56,22 @@ class Sampler:
         self._penalty_ids = self._penalty_slab.device[:self._penalty_id_bytes].view(torch.int64).view(requests,limit)
         self._penalty_counts = self._penalty_slab.device[self._penalty_id_bytes:].view(torch.int32).view(rows,limit)
 
-    def reserve_device(self, rows, vocab):
+    def reserve_device(self, rows, vocab, *, arena=None):
         self.uniforms = torch.empty(rows,dtype=torch.float32,device="cuda")
-        self.workspace = torch.empty(
-            sample_workspace_bytes(rows,vocab,min(vocab,ops.SAMPLING_MAX_K)),
-            dtype=torch.uint8,device="cuda")
+        self.arena = arena
+        self._workspace_bytes = sample_workspace_bytes(rows,vocab,min(vocab,ops.SAMPLING_MAX_K))
+        self.workspace = (None if arena is not None else
+                          torch.empty(self._workspace_bytes,dtype=torch.uint8,device='cuda'))
+
+    @contextlib.contextmanager
+    def _workspace_scope(self):
+        arena = getattr(self,'arena',None)
+        if arena is None:
+            yield getattr(self,'workspace',None)
+        else:
+            with arena.frame():
+                arena.at = max(arena.at,arena.tail_high)
+                yield arena.workspace(self._workspace_bytes,'workspace:sampling')
 
     def _parameters(self, rows, vocab):
         ks = [r.params.kernel_top_k() for r in rows]
@@ -81,8 +93,9 @@ class Sampler:
                     return ops.argmax(logits,out=out)
                 k, top_p, temp, width = self._parameters(rows, logits.shape[1])
                 uniform = self._uniform(len(rows))
-                return ops.sample(logits,k,top_p,temp,width,uniform=uniform,out=out,
-                                  workspace=getattr(self,"workspace",None))
+                with self._workspace_scope() as workspace:
+                    return ops.sample(logits,k,top_p,temp,width,uniform=uniform,out=out,
+                                      workspace=workspace)
             finally:
                 self.inputs.used()
 
@@ -93,7 +106,8 @@ class Sampler:
             top_k, top_p, temp, width = self._parameters(rows, logits.shape[1])
             n = len(rows) * width
             values, ids = out[:n].view(-1, width), indices[:n].view(-1, width)
-            probabilities(logits, top_k, top_p, temp, width, values, ids, self.workspace)
+            with self._workspace_scope() as workspace:
+                probabilities(logits, top_k, top_p, temp, width, values, ids, workspace)
         return values, ids
 
     def _read_tokens(self, logits, rows=None):

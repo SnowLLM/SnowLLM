@@ -310,7 +310,7 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=resident,
         load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
-        prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=False,
+        prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=True,
         draft_workspace=kv.get("draft_workspace"))
     loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - available)
     from .capacity import auxiliary_bytes
@@ -385,7 +385,7 @@ class Engine:
                                    native_rng=isinstance(model.geo, DeepSeekV4Geometry) and model.geo.v41)
             self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size,
                                  max_tokens=max_model_len+self.T,
-                                 max_requests=max_num_seqs)
+                                 max_requests=max_num_seqs,arena=self.runner.arena)
             self.tables, self.stage = self.runner.create_inputs()
             self.dflash = None
             if dflash_path and _dspark(self.dflash_geo):

@@ -4,6 +4,8 @@
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from ...ops.allocation import empty, empty_like, zeros_like
+from ...ops.allocation import active_arena
 import torch
 
 from ... import ops
@@ -20,15 +22,13 @@ d = ops.dflash
 
 def _feature_buffers(arena, geo, rows):
     out = arena.new(rows, geo.hidden)
-    with arena.frame():
-        scratch = arena.flat(d.projections_workspace_bytes(rows), torch.uint8)
+    scratch = arena.workspace(d.projections_workspace_bytes(rows))
     return out, scratch
 
 
 def _context_buffers(arena, geo, rows):
     kv = arena.new(rows, geo.ctx_kv_proj_n)
-    with arena.frame():
-        scratch = arena.flat(d.projections_workspace_bytes(rows), torch.uint8)
+    scratch = arena.workspace(d.projections_workspace_bytes(rows))
     cos = arena.new(rows, geo.head_size // 2, dtype=torch.float32)
     sin = arena.new(rows, geo.head_size // 2, dtype=torch.float32)
     return kv, scratch, cos, sin
@@ -42,7 +42,7 @@ class Workspace(DraftWorkspace):
 
     def cases(self, draft, context_rows, slots, num_spec, block_size, decode_rows):
         rows = max(context_rows, decode_rows)
-        taps = torch.empty(rows, draft.geo.fc_k, dtype=torch.bfloat16, device='cuda')
+        taps = empty(rows, draft.geo.fc_k, dtype=torch.bfloat16, device='cuda')
         positions = torch.arange(rows, dtype=torch.int64, device='cuda')
         mapping = torch.arange(rows, dtype=torch.int32, device='cuda')
         def context():
@@ -71,8 +71,11 @@ class DFlashDraft:
 
     def scratch(self, m: int) -> torch.Tensor:
         need = self._scratch_bytes(m)
+        arena = active_arena()
+        if arena is not None:
+            return arena.workspace(need,'workspace:draft-projections')
         if self._scratch is None or self._scratch.numel() < need:
-            self._scratch = torch.empty(need, dtype=torch.uint8, device="cuda")
+            self._scratch = empty(need, dtype=torch.uint8, device="cuda")
         return self._scratch
 
     def context_feature(self, taps: torch.Tensor) -> torch.Tensor:
@@ -97,7 +100,7 @@ class DFlashDraft:
     def reserve(self, m: int, selector_rows: int = 0) -> None:
         self.scratch(m)
         if self.geo.dflash2 and selector_rows:
-            self._sel_ws = torch.empty(d.select_scratch_bytes(selector_rows), dtype=torch.uint8,
+            self._sel_ws = empty(d.select_scratch_bytes(selector_rows), dtype=torch.uint8,
                                        device="cuda")
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
@@ -108,8 +111,8 @@ class DFlashDraft:
         g = self.geo
         sc = self.scratch(M)
         half = g.head_size // 2
-        cos = torch.empty(M, half, dtype=torch.float32, device="cuda")
-        sin = torch.empty_like(cos)
+        cos = empty(M, half, dtype=torch.float32, device="cuda")
+        sin = empty_like(cos)
         d.rope_cos_sin(positions, self.inv_freq, cos, sin)
         num_slots = d.paged_attn_num_slots(B)
         scale = g.head_size ** -0.5
@@ -123,26 +126,26 @@ class DFlashDraft:
                            if g.sliding_window else (block_tables, seq_lens))
         plans = {w: d.paged_attn_plan(v[1], num_slots, self.block_size)
                  for w, v in views.items()}
-        ws = torch.empty(d.paged_attn_workspace_size(num_slots, blk), dtype=torch.uint8,
+        ws = empty(d.paged_attn_workspace_size(num_slots, blk), dtype=torch.uint8,
                          device="cuda")
 
         h = noise
-        residual = torch.zeros_like(h)
-        proj = torch.empty(M, d.proj_shape(d.Proj.QKV)[0], dtype=torch.bfloat16, device="cuda")
-        q = torch.empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
-        attn = torch.empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
-        o = torch.empty(M, d.proj_shape(d.Proj.O)[0], dtype=torch.bfloat16, device="cuda")
-        mlp_ws = torch.empty(max(d.gate_up_swiglu_workspace_bytes(M,w["gate_up"])
+        residual = zeros_like(h)
+        proj = empty(M, d.proj_shape(d.Proj.QKV)[0], dtype=torch.bfloat16, device="cuda")
+        q = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
+        attn = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
+        o = empty(M, d.proj_shape(d.Proj.O)[0], dtype=torch.bfloat16, device="cuda")
+        mlp_ws = empty(max(d.gate_up_swiglu_workspace_bytes(M,w["gate_up"])
                                 for w in self.w["layers"]),dtype=torch.uint8,device="cuda")
-        act = torch.empty(M, g.intermediate, dtype=torch.bfloat16, device="cuda")
-        x = torch.empty(M, H, dtype=torch.bfloat16, device="cuda")
+        act = empty(M, g.intermediate, dtype=torch.bfloat16, device="cuda")
+        x = empty(M, H, dtype=torch.bfloat16, device="cuda")
 
         conv = g.dflash2
         dyn = xc = oc = None
         if conv:
-            dyn = torch.empty(M, d.proj_shape(d.Proj.CONV)[0], dtype=torch.bfloat16, device="cuda")
-            xc = torch.empty(M, H, dtype=torch.bfloat16, device="cuda")
-            oc = torch.empty(M, H, dtype=torch.bfloat16, device="cuda")
+            dyn = empty(M, d.proj_shape(d.Proj.CONV)[0], dtype=torch.bfloat16, device="cuda")
+            xc = empty(M, H, dtype=torch.bfloat16, device="cuda")
+            oc = empty(M, H, dtype=torch.bfloat16, device="cuda")
 
         def site0(src: torch.Tensor, cw: dict | None) -> torch.Tensor:
             if not conv:
@@ -177,7 +180,7 @@ class DFlashDraft:
             d.proj(d.Proj.DOWN, act, w["down"], sc, o)
             sub = site1(o, w.get("mlp_conv"))
 
-        out = torch.empty_like(o)
+        out = empty_like(o)
         ops.rmsnorm_residual(sub, residual, self.w["norm"], out, self.eps)
         return out
 
@@ -185,13 +188,18 @@ class DFlashDraft:
                 path: torch.Tensor, *, temperature=None, uniform=None, slots=None,
                 candidate_ids=None, probabilities=None) -> None:
         n = hidden.shape[0]
-        hp = torch.empty(n, d.proj_shape(d.Proj.SELECTOR_HIDDEN)[0], dtype=torch.bfloat16, device="cuda")
+        hp = empty(n, d.proj_shape(d.Proj.SELECTOR_HIDDEN)[0], dtype=torch.bfloat16, device="cuda")
         d.proj(d.Proj.SELECTOR_HIDDEN, hidden, self.w["sel_hidden"], self.scratch(n), hp)
         need = d.select_scratch_bytes(n)
-        if self._sel_ws is None or self._sel_ws.numel() < need:
-            self._sel_ws = torch.empty(need, dtype=torch.uint8, device="cuda")
+        arena = active_arena()
+        if arena is not None:
+            scratch = arena.workspace(need,'workspace:draft-selector')
+        else:
+            if self._sel_ws is None or self._sel_ws.numel() < need:
+                self._sel_ws = empty(need, dtype=torch.uint8, device="cuda")
+            scratch = self._sel_ws
         d.select_path(hp, logits, self.w["sel_pred"], self.w["sel_succ"], anchor, path,
-                      self._sel_ws, temperature=temperature, uniform=uniform, slots=slots,
+                      scratch, temperature=temperature, uniform=uniform, slots=slots,
                       candidate_ids=candidate_ids, probabilities=probabilities)
 
 

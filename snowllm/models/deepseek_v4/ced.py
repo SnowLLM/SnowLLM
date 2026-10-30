@@ -32,19 +32,15 @@ class EncoderTail:
         take = min(ctx.M, self.window)
         keep = b.ced_keep
         slot = 0
-        trace = ops.tracing()
-        launch = trace is None or trace.launch
         for dest, source in ((self.streams[slot], streams), (self.pre[slot], ctx.pre_mix),
                              (self.ids[slot], b.input_ids), (self.positions[slot], b.positions)):
             if keep:
                 # The retained prefix overlaps its destination; stage it inside the planned arena.
                 with a.frame():
                     saved = a.new(keep, *dest.shape[1:], dtype=dest.dtype)
-                    if launch:
-                        ops.copy_tensor(saved, dest[min(first, self.window) - keep:min(first, self.window)])
-                        ops.copy_tensor(dest[:keep], saved)
-            if launch:
-                ops.copy_tensor(dest[keep:keep + take], source[-take:])
+                    ops.copy_tensor(saved, dest[min(first, self.window) - keep:min(first, self.window)])
+                    ops.copy_tensor(dest[:keep], saved)
+            ops.copy_tensor(dest[keep:keep + take], source[-take:])
 
     def retained(self, batch):
         rows = batch.input_ids.numel()

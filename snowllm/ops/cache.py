@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
+from .allocation import empty
 import torch
 
 from .._capi import check, lib
 from ._common import _chk, _p, _stream
 
 
+@operator
 def reshape_and_cache(k: torch.Tensor, v: torch.Tensor, k_cache: torch.Tensor,
                       v_cache: torch.Tensor, slot_mapping: torch.Tensor, k_row_stride: int,
                       v_row_stride: int, block_size: int) -> None:
@@ -17,6 +20,7 @@ def reshape_and_cache(k: torch.Tensor, v: torch.Tensor, k_cache: torch.Tensor,
                                         _stream()), "reshape_and_cache")
 
 
+@operator
 def reshape_and_cache_int8(k: torch.Tensor, v: torch.Tensor, k_cache: torch.Tensor,
                            v_cache: torch.Tensor, k_scale: torch.Tensor, v_scale: torch.Tensor,
                            slot_mapping: torch.Tensor, k_row_stride: int, v_row_stride: int,
@@ -33,6 +37,7 @@ def reshape_and_cache_int8(k: torch.Tensor, v: torch.Tensor, k_cache: torch.Tens
           "reshape_and_cache_int8")
 
 
+@operator
 def resolve_slots(block_tables: torch.Tensor, row_seq: torch.Tensor, row_pos: torch.Tensor,
                   block_size: int, *, out: torch.Tensor | None = None) -> torch.Tensor:
     M = row_seq.numel()
@@ -40,7 +45,7 @@ def resolve_slots(block_tables: torch.Tensor, row_seq: torch.Tensor, row_pos: to
     _chk(row_seq, "row_seq", torch.int32)
     _chk(row_pos, "row_pos", torch.int32)
     if out is None:
-        out = torch.empty(M, dtype=torch.int32, device="cuda")
+        out = empty(M, dtype=torch.int32, device="cuda")
     _chk(out, "slot_mapping", torch.int32, M)
     check(lib.snowllm_resolve_slots(_p(block_tables), block_tables.shape[1], _p(row_seq),
                                     _p(row_pos), _p(out), M, block_size, _stream()),
@@ -48,5 +53,6 @@ def resolve_slots(block_tables: torch.Tensor, row_seq: torch.Tensor, row_pos: to
     return out
 
 
+@operator
 def kv_blocks_for(num_tokens: int, block_size: int) -> int:
     return lib.snowllm_kv_blocks_for(num_tokens, block_size)

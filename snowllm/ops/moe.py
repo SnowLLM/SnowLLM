@@ -1,22 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
+from .allocation import empty
 import torch
 
 from .._capi import build_geometry, check, lib
 from ._common import empty_bytes, empty_shaped, empty_shaped_like, _chk, _p, _passthru, _stream
 
 
+@operator
 def moe_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     ne, I, H = gate.shape
     _chk(gate, "moe gate", torch.bfloat16, ne, I, H)
     _chk(up, "moe up", torch.bfloat16, ne, I, H)
-    out = torch.empty(ne, 2 * I, H, dtype=torch.bfloat16, device="cuda")
+    out = empty(ne, 2 * I, H, dtype=torch.bfloat16, device="cuda")
     check(lib.snowllm_moe_shuffle_gate_up(_p(gate), _p(up), _p(out), ne, _stream()),
           "moe_shuffle_gate_up")
     return out
 
 
+@operator
 def moe_shuffle_gate_up_fused(gate_up: torch.Tensor) -> torch.Tensor:
     ne = gate_up.shape[0]
     _chk(gate_up, "moe gate_up", torch.bfloat16)
@@ -26,6 +30,7 @@ def moe_shuffle_gate_up_fused(gate_up: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@operator
 def moe_scale_shuffle_gate_up_fp8(gate_s: torch.Tensor, up_s: torch.Tensor) -> torch.Tensor:
     ne = gate_s.shape[0]
     out = empty_shaped((2 * (gate_s.numel() + up_s.numel()),), torch.bfloat16)
@@ -34,6 +39,7 @@ def moe_scale_shuffle_gate_up_fp8(gate_s: torch.Tensor, up_s: torch.Tensor) -> t
     return out
 
 
+@operator
 def moe_scale_shuffle_down_fp8(down_s: torch.Tensor) -> torch.Tensor:
     out = empty_shaped_like(down_s)
     check(lib.snowllm_moe_scale_shuffle_down_fp8(_p(down_s), _p(out), down_s.shape[0], _stream()),
@@ -41,6 +47,7 @@ def moe_scale_shuffle_down_fp8(down_s: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@operator
 def moe_shuffle_down(down: torch.Tensor) -> torch.Tensor:
     ne = down.shape[0]
     _chk(down, "moe down", torch.bfloat16)
@@ -49,6 +56,7 @@ def moe_shuffle_down(down: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@operator
 def moe_shuffle_gate_up_fp8(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     ne, I, H = gate.shape
     _chk(gate, "moe gate fp8", torch.uint8, ne, I, H)
@@ -59,6 +67,7 @@ def moe_shuffle_gate_up_fp8(gate: torch.Tensor, up: torch.Tensor) -> torch.Tenso
     return out
 
 
+@operator
 def moe_shuffle_down_fp8(down: torch.Tensor) -> torch.Tensor:
     ne = down.shape[0]
     _chk(down, "moe down fp8", torch.uint8)
@@ -68,6 +77,7 @@ def moe_shuffle_down_fp8(down: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@operator
 def moe_shuffle_router(router: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
     _chk(router, "moe router", torch.bfloat16)
     out = empty_bytes(lib.snowllm_moe_shuffle_router_bytes())
@@ -79,14 +89,17 @@ def moe_shuffle_router(router: torch.Tensor, bias: torch.Tensor | None = None) -
 moe_workspace_bytes = _passthru("moe_workspace_bytes")
 
 
+@operator
 def moe_variant_force(index: int) -> None:
     lib.snowllm_moe_variant_force(index)
 
 
+@operator
 def moe_variant_name(index: int) -> str:
     return lib.snowllm_moe_variant_name(index).decode()
 
 
+@operator
 def fused_moe(hidden: torch.Tensor, router_w: torch.Tensor, gate_up_w: torch.Tensor,
               down_w: torch.Tensor, out: torch.Tensor, workspace: torch.Tensor) -> None:
     M = hidden.shape[0]
@@ -96,6 +109,7 @@ def fused_moe(hidden: torch.Tensor, router_w: torch.Tensor, gate_up_w: torch.Ten
                                 _p(workspace), M, _stream()), "fused_moe")
 
 
+@operator
 def fused_moe_fp8(hidden: torch.Tensor, router_w: torch.Tensor, gate_up_w: torch.Tensor,
                   down_w: torch.Tensor, gate_up_scale: torch.Tensor, down_scale: torch.Tensor,
                   out: torch.Tensor, workspace: torch.Tensor) -> None:
@@ -115,10 +129,12 @@ class KQuantExpertWeight:
 SharedWeight = torch.Tensor | KQuantExpertWeight
 
 
+@operator
 def kquant_gguf_bytes(fmt: int, rows: int, k: int) -> int:
     return lib.snowllm_kquant_gguf_bytes(fmt, rows, k)
 
 
+@operator
 def moe_kquant_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor, fmt: int,
                                num_experts: int) -> KQuantExpertWeight:
     quant = empty_bytes(lib.snowllm_moe_kquant_gate_up_quant_bytes(fmt, num_experts))
@@ -129,6 +145,7 @@ def moe_kquant_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor, fmt: int,
     return KQuantExpertWeight(quant, meta, fmt)
 
 
+@operator
 def moe_kquant_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> KQuantExpertWeight:
     quant = empty_bytes(lib.snowllm_moe_kquant_down_quant_bytes(fmt, num_experts))
@@ -142,6 +159,7 @@ def _shared_slab(w: SharedWeight) -> tuple[torch.Tensor, torch.Tensor | None, in
     return (w.quant, w.meta, w.fmt) if isinstance(w, KQuantExpertWeight) else (w, None, 0)
 
 
+@operator
 def fused_moe_kquant_split(hidden: torch.Tensor, router_w: torch.Tensor,
                            gate_up: KQuantExpertWeight, down: KQuantExpertWeight,
                            shared_gate_up: SharedWeight, shared_down: SharedWeight,
@@ -173,6 +191,7 @@ class LowBitExpertWeight:
         self.p0, self.p1, self.p2, self.stride, self.fmt = p0, p1, p2, stride, fmt
 
 
+@operator
 def moe_lowbit_shuffle_gate_up(gate_up: torch.Tensor, fmt: int,
                                num_experts: int) -> LowBitExpertWeight:
     p0 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
@@ -185,6 +204,7 @@ def moe_lowbit_shuffle_gate_up(gate_up: torch.Tensor, fmt: int,
     return LowBitExpertWeight(p0, p1, p2, lib.snowllm_moe_lowbit_gate_up_stride(num_experts), fmt)
 
 
+@operator
 def moe_lowbit_shuffle_gate_up_split(gate: torch.Tensor, up: torch.Tensor, fmt: int,
                                      num_experts: int) -> LowBitExpertWeight:
     p0 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
@@ -197,6 +217,7 @@ def moe_lowbit_shuffle_gate_up_split(gate: torch.Tensor, up: torch.Tensor, fmt: 
     return LowBitExpertWeight(p0, p1, p2, lib.snowllm_moe_lowbit_gate_up_stride(num_experts), fmt)
 
 
+@operator
 def moe_lowbit_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> LowBitExpertWeight:
     p0 = empty_bytes(lib.snowllm_moe_lowbit_down_p0_bytes(fmt, num_experts))
@@ -208,6 +229,7 @@ def moe_lowbit_shuffle_down(down: torch.Tensor, fmt: int,
     return LowBitExpertWeight(p0, p1, p2, lib.snowllm_moe_lowbit_down_stride(num_experts), fmt)
 
 
+@operator
 def fused_moe_lowbit_split(hidden: torch.Tensor, router_w: torch.Tensor,
                            gate_up: LowBitExpertWeight, down: LowBitExpertWeight,
                            shared_gate_up: SharedWeight, shared_down: SharedWeight,
@@ -227,6 +249,7 @@ def fused_moe_lowbit_split(hidden: torch.Tensor, router_w: torch.Tensor,
           "fused_moe_lowbit_split")
 
 
+@operator
 def fused_moe_lowbit_kquant_down_split(hidden: torch.Tensor, router_w: torch.Tensor,
                                        gate_up: LowBitExpertWeight, down: KQuantExpertWeight,
                                        shared_gate_up: SharedWeight, shared_down: SharedWeight,
@@ -246,14 +269,15 @@ def fused_moe_lowbit_kquant_down_split(hidden: torch.Tensor, router_w: torch.Ten
 moe_router_shuffle_bytes = _passthru("moe_router_shuffle_bytes")
 
 
+@operator
 def moe_router_tid2eid(hidden: torch.Tensor, router_w: torch.Tensor, token_ids: torch.Tensor,
                        tid2eid: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     M, all_ = hidden.shape[0], build_geometry().moe_topk_all
     _chk(hidden, "hidden", torch.bfloat16, M, hidden.shape[1])
     _chk(token_ids, "token_ids", torch.int64, M)
     _chk(tid2eid, "tid2eid", torch.int32, tid2eid.shape[0], tid2eid.shape[1])
-    w = torch.empty(M, all_, dtype=torch.float32, device="cuda")
-    ids = torch.empty(M, all_, dtype=torch.int32, device="cuda")
+    w = empty(M, all_, dtype=torch.float32, device="cuda")
+    ids = empty(M, all_, dtype=torch.int32, device="cuda")
     shuf = empty_bytes(moe_router_shuffle_bytes(M))
     check(lib.snowllm_moe_router_tid2eid(_p(hidden), _p(router_w), _p(token_ids), _p(tid2eid),
                                          _p(w), _p(ids), _p(shuf), M, _stream()),
@@ -261,6 +285,7 @@ def moe_router_tid2eid(hidden: torch.Tensor, router_w: torch.Tensor, token_ids: 
     return w, ids
 
 
+@operator
 def moe_experts_lowbit_split_tid2eid(hidden: torch.Tensor, router_w: torch.Tensor,
                                      token_ids: torch.Tensor, tid2eid: torch.Tensor,
                                      gate_up: LowBitExpertWeight, down: LowBitExpertWeight,

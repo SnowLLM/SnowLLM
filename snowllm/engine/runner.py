@@ -48,6 +48,7 @@ class ForwardResult(NamedTuple):
 class BaseRunner:
     host_messages = True
     text_only = False
+    defer_model_end = False
     inputs = None
 
     max_num_seqs: int
@@ -331,7 +332,12 @@ class BaseRunner:
             release_device_cache()
 
     def _plan_activations(self, rows, allocation):
-        plan_activations(self.arena, allocation.groups)
+        from ..ops.sampling import sample_workspace_bytes
+        sampling = sample_workspace_bytes(self.max_num_seqs*self.T,self.geo.vocab_size,
+                                         min(self.geo.vocab_size,ops.SAMPLING_MAX_K))
+        head = ops.lm_head_scratch_bytes(self.max_num_seqs*self.T)
+        allocation.extra_bytes = max(allocation.extra_bytes,sampling,head)
+        plan_activations(self.arena,allocation.groups,after=allocation.extra_bytes)
         if self.draft_workspace is not None:
             probes = self.draft_workspace.probes(self.arena, rows, self.max_num_seqs,
                 self.num_spec, self.block_size, self.max_num_seqs * self.T)
@@ -453,13 +459,18 @@ class GraphRunner(BaseRunner):
 
     def _forward_eager(self, batch):
         ctx = self._ctx(batch)
+        ctx.defer_end = self.defer_model_end
         try:
             self.n_eager_forwards += 1
-            with span(f"forward {'prefill' if batch.is_prefill else 'decode'} M={ctx.M}"):
+            scope = ctx.arena.activate() if ctx.arena is not None else contextlib.nullcontext()
+            with scope, span(f"forward {'prefill' if batch.is_prefill else 'decode'} M={ctx.M}"):
                 result = self._execute(ctx)
             self.last_hidden = result.hidden
+            if ctx.arena is not None:
+                ctx.arena.retain(result.hidden)
             return result.output
         finally:
+            ctx.defer_end = False
             ctx.close()
 
     @torch.no_grad()
@@ -476,11 +487,14 @@ class GraphRunner(BaseRunner):
 
     def _draft_eager(self, hidden, next_ids, batch):
         ctx = self._draft_context(batch, next_ids)
+        ctx.defer_end = self.defer_model_end
         try:
             self.n_draft_eager += 1
-            with span(f"mtp draft M={ctx.M}"):
+            scope = ctx.arena.activate() if ctx.arena is not None else contextlib.nullcontext()
+            with scope, span(f"mtp draft M={ctx.M}"):
                 return self._execute_draft(ctx, hidden, next_ids)
         finally:
+            ctx.defer_end = False
             ctx.close()
 
     def _graph_values(self, batch):

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -8,55 +9,66 @@ from ._common import (geo, KQuantProjWeight, Path, _chk, _p, _proj_shuffle_kquan
                       _stream)
 
 
+@operator
 def linear_in_proj_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "in_proj w", torch.bfloat16)
     return _shuffle(w, "linear_in_proj_shuffle_w")
 
 
+@operator
 def linear_out_proj_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "lin out_proj w", torch.bfloat16)
     return _shuffle(w, "linear_out_proj_shuffle_w")
 
 
+@operator
 def linear_in_proj_qz_shuffle_w_fp8(w8: torch.Tensor) -> torch.Tensor:
     _chk(w8, "in_proj qz fp8", torch.uint8)
     return _shuffle(w8, "linear_in_proj_qz_shuffle_w_fp8")
 
 
+@operator
 def linear_in_proj_ba_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "in_proj ba", torch.bfloat16)
     return _shuffle(w, "linear_in_proj_ba_shuffle_w")
 
 
+@operator
 def linear_out_proj_shuffle_w_fp8(w8: torch.Tensor) -> torch.Tensor:
     _chk(w8, "lin out_proj w fp8", torch.uint8)
     return _shuffle(w8, "linear_out_proj_shuffle_w_fp8")
 
 
+@operator
 def linear_in_proj_qz_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().lin_off_b, geo().hidden,
                                 "linear_in_proj_qz_shuffle_w_kquant")
 
 
+@operator
 def linear_in_proj_qkv_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().lin_conv_dim, geo().hidden,
                                 "linear_in_proj_qkv_shuffle_w_kquant")
 
 
+@operator
 def linear_in_proj_z_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().lin_value_dim, geo().hidden,
                                 "linear_in_proj_z_shuffle_w_kquant")
 
 
+@operator
 def linear_out_proj_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().hidden, geo().lin_value_dim,
                                 "linear_out_proj_shuffle_w_kquant")
 
 
+@operator
 def fused_linear_attn_workspace_bytes(M: int, path: Path = Path.PREFILL) -> int:
     return lib.snowllm_fused_linear_attn_workspace_bytes(int(M), int(path))
 
 
+@operator
 def linear_attn_checkpoint_rows(first: int, rows: int, interval: int) -> int:
     """Token capacity for a span that publishes complete periodic checkpoints."""
     return lib.snowllm_linear_attn_checkpoint_rows(first, rows, interval)
@@ -106,6 +118,7 @@ class LinearAttnWeights:
                      + [int(out_proj_v_stored_order)])
 
 
+@operator
 def fused_linear_attn(x: torch.Tensor, w: LinearAttnWeights, cu_seqlens: torch.Tensor | None,
                       has_state: torch.Tensor | None, state_indices: torch.Tensor | None,
                       conv_state: torch.Tensor, recurrent_state: torch.Tensor,
@@ -141,10 +154,12 @@ def fused_linear_attn(x: torch.Tensor, w: LinearAttnWeights, cu_seqlens: torch.T
           "fused_linear_attn")
 
 
+@operator
 def linear_attn_retain_bytes(M: int) -> tuple[int, int, int]:
     return tuple(lib.snowllm_linear_attn_retain_bytes(int(M), i) for i in range(3))
 
 
+@operator
 def linear_attn_advance(retain: tuple, w: LinearAttnWeights, state_indices: torch.Tensor,
                         num_accepted: torch.Tensor, conv_state: torch.Tensor,
                         recurrent_state: torch.Tensor, B: int, T: int,
@@ -160,6 +175,7 @@ def linear_attn_advance(retain: tuple, w: LinearAttnWeights, state_indices: torc
           "linear_attn_advance")
 
 
+@operator
 def linear_state_slots(group: int, live: int, rows: int, slots_per_request: int) -> list[int]:
     import ctypes
     buf = (ctypes.c_int32 * rows)()

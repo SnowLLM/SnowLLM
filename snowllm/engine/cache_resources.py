@@ -55,7 +55,7 @@ class QwenResources(ResourceSet):
         self.outputs = self.add(self.allocate_outputs, [(r, ('x', 'taps', 'draft_taps', 'ple_emb',
             'trunk_streams', 'mtp_streams'))])
         self.statics = self.add(self.allocate_statics, [(r, ('logits', 'draft_logits', 'mtp_h',
-            'd_mscale', 'decode_ws', 'decode_plan')), (r.model.lm_head, ('scratch',))])
+            'd_mscale', 'decode_ws', 'decode_plan')), (r.model.lm_head, ('scratch','arena'))])
         self.messages = self.add(self.allocate_messages, [(r, ('d_ids', 'd_slot', 'd_seq', 'd_bt',
             'd_sidx', 'd_nacc', 'd_pos', 'd_cu', '_graph_inputs'))])
         self.metadata = self.add(self.allocate_metadata, [(r, ('_qsa_of_row', '_qsa_launch'))])
@@ -156,10 +156,11 @@ class QwenResources(ResourceSet):
             r._alloc_mtp_hidden()
         r.d_mscale = tensor(slabs, (1,), torch.float32).fill_(1)
         r.logits = tensor(slabs, (r.decode_rows, g.vocab_size), torch.float32)
-        if n := ops.lm_head_scratch_bytes(r.decode_rows):
-            r.model.lm_head.scratch = slabs.take(n).span()
+        r.model.lm_head.scratch = None
+        r.model.lm_head.arena = r.arena
         r.num_slots = ops.paged_decode_num_slots(r.max_num_seqs)
-        r.decode_ws = slabs.take(ops.paged_decode_workspace_size(r.num_slots, r.attn_q_tokens)).span()
+        r.decode_ws = None
+        r.decode_ws_bytes = ops.paged_decode_workspace_size(r.num_slots,r.attn_q_tokens)
         r.decode_plan = tensor(slabs, (ops.paged_decode_plan_elems(r.max_num_seqs, r.num_slots),), torch.int32)
 
 

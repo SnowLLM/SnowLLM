@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import ctypes
 import enum
 import functools
 from typing import NamedTuple
 
+from .allocation import empty
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -42,6 +44,7 @@ class Dsv4ProjectionPlan(NamedTuple):
 
 
 @functools.lru_cache(None)
+@operator
 def dsv4_projection_plan(m: int, decode_rows: int, wide_columns: int = 0,
                           narrow_columns: int = 0) -> Dsv4ProjectionPlan:
     out=(ctypes.c_int64*4)()
@@ -57,21 +60,25 @@ def _attn_output_plan(geometry: int, m: int, prefill: bool, kv_int8: bool) -> tu
     return tuple(out)
 
 
+@operator
 def attn_output_plan(m: int, prefill: bool, kv_int8: bool) -> tuple[int,int]:
     from ._common import geometry_id
     return _attn_output_plan(geometry_id(),m,prefill,kv_int8)
 
 
+@operator
 def attn_output_shape(m: int, prefill: bool, kv_int8: bool) -> tuple[int,int,int]:
     g=geo();elements,_=attn_output_plan(m,prefill,kv_int8)
     return elements//(g.num_heads*g.head_size),g.num_heads,g.head_size
 
 
+@operator
 def attn_output_gating(proj: torch.Tensor,prefill: bool,kv_int8: bool,row0: int = 0) -> tuple:
     return (lib.snowllm_attn_output_gate(_p(proj),int(prefill),int(kv_int8)) or 0,
             proj.shape[1],row0)
 
 
+@operator
 def attn_output_project(a: torch.Tensor,proj: torch.Tensor,w: torch.Tensor | KQuantProjWeight,
                          scale: torch.Tensor | None,scratch: torch.Tensor | None,
                          out: torch.Tensor,prefill: bool,kv_int8: bool) -> None:
@@ -97,15 +104,18 @@ class _PagedAttentionStep(ctypes.Structure):
 
 
 @functools.lru_cache(None)
+@operator
 def paged_attention_scratch_bytes(batch: int,tokens: int,varlen: bool) -> int:
     return lib.snowllm_paged_attention_scratch_bytes(batch,tokens,int(varlen))
 
 
 @functools.lru_cache(None)
+@operator
 def paged_attention_varlen(prefill: bool,tokens: int,chunk_decode: bool) -> bool:
     return bool(lib.snowllm_paged_attention_varlen(int(prefill),tokens,int(chunk_decode)))
 
 
+@operator
 def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,slots,tokens,
                      block_size,scale,varlen,scratch,gate=(0,0,0)):
     batch=lens.numel()
@@ -131,10 +141,12 @@ class _Dsv4AttentionStep(ctypes.Structure):
        ('scale',ctypes.c_float),('block_q',ctypes.c_int),('comp_fp4',ctypes.c_int)]
 
 
+@operator
 def dsv4_attention_scratch_bytes(q_blocks: int,compressed: bool) -> int:
     return lib.snowllm_dsv4_attention_scratch_bytes(q_blocks,int(compressed))
 
 
+@operator
 def dsv4_attention(q,k,out,cu,table,lens,qmap,q_blocks,scale,sinks,window,page,scratch,*,
                     block_q=False,comp_k=None,comp_table=None,comp_lens=None,mask=None,
                     selection=None,counts=None):
@@ -159,10 +171,12 @@ def dsv4_attention(q,k,out,cu,table,lens,qmap,q_blocks,scale,sinks,window,page,s
           scratch.nbytes if scratch is not None else 0,_stream()),'dsv4_attention')
 
 
+@operator
 def dsv4_norm_proj_scratch_bytes(which: Dsv4Proj, M: int, path: Path) -> int:
     return lib.snowllm_dsv4_norm_proj_scratch_bytes(int(which), M, int(path))
 
 
+@operator
 def dsv4_norm_proj_bf16(which: Dsv4Proj, x: torch.Tensor, gamma: torch.Tensor | None, eps: float,
                         w_shuffled: torch.Tensor, w_narrow: torch.Tensor | None,
                         out: torch.Tensor, scratch: torch.Tensor, path: Path) -> None:
@@ -179,10 +193,12 @@ def dsv4_norm_proj_bf16(which: Dsv4Proj, x: torch.Tensor, gamma: torch.Tensor | 
         _stream()), "dsv4_norm_proj_bf16")
 
 
+@operator
 def dsv4_norm_proj_kquant_scratch_bytes(which: Dsv4Proj, M: int, path: Path) -> int:
     return lib.snowllm_dsv4_norm_proj_kquant_scratch_bytes(int(which), M, int(path))
 
 
+@operator
 def dsv4_norm_proj_kquant(which: Dsv4Proj, x: torch.Tensor, gamma: torch.Tensor, eps: float,
                           w: KQuantProjWeight, out: torch.Tensor, scratch: torch.Tensor,
                           path: Path) -> None:
@@ -201,10 +217,12 @@ def dsv4_norm_proj_kquant(which: Dsv4Proj, x: torch.Tensor, gamma: torch.Tensor,
                                             _stream()), "dsv4_norm_proj_kquant")
 
 
+@operator
 def dsv4_attn_fanout_scratch_bytes(M: int, path: Path) -> int:
     return lib.snowllm_dsv4_attn_fanout_scratch_bytes(M, int(path))
 
 
+@operator
 def dsv4_attn_fanout(x: torch.Tensor, gamma: torch.Tensor, eps: float, which: Dsv4Proj,
                      arm: KQuantProjWeight, wide: torch.Tensor, q_a_w: KQuantProjWeight,
                      q_a: torch.Tensor, proj_w: torch.Tensor | None,
@@ -234,10 +252,12 @@ def dsv4_attn_fanout(x: torch.Tensor, gamma: torch.Tensor, eps: float, which: Ds
         "dsv4_attn_fanout")
 
 
+@operator
 def dsv4_q_proj_scratch_bytes(M: int, path: Path) -> int:
     return lib.snowllm_dsv4_q_proj_scratch_bytes(M, int(path))
 
 
+@operator
 def dsv4_q_proj_kquant(x: torch.Tensor, gamma: torch.Tensor, eps: float, w: KQuantProjWeight,
                        qn: torch.Tensor, w_index: KQuantProjWeight | None,
                        iq: torch.Tensor | None, scratch: torch.Tensor, path: Path) -> None:
@@ -262,10 +282,12 @@ def dsv4_q_proj_kquant(x: torch.Tensor, gamma: torch.Tensor, eps: float, w: KQua
         "dsv4_q_proj_kquant")
 
 
+@operator
 def dsv4_o_proj_scratch_bytes(M: int, path: Path, low_capacity: int = 0) -> int:
     return lib.snowllm_dsv4_o_proj_scratch_bytes(M, int(path), low_capacity)
 
 
+@operator
 def dsv4_o_proj(attn_out: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
                        ws: list[KQuantProjWeight | torch.Tensor], w_b: KQuantProjWeight | torch.Tensor,
                        out: torch.Tensor, scratch: torch.Tensor, path: Path, *,
@@ -311,10 +333,12 @@ def dsv4_o_proj(attn_out: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
           int(fp8), int(fp8_b), _stream()), "dsv4_o_proj")
 
 
+@operator
 def dsv4_proj_scratch_bytes(which: Dsv4Proj, M: int) -> int:
     return lib.snowllm_dsv4_proj_scratch_bytes(int(which), M)
 
 
+@operator
 def dsv4_proj_kquant(which: Dsv4Proj, hidden: torch.Tensor, w: KQuantProjWeight,
                      scratch: torch.Tensor, out: torch.Tensor, path: Path) -> None:
     M = hidden.shape[0]
@@ -325,14 +349,17 @@ def dsv4_proj_kquant(which: Dsv4Proj, hidden: torch.Tensor, w: KQuantProjWeight,
           "dsv4_proj_kquant")
 
 
+@operator
 def dsv4_narrow_proj_rows(which: Dsv4Proj) -> int:
     return lib.snowllm_dsv4_narrow_proj_rows(int(which))
 
 
+@operator
 def dsv4_narrow_proj_partials_bytes(which: Dsv4Proj, M: int) -> int:
     return lib.snowllm_dsv4_narrow_proj_partials_bytes(int(which), M)
 
 
+@operator
 def dsv4_narrow_proj_bf16(which: Dsv4Proj, x: torch.Tensor, w: torch.Tensor,
                           partials: torch.Tensor, out: torch.Tensor) -> None:
     M = x.shape[0]
@@ -343,6 +370,7 @@ def dsv4_narrow_proj_bf16(which: Dsv4Proj, x: torch.Tensor, w: torch.Tensor,
                                             _stream()), "dsv4_narrow_proj_bf16")
 
 
+@operator
 def dsv4_proj_kquant_grouped(hidden: torch.Tensor, ws: list[KQuantProjWeight],
                              out: torch.Tensor) -> None:
     G, M, _ = hidden.shape
@@ -361,6 +389,7 @@ def dsv4_proj_kquant_grouped(hidden: torch.Tensor, ws: list[KQuantProjWeight],
           "dsv4_proj_kquant_grouped")
 
 
+@operator
 def dsv4_proj_bf16(which: Dsv4Proj, hidden: torch.Tensor, w_shuffled: torch.Tensor,
                    scratch: torch.Tensor, out: torch.Tensor, path: Path) -> None:
     M = hidden.shape[0]
@@ -370,57 +399,68 @@ def dsv4_proj_bf16(which: Dsv4Proj, hidden: torch.Tensor, w_shuffled: torch.Tens
                                      M, int(path), _stream()), "dsv4_proj_bf16")
 
 
+@operator
 def qkv_proj_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "qkv w", torch.bfloat16)
     return _shuffle(w, "qkv_proj_shuffle_w")
 
 
+@operator
 def qkv_proj_index_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "indexer qk w", torch.bfloat16)
     return _shuffle(w, "qkv_proj_index_shuffle_w")
 
 
+@operator
 def qkv_proj_shuffle_w_fp8(w8: torch.Tensor) -> torch.Tensor:
     _chk(w8, "qkv w fp8", torch.uint8)
     return _shuffle(w8, "qkv_proj_shuffle_w_fp8")
 
 
+@operator
 def attn_out_scale_oproj_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     _chk(w, "o_proj w", torch.bfloat16)
     return _shuffle(w, "attn_out_scale_oproj_shuffle_w")
 
 
+@operator
 def attn_out_scale_oproj_shuffle_w_fp8(w8: torch.Tensor) -> torch.Tensor:
     _chk(w8, "o_proj w fp8", torch.uint8)
     return _shuffle(w8, "attn_out_scale_oproj_shuffle_w_fp8")
 
 
+@operator
 def qkv_proj_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().qkv_proj_n, geo().hidden,
                                 "qkv_proj_shuffle_w_kquant")
 
 
+@operator
 def qkv_proj_qk_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().qkv_off_v, geo().hidden,
                                 "qkv_proj_qk_shuffle_w_kquant")
 
 
+@operator
 def qkv_proj_v_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().num_kv_heads * geo().head_size, geo().hidden,
                                 "qkv_proj_v_shuffle_w_kquant")
 
 
+@operator
 def qkv_proj_q_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().qkv_off_k, geo().hidden,
                                 "qkv_proj_q_shuffle_w_kquant")
 
 
+@operator
 def qkv_proj_kv_shuffle_w(w: torch.Tensor) -> torch.Tensor:
     """attn_k and attn_v, dequantized and stacked in that order."""
     _chk(w, "kv w", torch.bfloat16, 2 * geo().num_kv_heads * geo().head_size, geo().hidden)
     return _shuffle(w, "qkv_proj_kv_shuffle_w")
 
 
+@operator
 def attn_out_scale_oproj_shuffle_w_kquant(blocks: torch.Tensor, fmt: int) -> KQuantProjWeight:
     return _proj_shuffle_kquant(blocks, fmt, geo().hidden, geo().num_heads * geo().head_size,
                                 "attn_out_scale_oproj_shuffle_w_kquant")
@@ -431,10 +471,12 @@ attn_out_scale_oproj_scratch_bytes = _passthru("attn_out_scale_oproj_scratch_byt
 paged_decode_plan_elems = _passthru("paged_decode_plan_elems")
 
 
+@operator
 def paged_decode_workspace_size(num_slots: int, q_tokens: int = 1) -> int:
     return lib.snowllm_paged_decode_workspace_size(num_slots, q_tokens)
 
 
+@operator
 def kv_pool_bytes(num_blocks: int, kv_int8: bool, block_size: int) -> tuple[int, int]:
     import ctypes
     k, v = ctypes.c_int64(), ctypes.c_int64()
@@ -443,6 +485,7 @@ def kv_pool_bytes(num_blocks: int, kv_int8: bool, block_size: int) -> tuple[int,
     return k.value, v.value
 
 
+@operator
 def kv_scale_bytes(num_blocks: int, block_size: int) -> tuple[int, int]:
     import ctypes
     k, v = ctypes.c_int64(), ctypes.c_int64()
@@ -450,6 +493,7 @@ def kv_scale_bytes(num_blocks: int, block_size: int) -> tuple[int, int]:
     return k.value, v.value
 
 
+@operator
 def prefill_q_plan(query_lens: list[int]) -> tuple[int, torch.Tensor]:
     import ctypes
     B = len(query_lens)
@@ -460,14 +504,15 @@ def prefill_q_plan(query_lens: list[int]) -> tuple[int, torch.Tensor]:
     return total, torch.frombuffer(memoryview(buf), dtype=torch.int32).clone().cuda()
 
 
+@operator
 def paged_window_view(block_tables: torch.Tensor, ends: torch.Tensor, sinks: int, window: int,
                       block_size: int, *, end_offset: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
     B = ends.numel()
     _chk(block_tables, "block_tables", torch.int32)
     _chk(ends, "ends", ends.dtype)
     w = lib.snowllm_paged_window_blocks(sinks, window, block_size)
-    out = torch.empty(B, w, dtype=torch.int32, device="cuda")
-    lens = torch.empty(B, dtype=torch.int32, device="cuda")
+    out = empty(B, w, dtype=torch.int32, device="cuda")
+    lens = empty(B, dtype=torch.int32, device="cuda")
     check(lib.snowllm_paged_window_view_shifted(_p(block_tables),block_tables.shape[1],_p(ends),
           {torch.int32:0,torch.int64:1}.get(ends.dtype,-1),end_offset,B,sinks,window,
           _p(out),w,_p(lens),block_size,_stream()),
@@ -478,10 +523,12 @@ def paged_window_view(block_tables: torch.Tensor, ends: torch.Tensor, sinks: int
 PAGED_DECODE_MAX_Q_TOKENS = lib.snowllm_paged_decode_max_q_tokens()
 
 
+@operator
 def paged_prefill_max_tokens() -> int:
     return lib.snowllm_paged_prefill_max_tokens()
 
 
+@operator
 def paged_decode_num_slots(num_seqs: int) -> int:
     return lib.snowllm_paged_decode_num_slots(num_seqs)
 
@@ -504,6 +551,7 @@ def _index(x: torch.Tensor, w: torch.Tensor | None,
     return _p(w), _p(out)
 
 
+@operator
 def qkv_proj(x: torch.Tensor, w_shuffled: torch.Tensor, scratch: torch.Tensor,
              proj: torch.Tensor, path: Path, residual: torch.Tensor | None = None,
              gamma: torch.Tensor | None = None, eps: float = 0.0,
@@ -517,6 +565,7 @@ def qkv_proj(x: torch.Tensor, w_shuffled: torch.Tensor, scratch: torch.Tensor,
           "qkv_proj")
 
 
+@operator
 def qkv_proj_fp8(x: torch.Tensor, w_shuffled: torch.Tensor, scale: torch.Tensor,
                  scratch: torch.Tensor, proj: torch.Tensor, path: Path,
                  residual: torch.Tensor | None = None, gamma: torch.Tensor | None = None,
@@ -530,6 +579,7 @@ def qkv_proj_fp8(x: torch.Tensor, w_shuffled: torch.Tensor, scale: torch.Tensor,
                                    *_index(x, index_w, index_out), _stream()), "qkv_proj_fp8")
 
 
+@operator
 def qkv_proj_kquant(x: torch.Tensor, w: KQuantProjWeight, scratch: torch.Tensor,
                     proj: torch.Tensor, path: Path, residual: torch.Tensor | None = None,
                     gamma: torch.Tensor | None = None, eps: float = 0.0,
@@ -544,6 +594,7 @@ def qkv_proj_kquant(x: torch.Tensor, w: KQuantProjWeight, scratch: torch.Tensor,
           "qkv_proj_kquant")
 
 
+@operator
 def qkv_proj_q_kv_kquant(x: torch.Tensor, q: KQuantProjWeight, kv: torch.Tensor,
                          scratch: torch.Tensor, proj: torch.Tensor, path: Path,
                          residual: torch.Tensor | None = None,
@@ -559,6 +610,7 @@ def qkv_proj_q_kv_kquant(x: torch.Tensor, q: KQuantProjWeight, kv: torch.Tensor,
                                            _stream()), "qkv_proj_q_kv_kquant")
 
 
+@operator
 def qkv_proj_pair_kquant(x: torch.Tensor, qk: KQuantProjWeight, v: KQuantProjWeight,
                          scratch: torch.Tensor, proj: torch.Tensor, path: Path,
                          residual: torch.Tensor | None = None,
@@ -575,6 +627,7 @@ def qkv_proj_pair_kquant(x: torch.Tensor, qk: KQuantProjWeight, v: KQuantProjWei
           "qkv_proj_pair_kquant")
 
 
+@operator
 def qk_norm(proj: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tensor, q: torch.Tensor,
             k: torch.Tensor, eps: float) -> None:
     M, N = proj.shape
@@ -588,6 +641,7 @@ def qk_norm(proj: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tensor, q:
                               eps, _stream()), "qk_norm")
 
 
+@operator
 def qk_norm_rope(proj: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tensor,
                  cos: torch.Tensor, sin: torch.Tensor, q: torch.Tensor, k: torch.Tensor,
                  eps: float) -> None:
@@ -612,6 +666,7 @@ def _latent_norm_store_layout(rows,width,stride,heads,mode,dtype):
     return tuple(layout)
 
 
+@operator
 def latent_norm_store(x, gamma, out, slots=None, cos=None, sin=None, *, mode, heads=1, eps=1e-6):
     """GLM KV (0), DeepSeek raw KV (1), or DeepSeek per-head query (2)."""
     if x.ndim == 3:
@@ -635,6 +690,7 @@ def latent_norm_store(x, gamma, out, slots=None, cos=None, sin=None, *, mode, he
         "latent_norm_store")
 
 
+@operator
 def qk_norm_rope_cache(proj, q_gamma, k_gamma, cos, sin, q, v, k_cache, v_cache,
                        slots, eps, block_size, *, k_proj=None, k_scale=None, v_scale=None):
     """Normalize/rotate QK and publish KV, preserving the original BF16 boundary."""
@@ -685,6 +741,7 @@ def qk_norm_rope_cache(proj, q_gamma, k_gamma, cos, sin, q, v, k_cache, v_cache,
         _p(k_scale), _p(v_scale), _p(slots), m, eps, block_size, _stream()), "qk_norm_rope_cache")
 
 
+@operator
 def qk_norm_rope_split_k(proj: torch.Tensor, k_proj: torch.Tensor, q_gamma: torch.Tensor,
                          k_gamma: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
                          q: torch.Tensor, k: torch.Tensor, eps: float) -> None:
@@ -704,6 +761,7 @@ def qk_norm_rope_split_k(proj: torch.Tensor, k_proj: torch.Tensor, q_gamma: torc
                                            _stream()), "qk_norm_rope_split_k")
 
 
+@operator
 def attn_out_scale_oproj(attn_out: torch.Tensor, proj: torch.Tensor, w_shuffled: torch.Tensor,
                          scratch: torch.Tensor, out: torch.Tensor, decode: bool) -> None:
     M = attn_out.shape[0]
@@ -715,6 +773,7 @@ def attn_out_scale_oproj(attn_out: torch.Tensor, proj: torch.Tensor, w_shuffled:
                                            _stream()), "attn_out_scale_oproj")
 
 
+@operator
 def attn_out_scale_oproj_fp8(attn_out: torch.Tensor, proj: torch.Tensor, w_shuffled: torch.Tensor,
                              scale: torch.Tensor, scratch: torch.Tensor, out: torch.Tensor,
                              decode: bool) -> None:
@@ -729,6 +788,7 @@ def attn_out_scale_oproj_fp8(attn_out: torch.Tensor, proj: torch.Tensor, w_shuff
           "attn_out_scale_oproj_fp8")
 
 
+@operator
 def attn_out_scale_oproj_kquant(attn_out: torch.Tensor, proj: torch.Tensor, w: KQuantProjWeight,
                                 scratch: torch.Tensor, out: torch.Tensor, decode: bool) -> None:
     M = attn_out.shape[0]
@@ -741,6 +801,7 @@ def attn_out_scale_oproj_kquant(attn_out: torch.Tensor, proj: torch.Tensor, w: K
           "attn_out_scale_oproj_kquant")
 
 
+@operator
 def gated_shuffled_out(gate: torch.Tensor | None, row0: int = 0) -> tuple:
     if gate is None:
         return (0, 0, 0)
@@ -748,6 +809,7 @@ def gated_shuffled_out(gate: torch.Tensor | None, row0: int = 0) -> tuple:
     return (_p(gate), gate.shape[1], row0)
 
 
+@operator
 def paged_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor,
                        out: torch.Tensor, cu_seqlens_q: torch.Tensor, block_tables: torch.Tensor,
                        seq_lens: torch.Tensor, total_num_q_blocks: int, scale: float,
@@ -765,6 +827,7 @@ def paged_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Te
           "paged_attn_prefill")
 
 
+@operator
 def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor | None, ape: torch.Tensor | None,
                          gamma: torch.Tensor, out: torch.Tensor | None, cur_row: torch.Tensor,
                          prev_row: torch.Tensor | None, coff: int, ratio: int, eps: float,
@@ -820,6 +883,7 @@ def dsv4_compressor_pool(kv: torch.Tensor, score: torch.Tensor | None, ape: torc
                                            _stream()), "dsv4_compressor_pool")
 
 
+@operator
 def dsv4_carry_slide(kv: torch.Tensor, score: torch.Tensor, dst: torch.Tensor, src: torch.Tensor,
                      dummy: int) -> None:
     layers, rows_per_layer, width = kv.shape
@@ -832,6 +896,7 @@ def dsv4_carry_slide(kv: torch.Tensor, score: torch.Tensor, dst: torch.Tensor, s
           "dsv4_carry_slide")
 
 
+@operator
 def dsv4_fp8_kv_quantize(x: torch.Tensor, n_rot: int) -> None:
     head_size = x.shape[-1]
     rows = x.numel() // head_size
@@ -840,6 +905,7 @@ def dsv4_fp8_kv_quantize(x: torch.Tensor, n_rot: int) -> None:
           "dsv4_fp8_kv_quantize")
 
 
+@operator
 def dsv4_indexer_weights(proj: torch.Tensor, out: torch.Tensor, scale: float) -> None:
     T, heads = out.shape
     bf16 = proj.dtype is torch.bfloat16
@@ -849,6 +915,7 @@ def dsv4_indexer_weights(proj: torch.Tensor, out: torch.Tensor, scale: float) ->
                                            scale, _stream()), "dsv4_indexer_weights")
 
 
+@operator
 def dsv4_indexer_scores(q: torch.Tensor, k_cache: torch.Tensor, block_tables: torch.Tensor,
                         weights: torch.Tensor, out: torch.Tensor, comp_lens: torch.Tensor,
                         seq_of_row: torch.Tensor, positions: torch.Tensor, ratio: int,
@@ -870,6 +937,7 @@ def dsv4_indexer_scores(q: torch.Tensor, k_cache: torch.Tensor, block_tables: to
           "dsv4_indexer_scores")
 
 
+@operator
 def dsv4_indexer_topk_mask(scores: torch.Tensor, mask: torch.Tensor | None,
                            positions: torch.Tensor,
                            comp_lens: torch.Tensor, seq_of_row: torch.Tensor, ratio: int,
@@ -901,6 +969,7 @@ def dsv4_indexer_topk_mask(scores: torch.Tensor, mask: torch.Tensor | None,
                                              ratio, topk, _stream()), "dsv4_indexer_topk_mask")
 
 
+@operator
 def dsv4_mla_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor,
                           out: torch.Tensor, cu_seqlens_q: torch.Tensor,
                           block_tables: torch.Tensor, seq_lens: torch.Tensor,
@@ -919,6 +988,7 @@ def dsv4_mla_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch
           "dsv4_mla_attn_prefill")
 
 
+@operator
 def dsv4_mla_attn_prefill_block(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor,
                                 out: torch.Tensor, cu_seqlens_q: torch.Tensor,
                                 block_tables: torch.Tensor, seq_lens: torch.Tensor,
@@ -951,6 +1021,7 @@ def _sel_stride(sel: torch.Tensor | None, sel_cnt: torch.Tensor | None, q: torch
     return stride
 
 
+@operator
 def dsv4_mla_attn_prefill_compressed(q: torch.Tensor, k_cache: torch.Tensor,
                                      v_cache: torch.Tensor, out: torch.Tensor,
                                      cu_seqlens_q: torch.Tensor, block_tables: torch.Tensor,
@@ -980,18 +1051,22 @@ def dsv4_mla_attn_prefill_compressed(q: torch.Tensor, k_cache: torch.Tensor,
         sel_stride, block_size, _stream()), "dsv4_mla_attn_prefill_compressed")
 
 
+@operator
 def dsv4_mla_split_worth(total_num_q_blocks: int) -> bool:
     return bool(lib.snowllm_dsv4_mla_split_worth(total_num_q_blocks))
 
 
+@operator
 def dsv4_mla_split_workspace_bytes(total_num_q_blocks: int) -> int:
     return lib.snowllm_dsv4_mla_split_workspace_bytes(total_num_q_blocks)
 
 
+@operator
 def dsv4_mla_raw_ring_blocks(window: int, chunk_tokens: int, block_size: int) -> int:
     return lib.snowllm_dsv4_mla_raw_ring_blocks(window, chunk_tokens, block_size)
 
 
+@operator
 def dsv4_mla_attn_split_compressed(q: torch.Tensor, k_cache: torch.Tensor,
                                     v_cache: torch.Tensor, out: torch.Tensor,
                                     cu_seqlens_q: torch.Tensor, block_tables: torch.Tensor,
@@ -1026,6 +1101,7 @@ def dsv4_mla_attn_split_compressed(q: torch.Tensor, k_cache: torch.Tensor,
           "dsv4_mla_attn_split_compressed")
 
 
+@operator
 def paged_attn_decode(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
                       v_cache: torch.Tensor, out: torch.Tensor, block_tables: torch.Tensor,
                       plan: torch.Tensor, workspace: torch.Tensor, num_seqs: int, num_slots: int,
@@ -1042,6 +1118,7 @@ def paged_attn_decode(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Te
           "paged_attn_decode")
 
 
+@operator
 def attn_oproj_shuffled_a(a_shuffled: torch.Tensor, w_shuffled: torch.Tensor, out: torch.Tensor,
                           M: int) -> None:
     _chk(out, "out", torch.bfloat16, M, out.shape[1])
@@ -1049,6 +1126,7 @@ def attn_oproj_shuffled_a(a_shuffled: torch.Tensor, w_shuffled: torch.Tensor, ou
           "attn_oproj_shuffled_a")
 
 
+@operator
 def attn_oproj_shuffled_a_fp8(a_shuffled: torch.Tensor, w_shuffled: torch.Tensor,
                               scale: torch.Tensor, out: torch.Tensor, M: int) -> None:
     _chk(out, "out", torch.bfloat16, M, out.shape[1])
@@ -1057,6 +1135,7 @@ def attn_oproj_shuffled_a_fp8(a_shuffled: torch.Tensor, w_shuffled: torch.Tensor
           "attn_oproj_shuffled_a_fp8")
 
 
+@operator
 def attn_oproj_shuffled_a_kquant(a_shuffled: torch.Tensor, w: KQuantProjWeight, out: torch.Tensor,
                                  M: int) -> None:
     _chk(out, "out", torch.bfloat16, M, out.shape[1])
@@ -1065,6 +1144,7 @@ def attn_oproj_shuffled_a_kquant(a_shuffled: torch.Tensor, w: KQuantProjWeight, 
           "attn_oproj_shuffled_a_kquant")
 
 
+@operator
 def paged_attn_prefill_int8(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor,
                             k_scale: torch.Tensor, v_scale: torch.Tensor, out: torch.Tensor,
                             cu_seqlens_q: torch.Tensor, block_tables: torch.Tensor,
@@ -1087,6 +1167,7 @@ def paged_attn_prefill_int8(q: torch.Tensor, k_cache: torch.Tensor, v_cache: tor
           "paged_attn_prefill_int8")
 
 
+@operator
 def paged_attn_decode_int8(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: torch.Tensor,
                            v_cache: torch.Tensor, k_scale: torch.Tensor, v_scale: torch.Tensor,
                            out: torch.Tensor, block_tables: torch.Tensor, plan: torch.Tensor,
@@ -1105,6 +1186,7 @@ def paged_attn_decode_int8(q: torch.Tensor, seq_lens: torch.Tensor, k_cache: tor
           "paged_attn_decode_int8")
 
 
+@operator
 def paged_attn_decode_plan(seq_lens: torch.Tensor, plan: torch.Tensor, num_slots: int,
                            block_size: int, uniform: bool = False) -> None:
     _chk(seq_lens, "seq_lens", torch.int32)

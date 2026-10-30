@@ -6,6 +6,7 @@ import math
 import torch
 
 from ... import ops
+from ...ops.allocation import copy_into
 from ..._capi import SnowLLMError
 from ..vision_layers import VisionBlock, VisionLinear
 
@@ -98,65 +99,28 @@ class MiniCPMVision:
             raise SnowLLMError(f"MiniCPM patch grids must be positive multiples of {factor}")
         return [(int(h), int(w)) for h, w in grids]
 
-    def _allocate(self, arena, grids, mode):
-        m, h = sum(y * x for y, x in grids), self.hidden
-        window = mode == "16x"
-        reduced = m // 4 if window else m
-        out_rows = reduced // 4
-        linears = [(m, self.patch), (m, self.blocks[0].qkv),
-                   (m, self.blocks[0].fc2), (out_rows, self.merger[0]),
-                   (out_rows, self.merger[1])]
-        if window:
-            linears += [(m // 4, self.window.fc1), (m // 4, self.window.fc2)]
-        scratch = max(ops.vision_gemm_scratch_bytes(rows, lin.k) for rows, lin in linears)
-        b = dict(hidden=arena.new(m, h), cu=arena.new(len(grids) + 1, dtype=torch.int32),
-                 scratch=arena.flat(scratch, torch.uint8))
-        # Separate frames alias storage; forward consumes each stage before starting the next.
-        with arena.frame():
-            b["patches"] = arena.new(m, self.patch.k)
-        with arena.frame():
-            b["positions"] = arena.new(m, dtype=torch.int32)
-        with arena.frame():
-            b["norm"] = arena.new(m, h)
-            b["attention"] = b["norm"]
-            with arena.frame():
-                b["qkv"] = arena.new(m, 3 * h)
-            with arena.frame():
-                b["ff"] = arena.new(m * self.blocks[0].fc1.n)
-        if window:
-            with arena.frame():
-                w = dict(reordered=arena.new(m, h),
-                         window_index=arena.new(m, dtype=torch.int64), scratch=b["scratch"])
-                with arena.frame():
-                    w["norm"] = arena.new(m, h)
-                    w["attention"] = w["norm"]
-                    w["qkv"] = arena.new(m, 3 * h)
-                with arena.frame():
-                    w["residual"] = arena.new(m // 4, h)
-                    w["flat_norm"] = arena.new(m // 4, 4 * h)
-                    w["ff"] = arena.new(m // 4, self.window.fc1.n)
-                b["window"] = w
-        with arena.frame():
-            b["post_norm"] = arena.new(reduced, h)
-            b["merge_index"] = arena.new(reduced, dtype=torch.int64)
-            b["flat_norm"] = arena.new(out_rows, 4 * h)
-            b["merged"] = arena.new(out_rows, 4 * h)
-        b["out"] = ops.empty_shaped((out_rows, self.out_hidden), torch.bfloat16)
-        return b
-
-    def _arena(self, grids, mode):
-        with ops.dry_load():
-            arena = ops.Arena()
-            buffers = self._allocate(arena, grids, mode)
-            output_bytes = buffers["out"].numel() * buffers["out"].element_size()
-        arena.reset()
-        return arena, output_bytes
+    def _allocate(self, arena, grids, mode, out):
+        m,h = sum(y*x for y,x in grids),self.hidden
+        return dict(hidden=arena.new(m,h),cu=arena.new(len(grids)+1,dtype=torch.int32),
+                    scratch=None,patches=arena.new(m,self.patch.k),
+                    positions=arena.new(m,dtype=torch.int32),out=out)
 
     def workspace_bytes(self, target_sizes, mode=None):
         mode = mode or self.downsample_mode
-        grids = self._grids(target_sizes, mode)
-        arena, output_bytes = self._arena(grids, mode)
-        return arena.high + output_bytes
+        grids = self._grids(target_sizes,mode)
+        m = sum(y*x for y,x in grids)
+        patches = torch.empty(m,self.patch.k,dtype=torch.bfloat16)
+        arena = ops.Arena()
+        with ops.dry_load():
+            out = torch.empty(m//(16 if mode=='16x' else 4),self.out_hidden,
+                              dtype=torch.bfloat16,device='cuda')
+            def walk():
+                arena.planner.begin(('vision',))
+                arena.reset()
+                try:return self._forward_gpu(arena,grids,mode,patches,out)
+                finally:arena.end_plan()
+            arena.plan(('vision',),m,walk,lifetimes='uses')
+        return arena.planner.high + out.nbytes
 
     def _norm(self, x, norm, out):
         ops.vision_layernorm(x, *norm, out, self.eps)
@@ -172,27 +136,36 @@ class MiniCPMVision:
         m, h, p = sum(y * x for y, x in grids), self.hidden, self.patch_size
         if tuple(pixel_values.shape) != (1, 3, p, m * p):
             raise SnowLLMError("MiniCPM pixel_values do not match target_sizes")
-        arena, _ = self._arena(grids, mode)
-        arena.freeze()
-        b = self._allocate(arena, grids, mode)
         patches = torch.zeros(m, self.patch.k, dtype=torch.bfloat16)
         patches[:, :3*p*p].copy_(pixel_values.cpu().reshape(3, p, m, p)
                                  .permute(2, 0, 1, 3).reshape(m, -1))
-        b["patches"].copy_(patches)
+        out = torch.empty(m//(16 if mode=='16x' else 4),self.out_hidden,
+                          dtype=torch.bfloat16,device='cuda')
+        arena = ops.Arena()
+        return arena.execute(('vision',),m,
+            lambda: self._forward_gpu(arena,grids,mode,patches,out))
+
+    def _forward_gpu(self,arena,grids,mode,patches,out):
+        from transformers.vision_utils import get_vision_nearest_position_ids
+        h = self.hidden
+        b = self._allocate(arena,grids,mode,out)
+        copy_into(b['patches'],patches)
         hidden = b["hidden"]
         self._gemm(b["patches"], self.patch, hidden, b)
         ids = get_vision_nearest_position_ids(torch.tensor(grids), math.isqrt(self.positions.shape[0]))
-        b["positions"].copy_(ids.to(torch.int32))
+        copy_into(b["positions"],ids.to(torch.int32))
         ops.vision_pos_embed_add(hidden, self.positions, b["positions"])
-        b["cu"].copy_(_cu(grids))
+        copy_into(b["cu"],_cu(grids))
         cu = b["cu"]
         for i, block in enumerate(self.blocks):
             n = hidden.shape[0]
             block.forward(hidden, cu, b, self.heads, self.dim, self.eps)
             if mode == "16x" and i == self.insert_layer:
                 block = self.window
-                w = b["window"]
-                w["window_index"].copy_(_windows(grids))
+                w = dict(reordered=arena.new(n,h),window_index=arena.new(n,dtype=torch.int64),
+                         scratch=None,residual=arena.new(n//4,h),
+                         flat_norm=arena.new(n//4,4*h),ff=arena.new(n//4,block.fc1.n))
+                copy_into(w["window_index"],_windows(grids))
                 reordered = w["reordered"]
                 ops.gather_rows(hidden, w["window_index"], out=reordered)
                 block.attention(reordered, None, w, self.heads, self.dim, self.eps)
@@ -205,15 +178,16 @@ class MiniCPMVision:
                 hidden = b["hidden"][:n // 4]
                 self._gemm(ff, block.fc2, hidden, b, residual=residual)
                 grids = [(y // 2, x // 2) for y, x in grids]
-                b["cu"].copy_(_cu(grids))
+                copy_into(b["cu"],_cu(grids))
         n = hidden.shape[0]
-        ln = b["post_norm"]
+        ln = arena.new(n,h)
         self._norm(hidden, self.post_norm, ln)
-        b["merge_index"].copy_(_windows(grids))
-        merged_norm = b["flat_norm"][:n // 4]
+        merge_index = arena.new(n,dtype=torch.int64)
+        copy_into(merge_index,_windows(grids))
+        merged_norm = arena.new(n//4,4*h)
         ops.vision_merge_norm(ln, *self.merger_norm, merged_norm, self.eps,
-                               indices=b["merge_index"])
-        merged = b["merged"]
+                               indices=merge_index)
+        merged = arena.new(n//4,4*h)
         self._gemm(merged_norm, self.merger[0], merged, b, act=2)
         out = b["out"]
         self._gemm(merged, self.merger[1], out, b)

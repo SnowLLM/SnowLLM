@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 class QwenRunner(GraphRunner):
     tunable_rope = True
+    defer_model_end = True
     GRAPH_FIELDS = (*GraphRunner.GRAPH_FIELDS, 'q_block_map')
 
     @property
@@ -36,6 +37,7 @@ class QwenRunner(GraphRunner):
 
 
     def _configure(self):
+        self.tap_at = {layer:j for j,layer in enumerate(self.tap_layers)}
         self.drafting = self.model.mtp is not None or bool(self.tap_layers)
         self.roll_forward = bool(self.tap_layers)
         if self.num_spec and not self.drafting:
@@ -100,6 +102,7 @@ class QwenRunner(GraphRunner):
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
             arena=self.arena, plan_key=plan_key,
             decode_plan=self.decode_plan, decode_ws=self.decode_ws, num_slots=self.num_slots,
+            decode_ws_bytes=self.decode_ws_bytes,
             block_size=self.block_size,
             kv_int8=self.kv_int8, mscale=self.d_mscale, tap_at=self.tap_at,
             x=self.x[:M],
@@ -147,7 +150,8 @@ class QwenRunner(GraphRunner):
             def walk():
                 return (self.mtp_draft(self._mtp_input(rows), batch.input_ids, batch) if draft
                         else self._forward_eager(batch))
-            yield ActivationProbe(key, rows, walk)
+            yield ActivationProbe(key, rows, walk,
+                lifetimes='uses' if self.plan_activations else 'references')
 
     def _graph_key(self, b: Batch, draft=False):
         if b.is_prefill or draft:
@@ -166,9 +170,10 @@ class QwenRunner(GraphRunner):
         self._plan_attn(ctx)
         last, hidden = self._model_hidden(ctx)
         out = self.logits[:last.shape[0]]
-        if ctx.batch.need_logits:
+        scratch = ctx.arena.workspace(ops.lm_head_scratch_bytes(last.shape[0]))
+        if ctx.batch.need_logits or ops.tracing() is not None:
             with span("lm_head"):
-                out = self.model.lm_head(last, self.logits)
+                out = self.model.lm_head(last, self.logits,scratch=scratch)
         return ForwardResult(out, hidden)
 
     def _draft_context(self, batch, next_ids):

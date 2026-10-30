@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
+from .operation import operator, workspace_capacity
 import ctypes
 import functools
 from types import SimpleNamespace
 
+from .allocation import empty, empty_like
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -32,12 +34,18 @@ def _projection_plan(m,n,k,kind,fmt,output_type):
     return tuple(plan)
 
 
+@operator
 def projection_plan(p,m,dtype):
     w=_projection_weight(p)
-    return _projection_plan(m,p.n,p.k,w.kind,w.fmt,
-                            {torch.bfloat16:0,torch.float32:1}.get(dtype,-1))
+    output = {torch.bfloat16:0,torch.float32:1}.get(dtype,-1)
+    plan = _projection_plan(m,p.n,p.k,w.kind,w.fmt,output)
+    key = ('glm_projection',p.n,p.k,w.kind,w.fmt,output)
+    need = workspace_capacity(key,m,
+        lambda rows:_projection_plan.__wrapped__(rows,p.n,p.k,w.kind,w.fmt,output)[2])
+    return plan[:2]+(need,plan[3])
 
 
+@operator
 def projection_storage_plan(m,n,k,dtype=torch.bfloat16,*,fmt=None,weight_dtype=None):
     """Plan from storage metadata during memory budgeting, without live weight pointers."""
     kind=2 if fmt is not None else {torch.bfloat16:0,torch.float32:4}.get(weight_dtype,-2)
@@ -45,6 +53,7 @@ def projection_storage_plan(m,n,k,dtype=torch.bfloat16,*,fmt=None,weight_dtype=N
                             {torch.bfloat16:0,torch.float32:1}.get(dtype,-1))
 
 
+@operator
 def projection(p,x,out,workspace):
     m=x.shape[0]
     n,k,need,_=projection_plan(p,m,out.dtype)
@@ -59,6 +68,7 @@ def projection(p,x,out,workspace):
           'glm_projection')
 
 
+@operator
 def sparse_geometry(cfg):
     check(lib.snowllm_glm_sparse_geometry(*(cfg[n] for n in ('num_attention_heads',
           'kv_lora_rank','index_n_heads','index_head_dim','index_kpool','index_topk'))),
@@ -74,6 +84,7 @@ def _projection_jobs(m,projections,outputs):
     if not projections or len(projections)!=len(outputs):
         raise SnowLLMError('GLM fanout needs matching nonempty weights and outputs')
     jobs=(_ProjectionJob*len(projections))()
+    jobs._snowllm_tensors = [out for out,_ in outputs]
     for i,(p,(out,col)) in enumerate(zip(projections,outputs)):
         _chk(out,'fanout output',torch.bfloat16,m,out.shape[1])
         if col<0 or col+p.n>out.shape[1]:raise SnowLLMError('GLM fanout output is too small')
@@ -81,13 +92,21 @@ def _projection_jobs(m,projections,outputs):
     return jobs
 
 
+@operator
 def projection_fanout_prepare(x,projections,outputs):
     m,k=x.shape
     _chk(x,'fanout input',torch.bfloat16,m,k)
     jobs=_projection_jobs(m,projections,outputs)
-    return jobs,lib.snowllm_glm_projection_fanout_workspace_bytes(jobs,len(jobs),m,k)
+    return jobs,_fanout_capacity(jobs,m,k)
 
 
+def _fanout_capacity(jobs,m,k):
+    key = ('glm_fanout',k,tuple((j.weight.kind,j.weight.fmt,j.n,j.k,j.stride) for j in jobs))
+    return workspace_capacity(key,m,
+        lambda rows:lib.snowllm_glm_projection_fanout_workspace_bytes(jobs,len(jobs),rows,k))
+
+
+@operator
 def projection_fanout(x,jobs,workspace):
     m,k=x.shape
     _chk(x,'fanout input',torch.bfloat16,m,k)
@@ -99,13 +118,15 @@ def projection_fanout(x,jobs,workspace):
           _stream()),'glm_projection_fanout')
 
 
+@operator
 def hc_projection_prepare(streams,projections,outputs):
     m,h,k=streams.shape
     _chk(streams,'HC projection streams',torch.bfloat16,m,h,k)
     jobs=_projection_jobs(m,projections,outputs)
-    return jobs,lib.snowllm_glm_hc_projection_workspace_bytes(jobs,len(jobs),m,h,k)
+    return jobs,_fanout_capacity(jobs,m,k)
 
 
+@operator
 def hc_projection(streams,weights,gamma,eps,hidden,jobs,workspace):
     m,h,k=streams.shape
     _chk(streams,'HC projection streams',torch.bfloat16,m,h,k)
@@ -120,6 +141,7 @@ def hc_projection(streams,weights,gamma,eps,hidden,jobs,workspace):
           jobs,len(jobs),m,h,k,_p(workspace),capacity,_stream()),'glm_hc_projection')
 
 
+@operator
 def prepare_embedding(batch, weight, max_pools, ids=None, arena=None):
     """Gather embeddings and derive sparse metadata in the same launch."""
     ids = batch.input_ids if ids is None else ids
@@ -133,7 +155,7 @@ def prepare_embedding(batch, weight, max_pools, ids=None, arena=None):
         raise SnowLLMError("GLM variable-length batch requires cu_seqlens")
     def new(*shape, dtype):
         return (arena.new(*shape,dtype=dtype) if arena is not None else
-                torch.empty(shape,dtype=dtype,device=weight.device))
+                empty(shape,dtype=dtype,device=weight.device))
     out = new(m,4096,dtype=weight.dtype)
     # Always reserve cu, including implicit single-token decode. The same
     # allocation sequence then covers explicit and implicit sequence boundaries.
@@ -148,6 +170,7 @@ def prepare_embedding(batch, weight, max_pools, ids=None, arena=None):
                                qmap=qmap,max_pools=max_pools)
 
 
+@operator
 def kda(qkv, forget, beta, conv, a_log, dt, batch, history, state, lower_bound, arena=None, *, ckpt=None):
     m, h = qkv.shape[0], beta.shape[1]
     slots = state.shape[0]
@@ -164,7 +187,7 @@ def kda(qkv, forget, beta, conv, a_log, dt, batch, history, state, lower_bound, 
     if batch.has_state is not None:
         _chk(batch.has_state, "has_state", torch.int32, batch.batch_size)
     out = (arena.new(m,h,128) if arena is not None else
-           torch.empty(m,h,128,dtype=torch.bfloat16,device=qkv.device))
+           empty(m,h,128,dtype=torch.bfloat16,device=qkv.device))
     fn = lib.snowllm_glm_kda_spec if spec else lib.snowllm_glm_kda
     tensors = [qkv, forget, beta, conv, a_log, dt, batch.cu_seqlens, batch.state_indices,
                batch.has_state, history, state, out]
@@ -210,6 +233,7 @@ def _sparse_entry(name):
     return fn
 
 
+@operator
 def sparse_produce(key, gate, ape, carry_k, carry_g, cu, lens, states, mapping, latent, index, kv, bs, spec=False, source_offset=0, *, accepted=None):
     """Publish index/carry; latent=None means the fused norm already stored KV."""
     m, b = key.shape[0], lens.numel()
@@ -236,6 +260,7 @@ def sparse_produce(key, gate, ape, carry_k, carry_g, cu, lens, states, mapping, 
     check(fn(*map(_p,tensors),m,b,bs,spec,source_offset,_stream()), "glm_sparse_produce")
 
 
+@operator
 def sparse_attention(q, kv, index, iq, iw, batch, meta, topk, scale, workspace, sinks, arena=None):
     """Native sparse selection/MLA pipeline with opaque shared scratch."""
     m = q.shape[0]
@@ -260,7 +285,7 @@ def sparse_attention(q, kv, index, iq, iw, batch, meta, topk, scale, workspace, 
         _chk(t,name,dtype,*shape)
     if meta.qmap.numel() != 2*m:
         raise SnowLLMError("GLM sparse query map needs a sequence/row pair per query")
-    out = arena.like(q) if arena is not None else torch.empty_like(q)
+    out = arena.like(q) if arena is not None else empty_like(q)
     check(lib.snowllm_glm_sparse_attention(*[_p(t) for t in (
           q,kv,index,iq,iw,out,meta.cu,batch.block_tables,batch.seq_lens,meta.qmap,
           meta.pool_lens,meta.row_seq,meta.positions,sinks,workspace)],
@@ -270,19 +295,22 @@ def sparse_attention(q, kv, index, iq, iw, batch, meta, topk, scale, workspace, 
 
 
 @functools.lru_cache(None)
+@operator
 def sparse_workspace_bytes(m, max_pools, topk):
     return _sparse_entry("attention_workspace_bytes")(m,max_pools,topk)
 
 
+@operator
 def sparse_cache_gather(kv, slots, block_size):
     _chk(kv, "GLM latent cache", torch.bfloat16, kv.shape[0], 512)
     _chk(slots, "GLM cache slots", torch.int32, slots.numel())
-    out = torch.empty(slots.numel(), 512, device=kv.device, dtype=kv.dtype)
+    out = empty(slots.numel(), 512, device=kv.device, dtype=kv.dtype)
     check(lib.snowllm_glm_sparse_cache_gather(_p(kv), _p(slots), _p(out), slots.numel(),
           kv.shape[0], block_size, _stream()), "glm_sparse_cache_gather")
     return out
 
 
+@operator
 def pack_qkv(q, k, v, out):
     m, n = q.shape
     for value, name in ((q, "q"), (k, "k"), (v, "v")):
@@ -292,6 +320,7 @@ def pack_qkv(q, k, v, out):
           "glm_pack_qkv")
 
 
+@operator
 def hc_mean(streams, out, ids=None):
     m, n = out.shape
     _chk(streams, "HC streams", torch.bfloat16, streams.shape[0], 4, n)
@@ -303,6 +332,7 @@ def hc_mean(streams, out, ids=None):
     check(lib.snowllm_glm_hc_mean(_p(streams), _p(ids), _p(out), m, n, _stream()), "glm_hc_mean")
 
 
+@operator
 def group_major(x, out):
     m, heads, n = x.shape
     _chk(x, "group input", torch.bfloat16, m, 64, n)
@@ -310,6 +340,7 @@ def group_major(x, out):
     check(lib.snowllm_glm_group_major(_p(x), _p(out), m, n, _stream()), "glm_group_major")
 
 
+@operator
 def rms_f32(x, out, eps):
     m, n = out.shape
     _chk(x, "RMS input", torch.bfloat16)
@@ -319,6 +350,7 @@ def rms_f32(x, out, eps):
     check(lib.snowllm_glm_rms_f32(_p(x), _p(out), m, n, eps, _stream()), "glm_rms_f32")
 
 
+@operator
 def hc_weighted_norm(streams, weights, gamma, out, eps):
     m = streams.shape[0]
     _chk(streams, "HC streams", torch.bfloat16, m, 4, 4096)
@@ -330,13 +362,15 @@ def hc_weighted_norm(streams, weights, gamma, out, eps):
 
 
 @functools.lru_cache(None)
+@operator
 def hc_norm_proj_workspace_bytes(m):
     fn = lib.snowllm_glm_hc_norm_proj_workspace_bytes
     fn.restype = ctypes.c_int64
     fn.argtypes = [ctypes.c_int]
-    return fn(m)
+    return workspace_capacity(('glm_hc_norm_proj',),m,fn)
 
 
+@operator
 def hc_norm_proj(streams, w, out, ws, eps):
     m = streams.shape[0]
     _chk(streams, "mHC streams", torch.bfloat16, m,4,4096)
@@ -349,13 +383,14 @@ def hc_norm_proj(streams, w, out, ws, eps):
           "glm_hc_norm_proj")
 
 
+@operator
 def grouped_proj(x, w, kind, arena=None):
     m, heads, k = x.shape
     _chk(x,"grouped input",torch.bfloat16,m,heads,k)
     n = lib.snowllm_glm_grouped_projection_cols(heads,k,kind)
     _chk(w,"grouped weight",torch.bfloat16,heads,n*k)
     out = (arena.new(m,heads,n,dtype=x.dtype) if arena is not None else
-           torch.empty(m,heads,n,dtype=x.dtype,device=x.device))
+           empty(m,heads,n,dtype=x.dtype,device=x.device))
     check(lib.snowllm_glm_grouped_projection(
           *[_p(t) for t in (x,w,out)],m,heads,k,kind,_stream()),
           "glm_grouped_proj")

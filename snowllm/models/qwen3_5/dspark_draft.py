@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import torch
+from ...ops.allocation import empty
 
 from ... import ops
 from ..._capi import SnowLLMError
@@ -16,7 +17,7 @@ class DSparkDraft(DFlashDraft):
             raise SnowLLMError("DSpark hidden rows do not match its proposal block")
         need = ops.dspark_markov_workspace_bytes(b, self.w["markov_w1"].shape[0],
                                                 self.geo.markov_rank, block)
-        scratch = torch.empty(need, dtype=torch.uint8, device=hidden.device)
+        scratch = empty(need, dtype=torch.uint8, device=hidden.device)
         ops.dspark_markov(logits[:, :self.w["markov_w1"].shape[0]],
                           self.w["markov_w1"], self.w["markov_w2"], anchor, block,
                           pre_head=hidden, conf_weight=self.w["conf_weight"],

@@ -190,8 +190,6 @@ class Compressor(nn.Module):
                           plan.n_work_dev, rot, fp8, dest, slots, ctx.cache.block_size,
                           kv[:plan.n_rows], None if score is None else score[:plan.n_rows], plan.src_row,
                           out=out)
-            if ops.tracing() is not None:
-                return
             if plan.keep_carry is not None:
                 dst, src = plan.keep_carry
                 ops.copy_rows(carried, carried, src_index=src, dst_index=dst)

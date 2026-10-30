@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -20,6 +21,7 @@ SUPPORTED_HEAD_DIMS = _supported("vision_supported_head_dims")
 SUPPORTED_LN_HIDDEN = _supported("vision_supported_ln_hidden")
 
 
+@operator
 def vision_layernorm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
                      out: torch.Tensor, eps: float) -> None:
     M, H = x.shape
@@ -34,6 +36,7 @@ def vision_layernorm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
 vision_gemm_scratch_bytes = _passthru("vision_gemm_scratch_bytes")
 
 
+@operator
 def vision_gemm_bias_act(a: torch.Tensor, b_shuffled: torch.Tensor, a_scratch: torch.Tensor,
                          out: torch.Tensor, bias: torch.Tensor | None,
                          residual: torch.Tensor | None, M: int, N: int, K: int, act: int) -> None:
@@ -44,6 +47,7 @@ def vision_gemm_bias_act(a: torch.Tensor, b_shuffled: torch.Tensor, a_scratch: t
           "vision_gemm_bias_act")
 
 
+@operator
 def vision_rope_qk(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, hidden: int,
                    num_heads: int, head_dim: int) -> None:
     M = qkv.shape[0]
@@ -53,12 +57,14 @@ def vision_rope_qk(qkv: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor, hidd
                                      _stream()), "vision_rope_qk")
 
 
+@operator
 def vision_attn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, o: torch.Tensor, S: int,
                 hidden: int, num_heads: int, head_dim: int) -> None:
     check(lib.snowllm_vision_attn(_p(q), _p(k), _p(v), _p(o), S, hidden, num_heads, head_dim,
                                   _stream()), "vision_attn")
 
 
+@operator
 def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
                          indices: torch.Tensor, weights: torch.Tensor | None = None) -> None:
     M, H = hidden.shape
@@ -74,6 +80,7 @@ def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
           "vision_pos_embed_add")
 
 
+@operator
 def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Tensor | None,
                      cu: torch.Tensor | None, out: torch.Tensor, num_heads: int,
                      head_dim: int) -> None:
@@ -99,6 +106,7 @@ def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Ten
           "vision_attention")
 
 
+@operator
 def vision_merge_norm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
                        out: torch.Tensor, eps: float, *, indices: torch.Tensor | None = None,
                        mean: torch.Tensor | None = None) -> None:

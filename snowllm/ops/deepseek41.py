@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+from .operation import operator
 import functools
 
 import torch
@@ -7,6 +8,7 @@ import torch
 from ._common import _chk, _p, _stream, check, lib, SnowLLMError
 
 
+@operator
 def hc_init(mix, pre=None):
     _chk(mix, "V4.1 HC initial mix", torch.float32, mix.shape[0], 24)
     if pre is not None:
@@ -19,11 +21,13 @@ def hc_init(mix, pre=None):
 
 
 @functools.lru_cache(None)
+@operator
 def attention_scratch_bytes(rows, compressed):
     query = getattr(lib, "snowllm_dsv41_attention_scratch_bytes", None)
     return query(rows, int(compressed)) if query is not None else 0
 
 
+@operator
 def attention(q, raw, table, positions, seq, sinks, out, window, *, compressed=None,
               comp_table=None, selection=None, counts=None, start=0, reference=False,
               scratch=None):
@@ -62,6 +66,7 @@ def attention(q, raw, table, positions, seq, sinks, out, window, *, compressed=N
         0 if selection is None else selection.shape[1], window, start, *extra, _stream()), "dsv41_attention")
 
 
+@operator
 def hc_mixes(x, weight, out, eps):
     rows, hc, hidden = x.shape
     _chk(x, "V4.1 HC residual", torch.bfloat16, rows, 4, hidden)
@@ -71,6 +76,7 @@ def hc_mixes(x, weight, out, eps):
         eps, _stream()), "dsv41_hc_mixes")
 
 
+@operator
 def fp8_quant(x):
     _chk(x, "V4.1 FP8 activation", torch.bfloat16)
     if x.numel() % 32:
@@ -78,6 +84,7 @@ def fp8_quant(x):
     check(lib.snowllm_dsv41_fp8_quant(_p(x), x.numel(), _stream()), "dsv41_fp8_quant")
 
 
+@operator
 def index_scores(q, key, table, weights, positions, seq, lengths, out, ratio,
                  candidates=None, candidate_block=8):
     rows = q.shape[0]
@@ -101,6 +108,7 @@ def index_scores(q, key, table, weights, positions, seq, lengths, out, ratio,
         0 if candidates is None else candidates.shape[1], candidate_block, _stream()), "dsv41_index_scores")
 
 
+@operator
 def candidate_scores(scores, out, positions, lengths, seq, block_positions, block_lengths, block):
     _chk(scores, "V4.1 candidate input", torch.float32)
     _chk(out, "V4.1 candidate scores", torch.float32)
@@ -116,6 +124,7 @@ def candidate_scores(scores, out, positions, lengths, seq, block_positions, bloc
         scores.shape[0], scores.shape[1], out.shape[1], block, _stream()), "dsv41_candidate_scores")
 
 
+@operator
 def engram_unpack(raw, out):
     _chk(raw, "Engram row bytes", torch.uint8)
     _chk(out, "Engram embeddings", torch.bfloat16)
@@ -124,6 +133,7 @@ def engram_unpack(raw, out):
     check(lib.snowllm_dsv41_engram_unpack(_p(raw), _p(out), raw.numel() // 264, _stream()), "dsv41_engram_unpack")
 
 
+@operator
 def engram_gate(x, kv, weight, out, eps):
     rows, hc, hidden = x.shape
     _chk(x, "Engram residual", torch.bfloat16, rows, 4, hidden)

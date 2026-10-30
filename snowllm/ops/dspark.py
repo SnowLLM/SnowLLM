@@ -1,19 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """DSpark arithmetic. Native owns weight layout, row dispatch and Markov scheduling."""
+from .operation import operator
 import functools
+from .allocation import empty
 import torch
 from .._capi import lib,check,SnowLLMError
 from ._common import _chk,_chk_rows,_p,_stream
 
 
+@operator
 def dspark_pack_weight(raw):
     n,k=raw.shape;_chk(raw,'DSpark raw weight',torch.bfloat16,n,k)
     need=lib.snowllm_dspark_weight_bytes(n,k)
-    packed=torch.empty(need,dtype=torch.uint8,device=raw.device).view(torch.bfloat16).view(n,k)
+    packed=empty(need,dtype=torch.uint8,device=raw.device).view(torch.bfloat16).view(n,k)
     check(lib.snowllm_dspark_pack_weight(_p(raw),_p(packed),n,k,_stream()),'dspark_pack_weight')
     return packed
 
 
+@operator
 def dspark_tap_mean(streams,out):
     m,hc,h=streams.shape
     if streams.stride(1)!=h or streams.stride(2)!=1:raise SnowLLMError('DSpark streams need dense inner dimensions')
@@ -24,16 +28,18 @@ def dspark_tap_mean(streams,out):
 
 
 @functools.lru_cache(None)
+@operator
 def dspark_context_workspace_bytes(m,n,k):return lib.snowllm_dspark_context_workspace_bytes(m,n,k)
 
 
+@operator
 def dspark_context(x,weight,out,workspace=None):
     m,k=x.shape;n,wk=weight.shape
     if wk!=k:raise SnowLLMError('DSpark context input/weight widths differ')
     _chk(x,'DSpark context',torch.bfloat16,m,k);_chk(weight,'DSpark packed fc',torch.bfloat16,n,k)
     _chk(out,'DSpark context output',torch.bfloat16,m,n)
     need=dspark_context_workspace_bytes(m,n,k)
-    if workspace is None:workspace=torch.empty(need,dtype=torch.uint8,device=x.device)
+    if workspace is None:workspace=empty(need,dtype=torch.uint8,device=x.device)
     _chk(workspace,'DSpark context workspace',torch.uint8)
     if workspace.numel()<need:raise SnowLLMError('DSpark context workspace too small')
     check(lib.snowllm_dspark_context(*[_p(t) for t in (x,weight,out,workspace)],m,n,k,workspace.numel(),_stream()),'dspark_context')
@@ -41,9 +47,11 @@ def dspark_context(x,weight,out,workspace=None):
 
 
 @functools.lru_cache(None)
+@operator
 def dspark_markov_workspace_bytes(b,v,rank,block):return lib.snowllm_dspark_markov_workspace_bytes(b,v,rank,block)
 
 
+@operator
 def dspark_markov(base,w1,w2,anchor,block,*,pre_head=None,conf_weight=None,conf_bias=None,confidence=None,workspace=None,out=None,fp32_bias=False):
     b=anchor.numel();v,rank=w1.shape
     _chk_rows(base,'DSpark base logits',torch.float32)
@@ -60,10 +68,10 @@ def dspark_markov(base,w1,w2,anchor,block,*,pre_head=None,conf_weight=None,conf_
         if conf_bias is not None and conf_bias.numel()!=1:raise SnowLLMError('DSpark confidence bias must be scalar')
         _chk(confidence,'DSpark confidence output',torch.float32,b,block)
     need=dspark_markov_workspace_bytes(b,v,rank,block)
-    if workspace is None:workspace=torch.empty(need,dtype=torch.uint8,device=base.device)
+    if workspace is None:workspace=empty(need,dtype=torch.uint8,device=base.device)
     _chk(workspace,'DSpark Markov workspace',torch.uint8)
     if workspace.numel()<need:raise SnowLLMError('DSpark Markov workspace too small')
-    if out is None:out=torch.empty(b,block,dtype=torch.int64,device=base.device)
+    if out is None:out=empty(b,block,dtype=torch.int64,device=base.device)
     _chk(out,'DSpark output',torch.int64,b,block)
     check(lib.snowllm_dspark_markov(*[_p(t) for t in (base,w1,w2,anchor,pre_head,conf_weight,conf_bias,out,confidence,workspace)],
           b,v,rank,block,base.stride(0),h,ps,workspace.numel(),int(fp32_bias),_stream()),'dspark_markov')

@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import ctypes
 import functools
 
+from .allocation import empty
 import torch
 
 from .._capi import check, lib
@@ -11,6 +13,7 @@ from ._common import _chk, _chk_dense, _chk_rows, _p, _stream
 from .attention_full import _PagedAttentionStep
 
 
+@operator
 def qwen4exp_ple_gate(key: torch.Tensor, query: torch.Tensor, value: torch.Tensor,
                       gated: torch.Tensor, gate: torch.Tensor | None = None) -> None:
     T, n_hc, E = key.shape
@@ -24,6 +27,7 @@ def qwen4exp_ple_gate(key: torch.Tensor, query: torch.Tensor, value: torch.Tenso
                                         n_hc, E, _stream()), "qwen4exp_ple_gate")
 
 
+@operator
 def qwen4exp_ple_conv(x: torch.Tensor, state: torch.Tensor, state_indices: torch.Tensor,
                       cu_seqlens: torch.Tensor | None, has_state: torch.Tensor | None,
                       w: torch.Tensor, hidden: torch.Tensor, gated: torch.Tensor,
@@ -47,6 +51,7 @@ def qwen4exp_ple_conv(x: torch.Tensor, state: torch.Tensor, state_indices: torch
                                         C, kernel, dilation, _stream()), "qwen4exp_ple_conv")
 
 
+@operator
 def qwen4exp_ple_state_checkpoint(x: torch.Tensor, state: torch.Tensor,
                                   state_indices: torch.Tensor, cu_seqlens: torch.Tensor | None,
                                   has_state: torch.Tensor | None, ckpt_at: torch.Tensor,
@@ -67,6 +72,7 @@ def qwen4exp_ple_state_checkpoint(x: torch.Tensor, state: torch.Tensor,
         "qwen4exp_ple_state_checkpoint")
 
 
+@operator
 def qwen4exp_indexer_pool_norm(raw: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor,
                                ratio: int, eps: float) -> None:
     n_blocks, D = out.shape
@@ -77,6 +83,7 @@ def qwen4exp_indexer_pool_norm(raw: torch.Tensor, gamma: torch.Tensor, out: torc
                                                  eps, _stream()), "qwen4exp_indexer_pool_norm")
 
 
+@operator
 def qwen4exp_indexer_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> None:
     M, heads = (x.shape[0], x.shape[1]) if x.dim() == 3 else (x.shape[0], 1)
     _chk(cos, "cos", torch.float32, M, cos.shape[1])
@@ -85,6 +92,7 @@ def qwen4exp_indexer_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor)
           "qwen4exp_indexer_rope")
 
 
+@operator
 def qwen4exp_qsa_gather(k_cache: torch.Tensor, v_cache: torch.Tensor,
                         block_tables: torch.Tensor, sel: torch.Tensor, sel_cnt: torch.Tensor,
                         positions: torch.Tensor, seq_of_row: torch.Tensor, out_k: torch.Tensor,
@@ -109,6 +117,7 @@ def _qsa_produce_workspace_bytes(batch, width, ratio):
     return lib.snowllm_qwen4exp_qsa_produce_workspace_bytes(batch, width, ratio)
 
 
+@operator
 def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: torch.Tensor,
                          resume_slots: torch.Tensor, snap_slots: torch.Tensor,
                          cu_seqlens: torch.Tensor, seq_lens: torch.Tensor, positions: torch.Tensor,
@@ -132,7 +141,7 @@ def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: to
     _chk(inv_freq, "inv_freq", torch.float32)
     _chk(pool, "pool", torch.bfloat16, pool.shape[0], D)
     need = _qsa_produce_workspace_bytes(B, D, ratio)
-    workspace = torch.empty(need, dtype=torch.uint8, device=k_raw.device)
+    workspace = empty(need, dtype=torch.uint8, device=k_raw.device)
     scaled = mscale is not None and hasattr(lib, 'snowllm_qwen4exp_qsa_produce_snapshot_scaled')
     if scaled:
         _chk(mscale, "RoPE scale", torch.float32, 1)
@@ -145,6 +154,7 @@ def qwen4exp_qsa_produce(k_raw: torch.Tensor, carry: torch.Tensor, carry_pos: to
         _p(workspace), need, _stream()), "qwen4exp_qsa_produce")
 
 
+@operator
 def qwen4exp_indexer_q(qk: torch.Tensor, gamma: torch.Tensor, cos: torch.Tensor,
                        sin: torch.Tensor, q: torch.Tensor, eps: float) -> None:
     M, heads, D = q.shape
@@ -157,6 +167,7 @@ def qwen4exp_indexer_q(qk: torch.Tensor, gamma: torch.Tensor, cos: torch.Tensor,
                                          M, heads, D, eps, _stream()), "qwen4exp_indexer_q")
 
 
+@operator
 def qwen4exp_qsa_tile_axis(sel: torch.Tensor, cnt: torch.Tensor, cells: torch.Tensor,
                            axis: torch.Tensor, axis_len: torch.Tensor, mask: torch.Tensor,
                            n_blocks: int, tile_rows: int, ratio: int) -> None:
@@ -174,10 +185,12 @@ def qwen4exp_qsa_tile_axis(sel: torch.Tensor, cnt: torch.Tensor, cells: torch.Te
                                              _stream()), "qwen4exp_qsa_tile_axis")
 
 
+@operator
 def qwen4exp_qsa_q_tile() -> int:
     return lib.snowllm_qwen4exp_qsa_q_tile()
 
 
+@operator
 def qwen4exp_qsa_attn_prefill(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor,
                               out: torch.Tensor, cu_seqlens_q: torch.Tensor,
                               block_tables: torch.Tensor, seq_lens: torch.Tensor,
@@ -218,21 +231,25 @@ class _PleStep(ctypes.Structure):
         (n,ctypes.c_int64) for n in ('B','M','C','kernel','dilation','slot_count')]+[('prefill',ctypes.c_int)]
 
 
+@operator
 def qsa_group_rows():
     return lib.snowllm_qsa_group_rows()
 
 
+@operator
 def qsa_decode_rows(rows):
     return lib.snowllm_qsa_decode_rows(rows)
 
 
+@operator
 def qsa_attention(ctx, module, q, pools, out, proj):
+    decode_ws = ctx.arena.workspace(0 if ctx.batch.is_prefill else ctx.decode_ws_bytes)
     b=ctx.batch
     gate=module.shuf(ctx,proj)
     ks,vs=pools[2:] if len(pools)==4 else (None,None)
     att=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
         (q,pools[0],pools[1],ks,vs,b.cu_seqlens,b.block_tables,b.seq_lens,b.q_block_map)],gate[0]),
-        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan),_p(ctx.decode_ws)),b.batch_size,
+        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan),_p(decode_ws)),b.batch_size,
         b.block_tables.shape[1],b.total_q_blocks,ctx.num_slots,b.tokens_per_req,ctx.block_size,
         gate[1],gate[2],module.attn_scale,int(b.varlen_attn))
     jobs=(_QsaJob*len(ctx.qsa_lens or []))(*[
@@ -255,6 +272,7 @@ def qsa_attention(ctx, module, q, pools, out, proj):
         check(lib.snowllm_qsa_attention(ctypes.byref(step),_p(ws),need,_stream()),'qsa_attention')
 
 
+@operator
 def ple_step(ctx,x,state,w,hidden,gated,out,dilation):
     b=ctx.batch
     step=_PleStep((ctypes.c_void_p*8)(*[_p(t) for t in
@@ -266,6 +284,7 @@ def ple_step(ctx,x,state,w,hidden,gated,out,dilation):
         check(lib.snowllm_ple_step(ctypes.byref(step),_p(ws),need,_stream()),'ple_step')
 
 
+@operator
 def qsa_job_plan(cumulative_lengths,sequence_lengths):
     b=len(sequence_lengths)
     if len(cumulative_lengths)!=b+1:

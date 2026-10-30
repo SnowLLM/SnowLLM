@@ -13,7 +13,7 @@ def auxiliary_bytes(r, kv):
     from ..checkpoint.loader import yarn_rope_table
     with ops.dry_load() as dry:
         sampler = object.__new__(Sampler)
-        sampler.reserve_device(r.max_num_seqs*r.T, r.geo.vocab_size)
+        sampler.reserve_device(r.max_num_seqs*r.T, r.geo.vocab_size,arena=r.arena)
         tables, stage = r.create_inputs()
         spec, inv = None, None
         geo = kv.get('draft_geo')

@@ -104,10 +104,12 @@ class ForwardContext:
     path: ops.Path
     arena: ops.Arena
     plan_key: tuple
+    defer_end: bool = False
 
     x: torch.Tensor | None = None
     decode_plan: torch.Tensor | None = None
     decode_ws: torch.Tensor | None = None
+    decode_ws_bytes: int = 0
     num_slots: int = 0
     block_size: int = 0
     kv_int8: bool = False
@@ -149,7 +151,8 @@ class ForwardContext:
         self.sin = a.new(M, 64, dtype=torch.float32)
 
     def close(self) -> None:
-        self.end_plan()
+        if not self.defer_end:
+            self.end_plan()
 
     def apply_mscale(self) -> None:
         self.cos.mul_(self.mscale)
@@ -223,6 +226,7 @@ class Glm5NextContext(ForwardContext):
     next_ids: torch.Tensor | None = None
     max_pools: int = 0
     require_plan: bool = False
+    plan_workspace: bool = True
 
     def open(self) -> None:
         from ..ops.glm5_next import prepare_embedding
@@ -231,7 +235,10 @@ class Glm5NextContext(ForwardContext):
             self.batch,self.embedding_weight,self.max_pools,self.next_ids,self.arena)
 
     def workspace(self, n: int) -> None:
-        self.ws = self.scratch(n)
+        if self.arena is None or not self.plan_workspace:
+            self.ws = self.scratch(n)
+        else:
+            self.ws = self.arena.workspace(n,'workspace:glm')
 
 
 @dataclass
@@ -255,6 +262,8 @@ class Dsv4Context(ForwardContext):
 
     def close(self) -> None:
         self.rot = self.banks = self.hidden = None
+        self.mixes = self.pre_mix = self.selection = self.selection_counts = None
+        self.candidates = self.engram_hashes = None
         super().close()
 
 
@@ -311,7 +320,8 @@ class Dsv4Walker:
                 b.ced_keep,
                 projection_reuse,
                 tiles,
-                tuple((int(pl.keep_dst is not None), int(pl.n_new > 0), int(pl.max_n_comp > 0))
+                tuple((int(pl.keep_dst is not None), int(pl.n_new > 0), int(pl.max_n_comp > 0),
+                       int(pl.keep_carry is not None),int(pl.keep_new is not None))
                       for _, pl in sorted(b.plans.items())))
 
     def plan_widths(self, widest: int) -> tuple:
@@ -327,7 +337,7 @@ class Dsv4Walker:
         planner = self.arena.planner
         if planner.buf is None:
             return
-        self.arena.plan(ctx.plan_key, ctx.M, lambda: stack(ctx), after)
+        self.arena.plan(ctx.plan_key, ctx.M, lambda: stack(ctx), after,lifetimes='uses')
 
     def run(self, stack: object, tokens: torch.Tensor, positions: torch.Tensor,
             cache: object, *, ced: bool = True, final: bool = True,

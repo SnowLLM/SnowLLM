@@ -98,7 +98,8 @@ class DSparkDraft:
                                   embedded=noise, pre_head=pre_head,
                                   path=ops.Path.DECODE if self.geo.stack.v41 else None)
         self.walker.plan_for(self.stack, ctx)
-        return self.stack(ctx)
+        with self.walker.arena.activate():
+            return self.stack(ctx)
 
     def markov(self, base: torch.Tensor, anchor: torch.Tensor, block: int,
                pre_head: torch.Tensor | None = None,

@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import torch
 
 from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _chk_norm_x, _p, _stream
 
 
+@operator
 def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
     if x.ndim < 2 or x.shape[-1] == 0:
         raise SnowLLMError("RMSNorm needs rows with a positive final dimension")
@@ -20,6 +22,7 @@ def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
         torch.mul(out, gamma, out=out)
 
 
+@operator
 def layernorm_rows(x, gamma, bias, out, eps):
     if x.ndim < 2:
         raise SnowLLMError("LayerNorm needs rows")
@@ -35,6 +38,7 @@ def layernorm_rows(x, gamma, bias, out, eps):
                                    x.numel() // width, width, eps, _stream()), "layernorm_rows")
 
 
+@operator
 def rmsnorm_gated_rows(x, gate, gamma, out, eps, *, sigmoid=False):
     if x.ndim < 2:
         raise SnowLLMError("gated RMSNorm needs rows")
@@ -50,6 +54,7 @@ def rmsnorm_gated_rows(x, gate, gamma, out, eps, *, sigmoid=False):
           "rmsnorm_gated_rows")
 
 
+@operator
 def rmsnorm(x: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor, eps: float) -> None:
     M, H = x.shape
     _chk(x, "x", torch.bfloat16, M, H)
@@ -58,6 +63,7 @@ def rmsnorm(x: torch.Tensor, gamma: torch.Tensor, out: torch.Tensor, eps: float)
     check(lib.snowllm_rmsnorm(_p(x), _p(gamma), _p(out), M, eps, _stream()), "rmsnorm")
 
 
+@operator
 def dsv4_rmsnorm(x: torch.Tensor, gamma: torch.Tensor | None, out: torch.Tensor,
                  eps: float) -> None:
     H = x.shape[-1]
@@ -71,6 +77,7 @@ def dsv4_rmsnorm(x: torch.Tensor, gamma: torch.Tensor | None, out: torch.Tensor,
                                    _stream()), "dsv4_rmsnorm")
 
 
+@operator
 def rmsnorm_residual(x: torch.Tensor, residual: torch.Tensor, gamma: torch.Tensor,
                      out: torch.Tensor, eps: float) -> None:
     M, H = x.shape

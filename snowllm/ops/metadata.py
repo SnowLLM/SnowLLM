@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tensor and logical metadata descriptors; Kernels owns execution and staging."""
+from .operation import operator
 import ctypes
 import math
+from .allocation import empty
 import torch
 from .._capi import lib,check,SnowLLMError
 from ._common import _overlaps, _p,_stream,_chk,_chk_rows
@@ -15,6 +17,7 @@ class _Range(ctypes.Structure):
         (n,ctypes.c_int64) for n in ('table_stride','page','sequence')]
 
 
+@operator
 def metadata_ranges(groups,*,table=None,page=0):
     """Build logical integer vectors from CPU range descriptors in one native entry.
 
@@ -24,7 +27,7 @@ def metadata_ranges(groups,*,table=None,page=0):
     outputs=[];jobs=[]
     for dtype,ranges in groups:
         count=sum(r[2] for r in ranges)
-        out=torch.empty(count,dtype=dtype,device='cuda');outputs.append(out);off=0
+        out=empty(count,dtype=dtype,device='cuda');outputs.append(out);off=0
         for r in ranges:
             first,step,n=r[:3]
             sequence=r[3] if len(r)>3 else -1
@@ -39,6 +42,7 @@ def metadata_ranges(groups,*,table=None,page=0):
     return outputs
 
 
+@operator
 def fill_ranges_(groups):
     jobs=[]
     for out,first,step in groups:
@@ -68,6 +72,20 @@ def _copy_descriptor(dst,src,*,src_index=None,dst_index=None,count=None):
     targets=dst if isinstance(dst,tuple) else (dst,)
     if len(sources)!=len(targets):raise SnowLLMError('row copy field counts differ')
     ss,dd=tuple(map(_matrix,sources)),tuple(map(_matrix,targets))
+    values = (*ss,*dd,src_index,dst_index)
+    address = _p
+    if any(t is not None and t.device.type=='meta' for t in values):
+        bases,at = {},4096
+        # Native layout queries inspect pointer ranges, never tensor contents.
+        def address(t):
+            nonlocal at
+            if t is None:return 0
+            storage = t.untyped_storage()
+            key = storage._cdata
+            if key not in bases:
+                bases[key] = at
+                at += -(-(storage.nbytes()+4096)//4096)*4096
+            return bases[key]+t.storage_offset()*t.element_size()
     a,b=ss[0],dd[0]
     for tensors,name in ((ss,'source'),(dd,'destination')):
         first=tensors[0]
@@ -84,30 +102,46 @@ def _copy_descriptor(dst,src,*,src_index=None,dst_index=None,count=None):
             raise SnowLLMError('row copy index counts differ')
     n=(indices[0].numel() if indices else min(a.shape[0],b.shape[0])) if count is None else count
     if any(i.numel()<n for i in indices):raise SnowLLMError('row copy index buffer is too small')
-    step=_RowCopy((ctypes.c_void_p*2)(*[_p(t) for t in ss]),
-                  (ctypes.c_void_p*2)(*[_p(t) for t in dd]),_p(src_index),_p(dst_index),
+    step=_RowCopy((ctypes.c_void_p*2)(*[address(t) for t in ss]),
+                  (ctypes.c_void_p*2)(*[address(t) for t in dd]),address(src_index),address(dst_index),
                   n,b.shape[1],a.shape[1],a.shape[0],b.shape[0],a.stride(0),b.stride(0),
                   _TYPES.get(a.dtype,-1),_TYPES.get(b.dtype,-1),index_type,len(ss))
     return step
 
 
+def _copy_workspace_size(step):
+    need = lib.snowllm_row_copy_workspace_bytes(ctypes.byref(step))
+    from .trace import tracing
+    if need and tracing() is not None:
+        bound = _RowCopy.from_buffer_copy(step)
+        # Indexed in-place staging is bounded by the participating row capacities.
+        bound.rows = max(step.rows,step.src_rows,step.dst_rows)
+        if not step.src_index:bound.rows = min(bound.rows,step.src_rows)
+        if not step.dst_index:bound.rows = min(bound.rows,step.dst_rows)
+        need = lib.snowllm_row_copy_workspace_bytes(ctypes.byref(bound))
+    return need
+
+
+@operator
 def copy_rows(dst,src,*,src_index=None,dst_index=None,count=None):
     step=_copy_descriptor(dst,src,src_index=src_index,dst_index=dst_index,count=count)
     b=dst[0] if isinstance(dst,tuple) else dst
-    need=lib.snowllm_row_copy_workspace_bytes(ctypes.byref(step))
-    ws=torch.empty(need,dtype=torch.uint8,device=b.device) if need else None
+    need=_copy_workspace_size(step)
+    ws=empty(need,dtype=torch.uint8,device=b.device)
     check(lib.snowllm_row_copy(ctypes.byref(step),_p(ws),need,_stream()),'row_copy')
     return dst
 
 
+@operator
 def copy_batch(targets,sources):
     if len(targets)!=len(sources):raise SnowLLMError('copy batch counts differ')
     jobs=(_RowCopy*len(targets))(*[_copy_descriptor(a,b) for a,b in zip(targets,sources)])
-    need=lib.snowllm_row_copies_workspace_bytes(jobs,len(jobs))
-    ws=torch.empty(need,dtype=torch.uint8,device=targets[0].device) if need else None
+    need=max((_copy_workspace_size(job) for job in jobs),default=0)
+    ws=empty(need,dtype=torch.uint8,device=targets[0].device)
     check(lib.snowllm_row_copies(jobs,len(jobs),_p(ws),need,_stream()),'row_copies')
 
 
+@operator
 def copy_tensor(dst,src):
     if dst.shape!=src.shape or dst.ndim>8:
         raise SnowLLMError('tensor copy requires matching shapes with at most eight axes')
@@ -144,6 +178,7 @@ def copy_tensor(dst,src):
     return dst
 
 
+@operator
 def copy_from_host(dst,data):
     _chk(dst,'host upload destination',dst.dtype)
     payload=memoryview(data)
@@ -158,20 +193,23 @@ def copy_from_host(dst,data):
     return dst
 
 
+@operator
 def gather_rows(src,ids,*,out=None):
-    if out is None:out=torch.empty((ids.numel(),*src.shape[1:]),dtype=src.dtype,device=src.device)
+    if out is None:out=empty((ids.numel(),*src.shape[1:]),dtype=src.dtype,device=src.device)
     return copy_rows(out,src,src_index=ids)
 
 
+@operator
 def causal_compress_mask(positions,lengths,seq,ratio,stride):
     m=positions.numel();_chk(positions,'mask positions',torch.int64,m)
     _chk(lengths,'compressed lengths',torch.int32,lengths.numel());_chk(seq,'mask sequences',torch.int32,m)
-    out=torch.empty(m,stride,dtype=torch.int8,device=positions.device)
+    out=empty(m,stride,dtype=torch.int8,device=positions.device)
     check(lib.snowllm_causal_compress_mask(_p(positions),_p(lengths),_p(seq),_p(out),m,
           lengths.numel(),stride,ratio,_stream()),'causal_compress_mask')
     return out
 
 
+@operator
 def qsa_metadata(states,positions,lens,m,ratio,heads,weight,prefill,arena,*,max_prefill_seqs=0):
     b=lens.numel();slots=states.view(b,-1);pos=positions[:,:m]
     _chk(slots,'QSA states',torch.int32,b,slots.shape[1]);_chk_rows(pos,'QSA positions',torch.int64)
@@ -192,23 +230,25 @@ def qsa_metadata(states,positions,lens,m,ratio,heads,weight,prefill,arena,*,max_
     return resume,snaps.view(-1),out_pos,comp,weights,cells
 
 
+@operator
 def spec_accept(tokens,drafts,*,out=None):
     b,t=tokens.shape;_chk_rows(tokens,'verified tokens',torch.int64);_chk_rows(drafts,'draft tokens',torch.int64)
     if drafts.shape!=(b,t-1):raise SnowLLMError('draft and verify token shapes differ')
-    if out is None:out=torch.empty(b,dtype=torch.int64,device=tokens.device)
+    if out is None:out=empty(b,dtype=torch.int64,device=tokens.device)
     _chk(out,'accepted lengths',torch.int64,b)
     check(lib.snowllm_spec_accept(_p(tokens),_p(drafts),_p(out),b,t,tokens.stride(0),drafts.stride(0),_stream()),'spec_accept')
     return out
 
 
+@operator
 def spec_first_metadata(tokens,accepted,cached,table,page,*,out=None):
     b,t=tokens.shape;_chk_rows(tokens,'verified tokens',torch.int64)
     _chk(accepted,'accepted lengths',torch.int64,b);_chk(cached,'cached lengths',torch.int64,b)
     _chk(table,'spec table',torch.int32,b,table.shape[1])
     if out is None:
-        out=(torch.empty(b*t,dtype=torch.int64,device=tokens.device),
-             torch.empty(b*t,dtype=torch.int32,device=tokens.device),
-             torch.empty(b,dtype=torch.int64,device=tokens.device))
+        out=(empty(b*t,dtype=torch.int64,device=tokens.device),
+             empty(b*t,dtype=torch.int32,device=tokens.device),
+             empty(b,dtype=torch.int64,device=tokens.device))
     ids,slots,rows=out
     for v,name,dtype,n in ((ids,'draft IDs',torch.int64,b*t),(slots,'draft slots',torch.int32,b*t),
                           (rows,'accepted rows',torch.int64,b)):
@@ -218,21 +258,23 @@ def spec_first_metadata(tokens,accepted,cached,table,page,*,out=None):
     return ids,slots,rows
 
 
+@operator
 def spec_step_table_width(sinks,window,page):
     return lib.snowllm_spec_step_table_width(sinks,window,page)
 
 
+@operator
 def spec_step_metadata(cached,accepted,delta,table,step,page,sinks,window,*,out=None):
     b=cached.numel()
     for t in (cached,accepted,delta):_chk(t,'spec lengths/deltas',torch.int64,b)
     _chk(table,'spec table',torch.int32,b,table.shape[1])
     width=spec_step_table_width(sinks,window,page)
     if out is None:
-        out=(torch.empty(3,b,dtype=torch.int64,device=table.device),
-             torch.empty(b,dtype=torch.int32,device=table.device),
-             torch.empty(b,dtype=torch.int32,device=table.device),
-             torch.empty(b,dtype=torch.int64,device=table.device),
-             torch.empty(b,width,dtype=torch.int32,device=table.device) if width else table)
+        out=(empty(3,b,dtype=torch.int64,device=table.device),
+             empty(b,dtype=torch.int32,device=table.device),
+             empty(b,dtype=torch.int32,device=table.device),
+             empty(b,dtype=torch.int64,device=table.device),
+             empty(b,width,dtype=torch.int32,device=table.device) if width else table)
     pos,slots,lens,ends,out_table=out
     _chk(pos,'draft positions',torch.int64,3,b)
     for v,name,dtype in ((slots,'draft slots',torch.int32),(lens,'draft lengths',torch.int32),
@@ -244,6 +286,7 @@ def spec_step_metadata(cached,accepted,delta,table,step,page,sinks,window,*,out=
     return pos,slots,out_table,lens
 
 
+@operator
 def draft_metadata(requests,i64,i32,lens,block,mask):
     _chk(requests,'draft requests',torch.int64,4,lens.numel())
     b=lens.numel();m=b*block

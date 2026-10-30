@@ -11,6 +11,8 @@ from . import moe
 from ._common import _p, _stream, drying, empty_bytes, host_memory, zero_bytes
 from .inference import _weight, _weights
 from .trace import tracing
+from .operation import operator
+from .allocation import activate
 
 
 def _sizes(fmt, count, role):
@@ -343,6 +345,7 @@ class CachedExperts:
     def workspace_bytes(self, rows):
         return lib.snowllm_moe_cache_workspace_bytes(rows)
 
+    @operator
     def forward(self, hidden, router, shared_gate, shared_down, out, workspace,
                 token_ids=None, tid2eid=None):
         store = self.store
@@ -407,7 +410,8 @@ class CachedExperts:
                         shared_computed = True
                         store.hits_done.record(store.stream)
                         try:
-                            with torch.cuda.stream(store.io_stream):
+                            # IO uses independently reserved cache and staging buffers.
+                            with activate(None), torch.cuda.stream(store.io_stream):
                                 store.load_many(self.layer, pending, self.gate_up, self.down)
                                 store.io_ready.record(store.io_stream)
                         except BaseException:
@@ -423,7 +427,7 @@ class CachedExperts:
                             store.io_stream.wait_stream(store.stream)
                         else:
                             store.io_stream.wait_event(store.route_ready)
-                        with torch.cuda.stream(store.io_stream):
+                        with activate(None), torch.cuda.stream(store.io_stream):
                             store.load_many(self.layer, pending, self.gate_up, self.down)
                             store.io_ready.record(store.io_stream)
                         store.stream.wait_event(store.io_ready)

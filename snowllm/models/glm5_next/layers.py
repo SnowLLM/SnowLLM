@@ -53,11 +53,11 @@ class Projection(nn.Module):
         n,_,need,cache = projection_plan(self,m,dtype)
         out = out if out is not None else _activation(x,m,n,ctx=ctx,dtype=dtype)
         ws = None
-        if need:
-            if ctx is not None:
-                ctx.workspace(need)
-                ws = ctx.ws
-            elif cache:
+        if ctx is not None:
+            ctx.workspace(need)
+            ws = ctx.ws
+        elif need:
+            if cache:
                 if self._decode_ws is None or self._decode_ws.numel() < need:
                     self._decode_ws = torch.empty(need,dtype=torch.uint8,device=x.device)
                 ws = self._decode_ws
@@ -237,39 +237,54 @@ class SparseAttention(nn.Module):
         self.sinks = _cache(slabs, (self.cfg["num_attention_heads"],), torch.float32).fill_(-torch.inf)
 
     def forward(self,x,ctx):
-        qa_raw,latent_raw,raw_key,gates = project_many(
-            x,(self.q_a,self.kv_a,self.index_k,self.index_gate),ctx)
-        return self._forward(x,ctx,qa_raw,latent_raw,raw_key,gates)
+        return self._forward([x, *project_many(
+            x,(self.q_a,self.kv_a,self.index_k,self.index_gate),ctx)],ctx)
 
     def forward_hc(self, streams, weights, gamma, eps, ctx):
         x,projections=project_hc(streams,weights,gamma,eps,
                                 (self.q_a,self.kv_a,self.index_k,self.index_gate),ctx)
-        return self._forward(x,ctx,*projections)
+        projections.insert(0,x)
+        del x
+        return self._forward(projections,ctx)
 
-    def _forward(self,x,ctx,qa_raw,latent_raw,raw_key,gates):
+    def _forward(self,projections,ctx):
+        x,qa_raw,latent_raw,raw_key,gates = projections
+        # Caller frames must not retain projections past their last use below.
+        projections.clear()
         c,b = self.cfg,ctx.batch
         m,heads = x.shape[0],c["num_attention_heads"]
         qa = norm(qa_raw,self.q_norm,c["rms_norm_eps"],ctx)
+        del qa_raw
         qb,iq = project_many(qa,(self.q_b,self.index_q),ctx)
+        del qa
         q = self.wk(qb.view(m,heads,c["qk_nope_head_dim"]),ctx)
+        del qb
         ops.latent_norm_store(latent_raw,self.kv_norm,self.kv,b.slot_mapping,
                               mode=0,eps=c["rms_norm_eps"])
+        del latent_raw
         iq = iq.view(m,c["index_n_heads"],c["index_head_dim"])
         ik = _activation(raw_key,*raw_key.shape,ctx=ctx)
         ops.layernorm_rows(raw_key, self.index_norm, self.index_bias, ik, c["layer_norm_eps"])
+        del raw_key
         iw = self.index_weight(x,torch.float32,ctx=ctx)
+        del x
         scaled_iw = _activation(iw,*iw.shape,ctx=ctx)
         ops.dsv4_indexer_weights(iw,scaled_iw,(c["index_n_heads"]*c["index_head_dim"])**-0.5)
+        del iw
         sparse_produce(ik,gates,self.ape,self.carry_k,self.carry_g,ctx.sparse.cu,
                        b.seq_lens,b.state_indices,b.slot_mapping,None,self.index,self.kv,self.bs,
                        spec=b.chunk_decode, source_offset=b.carry_source_offset,
                        accepted=b.num_accepted if not b.chunk_decode and not b.is_prefill else None)
+        del ik,gates
         # One scratch buffer is shared sequentially by all trunk and MTP layers.
         ctx.workspace(sparse_workspace_bytes(m,ctx.sparse.max_pools,c["index_topk"]))
         result = sparse_attention(q,self.kv,self.index,iq,scaled_iw,b,ctx.sparse,
                                   c["index_topk"],c["qk_nope_head_dim"]**-0.5,ctx.ws,self.sinks,
                                   getattr(ctx,"arena",None))
-        return self.output(self.wv(result,ctx).reshape(m,-1),ctx=ctx)
+        del q,iq,scaled_iw
+        value = self.wv(result,ctx)
+        del result
+        return self.output(value.reshape(m,-1),ctx=ctx)
 
 
 class DenseMLP(nn.Module):
@@ -329,6 +344,7 @@ class Glm5NextForConditionalGeneration(nn.Module):
         x, ctx.embedded = ctx.embedded, None
         streams = _activation(x,m,self.geo.hc_mult,self.geo.hidden,ctx=ctx)
         ops.dsv4_hc_broadcast(x,streams)
+        del x
         for layer in self.layers:
             streams = layer(streams, ctx)
         # NextN consumes the post-norm 4096-wide hidden, including every prefill row.
@@ -369,7 +385,9 @@ class Glm5NextMTP(nn.Module):
         cat = _activation(hidden,m,2*h,ctx=ctx)
         ops.mtp_pre_fc(embed,hidden,self.enorm,self.hnorm,cat,self.eps,
                        round_before_weight=True)
+        del embed
         x = self.fc(cat,ctx=ctx)
+        del cat
         x = add(x,self.attention(norm(x,self.anorm,self.eps,ctx),ctx),ctx)
         # The cache needs every row; the position-wise FFN/head needs only the last
         # accepted row in each sequence, just like the shared prefill runner.

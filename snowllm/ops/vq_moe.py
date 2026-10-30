@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from .operation import operator
 import ctypes
 import math
 
@@ -30,6 +31,7 @@ class VQExpertWeight:
         self.blob, self.layout, self.normalized_book = blob, layout, normalized_book
 
 
+@operator
 def vq_moe_workspace_bytes(rows: int, weight: VQExpertWeight, topk: int) -> int:
     if not hasattr(lib, "snowllm_vq_moe"):
         raise SnowLLMError("this kernel library has no VQ MoE support; rebuild SnowLLM-Kernels")
@@ -45,6 +47,7 @@ def vq_moe_workspace_bytes(rows: int, weight: VQExpertWeight, topk: int) -> int:
     return need if rows else 0
 
 
+@operator
 def fused_moe_vq(hidden: torch.Tensor, router: torch.Tensor, bias: torch.Tensor | None,
                  experts: VQExpertWeight, shared_gate: torch.Tensor, shared_up: torch.Tensor,
                  shared_down: torch.Tensor, out: torch.Tensor, workspace: torch.Tensor,

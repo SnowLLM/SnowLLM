@@ -2,7 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
+import dataclasses
 import functools
+from types import SimpleNamespace
 import weakref
 from collections.abc import Callable, Iterator, Sequence
 
@@ -10,18 +12,35 @@ import torch
 
 from .._capi import LAUNCHES, SnowLLMError, lib
 from ._common import DryLoad, dry_alloc
+from ..memory_plan import Buffer, allocate, live_peak
 
 ALIGN = 512
 
 
 class Trace:
-    def __init__(self, launch: bool) -> None:
+    def __init__(self, launch: bool, *, lifetimes: str = 'references') -> None:
+        if lifetimes not in ('references', 'uses'):
+            raise ValueError('lifetimes must be references or uses')
         self.launch = launch
+        self.lifetimes = lifetimes
         self.calls: list[str] = []
         self.owned: list[tuple] = []
         self._range: dict[int, list] = {}
         self._refs: list = []
         self.tick = 0
+        self.operations: list[dict] = []
+        self.unmarked: list[str] = []
+        self.metadata: dict[int, dict] = {}
+        self._owners: dict[int, list[tuple]] = {}
+        self._storage_refs: dict[int, weakref.ref] = {}
+        self._ops: list[dict] = []
+        self._last_use: dict[int, int] = {}
+        self._retained: set[int] = set()
+        self._conservative: set[int] = set()
+        self._released: set[int] = set()
+        self._observing = False
+        self._stream = None
+        self._physical_stream = None
 
     def __len__(self) -> int:
         return len(self.calls)
@@ -44,11 +63,120 @@ class Trace:
         self.owned.append((tag, name, t.numel() * t.element_size(), sig))
         self.tick += 1
         self._range[tag] = [self.tick, None]
+        with torch._C.DisableTorchFunction():
+            backing = t.untyped_storage()
+            storage = backing._cdata
+            if storage not in self._storage_refs or self._storage_refs[storage]() is None:
+                self._owners[storage] = []
+                self._storage_refs[storage] = weakref.ref(backing)
+            start = t.storage_offset() * t.element_size()
+            self._owners.setdefault(storage, []).append((tag, start, start + t.numel()*t.element_size()))
+            self.metadata[tag] = dict(shape=list(t.shape), dtype=str(t.dtype), kind='tensor')
+        if self._ops:
+            self._ops[-1]['allocated'].append(tag)
         try:
             self._refs.append(weakref.ref(t, functools.partial(self._died, tag)))
         except TypeError:
             self._range[tag][1] = None
         return tag
+
+    def _tags(self, value, seen=None) -> set[int]:
+        if isinstance(value, torch.Tensor):
+            with torch._C.DisableTorchFunction():
+                key = value.untyped_storage()._cdata
+                start = value.storage_offset() * value.element_size()
+                span = ((1 + sum((n-1)*s for n,s in zip(value.shape,value.stride())))
+                        * value.element_size()) if value.numel() else 0
+            if key not in self._storage_refs or self._storage_refs[key]() is None:
+                return set()
+            candidates = [tag for tag,lo,hi in self._owners.get(key, ()) if lo <= start and start+span <= hi]
+            return {max(candidates)} if candidates else set()
+        seen = set() if seen is None else seen
+        if id(value) in seen:
+            return set()
+        seen.add(id(value))
+        if isinstance(value,SimpleNamespace):
+            value = vars(value)
+        elif hasattr(value,'_snowllm_tensors'):
+            value = value._snowllm_tensors
+        elif dataclasses.is_dataclass(value) and not isinstance(value,type):
+            value = [getattr(value,f.name) for f in dataclasses.fields(value)]
+        if isinstance(value, dict):
+            value = value.values()
+        if isinstance(value, (tuple, list, type({}.values()))):
+            return set().union(*(self._tags(v,seen) for v in value)) if value else set()
+        return set()
+
+    def _touch(self, tags):
+        if self.lifetimes == 'uses' and self._released.intersection(tags):
+            raise SnowLLMError('an operation uses storage after its scratch scope ended')
+        for tag in tags:
+            self._last_use[tag] = self.tick
+
+    def retain(self, value):
+        tags = self._tags(value)
+        self._touch(tags)
+        self._retained.update(tags)
+
+    def check_stream(self, stream):
+        if self.lifetimes == 'uses' and self._physical_stream not in (None,stream):
+            raise SnowLLMError('use-based planning requires one ordered GPU stream')
+        self._physical_stream = stream
+
+    def validate_escapes(self):
+        escaped = [tag for tag,(_,end) in self._range.items() if end is None
+                   and tag in self._last_use and tag not in self._retained
+                   and tag not in self._conservative and tag not in self._released]
+        if escaped:
+            names = ', '.join(self.owned[tag][1] for tag in escaped[:4])
+            raise SnowLLMError(f'live cross-stage storage needs Arena.retain(): {names}')
+
+    @contextlib.contextmanager
+    def operation(self, name: str, *, reads=(), writes=(), stream=0):
+        if not isinstance(stream,int):
+            raise ValueError('stream must be a logical integer identifier')
+        if self.lifetimes == 'uses' and self._stream not in (None,stream):
+            raise SnowLLMError('use-based planning requires one ordered stream; cross-stream events are not declared')
+        self._stream = stream
+        self.tick += 1
+        tags = self._tags((reads,writes))
+        self._touch(tags)
+        op = dict(name=name, first=self.tick, reads=sorted(self._tags(reads)),
+                  writes=sorted(self._tags(writes)), allocated=[], uses=set(tags), stream=stream)
+        self._ops.append(op)
+        self.operations.append(op)
+        try:
+            yield
+        finally:
+            self.tick += 1
+            active = op['uses'].union(op['allocated']) - self._released
+            self._touch(active)
+            op['uses'] = sorted(op['uses'])
+            op['last'] = self.tick
+            self._ops.pop()
+
+    def torch_call(self, func, args, kwargs, out):
+        if self.lifetimes != 'uses' or self._observing:
+            return
+        self._observing = True
+        try:
+            tags = self._tags((args,kwargs,out))
+            if not tags:
+                return
+            if self._ops:
+                self._touch(tags)
+                self._ops[-1]['uses'].update(tags)
+            elif (getattr(func,'__name__','') not in (
+                    '__get__','__len__','dim','ndimension','numel','size','stride','storage_offset','element_size',
+                    'untyped_storage','data_ptr','is_contiguous','view',
+                    'transpose','permute','as_strided','detach')
+                    and not (getattr(func,'__name__','') in
+                             ('__getitem__','narrow','select','split','unbind','chunk','reshape','flatten')
+                             and self._tags(out).intersection(self._tags(args)))):
+                self._touch(tags)
+                self._conservative.update(tags)
+        finally:
+            self._observing = False
 
     def _died(self, tag: int, _ref: weakref.ref) -> None:
         self.tick += 1
@@ -65,11 +193,22 @@ class Trace:
         self.tick += 1
         for tag in dead:
             self._range[tag][1] = self.tick
+        self._released.update(range(mark,len(self.owned)))
 
     def ranges(self) -> dict[int, tuple[int, int]]:
-        return {tag: (a, self.tick if b is None else b) for tag, (a, b) in self._range.items()}
+        ranges = {tag: (a, self.tick if b is None else b) for tag, (a, b) in self._range.items()}
+        if self.lifetimes == 'uses':
+            for tag,(a,b) in ranges.items():
+                if tag in self._retained:
+                    ranges[tag] = a,self.tick
+                elif tag in self._last_use and tag not in self._conservative:
+                    ranges[tag] = a,max(a,self._last_use[tag])
+        return ranges
 
     def live(self) -> set[int]:
+        if self.lifetimes == 'uses':
+            return self._retained.union(tag for tag,(_,b) in self._range.items()
+                if b is None and (tag not in self._last_use or tag in self._conservative))
         return {tag for tag, (_, b) in self._range.items() if b is None}
 
     def peak(self) -> int:
@@ -97,6 +236,12 @@ class Plan:
         self.names = list(names)
         self.sigs = list(sigs)
         self.rows = rows
+        self.metadata: dict[int, dict] = {}
+        self.operations: list[dict] = []
+        self.lifetimes = 'references'
+        self.unmarked: list[str] = []
+        self.retained: set[int] = set()
+        self.after = 0
 
     def __len__(self) -> int:
         return len(self.offset)
@@ -121,48 +266,42 @@ class Plan:
                     bad.append((k, t0, t1, a0, a1, b0))
         return bad
 
+    def report(self) -> dict:
+        buffers = [Buffer(k,self.sizes[k],*self.ranges[k]) for k in self.sizes]
+        peak = live_peak(buffers)
+        return dict(schema=1,rows=self.rows,lifetimes=self.lifetimes,
+            capacity_bytes=self.high,live_peak_bytes=peak,fragmentation_bytes=self.high-peak,
+            post_workspace_bytes=self.after,total_capacity_bytes=max(self.high,self.live_high+self.after),
+            retained_high_bytes=self.live_high,unmarked_native_calls=self.unmarked,
+            operations=self.operations,buffers=[dict(id=k,name=self.names[k] if k<len(self.names) else f'buffer {k}',bytes=self.sizes[k],
+                offset=self.offset[k],first=self.ranges[k][0],last=self.ranges[k][1],
+                retained=k in self.retained,**self.metadata.get(k,{})) for k in self.sizes])
 
-def _merge(spans: list[tuple[int, int]]) -> list[list[int]]:
-    out: list[list[int]] = []
-    for a, b in sorted(spans):
-        if out and a <= out[-1][1]:
-            out[-1][1] = max(out[-1][1], b)
-        else:
-            out.append([a, b])
-    return out
-
-
-def _lowest(n: int, taken: list[list[int]]) -> int:
-    off = 0
-    for a, b in taken:
-        if off + n <= a:
-            return off
-        off = max(off, -(-b // ALIGN) * ALIGN)
-    return off
+    def write_report(self, path) -> None:
+        import json
+        from pathlib import Path
+        Path(path).write_text(json.dumps(self.report(),indent=2)+'\n')
 
 
-def pack(t: Trace, rows: int = 0) -> Plan:
+def pack(t: Trace, rows: int = 0, *, after: int = 0) -> Plan:
     ranges = t.ranges()
     sizes = {tag: n for tag, _, n, _ in t.owned}
-    order = sorted(ranges, key=lambda k: (-sizes[k], ranges[k][0], k))
-    placed: list[tuple] = []
-    offset: dict[int, int] = {}
-    high = 0
-    for tag in order:
-        n = sizes[tag]
-        if n == 0:
-            offset[tag] = 0
-            continue
-        lo, hi = ranges[tag]
-        taken = _merge([(o, o + s) for a, b, o, s in placed if a <= hi and lo <= b])
-        off = _lowest(n, taken)
-        offset[tag] = off
-        placed.append((lo, hi, off, n))
-        high = max(high, off + n)
     live = t.live()
-    live_high = max((offset[tag] + sizes[tag] for tag in live if sizes[tag]), default=0)
-    return Plan(offset, high, ranges, sizes, [nm for _, nm, _, _ in t.owned],
+    offset,high,live_high = allocate(
+        [Buffer(tag,n,*ranges[tag],retained=tag in live) for tag,n in sizes.items()],
+        after=after,after_alignment=ALIGN)
+    live_high = -(-live_high//ALIGN)*ALIGN
+    plan = Plan(offset, high, ranges, sizes, [nm for _, nm, _, _ in t.owned],
                 [sg for _, _, _, sg in t.owned], rows, live_high)
+    plan.metadata = {tag:dict(meta) for tag,meta in t.metadata.items()}
+    for tag in plan.metadata:
+        plan.metadata[tag]['conservative'] = tag in t._conservative
+    plan.retained = live
+    plan.operations = t.operations
+    plan.unmarked = t.unmarked
+    plan.lifetimes = t.lifetimes
+    plan.after = after
+    return plan
 
 
 class Planner:
@@ -174,6 +313,7 @@ class Planner:
         self.served = 0
         self.eager = 0
         self.missed: set[tuple] = set()
+        self._physical_stream = None
 
     def install(self, key: tuple, plan: Plan) -> None:
         self.plans[key] = plan
@@ -186,10 +326,17 @@ class Planner:
         tracing = _current is not None
         self.active = self.plans.get(key) if self.buf is not None and not tracing else None
         self.seq = 0
+        self._physical_stream = None
         if self.active is None and not tracing:
             self.eager += 1
             self.missed.add(key)
         return self.active is not None
+
+    def check_stream(self, stream):
+        if self.active is not None and self.active.lifetimes == 'uses':
+            if self._physical_stream not in (None,stream):
+                raise SnowLLMError('a use-based activation plan cannot cross GPU streams')
+            self._physical_stream = stream
 
     def end(self) -> int:
         p, self.active = self.active, None
@@ -224,14 +371,19 @@ def sig_str(sig: tuple) -> str:
 
 def _stub(t: Trace, name: str, real: Callable) -> Callable:
     def go(*a: object) -> object:
+        if not t._ops:
+            t.unmarked.append(name)
+            if t.lifetimes == 'uses':
+                raise SnowLLMError(f'{name} has no operation lifetime annotation')
         t.calls.append(name)
         return real(*a) if t.launch else 0
     return go
 
 
 @contextlib.contextmanager
-def dummy_run(launch: bool = False) -> Iterator[Trace]:
-    t = Trace(launch)
+def dummy_run(launch: bool = False, *, lifetimes: str = 'references') -> Iterator[Trace]:
+    t = Trace(launch,lifetimes=lifetimes)
+    previous = _current
     saved = {name: getattr(lib, name) for name in LAUNCHES}
     for name, real in saved.items():
         setattr(lib, name, _stub(t, name, real))
@@ -239,7 +391,7 @@ def dummy_run(launch: bool = False) -> Iterator[Trace]:
     try:
         yield t
     finally:
-        _set_current(None)
+        _set_current(previous)
         for name, real in saved.items():
             setattr(lib, name, real)
 
