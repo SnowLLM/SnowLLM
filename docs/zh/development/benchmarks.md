@@ -72,7 +72,7 @@ Flash-Next UD-Q3_K_XL 中标记为 **Engine** 的数据直接测量 Engine 墙�
 
 MTP k=2 解码速度从 1K 的 43.29 tok/s 到 220K 的 38.56 tok/s，无 MTP 为 28.30 到 26.46 tok/s，加速约 1.46–1.53 倍。15 对样本的输入哈希均一致，但完整输出均不完全相同。已记录的 1K 诊断显示，顺序解码与三行验证路径中，接近并列的目标 logits 排序发生变化；其他分歧未逐一诊断。这些计时数据不能证明输出逐位一致。
 
-正式数据为 `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`。完整原始记录、CSV 和说明以 `qwen38_flash_next_mtp_20261020.*` 保存在 [`benchmarks/runs/archive/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs/archive)；网站构建只读取 `runs/` 直属的 JSON 文件。
+正式数据为 `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`。网站构建只读取 `runs/` 直属的 JSON 文件。
 
 ## GLM-5.3-Flash 220K 补测（2026-10-16） {#glm-220k-completion}
 

@@ -61,8 +61,6 @@
   "graphs": true,
   "dflash_block": 5,
   "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "deepseek_adaptive",
   "device_map": "auto",
   "offload": {
    "group": "experts.down",
@@ -132,8 +130,6 @@
   "graphs": true,
   "dflash_block": 5,
   "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "deepseek_adaptive",
   "device_map": "auto",
   "offload": {
    "group": "experts.down",
@@ -203,8 +199,6 @@
   "graphs": true,
   "dflash_block": 5,
   "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "deepseek_adaptive",
   "device_map": "auto",
   "offload": {
    "group": "experts.down",
@@ -274,8 +268,6 @@
   "graphs": true,
   "dflash_block": 5,
   "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "deepseek_adaptive",
   "device_map": "auto",
   "offload": {
    "group": "experts.down",
@@ -345,8 +337,6 @@
   "graphs": true,
   "dflash_block": 5,
   "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "deepseek_adaptive",
   "device_map": "auto",
   "offload": {
    "group": "experts.down",

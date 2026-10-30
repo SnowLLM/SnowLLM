@@ -13,7 +13,7 @@ translation.
 | `demo/` | Capture and render the public demonstration. |
 
 Published measurements live directly in `runs/*.json`; the website reads those
-files. Dated run directories and `results/` are ignored generated output.
+files. Dated run directories, `runs/archive/` and `results/` stay local and are ignored.
 Kernel traces, ISA audits, weight-layout probes and operator tuning belong in
 the private development workspace.
 

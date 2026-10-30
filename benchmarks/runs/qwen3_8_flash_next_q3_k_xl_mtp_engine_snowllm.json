@@ -35,8 +35,6 @@
   "context": 262144,
   "prefill_chunk": 32768,
   "kv_cache_dtype": "bf16",
-  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
-  "source_mode": "MTP2",
   "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
  },
  {
@@ -75,8 +73,6 @@
   "context": 262144,
   "prefill_chunk": 32768,
   "kv_cache_dtype": "bf16",
-  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
-  "source_mode": "MTP2",
   "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
  },
  {
@@ -115,8 +111,6 @@
   "context": 262144,
   "prefill_chunk": 32768,
   "kv_cache_dtype": "bf16",
-  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
-  "source_mode": "MTP2",
   "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
  },
  {
@@ -155,8 +149,6 @@
   "context": 262144,
   "prefill_chunk": 32768,
   "kv_cache_dtype": "bf16",
-  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
-  "source_mode": "MTP2",
   "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
  },
  {
@@ -195,8 +187,6 @@
   "context": 262144,
   "prefill_chunk": 32768,
   "kv_cache_dtype": "bf16",
-  "source": "benchmarks/runs/archive/qwen38_flash_next_mtp_20261020.json",
-  "source_mode": "MTP2",
   "output_equivalence": "Short preflight matches. Full outputs can diverge at near-tied logits; exact per-sample parity is recorded, not assumed."
  }
 ]

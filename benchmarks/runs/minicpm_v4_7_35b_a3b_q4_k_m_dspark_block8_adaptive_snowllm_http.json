@@ -60,9 +60,7 @@
   "prefix_memory_ratio": 0.08,
   "graphs": true,
   "dflash_block": 8,
-  "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "minicpm_adaptive"
+  "dspark_adaptive": true
  },
  {
   "label": "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_adaptive_snowllm_http",
@@ -125,9 +123,7 @@
   "prefix_memory_ratio": 0.08,
   "graphs": true,
   "dflash_block": 8,
-  "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "minicpm_adaptive"
+  "dspark_adaptive": true
  },
  {
   "label": "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_adaptive_snowllm_http",
@@ -190,9 +186,7 @@
   "prefix_memory_ratio": 0.08,
   "graphs": true,
   "dflash_block": 8,
-  "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "minicpm_adaptive"
+  "dspark_adaptive": true
  },
  {
   "label": "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_adaptive_snowllm_http",
@@ -255,9 +249,7 @@
   "prefix_memory_ratio": 0.08,
   "graphs": true,
   "dflash_block": 8,
-  "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "minicpm_adaptive"
+  "dspark_adaptive": true
  },
  {
   "label": "minicpm_v4_7_35b_a3b_q4_k_m_dspark_block8_adaptive_snowllm_http",
@@ -320,8 +312,6 @@
   "prefix_memory_ratio": 0.08,
   "graphs": true,
   "dflash_block": 8,
-  "dspark_adaptive": true,
-  "source": "benchmarks/runs/archive/dspark_http_standard_20261021.json",
-  "source_arm": "minicpm_adaptive"
+  "dspark_adaptive": true
  }
 ]

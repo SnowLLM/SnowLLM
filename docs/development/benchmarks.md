@@ -72,7 +72,7 @@ Both Engine arms keep the same model and MTP weights resident, with a fixed 262,
 
 MTP k=2 decode ranges from 43.29 tok/s at 1K to 38.56 tok/s at 220K, versus 28.30 to 26.46 tok/s without MTP (1.46–1.53× speedup). All 15 pairs have identical input hashes, but none have identical complete outputs. The recorded 1K diagnosis shows near-tied target logits changing order between sequential decoding and three-row verification; other divergences were not individually diagnosed. These timings do not establish bitwise output equivalence.
 
-The two published arms are `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`. The complete source record, CSV and notes are preserved under [`benchmarks/runs/archive/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs/archive) as `qwen38_flash_next_mtp_20261020.*`; the site builder reads only JSON files directly in `runs/`.
+The two published arms are `benchmarks/runs/qwen3_8_flash_next_q3_k_xl_{mtp,nospec}_engine_snowllm.json`. The site builder reads only JSON files directly in `runs/`.
 
 ## GLM-5.3-Flash 220K completion (2026-10-16)
 
