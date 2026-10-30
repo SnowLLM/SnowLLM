@@ -23,9 +23,9 @@
     }
   ],
   "spec": "DSpark",
-  "requires": "0.3.12",
+  "requires": "0.3.14",
   "summary": "DeepSeek-V4-Flash with adaptive DSpark, one request, a 409600-token context and 8192-token prefill chunks.",
-  "note": "Uses automatic weight offload at 95% GPU memory utilization, with no prefix-cache reservation.",
+  "note": "Uses automatic weight offload at 95% GPU memory utilization, with no prefix-cache reservation. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
   "defaults": {
     "device_map": "auto",
     "dflash": "@model",
@@ -34,7 +34,8 @@
     "max_model_len": 409600,
     "max_num_batched_tokens": 8192,
     "max_gpu_mem_util": 0.95,
-    "prefix_memory_ratio": 0.0
+    "prefix_memory_ratio": 0.0,
+    "max_host_mem_util": 0.75
   },
   "serve_as": "DeepSeek-V4-Flash-0731",
   "priority": 80

@@ -62,10 +62,10 @@ class RecipeCompatibilityTests(unittest.TestCase):
         before = copy.deepcopy(book)
         old = {r['id']: r for r in builder.for_client(book, '0.3.13')}
         key = 'deepseek-v4-flash-iq2-xxs-400k'
-        self.assertEqual(old[key]['defaults']['gpu_memory_utilization'], .95)
-        self.assertNotIn('max_gpu_mem_util', old[key]['defaults'])
+        self.assertNotIn(key,old)
         current = {r['id']: r for r in book}
         self.assertEqual(current[key]['defaults']['max_gpu_mem_util'], .95)
+        self.assertEqual(current[key]['defaults']['max_host_mem_util'], .75)
         future = 'deepseek-v4.1-flash-1017-vq-q4-k'
         self.assertNotIn(future, old)
         self.assertEqual(current[future]['defaults']['max_host_mem_util'], .75)
@@ -92,12 +92,16 @@ class RecipeCompatibilityTests(unittest.TestCase):
             selected = {r['id']: r for r in view}
             for key, context in expected.items():
                 with self.subTest(recipe=key, legacy=view is not book):
+                    if view is not book:
+                        self.assertNotIn(key,selected)
+                        continue
                     defaults = selected[key]['defaults']
                     self.assertEqual(defaults['max_num_seqs'], 1)
                     self.assertEqual(defaults['max_model_len'], context)
                     self.assertEqual(defaults['max_num_batched_tokens'], 8192)
                     memory = 'max_gpu_mem_util' if view is book else 'gpu_memory_utilization'
                     self.assertEqual(defaults[memory], .95)
+                    self.assertEqual(defaults['max_host_mem_util'],.75)
             for key in ('qwen3.8-flash-next-iq4-xs', 'qwen3.8-flash-next-q3-k-xl'):
                 with self.subTest(recipe=key, legacy=view is not book):
                     self.assertEqual(selected[key]['defaults']['max_model_len'], 409600)

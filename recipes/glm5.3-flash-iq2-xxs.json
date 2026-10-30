@@ -14,7 +14,7 @@
     "UD-IQ2_XXS/*.gguf"
   ],
   "priority": 60,
-  "requires": "0.3.10",
+  "requires": "0.3.14",
   "serve_as": "GLM-5.3-Flash",
   "spec": "none",
   "defaults": {
@@ -24,8 +24,9 @@
     "max_model_len": 227328,
     "max_num_batched_tokens": 8192,
     "kv_cache_dtype": "bf16",
-    "num_spec": 0
+    "num_spec": 0,
+    "max_host_mem_util": 0.75
   },
   "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
-  "note": "Vision is not supported. Defaults to one request and a 227328-token context limit."
+  "note": "Vision is not supported. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount."
 }
