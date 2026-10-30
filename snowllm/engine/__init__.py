@@ -460,6 +460,11 @@ class Engine:
                         "pages that the request which wrote them has since reused. Pass "
                         "prefix_memory_ratio=0.")
                 self.cache = PrefixCache(store)
+            if dspark_adaptive and _dspark(self.dflash_geo):
+                from .dspark_profile import profile
+                # Reconcile measured startup memory before graphs retain weight addresses.
+                profile(self.dflash, warmup=True)
+                self.runner.ensure_capacity()
             self.graph_sizes = []
             if not enforce_eager:
                 self.graph_sizes = self.runner.capture(shapes)

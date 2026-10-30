@@ -12,9 +12,46 @@ from snowllm.models.deepseek_v4.dspark import DSparkDraft, Workspace, weight_pla
 from snowllm.models.deepseek_v4.layers import RMSNorm
 from snowllm.models.deepseek_v4.v41 import Linear
 from snowllm.models.projection import pack_bf16
+from snowllm.engine import DraftPlan, Engine
+from snowllm.engine.resources import ResourceSet
 
 
 class DSparkWorkspaceTests(unittest.TestCase):
+    def test_driver_warmup_and_automatic_placement_precede_weight_address_capture(self):
+        events = []
+        geo = SimpleNamespace(tap_layers=(), block_size=5, stack=SimpleNamespace(v41=False))
+        model = SimpleNamespace(config={}, geo=object())
+        runner = SimpleNamespace(max_prefill_tokens=16, draft_blocks=2, ring_blocks=1,
+            arena=ops.Arena(),
+            num_spec=5, slots_per_request=1, dummy_slot=1, max_num_seqs=1, block_size=16,
+            geo=SimpleNamespace(vocab_size=8), auto_yarn=False, prefix_slots=0,
+            resources=ResourceSet(), create_inputs=lambda: (None, None),
+            probe_graph_bytes=lambda shapes: (0, 0), finish_pools=lambda n: 2,
+            ensure_capacity=lambda: events.append('placement'),
+            capture=lambda shapes: events.append('capture') or [1],
+            _discard_pools=lambda: None)
+        draft = SimpleNamespace(decode_shapes=lambda n: [object()], max_blocks_per_seq=2,
+                                capture=lambda r: None, cache_window=0)
+
+        def build(engine, *args):
+            engine._draft_pool = SimpleNamespace(release=lambda: None)
+            return draft
+
+        def profile(decoder, *, warmup=False):
+            events.append('warmup' if warmup else 'profile')
+
+        with patch('snowllm.engine._runner_for', return_value=lambda *a, **kw: runner), \
+             patch('snowllm.engine._dspark', return_value=True), \
+             patch('snowllm.engine._check_dflash_target'), \
+             patch('snowllm.engine.Sampler', return_value=SimpleNamespace(reserve=lambda *a, **kw: None)), \
+             patch.object(Engine, '_build_dspark', build), \
+             patch.object(Engine, '_retake_draft'), \
+             patch('snowllm.engine.dspark_profile.profile', side_effect=profile):
+            Engine(model, max_num_seqs=1, max_model_len=16, prefill_chunk=16,
+                   dflash_path='draft', dspark_adaptive=True, draft_plan=DraftPlan(geo))
+        self.assertEqual(events, ['warmup', 'placement', 'capture', 'profile'])
+        runner.resources.close()
+
     def test_draft_host_plan_tracks_allocation_lifetimes_and_reader_buffers(self):
         from snowllm.ops._common import _host_buffer_size
         geo = SimpleNamespace(tap_layers=())
@@ -34,7 +71,6 @@ class DSparkWorkspaceTests(unittest.TestCase):
         self.assertEqual(host, _host_buffer_size(8192) + _host_buffer_size(4096) + reader._io_bytes)
         self.assertEqual(workspace.draft.weight.numel(), 4096)
         self.assertEqual(ops.host_pinned_bytes(), before)
-
 
     def check_stages(self, v41, graph):
         torch.manual_seed(78)

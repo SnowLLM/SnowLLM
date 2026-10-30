@@ -207,6 +207,17 @@ class BaseRunner:
                                    'lower --max-num-seqs/--num-spec or offload more weights')
             self._allow = self._allowance()
 
+    def ensure_capacity(self):
+        from ..capacity import memory_shortage
+        from ..models.placement import ensure_room
+        release_device_cache()
+        shortage = -self._allowance()
+        while shortage > 0:
+            if not ensure_room(self.model, shortage):
+                raise memory_shortage(shortage)
+            release_device_cache()
+            shortage = -self._allowance()
+
     def _pool_capacity(self, plan, *, prefix_budget=0):
         release_device_cache()
         from ..host_alloc import enabled

@@ -15,8 +15,10 @@ from .request import Request, SamplingParams
 from .spec_decode import SPEC_MAX_STEP_ROWS
 
 
-def elapsed(run):
+def elapsed(run, *, warmup=False):
     run()
+    if warmup:
+        return 0.
     samples = []
     for _ in range(3):
         torch.cuda.synchronize()
@@ -28,10 +30,11 @@ def elapsed(run):
 
 
 @torch.no_grad()
-def profile(decoder):
+def profile(decoder, *, warmup=False):
     runner = decoder.runner
     shapes = decoder.decode_shapes(min(runner.max_num_seqs, SPEC_MAX_STEP_ROWS))
-    print(f'{term.stamp()} profiling DSpark verification costs ({len(shapes)} shapes) ...', flush=True)
+    action = 'warming up DSpark verification' if warmup else 'profiling DSpark verification costs'
+    print(f'{term.stamp()} {action} ({len(shapes)} shapes) ...', flush=True)
     try:
         for B in range(1, min(runner.max_num_seqs, SPEC_MAX_STEP_ROWS) + 1):
             c = runner.block_size
@@ -84,7 +87,7 @@ def profile(decoder):
                         decoder._draft_blocks(requests)
                     else:
                         decoder._block(requests, draft_bt)
-                draft = elapsed(draft_step)
+                draft = elapsed(draft_step, warmup=warmup)
                 eager, graphs = {}, {}
                 for shape in (s for s in shapes if s.B == B):
                     with contextlib.closing(runner._graph_cases(shape)) as cases:
@@ -96,18 +99,21 @@ def profile(decoder):
                                 for slot, metadata in enumerate(saved):
                                     state.load(slot, metadata)
                                 return case.run()
-                            eager[rows] = elapsed(run)
+                            eager[rows] = elapsed(run, warmup=warmup)
                             record = runner.graphs.get(case.key)
                             if record is not None:
-                                graphs[rows] = elapsed(lambda: record.replay(case.inputs.tensors))
-                decoder.costs[B] = StepCost(eager, graphs, draft)
-                print(f'{term.stamp()}   DSpark R={B}: draft {draft*1000:.2f} ms, '
-                      f'verify {min(eager):d}..{max(eager):d} rows, '
-                      f'{len(graphs)} graph points', flush=True)
+                                graphs[rows] = elapsed(lambda: record.replay(case.inputs.tensors), warmup=warmup)
+                if not warmup:
+                    decoder.costs[B] = StepCost(eager, graphs, draft)
+                    print(f'{term.stamp()}   DSpark R={B}: draft {draft*1000:.2f} ms, '
+                          f'verify {min(eager):d}..{max(eager):d} rows, '
+                          f'{len(graphs)} graph points', flush=True)
             finally:
                 for r in requests:
                     decoder.release(r)
                     runner.release(r.slot)
+        if warmup:
+            torch.cuda.synchronize()
     finally:
         decoder.scheduler.reset()
         decoder.tables.forget()

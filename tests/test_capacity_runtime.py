@@ -96,6 +96,23 @@ def main():
     ck('legacy auto chunk preserves the 8K default', runner.candidates() == [8192])
     runner._want_chunk = 512
     ck('explicit chunk is preserved', runner.candidates() == [512])
+    runner.model = SimpleNamespace()
+    with patch.object(runner, '_allowance', side_effect=(-74, 128)), \
+         patch.object(placement, 'ensure_room', return_value=True) as move, \
+         patch('snowllm.engine.runner.release_device_cache'):
+        runner.ensure_capacity()
+        ck('measured startup overhead is offloaded before graphs capture weight addresses',
+           move.call_args.args == (runner.model, 74))
+    with patch.object(runner, '_allowance', return_value=-74), \
+         patch.object(placement, 'ensure_room', return_value=False), \
+         patch('snowllm.engine.runner.release_device_cache'):
+        try:
+            runner.ensure_capacity()
+        except Exception as exc:
+            ck('measured startup overhead cannot silently cross a fixed budget',
+               'GPU memory budget is short' in str(exc))
+        else:
+            ck('measured startup overhead cannot silently cross a fixed budget', False)
     return ck.done()
 
 
