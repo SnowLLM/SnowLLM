@@ -283,7 +283,7 @@ time.sleep(60)
     def test_copied_benchmark_command_runs_independently(self):
         self.benchmark_stub('''import os, pathlib, sys, time
 assert os.environ['ENGINE'] == 'snowllm'
-assert os.environ['RECIPE'] == 'qwen3.6-35b-a3b-q4-k-xl'
+assert os.environ['RECIPE'] == 'qwen3.6-35b-a3b-q4-k-xl-mtp'
 assert os.environ['LABEL'] == 'qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm'
 assert os.environ['ISL'] == '1024,8192,32768,131072'
 assert os.environ['COOL'] == '60'
@@ -296,14 +296,13 @@ pathlib.Path(os.environ['STUB_SERVER_ARGS']).write_text(json.dumps(sys.argv[1:])
 os.execl(os.environ['STUB_SERVER'], 'server')
 ''')
         command = next(line for line in (ROOT / 'benchmarks/all_bench.sh').read_text().splitlines()
-                       if line.endswith('--num-spec 2 & wait $!'))
+                       if 'benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl-mtp ' in line)
         p = self.start(['bash', '-c', command], cwd=self.base)
         out, _ = p.communicate(timeout=6)
         self.assertEqual(p.returncode, 0, out)
         self.assert_collected()
         args = json.loads(Path(self.env['STUB_SERVER_ARGS']).read_text())
-        self.assertEqual(args[0], 'qwen3.6-35b-a3b-q4-k-xl')
-        self.assertEqual(args[-2:], ['--num-spec', '2'])
+        self.assertEqual(args[0], 'qwen3.6-35b-a3b-q4-k-xl-mtp')
 
 
 if __name__ == '__main__':
