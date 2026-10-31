@@ -1,6 +1,6 @@
 # SnowLLM
 
-A local LLM inference framework, hand-tuned for the **Ryzen AI Max** APU.
+A local LLM inference framework, hand-tuned for **AMD Ryzen AI Max**<br>and compatible with other **AMD RDNA 3 / RDNA 3.5 APUs**.
 
 For more information, visit [snowllm.dev](https://snowllm.dev/) ([中文](https://snowllm.dev/?lang=zh_cn)).
 
@@ -11,14 +11,13 @@ SnowLLM is fast with:
 - Tuned for low-concurrency inference
 - Speculative decoding
 
-## News
+## Recent News
 
-- **2026-10-19** — **GLM-5.3-Flash support** with MTP: **26.8 tok/s at 220K context**, **4.3× faster than llama.cpp**, on a single Ryzen AI Max+ 395 using IQ2_XXS weights. [Benchmarks](https://snowllm.dev/benchmark/).
-- **2026-10-12** — **v0.3.9** adds a persistent daemon and local Web UI for model management and chat, shared JSON configuration, template-based thinking controls, and request/GPU metrics.
-- **2026-10-12** — **v0.3.8** fixes Windows weight-loading races, GPU memory budgeting and downloads, with quantized weight shuffle and file-read recovery fixes in SnowLLM-Kernels 0.3.4.
-- **2026-10-03** — New demo: **2.4× faster than llama.cpp** on an nginx log triage task through Pi, using the same Qwen3.6-35B-A3B GGUF on a single Ryzen AI Max+ 395.
-- **2026-09-09** — **v0.3.0** adds GGUF support, DeepSeek-V4-Flash and Qwen3.8 models, DFlash speculative decoding, and recipe-based model downloads.
-- **2026-08-04** — SnowLLM is now open source and available on PyPI! A local LLM inference framework hand-tuned for AMD Ryzen AI Max APUs.
+- **2026-10-29** — **MiniCPM-V 4.7 on Ryzen 9 7940HS (RDNA 3)**: 132K context capacity on a 32 GiB Windows machine. [Benchmarks](https://snowllm.dev/docs/development/benchmarks#radeon-780m).
+- **2026-10-26** — **DeepSeek V4.1 Flash support**, including embedded DSpark decoding.
+- **2026-10-21** — **MiniCPM-V 4.7 support** with adaptive DSpark: **63.7 tok/s at 8K input** on Ryzen AI Max+ 395.
+- **2026-10-19** — **GLM-5.3-Flash support**: **26.8 tok/s at 220K input**, **4.3×** llama.cpp decode throughput, on Ryzen AI Max+ 395.
+- **2026-10-12** — **Local Web UI** for model management and chat.
 
 ## Demo
 
@@ -30,49 +29,21 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 
 ## Performance
 
-Measured on one [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html).
-Every model, precision, drafter and context length, with the runs behind each number:
-<https://snowllm.dev/#benchmarks>.
+| Model | Weights | Speculative decoding | Min RAM | Test machine | Arch | 8K Prefill, tok/s | 8K Decode, tok/s | 220K Prefill, tok/s | 220K Decode, tok/s |
+| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| Qwen3.8-Flash-Next | UD-Q3_K_XL | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **1812.2** | **42.9** | **1723.8** | **38.6** |
+| MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark, block 8 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **4323.9** | **63.7** | **1257.3** | **18.0** |
+| MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark, block 8 | 32 GiB | 7940HS | gfx1103 (RDNA 3) | **1041.8** | **19.6** | — | — |
+| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | TBD | TBD | TBD | TBD |
+| GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **517.1** | **25.8** | **480.7** | **26.8** |
+| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **862.6** | **26.0** | **631.8** | **22.3** |
+| Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **3806.5** | **83.8** | **1244.0** | **33.6** |
 
-Accuracy: **91.7%** avg@4 on AIME 2026 (±4.2), vs.
-[Qwen's reported 92.7](https://huggingface.co/Qwen/Qwen3.6-35B-A3B) at avg@8.
-
-## Support matrix
-
-Tested only on the [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html);
-validation of other APUs is in progress. The APU target list is `gfx1103`, `gfx1150`,
-`gfx1151`, `gfx1152` and `gfx1153`.
-Use the [homepage target selector](https://snowllm.dev/#install) to generate installation commands,
-or see the [APU target table](https://snowllm.dev/docs/getting-started/installation#choose-your-apu-target).
-
-Hugging Face `safetensors` at FP8, and GGUF K-quants and i-quants. `snowllm recipes` lists the
-lot; a recipe that names a snowllm newer than yours says so instead of serving:
-
-| Recipe                       | Model                                                                                | Format          | Resident | tok/s at batch 1               |
-| ---------------------------- | ------------------------------------------------------------------------------------ | --------------- | -------- | ------------------------------ |
-| `qwen3.8-flash-next-q3-k-xl` | [Qwen3.8-Flash-Next](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF)          | UD-Q3_K_XL GGUF | 62.1 GiB | 39.1 with MTP, at 8K           |
-| `deepseek-v4-flash-iq2-xxs-400k`  | [DeepSeek-V4-Flash-0731](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF)  | UD-IQ2_XXS GGUF | 86.0 GiB | 17.5                           |
-| `qwen3.8-27b-q4-k-xl`        | [Qwen3.8-27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF)                       | UD-Q4_K_XL GGUF | 19.9 GiB | 19.2 with MTP, 22.5 with DFlash 2 |
-| `qwen3.6-35b-a3b-fp8`        | [Qwen3.6-35B-A3B](https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8)                   | FP8             | 34.9 GiB | 62.4 with MTP, at 8K           |
-| `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB | 8.0, 14.7 with `--num-spec 2`  |
-| `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB | 11.8, 27.3 with `--num-spec 2` |
-
-`qwen3.6-35b-a3b-q4-k-xl` is the 35B MoE as a GGUF, 24.2 GiB resident, for a machine that cannot
-hold the FP8 file. Where a drafter ships beside the weights there is a `-dflash` or `-dflash2`
-recipe of its own, and `qwen3.6-35b-a3b-fp8-mtp` is the FP8 weights decoding through the MTP
-head that checkpoint already carries.
-
-The Q4_K_XL recipe disables MTP. Choose `qwen3.6-35b-a3b-q4-k-xl-mtp` for MTP k=2;
-it downloads the GGUF release with an embedded MTP head into a separate directory.
-
-Resident is weights only; KV capacity follows the configured context and concurrency.
-DeepSeek wants a 128 GiB machine with a large carve-out, and an explicit host/disk offload budget at long context.
-Flash-Next wants the same machine and no `--device-map`: another 26.8 GiB of it is a lookup table
-read off disk per batch, so keep it on the SSD you serve from. Only the Qwens take image input.
+[Full benchmarks](https://snowllm.dev/benchmark/) · [Methodology and runs](docs/development/benchmarks.md).
 
 ## Requirements
 
-- Linux x86_64 or Windows 11, an AMD Ryzen APU with one of the targets listed above. WSL2 works;
+- Linux or Windows 11, an AMD Ryzen APU with [RDNA 3 or RDNA 3.5 graphics](https://snowllm.dev/docs/getting-started/installation#choose-your-apu-target). WSL2 works;
   ROCm reaches the GPU there through `/dev/dxg`, so set it up with
   [AMD's WSL guide](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html)
   first
@@ -110,6 +81,12 @@ See [switching channels with pip](docs/getting-started/installation.md#change-ch
 
 ## Integrations
 
+| API | Endpoint |
+| --- | --- |
+| OpenAI Chat Completions | `http://127.0.0.1:8000/v1/chat/completions` |
+| OpenAI Responses | `http://127.0.0.1:8000/v1/responses` |
+| Anthropic Messages | `http://127.0.0.1:8000/v1/messages` |
+
 `snowllm pi` points [Pi](https://pi.dev) at a local server by writing every model to
 `~/.pi/agent/models.json`.
 
@@ -120,8 +97,6 @@ snowllm pi --host 192.168.1.10 --port 8000    # one elsewhere on the network
 
 `--host` is where Pi should reach the server, `localhost` by default; `--port` is the same 8000
 the server listens on.
-
-OpenAI Chat Completions/Responses and Anthropic Messages APIs support streaming, tool calls, and images on supported models; use `http://127.0.0.1:8000/v1` for OpenAI or `http://127.0.0.1:8000` for Anthropic.
 
 ## Web UI
 
@@ -150,8 +125,8 @@ monitoring, and Web UI details.
 A recipe is one model at one precision. `snowllm pull` fetches it:
 
 ```sh
-snowllm recipes                      # what there is
-snowllm pull qwen3.6-35b-a3b-fp8     # or just `snowllm pull`, and pick from the list
+snowllm recipes
+snowllm pull qwen3.8-flash-next-q3-k-xl
 ```
 
 - Fetches over several connections at once, and resumes where it stopped
@@ -165,25 +140,22 @@ or override it with `SNOWLLM_MODELS`. `snowllm <recipe>` looks there;
 | Env                    | What it does                                          |
 | ---------------------- | ----------------------------------------------------- |
 | `SNOWLLM_MODELS`       | checkpoint directory (`~/models`)                     |
-| `SNOWLLM_RECIPES_URL`  | your own catalogue; a path works as well as a URL     |
 | `HF_ENDPOINT`          | mirror to fetch from                                  |
 | `HF_TOKEN`             | token for gated repositories                         |
 
-Use `SNOWLLM_RECIPES_URL` to select a catalogue:
+Use `--bundle` to read recipes shipped with SnowLLM instead of fetching the online catalogue:
 
 ```sh
-# Catalogue compatible with an older SnowLLM version
-SNOWLLM_RECIPES_URL=https://snowllm.dev/recipes/0.3.13.json snowllm recipes --refresh
-
-# Local catalogue JSON file
-SNOWLLM_RECIPES_URL="$HOME/recipes.json" snowllm recipes
+snowllm recipes --bundle
+snowllm pull qwen3.8-flash-next-q3-k-xl --bundle
 ```
 
 ## Run
 
 ```sh
-snowllm qwen3.6-35b-a3b-fp8          # a recipe you pulled, or a path
-snowllm ~/models/Qwen3.6-35B-A3B-FP8
+snowllm qwen3.8-flash-next-q3-k-xl
+snowllm ~/models/Qwen3.8-Flash-Next-UD-Q3_K_XL
+snowllm qwen3.8-flash-next-q3-k-xl --bundle
 ```
 
 Common flags (`snowllm --help` lists every option):
@@ -214,7 +186,7 @@ Common flags (`snowllm --help` lists every option):
 ## Questions
 
 Ask in [Discussions](https://github.com/SnowLLM/SnowLLM/discussions). Hardware reports from the rest of the
-Ryzen AI Max 300 and 400 series are especially useful — only the 395 has been tested here.
+Ryzen AI Max 300 and 400 series and other RDNA 3 / RDNA 3.5 APUs are especially useful.
 
 ## License
 
