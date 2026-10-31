@@ -5,11 +5,27 @@ from .. import ops
 from .resources import draft_table_blocks
 
 
+def suggest_context(r, plan, fits, maximum):
+    from ..capacity import largest_fitting
+    from ..errors import SnowLLMError
+    from ..memory_report import current
+    report = current()
+    if report is None or getattr(r, '_want_blocks', None) is not None:
+        return
+    try:
+        scale = r.ctx_cap // plan.minimum
+        fitting = largest_fitting(fits, maximum, unit=r.block_size if scale == 1 else 1)
+        report.suggestion = min(fitting * scale, report.values['context'] - 1)
+    except SnowLLMError:
+        pass
+
+
 def record_memory(r, kv, *, weights, host_weights, load_peak, room):
     from ..memory_report import current
     report = current()
     if report is None:
         return
+    report.suggestion = None
     from ..models.geometry import DeepSeekV4Geometry, Glm5NextGeometry
     plan = r._pool_plan(0)
     units = plan.minimum if plan.requested is None else plan.requested
@@ -21,7 +37,7 @@ def record_memory(r, kv, *, weights, host_weights, load_peak, room):
     linear, fixed_workspace = 0, 0
     modules = getattr(r.resources, 'linear', None)
     if modules is None:
-        modules = [a for _, a in getattr(r, 'linear_mods', ())]
+        modules = [a for _, a in (*getattr(r, 'linear_mods', ()), *getattr(r, 'conv_mods', ()))]
     for a in modules:
         tensors = (a.history, a.state) if hasattr(a, 'history') else a.state
         for t in tensors:

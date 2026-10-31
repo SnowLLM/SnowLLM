@@ -329,6 +329,13 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     from .capacity import record_memory
     record_memory(r, kv, weights=weights, host_weights=host_weights, load_peak=load_peak,
                   room=room + resident)
+    if got > budget:
+        from .capacity import suggest_context
+        plan=r._pool_plan(0)
+        blocks=r._cache_blocks()
+        fixed=weights+r.minimum_bytes(rows)+r.act_bytes_for(rows)+aux-r._cache_bytes(blocks)
+        suggest_context(r,plan,
+            lambda n:max(loading,fixed+r._cache_bytes(n)-room)<=budget,blocks-1)
     return got
 
 

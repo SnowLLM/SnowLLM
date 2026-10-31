@@ -257,7 +257,7 @@ class BaseRunner:
         try:
             units, snapshots = plan.choose(allowance(), prefix_budget)
         except ValueError as exc:
-            from ..capacity import largest_fitting, memory_shortage
+            from ..capacity import memory_shortage
             from ..memory_report import current
             if floor < plan.minimum or (plan.maximum is not None and floor > plan.maximum):
                 raise CapacityError(
@@ -268,16 +268,9 @@ class BaseRunner:
             report = current()
             if report is not None:
                 report.shortfall(missing)
-                if getattr(self, '_want_blocks', None) is None:
-                    scale = self.ctx_cap // plan.minimum
-                    unit = self.block_size if scale == 1 else 1
-                    try:
-                        fitting = largest_fitting(
-                            lambda n: plan.bytes_for(n) + plan.snapshot_floor + plan.future_bytes <= room,
-                            floor - 1, unit=unit)
-                        report.suggestion = min(fitting * scale, report.values['context'] - 1)
-                    except SnowLLMError:
-                        pass
+                from .capacity import suggest_context
+                suggest_context(self,plan,
+                    lambda n:plan.bytes_for(n)+plan.snapshot_floor+plan.future_bytes<=room,floor-1)
             raise CapacityError(
                 f'{type(self).__name__}: '
                 f'{memory_shortage(missing, target="host" if enabled() else "GPU")}') from exc

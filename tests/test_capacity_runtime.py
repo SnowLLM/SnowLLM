@@ -161,6 +161,7 @@ def main():
         sparse_state_bytes=lambda: 100, block_size=16, max_prefill_tokens=32,
         resources=SimpleNamespace(linear=[]), act_bytes_for=lambda n: 32,
         fixed_bytes=lambda n: 228, ctx_cap=128, max_num_seqs=1, slots_per_request=1)
+    report.suggestion=64
     with patch('snowllm.memory_report.current', return_value=report), \
          patch('snowllm.engine.capacity.auxiliary_bytes', return_value=0):
         record_memory(planned, {}, weights=1000, host_weights=0, load_peak=1200, room=2000)
@@ -168,6 +169,7 @@ def main():
        report.values['cache'] == 128 and report.values['other'] == 100)
     ck('per-100K KV growth excludes fixed carry buffers', report.values['cache_100k'] == 100000)
     ck('report categories add up without double counting', report.values['total'] == 1260)
+    ck('a new workload report clears advice from a rejected placement',report.suggestion is None)
     planned.resources.checkpoints = SimpleNamespace(bytes_for=lambda n: 8)
     planned._pool_plan = lambda n: PoolPlan(lambda n: 100+n*16, minimum=8,
                                           checkpoint_bytes=16, minimum_snapshots=2)
