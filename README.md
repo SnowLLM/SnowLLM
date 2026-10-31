@@ -1,6 +1,6 @@
 # SnowLLM
 
-A local LLM inference framework, hand-tuned for **AMD Ryzen AI Max**<br>and compatible with other **AMD RDNA 3 / RDNA 3.5 APUs**.
+A local LLM inference framework, hand-tuned for **AMD Ryzen AI Max** and compatible with other **AMD RDNA 3 / RDNA 3.5 APUs**.
 
 For more information, visit [snowllm.dev](https://snowllm.dev/) ([中文](https://snowllm.dev/?lang=zh_cn)).
 
