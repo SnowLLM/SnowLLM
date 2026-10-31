@@ -48,3 +48,25 @@ MiniCPM-V 4.7 支持文本、单图、多图和高分辨率图片切片，图像
 `minicpm-v4.7-35b-a3b-q4-k-m-dspark` 方案附带官方 Q8 DSpark 草稿模型（下载约 405 MiB，常驻权重约 519 MiB），支持文本、图片、批量 HIP graph 和置信度预测头。已有权重可通过 `--dflash /path/to/dspark` 指定对应草稿目录或 GGUF 文件，也支持 BF16 safetensors。方案使用 `--dflash-block 8`，可选 1、4、8、15；0 使用官方配置的 15。较小的块可能更快：本机测过的代码提示词使用 4 比 8 快。`--dflash-p-min` 可启用置信度截断，默认为 0（关闭）。
 
 上述大小是参考值，并非内存预留量，草稿权重和运行时缓冲还会增加占用。方案的默认值也可能不同：`qwen3.6-35b-a3b-fp8` 设置 `--num-spec 0`，其 `-mtp` 方案则开启 MTP。实测性能见[性能测试](https://snowllm.dev/benchmark/)。
+
+
+`lfm2.5-8b-a1b-q4-k-m` 使用官方 [LFM2.5-8B-A1B GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF)，支持普通文本解码、分块和批量 prefill，以及保存短卷积历史的前缀缓存。运行 `snowllm pull lfm2.5-8b-a1b-q4-k-m --bundle` 下载，需要包含 LFM geometry 6 的内核构建。支持 BF16 safetensors，以及投影和专家使用 Q4_K、Q6_K、Q8_0 的 GGUF；基础方案默认单请求、关闭推测解码。模型原生上下文上限为 128000 token。已在 gfx1151 和 Windows Radeon 780M（gfx1103）上实测；新增注意力和卷积内核也通过了 gfx1150 交叉编译，仍需对应硬件验证。专家路由分数接近时，不同批量或分块大小可能产生不同的贪心输出。
+
+使用 `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` 下载开启 DSpark 的方案，复用主模型，并将官方 Q8_0 草稿下载到 `dspark/`。默认草稿块为 9 token，支持自适应块长、批量解码和前缀复用。内核构建还需包含 DSpark draft geometry 4；DSpark 需要单独的草稿权重。
+
+Q8_0 主模型对应 `lfm2.5-8b-a1b-q8-0` 和 `lfm2.5-8b-a1b-q8-0-dspark`。四个方案复用相同实现，两种 DSpark 方案使用同一份草稿权重；默认单请求、8192 个共享缓存 token、512-token prefill 分块。
+
+在 gfx1151 上，使用上述默认上下文和分块、BF16 KV、启用 graph、前缀缓存比例 0.08 时，设备显存实测如下：
+
+| 主模型 | 普通解码 | 加 Q8_0 DSpark |
+| --- | --- | --- |
+| Q4_K_M | 5.98 GiB | 6.59 GiB |
+| Q8_0 | 9.68 GiB | 10.17 GiB |
+
+进程主机侧 RSS 另约 1.4 GiB；这些是设备和进程测量，尚未在物理 16 GiB 整机上验证。Q4_K_M 已通过 8 GiB 设备预算下的加载和生成；Q8_0 的主模型权重本身就超过 8 GiB。
+
+PG19 续写、输入 2048 token、输出 256 token、关闭前缀缓存、预热一次后测三次中位数：开启固定块长 DSpark 后，单请求解码吞吐 Q4_K_M 从 93.4 提升至 275.7 tok/s，Q8_0 从 52.5 提升至 104.3 tok/s。两请求合计吞吐分别为 148.6 → 301.1 和 87.6 → 185.8 tok/s。接受率和吞吐随文本及主模型量化精度变化。
+
+Windows Radeon 780M（gfx1103）也已通过两种权重的算子／参考精度、普通解码、批量 DSpark、graph 和前缀恢复测试。输入 2048、输出 128 token 时，普通解码 → block 9 DSpark：Q4_K_M 为 49.4 → 41.4 tok/s，Q8_0 为 32.5 → 77.2 tok/s。Q4_K_M 的 block 1／4／8 和自适应 block 9 分别为 46.2／47.5／42.9／45.3 tok/s，因此该 GPU 上这个工作负载优先使用普通 Q4 方案。Q8_0 的 block 8 为 80.0 tok/s，自适应 block 9 为 78.7 tok/s。测速采用 Engine 阶段同步计时、graph、512-token prefill 分块、关闭前缀复用，预热后测三次中位数。
+
+按加载器的实际分配规划，LFM 主模型常驻权重分别为 Q4_K_M 5.29 GiB、Q6_K 6.97 GiB、Q8_0 8.88 GiB、BF16 safetensors 16.27 GiB；Q8_0 草稿另需 0.392 GiB。BF16 KV 每 token 占主模型 12 KiB、草稿 10 KiB，合计 8192 个共享缓存 token 需 176 MiB，32768 个需 704 MiB。这些数字不含激活、graph 和驱动开销。在 gfx1151 上，Q4_K_M + Q8_0 DSpark、128000 缓存 token、单请求、512-token prefill 分块、block 9、启用 graph、关闭前缀快照时，初始化后 Torch 活跃分配为 8.44 GiB，设备显存实测占用 9.05 GiB。Q6_K 和 BF16 主模型大小来自分配规划，尚未执行全模型运行验证。LFM 加载器尚不支持 FP8 权重。

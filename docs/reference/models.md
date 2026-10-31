@@ -17,6 +17,59 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB |
 | `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB |
 
+`lfm2.5-8b-a1b-q4-k-m` runs the official [LFM2.5-8B-A1B GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF).
+It supports ordinary text decoding, chunked and batched prefill, and prefix snapshots of the short-convolution history.
+Use `snowllm pull lfm2.5-8b-a1b-q4-k-m --bundle` with a kernel build that includes LFM geometry 6.
+Dense projections and experts support BF16 safetensors and Q4_K/Q6_K/Q8_0 GGUF storage.
+`lfm2.5-8b-a1b-q8-0` uses the official Q8_0 target. Both base recipes default to one
+request, 8192 shared cache tokens, 512-token prefill chunks and speculative decoding disabled.
+Use `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` for the same target plus the
+official Q8_0 DSpark draft in `dspark/`. It uses a nine-token draft block; adaptive
+blocks, batched decoding and prefix reuse are supported. The kernel build must include
+LFM target geometry 6 and DSpark draft geometry 4. DSpark needs a separate draft checkpoint.
+The corresponding Q8_0 target recipe is `lfm2.5-8b-a1b-q8-0-dspark`;
+all four recipes share the implementation and the DSpark variants use the same draft weights.
+The model's native context limit is 128000 tokens. Runtime validation covers gfx1151
+and Windows Radeon 780M (gfx1103). The new attention and convolution kernels also
+compile for gfx1150, which still needs hardware validation.
+Batch and chunk shapes can change greedy tokens when expert routing scores are close.
+
+LFM resident target weights are 5.29 GiB (Q4_K_M), 6.97 GiB (Q6_K), 8.88 GiB (Q8_0)
+or 16.27 GiB (BF16 safetensors), using the loader's allocation plan. The Q8_0 draft adds
+0.392 GiB. With BF16 KV, the target uses 12 KiB per token and the draft 10 KiB;
+8192 shared cache tokens therefore add 176 MiB, and 32768 add 704 MiB.
+These figures exclude activations, graphs and driver allocations. On gfx1151,
+Q4_K_M + Q8_0 DSpark with 128000 cache tokens, one request, 512-token prefill chunks,
+block 9, graphs and no prefix snapshots used 8.44 GiB of live Torch allocations
+and 9.05 GiB of device memory after initialization. Q6_K and BF16 target sizes
+are allocation plans, not full-model runtime validation. The LFM loader does not support FP8 weights.
+
+For the recipes' 8192-token capacity, one request, 512-token prefill chunks, BF16 KV,
+graphs and prefix ratio 0.08, measured device memory on gfx1151 was:
+
+| Target | Ordinary decoding | With Q8_0 DSpark |
+| --- | --- | --- |
+| Q4_K_M | 5.98 GiB | 6.59 GiB |
+| Q8_0 | 9.68 GiB | 10.17 GiB |
+
+The process also had about 1.4 GiB host RSS. These are device and process measurements,
+not a validation on a physical 16 GiB system. Q4_K_M passed loading and generation
+under an 8 GiB device budget; Q8_0 needs more than 8 GiB for the target weights alone.
+For PG19 continuation with 2048 input tokens, 256 output tokens, prefix caching disabled
+and one warmup plus three timed runs, median decode throughput was 93.4 → 275.7 tok/s
+for Q4_K_M and 52.5 → 104.3 tok/s for Q8_0 when enabling fixed-block DSpark.
+With two requests, aggregate throughput was 148.6 → 301.1 and 87.6 → 185.8 tok/s respectively.
+Acceptance rates and throughput depend on the text and target quantization.
+
+On the Windows Radeon 780M, both targets pass the operator/reference, ordinary decoding,
+batched DSpark, graph and prefix-restoration checks. At 2048 input / 128 output tokens,
+ordinary → block-9 DSpark decode measured 49.4 → 41.4 tok/s for Q4_K_M and
+32.5 → 77.2 tok/s for Q8_0. Q4_K_M block sizes 1/4/8 and adaptive block 9 measured
+46.2/47.5/42.9/45.3 tok/s. Prefer the ordinary Q4 recipe on this GPU for this workload;
+Q8_0 block 8 measured 80.0 tok/s and adaptive block 9 measured 78.7 tok/s.
+DSpark remains an option for Q8 and other hardware. These are direct-engine phase
+measurements, with graphs, 512-token prefill chunks, no prefix reuse and three timed runs.
+
 `deepseek-v4.1-flash-1017-vq-q4-k` supports text inference with the 1017 VQ + Q4_K checkpoint.
 Use `deepseek-v4.1-flash-1017-vq-q4-k-dspark` to enable DSpark by default with the same model directory and downloads.
 The base recipe defaults are one active request, an 8192-token context and 8192-token prefill chunks, with
