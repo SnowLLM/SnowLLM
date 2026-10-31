@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.19.dev4 — 2026-10-31
+
+Fix DSpark startup profiling with multiple requests and improve recipe compatibility validation.
+
+- Match DSpark profiling warmup to the planned single head row when prefill does not request logits, preventing workspace shape errors with multiple request slots.
+  DSpark profiling 预热在无需 logits 的 prefill 中使用规划好的单个 head 行，修复多请求槽位下的工作区形状错误。
+- Validate published recipe clients against the recipes supported by each client's version.
+  按各客户端版本支持的配方验证已发布客户端的兼容性。
+- Correct the documented minimum RAM for MiniCPM-V 4.7 Q4_K_M to 64 GiB.
+  将 MiniCPM-V 4.7 Q4_K_M 的文档最低内存修正为 64 GiB。
+
 ## 0.3.19.dev3 — 2026-10-30
 
 Add Stable / Dev installation channels and update checks, with published PyPI versions shown on the homepage.
