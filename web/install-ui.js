@@ -44,10 +44,14 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
   function renderInstall() {
     var channelButtons = Array.from(document.querySelectorAll('.opts[data-axis="channel"] .opt'));
     channelButtons.forEach(function (button) {
-      button.disabled = !supportsTarget(releases[button.dataset.value], choice.gpu);
+      button.hidden = button.dataset.value === "dev" && releaseState === "ready" && !releases.dev;
+      button.disabled = button.hidden || !supportsTarget(releases[button.dataset.value], choice.gpu);
     });
+    if (releaseState === "ready" && !releases.dev && choice.channel === "dev") choice.channel = "stable";
     var available = channelButtons.find(function (button) { return !button.disabled; });
-    if (!supportsTarget(releases[choice.channel], choice.gpu) && available) {
+    if (!channelButtons.some(function (button) {
+      return button.dataset.value === choice.channel && !button.disabled;
+    }) && available) {
       choice.channel = available.dataset.value;
     }
     var blocked = !supportsTarget(releases[choice.channel], choice.gpu);
@@ -94,7 +98,7 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
 
   document.querySelectorAll(".opts[data-axis] .opt").forEach(function (button) {
     button.addEventListener("click", function () {
-      if (button.disabled) return;
+      if (button.disabled || button.hidden) return;
       choice[button.parentNode.dataset.axis] = button.dataset.value;
       if (cmdEl) renderInstall();
       saveChoice();

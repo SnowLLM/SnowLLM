@@ -1,6 +1,19 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.20 — 2026-10-31
+
+Report startup memory shortages sooner and hide superseded development releases on the website.
+
+- Check weight capacity before KV and workspace planning, report shortages without rebuilding the model to search for a context recommendation, and reuse host mapping measurements.
+  在规划 KV 和工作区前检查权重容量，内存不足时直接报错，不再重建模型搜索推荐上下文，并复用 host 映射统计。
+- Use incremental memory accounting with shared storage deduplication, and avoid real pinned memory allocations during simulated planning.
+  内存统计改为增量计数并保留共享存储去重，模拟规划期间不再实际申请锁页内存。
+- Show the Dev installation channel on the website only when its published version is newer than Stable; older Dev links switch to Stable automatically.
+  官网仅在已发布的 Dev 版本比 Stable 更新时显示 Dev 安装通道，旧 Dev 链接自动切回 Stable。
+- Clarify that the DeepSeek V4.1 Flash VQ + Q4_K DSpark configuration needs 128 GiB of RAM on Linux or 192 GiB on Windows.
+  明确 DeepSeek V4.1 Flash VQ + Q4_K DSpark 配置在 Linux 上需要 128 GiB 内存，Windows 上需要 192 GiB。
+
 ## 0.3.19 — 2026-10-31
 
 Bring bundled recipes, Stable / Dev installation channels, lower memory use, and fixes for DSpark startup and DeepSeek V4.1 prefix caching to the stable release.

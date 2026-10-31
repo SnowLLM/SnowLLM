@@ -283,6 +283,7 @@
   }
 
   .opt[disabled] { color: var(--hair); cursor: not-allowed; }
+  .opt[hidden] { display: none; }
   .opt[disabled]:hover { color: var(--hair); }
 
   .build-opt { flex-wrap: wrap; gap: 0.25rem 0.6rem; }

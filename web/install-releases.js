@@ -32,5 +32,8 @@ export function latestReleases(report) {
       ranks[channel] = rank
     }
   }
+  if (releases.dev && releases.stable && compareRanks(ranks.dev, ranks.stable) <= 0) {
+    releases.dev = null
+  }
   return releases
 }
