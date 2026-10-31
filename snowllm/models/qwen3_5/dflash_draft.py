@@ -219,9 +219,27 @@ def _proj(src: "DraftSource", which: int, names: Sequence[str]) -> object:
     return d.proj_shuffle_w(which, (torch.cat(rows, 0) if len(rows) > 1 else rows[0]).cuda())
 
 
+class NeoXSource:
+    def __init__(self,source,head_size):
+        self.source,self.head_size=source,head_size
+
+    def __getattr__(self,name):
+        return getattr(self.source,name)
+
+    def dense(self,name):
+        value=self.source.dense(name)
+        if name.endswith(('self_attn.q_proj.weight','self_attn.k_proj.weight',
+                          'self_attn.q_norm.weight','self_attn.k_norm.weight')):
+            shape=value.shape
+            return value.reshape(-1,self.head_size//2,2,*shape[1:]).transpose(1,2).reshape(shape)
+        return value
+
+
 def load(src: "DraftSource", geo: DFlashGeometry,
          pools: list[tuple[torch.Tensor, torch.Tensor]], arena: ops.Arena,
          block_size: int) -> DFlashDraft:
+    if not geo.rope_is_neox_style:
+        src=NeoXSource(src,geo.head_size)
     def cu(name: str) -> torch.Tensor:
         return src.dense(name).cuda()
 

@@ -7,6 +7,7 @@ from collections.abc import Callable
 from types import ModuleType
 
 _MODELS = {
+    "Lfm2MoeForCausalLM": ("lfm2", "load_weights"),
     "MiniCPMV4_7ForConditionalGeneration": ("minicpmv", "load_weights"),
     "Glm5NextForConditionalGeneration": ("glm5_next", None),
     "Qwen3_5MoeForCausalLM": ("qwen3_5", "load_weights"),

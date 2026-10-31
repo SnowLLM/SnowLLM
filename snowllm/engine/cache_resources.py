@@ -4,6 +4,7 @@ import torch
 from .. import ops
 from ..ops._common import dry_alloc
 from ..models.qwen3_5.layers import FullAttention, GatedDeltaNet
+from ..models.lfm2.layers import ShortConv
 from ..models.qwen4exp.layers import Ple
 from ..models.glm5_next.layers import LinearAttention, SparseAttention
 from .resources import ResourceSet
@@ -34,14 +35,16 @@ class QwenResources(ResourceSet):
         super().__init__()
         self.r = r = runner
         self.draft_modules = frozenset(r.model.mtp.modules()) if r.model.mtp is not None else frozenset()
-        pooled = pooled_modules(r.model, (FullAttention, GatedDeltaNet))
+        pooled = pooled_modules(r.model, (FullAttention, GatedDeltaNet, ShortConv))
         r.full_mods = [(i, a) for i, a in pooled if isinstance(a, FullAttention)]
         r.linear_mods = [(i, a) for i, a in pooled if isinstance(a, GatedDeltaNet)]
+        r.conv_mods = [(i, a) for i, a in pooled if isinstance(a, ShortConv)]
         r.ple_mods = [m for m in r.model.modules() if isinstance(m, Ple)]
         self.indexers = ([a.indexer for _, a in r.full_mods if getattr(a, 'indexer', None) is not None]
                          if getattr(r.geo, 'index_topk', 0) else [])
         self.states = self.add(self.allocate_states,
             [(a, ('state', 'retain')) for _, a in r.linear_mods]
+            + [(a, ('state', 'retain')) for _, a in r.conv_mods]
             + [(a, ('state',)) for a in r.ple_mods]
             + [(a, ('carry', 'carry_pos')) for a in self.indexers]
             + [(a, ('compact', 'compact_table', 'plan', 'plan_ws')) for _, a in r.full_mods
@@ -52,7 +55,7 @@ class QwenResources(ResourceSet):
             + [(a, ('pool',)) for a in self.indexers]
             + [(r, ('kv', 'kv_scale', 'cache'))])
         self.checkpoints = self.add(self.allocate_checkpoints,
-            [(a, ('ckpt',)) for _, a in r.linear_mods] + [(a, ('ckpt',)) for a in r.ple_mods])
+            [(a, ('ckpt',)) for _, a in r.linear_mods + r.conv_mods] + [(a, ('ckpt',)) for a in r.ple_mods])
         self.outputs = self.add(self.allocate_outputs, [(r, ('x', 'taps', 'draft_taps', 'ple_emb',
             'trunk_streams', 'mtp_streams'))])
         self.statics = self.add(self.allocate_statics, [(r, ('logits', 'draft_logits', 'mtp_h',
@@ -97,6 +100,10 @@ class QwenResources(ResourceSet):
                 tensor(slabs, (count, g.lin_num_v_heads, g.lin_head_k, g.lin_head_v), torch.float32))
             if r.roll_forward:
                 a.retain = tuple(slabs.take(n).span() for n in ops.linear_attn_retain_bytes(r.decode_rows))
+        for i, a in r.conv_mods:
+            a.state = r.state[i] = (tensor(slabs, (rows, 2, g.hidden), torch.bfloat16),)
+            a.retain = (tensor(slabs, (rows, r.T+2, g.hidden), torch.bfloat16)
+                        if r.roll_forward else None)
         for a in r.ple_mods:
             a.state = tensor(slabs, (rows + (a in self.draft_modules), a.hist, g.hc_dim), torch.bfloat16)
         if r.ple_mods:
@@ -104,7 +111,7 @@ class QwenResources(ResourceSet):
             r.ple_fresh = tensor(slabs, (r.max_num_seqs,), torch.int32)
             r.ple_going = tensor(slabs, (r.decode_rows,), torch.int32).fill_(1)
         if not self.indexers:
-            return RequestState([t for _, a in r.linear_mods for t in a.state]
+            return RequestState([t for _, a in r.linear_mods + r.conv_mods for t in a.state]
                                 + [a.state for a in r.ple_mods])
         for a in self.indexers:
             count = rows + (a in self.draft_modules)
@@ -121,7 +128,7 @@ class QwenResources(ResourceSet):
         for _, a in r.full_mods:
             a.compact, a.compact_table, a.plan, a.plan_ws = compact, table, plan, ws
             a.plan_slots = slots
-        return RequestState([t for _, a in r.linear_mods for t in a.state]
+        return RequestState([t for _, a in r.linear_mods + r.conv_mods for t in a.state]
                             + [a.state for a in r.ple_mods]
                             + [t for a in self.indexers for t in (a.carry, a.carry_pos)])
 
@@ -143,7 +150,7 @@ class QwenResources(ResourceSet):
 
     def allocate_checkpoints(self, slabs, rows):
         r, g = self.r, self.r.geo
-        for _, a in r.linear_mods:
+        for _, a in r.linear_mods + r.conv_mods:
             a.ckpt = RequestState(a.state).layout.allocate(rows, slabs) if rows else None
         for a in r.ple_mods:
             a.ckpt = RequestState((a.state,)).layout.allocate(rows, slabs)[0] if rows else None

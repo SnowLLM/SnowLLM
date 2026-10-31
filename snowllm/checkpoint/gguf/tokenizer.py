@@ -39,6 +39,8 @@ PRE_TOKENIZER = {
     )),
 }
 
+PRE_TOKENIZER["lfm2"] = PRE_TOKENIZER["glm4"]
+
 BYTE_LEVEL = {"type": "ByteLevel", "add_prefix_space": False, "trim_offsets": False,
               "use_regex": False}
 

@@ -70,7 +70,10 @@ def is_dflash(g: GGUF) -> bool:
 
 
 def geometry(g: GGUF) -> DFlashGeometry:
-    if "markov_w1.weight" in g and not g.get("{arch}.sample_from_anchor"):
+    lfm = (g.get('tokenizer.ggml.pre')=='lfm2' and
+           int(g.need('{arch}.embedding_length'))==2048 and
+           int(g.need('{arch}.attention.head_count'))==32)
+    if "markov_w1.weight" in g and not g.get("{arch}.sample_from_anchor",lfm):
         raise SnowLLMError("Qwen DSpark currently requires an anchor-first checkpoint")
     n_head = int(g.need("{arch}.attention.head_count"))
     head = int(g.get("{arch}.attention.key_length")
@@ -82,6 +85,7 @@ def geometry(g: GGUF) -> DFlashGeometry:
         raise SnowLLMError("DFlash sliding-window pattern must describe every draft layer")
     return DFlashGeometry(
         is_causal=g.get("{arch}.attention.causal"),
+        target_model_type="lfm2_moe" if lfm else "",
         markov_rank=int(g["markov_w1.weight"].shape[1]) if "markov_w1.weight" in g else 0,
         vocab_size=int(g["markov_w1.weight"].shape[0]) if "markov_w1.weight" in g else 0,
         hidden=int(g.need("{arch}.embedding_length")),

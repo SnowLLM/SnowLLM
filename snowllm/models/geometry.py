@@ -343,6 +343,8 @@ class DFlashGeometry:
     markov_rank: int = 0
     vocab_size: int = 0
     is_causal: bool | None = None
+    target_model_type: str = ""
+    rope_is_neox_style: bool = True
 
     @classmethod
     def from_config(cls, cfg: dict) -> "DFlashGeometry":
@@ -350,12 +352,19 @@ class DFlashGeometry:
         types = cfg.get("layer_types") or []
         if types and len(types) != cfg["num_hidden_layers"]:
             raise ValueError("DFlash layer_types must describe every draft layer")
-        dspark = "Qwen3DSparkModel" in cfg.get("architectures", [])
+        lfm = "Lfm2DSparkDraftModel" in cfg.get("architectures", [])
+        dspark = lfm or "Qwen3DSparkModel" in cfg.get("architectures", [])
+        d = dict(d)
+        if lfm:
+            d.update(markov_head_type=cfg.get('markov_head_type','vanilla'),
+                     markov_rank=cfg['markov_rank'])
         if dspark and (d.get("markov_head_type") != "vanilla"
                        or int(d.get("markov_rank", 0)) <= 0):
             raise ValueError("DSpark currently requires a vanilla Markov head")
         return cls(
             is_causal=cfg.get("is_causal"),
+            target_model_type="lfm2_moe" if lfm else "",
+            rope_is_neox_style=bool(cfg.get("rope_is_neox_style",True)),
             markov_rank=int(d.get("markov_rank", 0)) if dspark else 0,
             vocab_size=int(cfg.get("draft_vocab_size", cfg.get("vocab_size", 0))),
             conv_taps=int(d.get("conv_kernel_size", 0)),
@@ -368,13 +377,13 @@ class DFlashGeometry:
             num_kv_heads=cfg["num_key_value_heads"],
             head_size=cfg.get("head_dim") or cfg["hidden_size"] // cfg["num_attention_heads"],
             intermediate=cfg["intermediate_size"],
-            sliding_window=cfg["sliding_window"] or 0,
+            sliding_window=cfg.get("sliding_window") or 0,
             num_sliding_layers=sum(t == "sliding_attention" for t in types),
             tap_layers=tuple(d["target_layer_ids"]),
             mask_token_id=d["mask_token_id"],
-            num_target_layers=cfg["num_target_layers"],
+            num_target_layers=cfg.get("num_target_layers",d.get("num_target_layers",0)),
             block_size=cfg["block_size"] if dspark else d["block_size"],
-            rope_theta=float(cfg["rope_parameters"]["rope_theta"]),
+            rope_theta=float((cfg.get("rope_parameters") or {}).get("rope_theta",cfg.get("rope_theta",1000000.0))),
             eps=float(cfg["rms_norm_eps"]),
         )
 

@@ -11,7 +11,7 @@ from . import deepseek4
 from . import dspark
 from . import qwen4exp
 from . import GGUF, optional_int
-from . import glm5_next
+from . import glm5_next, lfm2
 
 ARCH_MOE = "qwen35moe"
 ARCH_DENSE = "qwen35"
@@ -21,6 +21,8 @@ ARCHITECTURES_DENSE = ["Qwen3_5ForConditionalGeneration"]
 
 
 def config(g: GGUF) -> dict:
+    if g.arch == lfm2.ARCH:
+        return lfm2.config(g)
     if g.arch == glm5_next.ARCH:
         return glm5_next.config(g)
     if g.arch == deepseek4.ARCH:

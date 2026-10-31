@@ -135,6 +135,8 @@ def _draft_geometry(path: str) -> DFlashGeometry:
 
 def _check_dflash_target(model: "TargetModel", draft: DraftGeometry) -> None:
     geo = model.geo
+    if getattr(draft,'target_model_type','') and draft.target_model_type!=model.config.get('model_type'):
+        raise SnowLLMError('this DSpark draft requires a matching LFM2-MoE target')
     if _dspark(draft):
         from ..checkpoint.gguf import dspark as dspark_gguf
         if not isinstance(geo, DeepSeekV4Geometry):
@@ -179,8 +181,8 @@ def draft_block(geo: DraftGeometry, block: int) -> int:
             raise SnowLLMError(f"native V4.1 DSpark requires its checkpoint block size {geo.block_size}")
         return max(block or 0, geo.block_size)
     if geo is not None and geo.dspark:
-        if block not in (0, 1, 4, 8, 15) or block > geo.block_size:
-            raise SnowLLMError("DSpark block must be 1, 4, 8 or 15 and fit the checkpoint")
+        if block not in (0, 1, 4, 8, 9, 15) or block > geo.block_size:
+            raise SnowLLMError("DSpark block must be 1, 4, 8, 9 or 15 and fit the checkpoint")
         return block or geo.block_size
     return block or 8
 
@@ -284,6 +286,9 @@ def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
 
 
 def _runner_for(model: "TargetModel") -> type[BaseRunner]:
+    if getattr(model, "config", {}).get("model_type") == "lfm2_moe":
+        from .lfm2_runner import Lfm2Runner
+        return Lfm2Runner
     if isinstance(model.geo, Glm5NextGeometry):
         from .glm5_next_runner import Glm5NextRunner
         return Glm5NextRunner

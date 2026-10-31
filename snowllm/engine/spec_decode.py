@@ -618,7 +618,7 @@ class DFlashDecoder(DSparkScheduling):
             self._dspark_blocks(B)
             return
         M, n = B * blk, B * (blk - 1)
-        self.runner.model.model.embed_tokens(self.d_i64[M:2 * M], self.noise[:M])
+        getattr(self.runner.model,"model",self.runner.model).embed_tokens(self.d_i64[M:2 * M], self.noise[:M])
         hid = self.draft.forward(
             self.noise[:M], self.d_i64[2 * M:3 * M],
             ops.resolve_slots(self.d_bt[:B], self.d_i32[2 * M:3 * M], self.d_i32[3 * M:4 * M],
@@ -650,7 +650,7 @@ class DFlashDecoder(DSparkScheduling):
         lengths = empty(B, dtype=torch.int32, device="cuda")
         ops.copy_rows(lengths, self.d_len[:B])
         lengths.sub_(1)
-        self.runner.model.model.embed_tokens(ids, self.noise[:M])
+        getattr(self.runner.model,"model",self.runner.model).embed_tokens(ids, self.noise[:M])
         hidden = self.draft.forward(self.noise[:M], pos,
             ops.resolve_slots(self.d_bt[:B], seq, cache_pos, self.runner.block_size),
             self.d_bt[:B], lengths)

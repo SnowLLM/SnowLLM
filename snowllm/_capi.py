@@ -28,7 +28,7 @@ os.environ.setdefault("ROCSHMEM_DEBUG_LEVEL", "NONE")
 __all__ = ["SnowLLMError", "build_geometry", "draft_count", "draft_name", "draft_shape", "lib",
            "select_draft", "select_geometry", "geometry_id", "geometry_name", "synchronize",
            "assert_single_hip_runtime", "GEO_QWEN36_35B_A3B", "GEO_QWEN36_27B",
-           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH"]
+           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH", "GEO_LFM25_8B_A1B"]
 
 GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
@@ -36,6 +36,7 @@ GEO_DEEPSEEK_V4_FLASH = 2
 GEO_QWEN38_FLASH_NEXT = 3
 GEO_GLM53_FLASH = 4
 GEO_DEEPSEEK_V41_FLASH = 5
+GEO_LFM25_8B_A1B = 6
 
 
 class BuildGeometry(ctypes.Structure):
@@ -95,7 +96,7 @@ def select_geometry(geo: int) -> None:
             + ", ".join(f"{i} ({geometry_name(i)})"
                         for i in (GEO_QWEN36_35B_A3B, GEO_QWEN36_27B,
                                   GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH,
-                                  GEO_DEEPSEEK_V41_FLASH)
+                                  GEO_DEEPSEEK_V41_FLASH, GEO_LFM25_8B_A1B)
                         if geometry_name(i))
         )
 
@@ -736,6 +737,14 @@ if hasattr(lib, "snowllm_dsv41_attention_split"):
     _SIGS.extend((("snowllm_dsv41_attention_scratch_bytes", c_int64, [c_int64, c_int]),
                   ("snowllm_dsv41_attention_split", c_int,
                    [P]*11+[c_int64]+[c_int]*5+[P, c_int64, S])))
+
+if hasattr(lib, "snowllm_lfm2_short_conv"):
+    _SIGS.extend((("snowllm_lfm2_short_conv", c_int, [P]*10+[c_int64]*5+[S]),
+                  ("snowllm_lfm2_rope", c_int, [P]*3+[c_int64]*2+[S])))
+
+if hasattr(lib, "snowllm_lfm2_short_conv_spec"):
+    _SIGS.extend((("snowllm_lfm2_short_conv_spec", c_int, [P]*8+[c_int64]*4+[S]),
+                  ("snowllm_lfm2_conv_advance", c_int, [P]*4+[c_int64]*3+[S])))
 
 _missing = []
 for _name, _res, _args in _SIGS:
