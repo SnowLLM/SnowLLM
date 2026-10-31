@@ -29,15 +29,15 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 
 ## Performance
 
-| Model | Weights | Speculative decoding | Min RAM | Test machine | Arch | 8K Prefill, tok/s | 8K Decode, tok/s | 220K Prefill, tok/s | 220K Decode, tok/s |
-| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Qwen3.8-Flash-Next | UD-Q3_K_XL | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **1812.2** | **42.9** | **1723.8** | **38.6** |
-| MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark, block 8 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **4323.9** | **63.7** | **1257.3** | **18.0** |
-| MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark, block 8 | 32 GiB | 7940HS | gfx1103 (RDNA 3) | **1041.8** | **19.6** | — | — |
-| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | TBD | TBD | TBD | TBD |
-| GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **517.1** | **25.8** | **480.7** | **26.8** |
-| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **862.6** | **26.0** | **631.8** | **22.3** |
-| Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **3806.5** | **83.8** | **1244.0** | **33.6** |
+| Model | Speculative decoding | Min RAM | Test machine | 8K Prefill, tok/s | 8K Decode, tok/s | 220K Prefill, tok/s | 220K Decode, tok/s |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| [Qwen3.8-Flash-Next (UD-Q3_K_XL)](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) | MTP k=2 | 128 GiB | AI Max+ 395 | **1812.2** | **42.9** | **1723.8** | **38.6** |
+| [MiniCPM-V 4.7 35B-A3B (Q4_K_M)](https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B-gguf/tree/8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7) | Adaptive DSpark, block 8 | 64 GiB | AI Max+ 395 | **4323.9** | **63.7** | **1257.3** | **18.0** |
+| [MiniCPM-V 4.7 35B-A3B (mix_q3gud_im)](https://huggingface.co/openbmb/MiniCPM-V-4.7-35B-A3B-gguf/tree/8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7) | DSpark, block 8 | 32 GiB | 7940HS (RDNA 3) | **1041.8** | **19.6** | — | — |
+| [DeepSeek-V4.1-Flash (VQ + Q4_K)](https://huggingface.co/Baekpica/DeepSeek-V4.1-Flash-1017-VQ-GGUF/tree/f81ee2e9801fcc58fd51ae75dd827467ffc0b9e5) | DSpark, block 5 | 128 GiB | AI Max+ 395 | TBD | TBD | TBD | TBD |
+| [GLM-5.3-Flash (UD-IQ2_XXS)](https://huggingface.co/unsloth/GLM-5.3-Flash-GGUF/tree/a38483c8cd5df544f53d70fb281afe97369d5ab6) | MTP k=2 | 128 GiB | AI Max+ 395 | **517.1** | **25.8** | **480.7** | **26.8** |
+| [DeepSeek-V4-Flash (IQ2_XXS)](https://huggingface.co/unsloth/DeepSeek-V4-Flash-0731-GGUF) | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | **862.6** | **26.0** | **631.8** | **22.3** |
+| [Qwen3.6-35B-A3B (UD-Q4_K_XL)](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-MTP-GGUF) | MTP k=2 | 64 GiB | AI Max+ 395 | **3806.5** | **83.8** | **1244.0** | **33.6** |
 
 [Full benchmarks](https://snowllm.dev/benchmark/) · [Methodology and runs](docs/development/benchmarks.md).
 
