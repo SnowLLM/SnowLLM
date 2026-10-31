@@ -1,0 +1,39 @@
+{
+  "id": "lfm2.5-8b-a1b-q4-k-m-dspark",
+  "model": "LFM2.5-8B-A1B",
+  "family": "LFM",
+  "modalities": [
+    "text"
+  ],
+  "precision": "Q4_K_M",
+  "dir": "LFM2.5-8B-A1B-Q4_K_M",
+  "bytes": 5512055872,
+  "repo": "LiquidAI/LFM2.5-8B-A1B-GGUF",
+  "revision": "main",
+  "include": [
+    "LFM2.5-8B-A1B-Q4_K_M.gguf"
+  ],
+  "spec": "DSpark",
+  "priority": 61,
+  "requires": "0.3.20",
+  "summary": "LFM2.5-8B-A1B official Q4_K_M with its Q8_0 DSpark draft.",
+  "serve_as": "LFM2.5-8B-A1B",
+  "defaults": {
+    "num_spec": 0,
+    "max_num_seqs": 1,
+    "dflash": "@model/dspark",
+    "dflash_block": 9,
+    "max_model_len": 8192,
+    "max_num_batched_tokens": 512
+  },
+  "note": "Shares target weights with the recipe without DSpark. The draft is downloaded into dspark/.",
+  "sources": [
+    {
+      "repo": "LiquidAI/LFM2.5-8B-A1B-DSpark-GGUF",
+      "subdir": "dspark",
+      "include": [
+        "LFM2.5-8B-A1B-DSpark-Q8_0.gguf"
+      ]
+    }
+  ]
+}

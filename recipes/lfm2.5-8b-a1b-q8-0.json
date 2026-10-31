@@ -1,0 +1,27 @@
+{
+  "id": "lfm2.5-8b-a1b-q8-0",
+  "model": "LFM2.5-8B-A1B",
+  "family": "LFM",
+  "modalities": [
+    "text"
+  ],
+  "precision": "Q8_0",
+  "dir": "LFM2.5-8B-A1B-Q8_0",
+  "bytes": 9010195680,
+  "repo": "LiquidAI/LFM2.5-8B-A1B-GGUF",
+  "revision": "main",
+  "include": [
+    "LFM2.5-8B-A1B-Q8_0.gguf"
+  ],
+  "spec": "none",
+  "priority": 62,
+  "requires": "0.3.20",
+  "summary": "LFM2.5-8B-A1B hybrid short-convolution/MoE model in official Q8_0.",
+  "serve_as": "LFM2.5-8B-A1B",
+  "defaults": {
+    "num_spec": 0,
+    "max_num_seqs": 1,
+    "max_model_len": 8192,
+    "max_num_batched_tokens": 512
+  }
+}
