@@ -59,10 +59,11 @@ def profile(decoder, *, warmup=False):
                         table = bt[lo:hi].contiguous()
                         rows = [(i, t) for i in range(hi-lo) for t in range(c)]
                         total, qmap = ops.prefill_q_plan([c]*(hi-lo))
+                        # The no-logits prefill plan reserves one unused head row.
                         warm = synthetic_batch([c]*(hi-lo), nb, block_tables=table,
                             positions=positions([p for _, p in rows]),
                             slot_mapping=slot_mapping(table, rows, c),
-                            state_indices=list(range(lo, hi)), last_row=[(i+1)*c-1 for i in range(hi-lo)],
+                            state_indices=list(range(lo, hi)), last_row=[(hi-lo)*c-1],
                             is_prefill=True, need_logits=False, total_q_blocks=total, q_block_map=qmap)
                     else:
                         warm = runner._warm_prefill(lo, c, bt[lo:hi].contiguous())
