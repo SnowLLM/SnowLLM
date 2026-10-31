@@ -25,6 +25,9 @@ _capsule_pointer.restype = ctypes.c_void_p
 
 
 def _mapped_view(host):
+    from .. import ops
+    if ops.drying() is not None:
+        return host.view_as(host)
     if not host.is_pinned():
         raise SnowLLMError("a shared scheduler buffer must be pinned")
     mapped = device_pointer(host.data_ptr())
@@ -41,6 +44,9 @@ _mapped_hosts = {}
 
 
 def pinned_tensor(shape, dtype):
+    from .. import ops
+    if (dry := ops.drying()) is not None:
+        return dry.meta(shape, dtype, host=True, host_padding=False)
     from ..capacity import reserve_host, release_host
     nbytes = math.prod(shape)*torch.empty((),dtype=dtype).element_size()
     reserve_host(nbytes)
@@ -89,17 +95,12 @@ class MappedBuffer:
     def reserve(self, n, *, exact=False):
         if n > self.capacity:
             capacity = n if exact else max(n, 2*self.capacity)
-            from ..capacity import reserve_host, release_host
-            nbytes = capacity * torch.empty((), dtype=self.dtype).element_size()
-            reserve_host(nbytes)
-            try:
-                host = torch.empty(capacity, dtype=self.dtype, pin_memory=True)
-                device = _mapped_view(host)
-            except BaseException:
-                release_host(nbytes)
-                raise
-            weakref.finalize(host.untyped_storage(), release_host, nbytes)
+            host = pinned_tensor((capacity,), self.dtype)
+            device = _mapped_view(host)
             self.capacity, self.host, self.device = capacity, host, device
+            from .. import ops
+            if ops.drying() is not None:
+                return
             ptr = device.data_ptr()
             def retire(ref):
                 if _mapped_hosts.get(ptr) is ref:
@@ -111,7 +112,7 @@ class MappedBuffer:
         flat = array.array(codes[self.dtype], values)
         n = len(flat)
         self.reserve(max(n, 1))
-        if n:
+        if n and self.host.device.type != 'meta':
             ctypes.memmove(self.host.data_ptr(), flat.buffer_info()[0], n*flat.itemsize)
         return self.device[:n]
 
@@ -206,7 +207,7 @@ class SchedulerInputs(HostArena):
         host = self.table.host.view(self.rows, self.width)
         for i, blocks in enumerate(lists):
             lo = self.length[i] if self.owner[i] is blocks else 0
-            if len(blocks) > lo:
+            if len(blocks) > lo and host.device.type != 'meta':
                 values = array.array("i", blocks[lo:])
                 ctypes.memmove(host.data_ptr()+(i*self.width+lo)*values.itemsize,
                                values.buffer_info()[0], len(values)*values.itemsize)

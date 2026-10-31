@@ -43,7 +43,7 @@ def main():
     else:
         ck('host budget errors identify the host ceiling', False)
     context, shortage = 227328, 61500000
-    kv = dict(ctx=context, chunk=8192, slots=1, host_offload_allowed=True)
+    kv = dict(ctx=context, chunk=8192, slots=1, host_offload_allowed=True, util=1.)
     errors, suggestions, limits = [], [], []
     def build(dmap, offload=None):
         return dmap
@@ -54,6 +54,7 @@ def main():
         report = MemoryReport(values={'context': context})
         with patch.object(placement, 'auto_budget', return_value=host_gib << 30), \
              patch.object(loader, 'dry_need', side_effect=need), \
+             patch('snowllm._platform.gpu_mem_info', return_value=(100 << 30, 100 << 30)), \
              patch('snowllm.memory_report.current', return_value=report):
             try:
                 loader._memory_device_map({}, kv, build, {'experts': 15 << 30},
@@ -66,12 +67,13 @@ def main():
                 raise AssertionError('GPU-bound layout unexpectedly fit')
     ck('host 18 to 20 GiB leaves the same GPU-bound error',
        errors[0] == errors[1] and 'GPU-bound' in errors[0] and '--max-host-mem' not in errors[0])
-    ck('tiny GPU shortfall gets the same nearby context at both host ceilings',
-       suggestions == [212304, 212304] and suggestions[0] > context//2)
+    ck('GPU shortfall is reported without searching other contexts',
+       suggestions == [None, None])
     ck('both GPU-bound failures report the 15 GiB movable-weight ceiling', limits == [15 << 30]*2)
     def host_need(build, cfg, options, budget):
         return (19 << 30) - build().host_bytes
-    with patch.object(loader, 'dry_need', side_effect=host_need):
+    with patch.object(loader, 'dry_need', side_effect=host_need), \
+         patch('snowllm._platform.gpu_mem_info', return_value=(100 << 30, 100 << 30)):
         for host_gib in (18, 20):
             with patch.object(placement, 'auto_budget', return_value=host_gib << 30):
                 try:
@@ -142,10 +144,16 @@ def main():
     report = MemoryReport(values={'context': 227328})
     kv = dict(ctx=227328, chunk=8192, slots=1)
     with patch('snowllm.memory_report.current', return_value=report), \
-         patch.object(loader, 'dry_need', side_effect=lambda build, cfg, kv, budget: kv['ctx']-212992):
-        loader._planned_shortage(61 << 20, lambda: None, {}, kv)
-    ck('planner searches a nearby aligned context instead of halving it', report.suggestion == 212992)
-    ck('suggestion search preserves the configured context', kv['ctx'] == 227328)
+         patch('snowllm._platform.gpu_mem_info', return_value=(10 << 30, 10 << 30)), \
+         patch.object(loader, 'dry_need') as dry:
+        try:
+            loader._memory_device_map({}, kv, lambda: None, {}, {}, 11 << 30)
+        except RuntimeError as exc:
+            ck('weight shortage skips workspace planning and context search',
+               not dry.called and report.suggestion is None and 'weights alone' in str(exc))
+        else:
+            ck('weight shortage skips workspace planning and context search', False)
+    ck('failed planning preserves the configured context', kv['ctx'] == 227328)
     from snowllm.engine.capacity import record_memory
     from snowllm.models.geometry import Glm5NextGeometry
     planned = SimpleNamespace(geo=object.__new__(Glm5NextGeometry),

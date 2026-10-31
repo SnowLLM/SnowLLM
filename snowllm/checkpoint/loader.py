@@ -295,21 +295,33 @@ def dry_need(build: "Callable[[], TargetModel]", cfg: dict, kv: dict | None,
                               host_weights=d.host)
 
 
-def _planned_shortage(nbytes, build, cfg, kv, *, host_help=False, disk_help=False):
-    from ..capacity import largest_fitting, memory_shortage
-    from ..memory_report import current, suspended
+def _check_weight_capacity(total, kv, movable):
+    if kv.get('max_disk_bytes') is not None:
+        return
+    from .._platform import gpu_mem_info
+    from ..defaults import DEFAULT_GPU_UTIL
+    from ..memory_report import current, size
+    from ..models import placement
+    free, physical = gpu_mem_info()
+    gpu = max(0, int(physical * float(kv.get('util') or DEFAULT_GPU_UTIL)) - (physical-free))
+    host = (min(movable, max(0, placement.auto_budget() - int(kv.get('host_taken') or 0)))
+            if kv.get('host_offload_allowed', False) else 0)
+    weights = total + int(kv.get('draft_weight_bytes', kv.get('draft_resident')) or 0)
+    missing = weights - gpu - host
+    if missing <= 0:
+        return
     report = current()
-    if report is not None and report.values and not kv.get('blocks'):
-        from .. import ops
-        unit = ops.KV_BLOCK_SIZES[0]
-        try:
-            with suspended():
-                report.suggestion = largest_fitting(
-                    lambda ctx: dry_need(build, cfg, dict(kv, ctx=ctx), 0) <= 0,
-                    int(kv['ctx']) - 1, unit=unit)
-        except SnowLLMError:
-            report.suggestion = None
-    return memory_shortage(nbytes, host_help=host_help, disk_help=disk_help)
+    if report is not None:
+        report.weight_lower_bound = weights, gpu, host
+    else:
+        print(f'[planner] weights need at least {size(weights)}; available: '
+              f'GPU {size(gpu)} + host up to {size(host)}', flush=True)
+    host_help = ' or --max-host-mem' if kv.get('host_offload_allowed', False) and movable > host else ''
+    raise SnowLLMError(
+        f'weights alone need at least {size(missing)} more memory '
+        '(KV cache and workspace not included); '
+        f'increase --max-gpu-mem{host_help} if more memory is available, '
+        'or use a smaller or more heavily quantized checkpoint')
 
 
 def _device_map(spec: str, cfg: dict, kv: dict | None,
@@ -361,10 +373,12 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
             by[group] = {i: n for i, n in by.get(group, {}).items() if i not in hash_layers}
             eligible[group] = sum(by[group].values())
     empty = placement.DeviceMap(frozenset(), sizes, per_layer=per_layer, total_bytes=total)
+    _check_weight_capacity(total, kv, sum(eligible.values()))
     from ..memory_report import current
     report = current()
     if report is not None:
         report.max_host_offload = placement.max_host_bytes(empty, (eligible, by))
+    print('[planner] planning KV cache and workspace', flush=True)
     needed = dry_need(lambda: build(empty, offload=None), cfg, kv, 0)
     if needed <= 0:
         return empty, None, (eligible, by)
@@ -377,13 +391,16 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
         planner = placement.plan_moe if cfg.get('model_type') == 'deepseek_v4' else placement.plan
         dmap = planner(eligible, host_budget, needed, by)
         dmap = dataclasses.replace(dmap, sizes=sizes, per_layer=per_layer, total_bytes=total)
-        remaining = dry_need(lambda: build(dmap, offload=None), cfg, kv, 0)
         padding = 0
-        if dmap.host_bytes:
-            with ops.dry_load() as layout:
-                probe = build(dmap, offload=None)
+        def placed_build():
+            nonlocal padding
+            model = build(dmap, offload=None)
+            if (layout := ops.drying()) is not None:
                 padding = max(0, layout.mapped_host_bytes - dmap.host_bytes)
-            del probe
+            return model
+        print('[planner] checking host placement and workspace', flush=True)
+        remaining = dry_need(placed_build, cfg, kv, 0)
+        if dmap.host_bytes:
             if dmap.host_bytes + padding > host_room and padding > reserve:
                 reserve = padding
                 continue
@@ -392,8 +409,9 @@ def _memory_device_map(cfg, kv, build, sizes, per_layer, total, *, hash_layers=(
         expanded = planner(eligible, sum(eligible.values()), needed, by)
         host_help = expanded.host_bytes > dmap.host_bytes
         if disk_limit is None:
-            raise _planned_shortage(remaining, lambda: build(dmap, offload=None), cfg, kv,
-                                    host_help=host_help)
+            if report is not None:
+                report.shortfall(remaining)
+            raise memory_shortage(remaining, host_help=host_help)
         if cfg.get('model_type') != 'deepseek_v4':
             raise SnowLLMError('this model does not have a disk expert cache backend')
         target = max(target, remaining)

@@ -34,7 +34,7 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 | Qwen3.8-Flash-Next | UD-Q3_K_XL | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **1812.2** | **42.9** | **1723.8** | **38.6** |
 | MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark, block 8 | 64 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **4323.9** | **63.7** | **1257.3** | **18.0** |
 | MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark, block 8 | 32 GiB | 7940HS | gfx1103 (RDNA 3) | **1041.8** | **19.6** | — | — |
-| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | TBD | TBD | TBD | TBD |
+| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB (Linux); 192 GiB (Windows) | AI Max+ 395 | gfx1151 (RDNA 3.5) | TBD | TBD | TBD | TBD |
 | GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **517.1** | **25.8** | **480.7** | **26.8** |
 | DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **862.6** | **26.0** | **631.8** | **22.3** |
 | Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | AI Max+ 395 | gfx1151 (RDNA 3.5) | **3806.5** | **83.8** | **1244.0** | **33.6** |

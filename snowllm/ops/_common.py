@@ -271,11 +271,23 @@ class DryLoad:
         self._placements: dict[int, tuple[str, int | None]] = {}
         self._storage_tags: dict[int, int] = {}
         self._storages: dict[int, int] = {}
+        self._host_padding: dict[int, bool] = {}
         self._aliases: dict[int, set[int]] = {}
         self._peak_device = 0
         self._peak_host = 0
+        self._device = self._host = self._pinned_host = self._mapped_host = 0
 
-    def note(self, t: torch.Tensor, host: bool = False) -> torch.Tensor:
+    def _account(self, tag: int, n: int, host: bool, sign: int) -> None:
+        if host:
+            reserved = _host_buffer_size(n) if self._host_padding.get(tag, True) else n
+            self._host += sign * n
+            self._pinned_host += sign * reserved
+            if tag in self._placements:
+                self._mapped_host += sign * reserved
+        else:
+            self._device += sign * n
+
+    def note(self, t: torch.Tensor, host: bool = False, *, host_padding: bool = True) -> torch.Tensor:
         storage = t.untyped_storage()
         key = storage._cdata
         tag = self._storage_tags.get(key)
@@ -287,14 +299,26 @@ class DryLoad:
             self._storages[tag] = key
             self._aliases[tag] = set()
             self._live[tag] = (storage.nbytes(), host)
-        elif host:
-            self._live[tag] = (storage.nbytes(), True)
+            self._host_padding[tag] = host_padding
+            self._account(tag, storage.nbytes(), host, 1)
+        else:
+            n, was_host = self._live[tag]
+            if n != storage.nbytes():
+                self._peak_device = max(self._peak_device, self.device)
+            self._account(tag, n, was_host, -1)
+            if host:
+                self._host_padding[tag] = host_padding
+            self._live[tag] = (storage.nbytes(), host or was_host)
+            self._account(tag, *self._live[tag], 1)
         self._peak_host = max(self._peak_host, self.pinned_host)
         if id(t) not in self._tag:
             self._tag[id(t)] = tag
             self._aliases[tag].add(id(t))
             self._refs.append(weakref.ref(t, functools.partial(self._died, tag, id(t))))
         if host and self.placement is not None:
+            if tag not in self._placements:
+                self._mapped_host += (_host_buffer_size(storage.nbytes())
+                                     if self._host_padding[tag] else storage.nbytes())
             self._placements[tag] = self.placement
         return t
 
@@ -304,18 +328,19 @@ class DryLoad:
         self._aliases[tag].discard(key)
         if not self._aliases[tag]:
             self._aliases.pop(tag)
-            self._live.pop(tag, None)
+            self._account(tag, *self._live.pop(tag), -1)
+            self._host_padding.pop(tag)
             self._placements.pop(tag, None)
             self._storage_tags.pop(self._storages.pop(tag))
 
     def meta(self, shape: Sequence[int], dtype: torch.dtype,
-             host: bool = False) -> torch.Tensor:
+             host: bool = False, *, host_padding: bool = True) -> torch.Tensor:
         return self.note(torch.empty(tuple(int(s) for s in shape), dtype=dtype, device="meta"),
-                         host)
+                         host, host_padding=host_padding)
 
     @property
     def device(self) -> int:
-        return sum(n for n, h in self._live.values() if not h)
+        return self._device
 
     @property
     def peak_device(self) -> int:
@@ -323,11 +348,11 @@ class DryLoad:
 
     @property
     def host(self) -> int:
-        return sum(n for n, h in self._live.values() if h)
+        return self._host
 
     @property
     def pinned_host(self) -> int:
-        return sum(_host_buffer_size(n) for n, host in self._live.values() if host)
+        return self._pinned_host
 
     @property
     def peak_host(self) -> int:
@@ -335,8 +360,7 @@ class DryLoad:
 
     @property
     def mapped_host_bytes(self) -> int:
-        return sum(_host_buffer_size(n) for tag, (n, host) in self._live.items()
-                   if host and tag in self._placements)
+        return self._mapped_host
 
     def placed_bytes(self) -> dict[tuple[str, int | None], int]:
         out = {}

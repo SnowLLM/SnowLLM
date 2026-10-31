@@ -35,6 +35,7 @@ class MemoryReport:
     values: dict = field(default_factory=dict)
     suggestion: int | None = None
     max_host_offload: int | None = None
+    weight_lower_bound: tuple[int, int, int] | None = None
 
     def available(self, gpu, host):
         print(f'[planner] available GPU={size(gpu)}, host={size(host)}', flush=True)
@@ -53,13 +54,20 @@ class MemoryReport:
                  snapshots=snapshots, snapshot_count=snapshot_count, device_used=device_used)
 
     def shortfall(self, nbytes):
-        if self.values:
+        if 'total' in self.values:
             self.values['room'] = self.values['total'] - nbytes
             self.values['measured_room'] = True
 
     def lines(self, status):
         v = self.values
         if not v:
+            if self.weight_lower_bound is not None:
+                weights, gpu, host = self.weight_lower_bound
+                yield (f'weights need at least {size(weights)}; available: '
+                       f'GPU {size(gpu)} + host up to {size(host)}')
+                yield (f'{status}: at least {size(max(0, weights-gpu-host))} more memory needed '
+                       '(KV cache and workspace not included)')
+                return
             yield f'{status} memory=n/a'
             return
         target = v.get('allocation', 'GPU')

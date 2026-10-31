@@ -197,6 +197,7 @@ class DraftPlan:
 def plan_draft(path: str | None, geo: DraftGeometry = None) -> DraftPlan:
     if not path:
         return DraftPlan(None)
+    print('[planner] measuring draft weights and workspace', flush=True)
     geo = _draft_geometry(path) if geo is None else geo
     weights = _dspark_weight_plan(path, geo) if _dspark(geo) else _dflash_weight_plan(path, geo)
     return DraftPlan(geo, *weights)

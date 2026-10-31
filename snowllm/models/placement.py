@@ -133,7 +133,7 @@ def place(dmap: "DeviceMap | None", group: str,
 
 def measure_weights(build: "Callable[[DeviceMap], object]"
                     ) -> tuple[int, dict[str, int], dict[str, dict[int, int]]]:
-    """Count final storage through the loader's existing offload scopes."""
+    print('[planner] measuring model weights', flush=True)
     with ops.dry_load() as dry:
         model = build(DeviceMap(frozenset(GROUPS), {}))
         sizes = dict.fromkeys(GROUPS, 0)

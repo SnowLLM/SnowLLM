@@ -111,7 +111,7 @@ def main():
          patch('snowllm._platform.host_available', return_value=128 << 30), \
          patch.object(torch.cuda, 'mem_get_info', side_effect=AssertionError('VRAM used as RAM budget')):
         free, total = gpu_mem_info()
-    ck('capacity uses RAM instead of the VRAM carve-out', total == int(.9 * (256 << 30)) and free >= 128 << 30)
+    ck('capacity uses RAM instead of the VRAM carve-out', total == 256 << 30 and free >= 128 << 30)
     ck('host allocation accounting includes native segments', host_alloc.allocated_bytes() >= raw.nbytes)
     budget = GraphBudget()
     with patch('snowllm.engine.graphs.device_mem_info', return_value=(64 << 20, 128 << 20)):
