@@ -1,6 +1,23 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.19 — 2026-10-31
+
+Bring bundled recipes, Stable / Dev installation channels, lower memory use, and fixes for DSpark startup and DeepSeek V4.1 prefix caching to the stable release.
+
+- Bundle recipes with the wheel, add MiniCPM mixed-Q3 DSpark profiles including a 32 GiB Windows profile, and provide a dedicated Qwen3.6 Q4_K_XL MTP recipe.
+  wheel 内置配方，新增 MiniCPM 混合 Q3 DSpark 方案及面向 32 GiB Windows 主机的配置，并提供独立的 Qwen3.6 Q4_K_XL MTP 配方。
+- Add Stable / Dev installation and update channels, including channel selection on the website and separate upgrade notifications in the terminal and Web UI.
+  新增 Stable / Dev 安装与更新通道，官网支持通道选择，终端和 Web UI 分别展示对应的升级提示。
+- Reduce loading and inference memory, preallocate runtime buffers, and improve automatic weight placement and host memory accounting.
+  降低加载与推理内存占用，预分配运行时缓冲，改进自动权重放置及主机内存计量。
+- Complete DeepSeek V4.1 prefix caching and fix DSpark startup memory planning and profiling warmup with multiple request slots.
+  补齐 DeepSeek V4.1 前缀缓存，修复 DSpark 启动内存规划及多请求槽位下的 profiling 预热。
+- Improve Windows ROCm startup and model compatibility, configure Pi from the recipe catalogue, and print the equivalent startup command after applying recipe defaults.
+  改进 Windows ROCm 启动和模型兼容性，支持按配方目录配置 Pi，并在应用配方默认值后打印等价启动命令。
+- Require SnowLLM-Kernels 0.3.12 and correct the documented MiniCPM-V 4.7 Q4_K_M minimum RAM to 64 GiB.
+  依赖 SnowLLM-Kernels 0.3.12，并将 MiniCPM-V 4.7 Q4_K_M 的文档最低内存修正为 64 GiB。
+
 ## 0.3.19.dev4 — 2026-10-31
 
 Fix DSpark startup profiling with multiple requests and improve recipe compatibility validation.
