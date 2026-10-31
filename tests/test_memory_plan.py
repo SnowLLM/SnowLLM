@@ -29,6 +29,17 @@ def legacy(buffers):
 
 
 class MemoryPlanTests(unittest.TestCase):
+    def test_prefill_gather_plan_covers_the_request_slots(self):
+        from snowllm.engine.qwen_runner import QwenRunner
+        x=torch.arange(6*64,device='cuda',dtype=torch.float32).to(torch.bfloat16).view(6,64)
+        runner=SimpleNamespace(model=lambda ctx:x,max_num_seqs=3,geo=SimpleNamespace(hidden=64))
+        ctx=SimpleNamespace(arena=ops.Arena(),batch=SimpleNamespace(is_prefill=True,
+            last_row=torch.tensor([5],device='cuda',dtype=torch.int64)))
+        walk=lambda:QwenRunner._model_hidden(runner,ctx)[0]
+        torch.testing.assert_close(ctx.arena.execute(('prefill',),6,walk),x[5:6])
+        ctx.batch.last_row=torch.tensor([0,3,5],device='cuda',dtype=torch.int64)
+        torch.testing.assert_close(ctx.arena.execute(('prefill',),6,walk),x[[0,3,5]])
+
     def test_layout_alignment_interference_and_legacy_bound(self):
         rng = random.Random(740)
         for _ in range(100):

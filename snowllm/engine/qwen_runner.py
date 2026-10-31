@@ -161,7 +161,11 @@ class QwenRunner(GraphRunner):
 
     def _model_hidden(self, ctx):
         x = self.model(ctx)
-        last = ops.gather_rows(x, ctx.batch.last_row) if ctx.batch.is_prefill else x
+        if ctx.batch.is_prefill:
+            last = ctx.arena.new(self.max_num_seqs, self.geo.hidden)
+            last = ops.gather_rows(x, ctx.batch.last_row, out=last[:ctx.batch.last_row.numel()])
+        else:
+            last = x
         return last, x
 
     def _execute(self, ctx):
