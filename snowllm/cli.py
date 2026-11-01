@@ -2,7 +2,6 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import argparse
-import json
 import os
 import pathlib
 import re
@@ -10,6 +9,7 @@ import shlex
 import subprocess
 import sys
 import time
+from typing import TYPE_CHECKING
 
 from . import term
 from ._version import __version__
@@ -17,6 +17,9 @@ from ._platform import release_device_cache
 from .defaults import DEFAULT_GPU_UTIL, DEFAULT_PREFILL_CHUNK
 from .telemetry import enabled as telemetry_enabled
 from .memory_report import current as memory_report, startup_report
+
+if TYPE_CHECKING:
+    from .serve.state import ServerState
 
 SUBCOMMANDS = ("pull", "recipes", "pi")
 
@@ -95,7 +98,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           host_offload: int | str | None = None,
           serve_as: str | None = None,
           prefix_memory_ratio: float | None = None,
-          offload_ratio: float | None = None, host_alloc: bool = False) -> "ServerState":
+          offload_ratio: float | None = None, host_alloc: bool = False, scheduler=None) -> "ServerState":
     from .capacity import MemoryBudget, configure, placement_options
     limits = MemoryBudget(max_gpu_mem_util, max_host_mem_util, max_host_mem_gib,
                           max_gpu_mem_gib=max_gpu_mem_gib, max_disk_mem_gib=max_disk_mem_gib)
@@ -125,7 +128,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from ._platform import device_mem_info
     free, physical = device_mem_info()
     gpu_memory_utilization = 1. if host_alloc else limits.gpu_utilization(physical)
-    host_limit = limits.host_limit(host_total())
+    limits.host_limit(host_total())
     from .capacity import host_room
     report = memory_report()
     if report is not None:
@@ -302,7 +305,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     sampling = loader.sampling_defaults(root)
     _log(f"sampling defaults from the checkpoint: {sampling or 'none'}")
     state = ServerState(
-        engine=AsyncEngine(engine, profile_dir, stats_interval=stats_interval),
+        engine=AsyncEngine(engine, profile_dir, stats_interval=stats_interval, scheduler=scheduler),
         tokenizer=tok, model=model, processor=proc,
         model_name=next(iter(aliases)), aliases=aliases,
         think_open_id=_single("<think>"), think_close_id=_single("</think>"),
@@ -338,6 +341,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     _log(f"served: {', '.join(f'{n} (factor {a.factor}, ctx {a.ctx})' for n, a in aliases.items())}")
     if profile_dir:
         _log(f"profiling armed -> {profile_dir} (POST /start_profile, /stop_profile)")
+    state.engine.memory = dict(report.values) if report is not None else {}
     return state
 
 
@@ -347,7 +351,7 @@ class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter,
 
 
 def parser() -> argparse.ArgumentParser:
-    from .defaults import (DEFAULT_DSPARK_P_MIN, DEFAULT_GPU_UTIL, DEFAULT_CONTEXT_TARGET,
+    from .defaults import (DEFAULT_DSPARK_P_MIN, DEFAULT_CONTEXT_TARGET,
                            DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK,
                            DEFAULT_PREFIX_MEMORY_RATIO)
 
@@ -507,23 +511,16 @@ def _equivalent_command(p, a, model, recipe):
     return subprocess.list2cmdline(command) if sys.platform == 'win32' else shlex.join(command)
 
 
-def main() -> None:
-    argv = sys.argv[1:]
-    if argv and argv[0] in ("webui", "load", "unload", "status"):
-        from .daemon.cli import main as daemon_main
-        raise SystemExit(daemon_main(argv))
-    if argv and argv[0] in SUBCOMMANDS:
-        if argv[0] == "pi":
-            from .hub import pi
-            raise SystemExit(pi.main(argv[0], argv[1:]))
-        from .hub import recipes
-        raise SystemExit(recipes.main(argv[0], argv[1:]))
-
+def prepare(argv, *, managed=False):
     p = parser()
+    if managed:
+        def exit_with_error(status=0, message=None):
+            raise ValueError(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', message or 'invalid model load options').strip())
+        p.exit = exit_with_error
     if not argv:
         p.print_help()
         return
-    a = p.parse_args()
+    a = p.parse_args(argv)
     from .capacity import MemoryBudget, placement_options
     from .errors import SnowLLMError
     def check_allocation(*, complete=True):
@@ -556,7 +553,7 @@ def main() -> None:
         p.exit(130, "\n")
 
     unset = object()
-    given = p.parse_args(namespace=argparse.Namespace(**dict.fromkeys(recipes.SETTABLE, unset)))
+    given = p.parse_args(argv, namespace=argparse.Namespace(**dict.fromkeys(recipes.SETTABLE, unset)))
     if recipe and recipe.defaults:
         def _at(v: object) -> object:
             return model + v[len("@model"):] if isinstance(v, str) and v.startswith("@model") \
@@ -591,12 +588,11 @@ def main() -> None:
     if recipe:
         print(f'{term.stamp()} run {_equivalent_command(p, a, model, recipe)}', flush=True)
 
-    import uvicorn
-    from .serve.api import app
-    from .serve.state import install
+    return p, a, model, recipe
 
-    try:
-        state = build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
+
+def build_prepared(a, model, recipe, scheduler=None):
+    return build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
               default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
               stats_interval=a.stats_interval, exact_stats=a.stats_exact,
               enforce_eager=a.enforce_eager, num_spec=a.num_spec,
@@ -616,7 +612,37 @@ def main() -> None:
               max_disk_mem_gib=a.max_disk_mem_gib,
               serve_as=(recipe.serve_as if recipe else None),
               prefix_memory_ratio=a.prefix_memory_ratio,
-              limit_mm_per_prompt=a.limit_mm_per_prompt)
+              limit_mm_per_prompt=a.limit_mm_per_prompt, scheduler=scheduler)
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    if "--managed-worker" in argv:
+        from .daemon.worker import main as worker_main
+        worker_main([arg for arg in argv if arg != "--managed-worker"])
+        return
+    if argv and argv[0] in ("webui", "load", "unload", "status"):
+        from .daemon.cli import main as daemon_main
+        raise SystemExit(daemon_main(argv))
+    if argv and argv[0] in SUBCOMMANDS:
+        if argv[0] == "pi":
+            from .hub import pi
+            raise SystemExit(pi.main(argv[0], argv[1:]))
+        from .hub import recipes
+        raise SystemExit(recipes.main(argv[0], argv[1:]))
+
+    if not argv:
+        parser().print_help()
+        return
+    p, a, model, recipe = prepare(argv)
+    from .errors import SnowLLMError
+
+    import uvicorn
+    from .serve.api import app
+    from .serve.state import install
+
+    try:
+        state = build_prepared(a, model, recipe)
     except (RuntimeError, MemoryError) as exc:
         from .errors import MEMORY_GUIDE_URL, is_capacity_error
         capacity_error = is_capacity_error(f'{type(exc).__name__}: {exc}')

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from contextvars import ContextVar
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,12 @@ if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
     from ..engine.async_engine import AsyncEngine
+
+
+def validate_model_id(value):
+    if value is not None and (not isinstance(value, str) or not value.strip()
+                              or len(value) > 256 or '=' in value or any(ord(char) < 32 for char in value)):
+        raise ValueError("model id must be a nonempty string of at most 256 characters without '=' or control characters")
 
 
 @dataclass(frozen=True)
@@ -44,9 +51,12 @@ class ServerState:
 
 
 _STATE: ServerState | None = None
+_REQUEST_STATE = ContextVar('snowllm_serving_state', default=None)
 
 
 def serving() -> ServerState:
+    if (state := _REQUEST_STATE.get()) is not None:
+        return state
     if _STATE is None:
         raise RuntimeError("the server has no model loaded yet; build() has not finished")
     return _STATE

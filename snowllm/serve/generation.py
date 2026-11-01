@@ -22,6 +22,16 @@ if TYPE_CHECKING:
     from PIL import Image
 
 
+async def prepare_prompt(function, messages):
+    state = serving()
+    contents = [message.get('content') if isinstance(message, dict) else message.content for message in messages]
+    images = any(part.get('type') in ('image', 'image_url')
+                 for content in contents if isinstance(content, list) for part in content if isinstance(part, dict))
+    if images and getattr(state, 'processor', None) is not None and state.engine.scheduler is not None:
+        return await state.engine.call(function)
+    return function()
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:24]}"
 

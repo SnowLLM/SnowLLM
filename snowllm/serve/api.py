@@ -19,12 +19,21 @@ from .protocol import ChatRequest, Common, CompletionRequest
 from .state import serving
 from .thinking import thinking_capabilities
 from ..metrics import gpu_sensors, prometheus
-from ..telemetry import model_session, model_snapshot
+from ..telemetry import model_session, model_snapshot, enabled as telemetry_enabled
 from ..updates import session as update_session
 
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    registry = getattr(_app.state, 'registry', None)
+    if registry is not None:
+        try:
+            source, options = _app.state.initial_model
+            await registry.load(source, options)
+            yield
+        finally:
+            await registry.close()
+        return
     serving().engine.start()
     async with model_session(serving(), _app.state), update_session():
         try:
@@ -35,6 +44,8 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="SnowLLM", lifespan=_lifespan)
+from .routing import ModelRouting
+app.add_middleware(ModelRouting)
 
 
 @app.exception_handler(TemplateError)
@@ -44,6 +55,15 @@ async def _template_error(_raw: Request, e: TemplateError) -> JSONResponse:
 
 @app.get("/health")
 async def health() -> dict:
+    registry = getattr(app.state, 'registry', None)
+    if registry is not None:
+        snapshot = registry.snapshot()
+        default = registry.records.get(registry.default)
+        telemetry = {}
+        if telemetry_enabled() and default and default.state and default.phase == 'ready':
+            runtime = default.state.engine.engine.runtime_config
+            telemetry['telemetry'] = model_snapshot(default.state, runtime.get('gpu_arch'))
+        return {"status": "failed" if registry.scheduler.failed else "ok", **snapshot, **telemetry}
     return {"status": "ok", "runtime_config": getattr(serving().engine.engine, "runtime_config", None),
             **({"telemetry": model_snapshot(serving(), app.state.telemetry_arch)}
                if getattr(app.state, "telemetry_enabled", False) else {}),
@@ -52,7 +72,14 @@ async def health() -> dict:
 
 @app.get("/metrics")
 async def metrics(format: str = "prometheus"):
-    snapshot = {"engine": asdict(serving().engine.stats()), "gpus": gpu_sensors()}
+    registry = getattr(app.state, 'registry', None)
+    if registry is None:
+        snapshot = {"engine": asdict(serving().engine.stats()), "gpus": gpu_sensors()}
+    else:
+        snapshot = registry.snapshot()
+        snapshot['gpus'] = gpu_sensors()
+        selected = next((row for row in snapshot['models'] if row['id'] == registry.default), None)
+        snapshot['engine'] = (selected.get('engine') or {}) if selected else {}
     if format == "json":
         return snapshot
     return Response(prometheus(snapshot), media_type="text/plain; version=0.0.4")
@@ -61,7 +88,9 @@ async def metrics(format: str = "prometheus"):
 @app.post("/start_profile")
 async def start_profile() -> dict:
     try:
-        await serving().engine.start_profile()
+        registry = getattr(app.state, "registry", None)
+        engine = registry.records[registry.default].state.engine if registry and registry.default else serving().engine
+        await engine.start_profile()
     except RuntimeError as e:
         raise HTTPException(400, str(e))
     return {"status": "profiling"}
@@ -70,7 +99,11 @@ async def start_profile() -> dict:
 @app.post("/stop_profile")
 async def stop_profile() -> dict:
     try:
-        out = await serving().engine.stop_profile()
+        registry = getattr(app.state, "registry", None)
+        engine = registry.scheduler.profiler_owner if registry else serving().engine
+        if engine is None:
+            raise RuntimeError("no profile is running")
+        out = await engine.stop_profile()
     except RuntimeError as e:
         raise HTTPException(400, str(e))
     return {"status": "stopped", "trace_dir": out}
@@ -78,12 +111,18 @@ async def stop_profile() -> dict:
 
 @app.get("/v1/models")
 async def models() -> dict:
-    st = serving()
-    thinking = thinking_capabilities(st.tokenizer, required=getattr(st.model, "thinking_required", False))
-    return {"object": "list",
-            "data": [{"id": name, "object": "model", "owned_by": "snowllm",
-                      "created": st.created, "thinking": thinking,
-                      "context_length": st.aliases[name].ctx} for name in sorted(st.aliases)]}
+    registry = getattr(app.state, 'registry', None)
+    states = ([record.state for record in registry.records.values()
+               if record.phase == 'ready' and record.state and not record.state.engine.error and not registry.scheduler.failed]
+              if registry else [serving()])
+    rows = []
+    for st in states:
+        thinking = thinking_capabilities(st.tokenizer, required=getattr(st.model, "thinking_required", False))
+        rows.extend({"id": name, "object": "model", "owned_by": "snowllm",
+                     "created": st.created, "thinking": thinking,
+                     "context_length": st.aliases[name].ctx}
+                    for name in sorted(st.aliases))
+    return {"object": "list", "data": rows}
 
 
 def _tool_calls_field(calls: list[ToolCallDone], streaming: bool) -> list[dict]:
@@ -177,7 +216,7 @@ async def chat_completions(req: ChatRequest, raw: Request) -> StreamingResponse 
         req.max_tokens = req.max_completion_tokens
     tools = req.tools if gen.check_tool_choice(req.tool_choice) else None
     msgs = _parse_tool_args([m.model_dump(exclude_none=True) for m in req.messages])
-    prompt, mm = gen.prompt_with_images(msgs, req.template_kwargs(), tools)
+    prompt, mm = await gen.prepare_prompt(lambda: gen.prompt_with_images(msgs, req.template_kwargs(), tools), msgs)
     return await _serve(raw, prompt, req, chat=True, reasoning=gen.thinking_open(prompt),
                         types=tool_parser.tool_types(tools), mm=mm)
 

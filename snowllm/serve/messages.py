@@ -197,13 +197,13 @@ def _message(rid: str, model: str, content: list[dict], usage: dict, **stop: obj
 
 @router.post("/v1/messages/count_tokens")
 async def count_tokens(req: CountTokensRequest) -> dict:
-    prompt, _, _, _ = _prepare(req)
+    prompt, _, _, _ = await gen.prepare_prompt(lambda: _prepare(req), req.messages)
     return {"input_tokens": len(prompt)}
 
 
 @router.post("/v1/messages", response_model=None)
 async def messages(req: MessagesRequest, raw: HTTPRequest) -> StreamingResponse | dict:
-    prompt, mm, common, types = _prepare(req)
+    prompt, mm, common, types = await gen.prepare_prompt(lambda: _prepare(req), req.messages)
     gen.max_new(common, len(prompt))
     rid, model = new_id("msg"), gen.resolve_alias(req.model)[0]
     reasoning = gen.thinking_open(prompt)

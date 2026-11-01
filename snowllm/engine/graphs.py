@@ -40,6 +40,9 @@ class GraphBudget:
         self._used = 0
         self.driver_measured = 0
         self._driver_used = 0
+        self._reserved = 0
+        self.retained_bytes = 0
+        self.driver_bytes = 0
 
     @staticmethod
     def _in_use() -> int:
@@ -49,6 +52,9 @@ class GraphBudget:
 
     def room(self, gpu_util: float, have: int) -> bool:
         self._used = self._in_use()
+        self._reserved = torch.cuda.memory_reserved()
+        free, physical = device_mem_info()
+        self._driver_used = physical - free
         total = gpu_mem_info()[1]
         from ..host_alloc import enabled
         if enabled():
@@ -72,7 +78,13 @@ class GraphBudget:
         return False
 
     def charge(self) -> None:
-        self.measured = max(self.measured, self._in_use() - self._used)
+        retained = max(0, self._in_use() - self._used)
+        self.measured = max(self.measured, retained)
+        self.retained_bytes += retained
+        free, physical = device_mem_info()
+        reserved = max(0, torch.cuda.memory_reserved() - self._reserved)
+        driver = max(0, physical - free - self._driver_used - reserved)
+        self.driver_bytes += driver
         from ..host_alloc import enabled
         if enabled():
             free, total = device_mem_info()
