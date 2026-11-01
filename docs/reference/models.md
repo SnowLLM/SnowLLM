@@ -63,12 +63,24 @@ Acceptance rates and throughput depend on the text and target quantization.
 
 On the Windows Radeon 780M, both targets pass the operator/reference, ordinary decoding,
 batched DSpark, graph and prefix-restoration checks. At 2048 input / 128 output tokens,
-ordinary → block-9 DSpark decode measured 49.4 → 41.4 tok/s for Q4_K_M and
-32.5 → 77.2 tok/s for Q8_0. Q4_K_M block sizes 1/4/8 and adaptive block 9 measured
-46.2/47.5/42.9/45.3 tok/s. Prefer the ordinary Q4 recipe on this GPU for this workload;
-Q8_0 block 8 measured 80.0 tok/s and adaptive block 9 measured 78.7 tok/s.
-DSpark remains an option for Q8 and other hardware. These are direct-engine phase
-measurements, with graphs, 512-token prefill chunks, no prefix reuse and three timed runs.
+ordinary → block-9 DSpark decode measured 49.0 → 95.2 tok/s for Q4_K_M and
+32.3 → 77.0 tok/s for Q8_0. Mean emitted tokens per verification step were 5.52 and 5.77.
+These measurements configure two request slots with one active request, graphs,
+512-token prefill chunks, no prefix reuse, one warmup and three timed runs.
+At 512 input tokens, DSpark measured 47.8 versus 50.0 tok/s for ordinary Q4,
+and 31.7 versus 32.8 tok/s for ordinary Q8; it does not accelerate every prompt.
+PG19 continuation is a throughput workload, not an answer-quality evaluation.
+
+Attention work is scheduled from the active batch, while plan and workspace allocations
+cover the configured maximum batch. Using the maximum for both previously changed the
+single-request partition count from 12 to 16 when increasing capacity from one to two
+slots on gfx1103. On the 2048-token Q4 case this changed greedy continuation and reduced
+mean acceptance from 5.52 to 2.44, with DSpark throughput falling to 41.4 tok/s.
+The corrected scheduling restores the smaller active-batch partition count without
+changing allocation budgets. Different active batches and verification widths can still
+produce different greedy paths through BF16 attention and near-tied expert routing.
+The LFM DSpark reference test checks context projection and KV writes, all five draft attention layers,
+the draft backbone, Markov proposals and confidence against PyTorch.
 
 `deepseek-v4.1-flash-1017-vq-q4-k` supports text inference with the 1017 VQ + Q4_K checkpoint.
 Use `deepseek-v4.1-flash-1017-vq-q4-k-dspark` to enable DSpark by default with the same model directory and downloads.
