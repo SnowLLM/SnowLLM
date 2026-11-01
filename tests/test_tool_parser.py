@@ -5,7 +5,7 @@ import sys
 
 import _harness
 
-CKPT = _harness.checkpoint()
+CKPT = _harness.checkpoint(sys.argv[1] if len(sys.argv) > 1 else _harness.BF16)
 
 from snowllm.serve.tool_parser import parse_tool_calls, StreamingToolParser, tool_types  # noqa: E402
 

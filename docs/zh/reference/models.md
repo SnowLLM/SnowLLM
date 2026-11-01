@@ -1,6 +1,6 @@
 # 支持的模型 {#supported-models}
 
-目前仅在 [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html) 上验证。其他 Ryzen AI Max 300 / 400 系列同为 `gfx1151`，预计可用，但尚未验证。
+主要验证硬件为 [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html)；各模型说明也会列出 Windows Radeon 780M（`gfx1103`）的验证情况。其他 Ryzen AI Max 300 / 400 系列同为 `gfx1151`，预计可用，但尚未验证。
 
 支持 Hugging Face FP8 `safetensors`，以及 GGUF K-quants 和 i-quants。`snowllm recipes` 可列出全部方案；方案要求的 SnowLLM 版本高于当前版本时，会提示版本要求而不会启动推理。
 
@@ -55,6 +55,10 @@ LFM2.5-8B-A1B 只提供两个方案：`lfm2.5-8b-a1b-q4-k-m-dspark` 和 `lfm2.5-
 两种方案默认单请求、8192 个共享缓存 token、512-token prefill 分块、9-token 草稿块，支持自适应块长、批量解码、分块和批量 prefill，以及保存短卷积历史的前缀缓存。启动时添加 `--dflash ''` 可切换为普通解码。
 
 加载器支持 BF16 safetensors，以及投影和专家使用 Q4_K、Q6_K、Q8_0 的 GGUF。模型原生上下文上限为 128000 token。已在 gfx1151 和 Windows Radeon 780M（gfx1103）上实测；新增注意力和卷积内核也通过了 gfx1150 交叉编译，仍需对应硬件验证。专家路由分数接近时，不同批量或分块大小可能产生不同的贪心输出。
+
+服务端共用的工具解析流程支持 LFM 的 Python 风格调用列表，覆盖 Chat Completions、Responses 和 Messages 的普通及流式返回。参数只做字面量解析，不执行模型文本。模型自行输出的开头 `<think>` 块会分离到思考字段；原始文本补全保留模型生成文本。
+
+在 gfx1151 上，两种主模型均通过约 8K、16K、32K 正常长篇文本中间位置的校验码检索。重复中文库存记录更困难：两种 DSpark 主模型在 8K～32K 时耗尽 512-token 思考额度，在 120K 时返回错误答案；Q4 普通解码也未通过 8K～32K 的重复记录案例，Q4 自适应 DSpark 在一个 4K 案例上同样耗尽额度。使用相同 Q4 GGUF 反量化的完整 24 层 Transformers BF16 参考在 8K 时答对，但在 32K 时也耗尽额度。这些仅是少量检索检查，不代表通用问答质量，也不能保证原生 128000-token 范围内的回答准确性。在 120000 token 位置，Q4 六层目标注意力最后三个因果查询与相同 Q/K/V 的 FP32 参考相对 L2 误差均为 0.16%～0.17%。
 
 在 gfx1151 上，使用上述默认上下文和分块、BF16 KV、启用 graph、前缀缓存比例 0.08 时，设备显存实测如下：
 

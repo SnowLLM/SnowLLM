@@ -1,7 +1,8 @@
 # Supported models
 
-Tested only on the [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html);
-the rest of the Ryzen AI Max 300 and 400 series (same `gfx1151`) should work but unverified.
+Primary validation uses the [Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html).
+Individual model notes also record Windows Radeon 780M (`gfx1103`) validation.
+The rest of the Ryzen AI Max 300 and 400 series (same `gfx1151`) should work but remain unverified.
 
 Hugging Face `safetensors` at FP8, and GGUF K-quants and i-quants. `snowllm recipes` lists the
 lot; a recipe that names a snowllm newer than yours says so instead of serving:
@@ -33,6 +34,22 @@ The model's native context limit is 128000 tokens. Runtime validation covers gfx
 and Windows Radeon 780M (gfx1103). The new attention and convolution kernels also
 compile for gfx1150, which still needs hardware validation.
 Batch and chunk shapes can change greedy tokens when expert routing scores are close.
+
+LFM Python-style tool-call lists are parsed by the shared service pipeline for Chat
+Completions, Responses and Messages, including streaming. Arguments are decoded as
+literals without executing model text. Generated leading `<think>` blocks are separated
+into reasoning fields; raw text completions preserve the generated text.
+
+On gfx1151, both targets retrieved a code embedded halfway through roughly 8K, 16K and
+32K tokens of prose. Repeated Chinese inventory records were harder: both DSpark targets
+exhausted a 512-token reasoning budget at 8K–32K, and returned incorrect answers at 120K.
+Ordinary Q4 decoding also failed the repeated-record cases at 8K–32K.
+Adaptive Q4 exhausted the budget in a 4K repeated-record case. A full 24-layer
+Transformers BF16 reference dequantized from the same Q4 GGUF answered the 8K case but
+also exhausted the budget at 32K. These are small retrieval checks, not a general quality
+evaluation or a guarantee across the native 128000-token context.
+At 120000 tokens, all six Q4 target attention layers matched FP32 attention at identical
+Q/K/V with relative L2 errors of 0.16%–0.17% for the final three causal queries.
 
 LFM resident target weights are 5.29 GiB (Q4_K_M), 6.97 GiB (Q6_K), 8.88 GiB (Q8_0)
 or 16.27 GiB (BF16 safetensors), using the loader's allocation plan. The Q8_0 draft adds
