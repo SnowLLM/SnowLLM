@@ -74,6 +74,25 @@ async def main():
                               max_tokens=512, **kwargs)
 
         try:
+            models = (await http.get("/v1/models")).json()["data"]
+            check("thinking capability is required", models[0]["thinking"].get("required") is True
+                  and models[0]["thinking"]["switch"] is False)
+            before = engine.acct.prefill_tokens
+            forbidden = [
+                ("/v1/chat/completions", {"messages": [{"role": "user", "content": "Hi"}],
+                                          "enable_thinking": False}),
+                ("/v1/chat/completions", {"messages": [{"role": "user", "content": "Hi"}],
+                                          "chat_template_kwargs": {"thinking": False}}),
+                ("/v1/responses", {"input": "Hi", "reasoning": {"effort": "none"}}),
+                ("/v1/messages", {"max_tokens": 8, "messages": [{"role": "user", "content": "Hi"}],
+                                  "thinking": {"type": "disabled"}}),
+            ]
+            for path, body in forbidden:
+                for stream in (False, True):
+                    r = await http.post(path, json={"model": serving().model_name, **body, "stream": stream})
+                    check(f"thinking-off rejected {path} stream={stream}", r.status_code == 400
+                          and "requires thinking" in r.text)
+            check("thinking-off requests never run prefill", engine.acct.prefill_tokens == before)
             for i, (question, answers) in enumerate(KNOWLEDGE):
                 r = await chat(f"knowledge-{i}", question, temperature=0)
                 content = r["choices"][0]["message"]["content"].split("</think>")[-1]

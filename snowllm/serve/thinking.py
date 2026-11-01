@@ -8,7 +8,9 @@ that the template both names and accepts when rendering a user message.
 from jinja2 import Environment, TemplateError, nodes
 
 
-def thinking_capabilities(tokenizer) -> dict:
+def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
+    if required:
+        return {"switch": False, "levels": [], "required": True, "source": "model"}
     controls = getattr(tokenizer, "thinking_controls", None)
     if controls is not None:
         return dict(controls)
@@ -86,3 +88,15 @@ def thinking_capabilities(tokenizer) -> dict:
     result["levels"] = [value for value in dict.fromkeys(candidates)
                         if accepts(reasoning_effort=value, enable_thinking=True, thinking=True)]
     return result
+
+
+def thinking_disabled(options: dict) -> bool:
+    for name in ("enable_thinking", "thinking"):
+        value = options.get(name)
+        if isinstance(value, dict):
+            value = value.get("type")
+        if (value is False or value == 0 or isinstance(value, str)
+                and value.strip().lower() in ("false", "off", "disabled")):
+            return True
+    effort = options.get("reasoning_effort")
+    return isinstance(effort, str) and effort.strip().lower() == "none"

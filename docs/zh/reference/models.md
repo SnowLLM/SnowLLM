@@ -58,6 +58,8 @@ LFM2.5-8B-A1B 只提供两个方案：`lfm2.5-8b-a1b-q4-k-m-dspark` 和 `lfm2.5-
 
 服务端共用的工具解析流程支持 LFM 的 Python 风格调用列表，覆盖 Chat Completions、Responses 和 Messages 的普通及流式返回。参数只做字面量解析，不执行模型文本。模型自行输出的开头 `<think>` 块会分离到思考字段；原始文本补全保留模型生成文本。
 
+LFM2.5-8B-A1B 必须开启 thinking。通过 `enable_thinking=false`、`thinking=false`／`thinking.type=disabled` 或 `reasoning_effort=none` 尝试关闭时，API 返回 HTTP 400；也包括 `chat_template_kwargs` 及 Responses 的 `reasoning.effort` 写法。`/v1/models` 标注 `thinking.required=true`、`switch=false`，界面显示“始终开启”。`preserve_thinking=false` 仅清理历史思考，仍可使用。
+
 在 gfx1151 上，两种主模型均通过约 8K、16K、32K 正常长篇文本中间位置的校验码检索。重复中文库存记录更困难：两种 DSpark 主模型在 8K～32K 时耗尽 512-token 思考额度，在 120K 时返回错误答案；Q4 普通解码也未通过 8K～32K 的重复记录案例，Q4 自适应 DSpark 在一个 4K 案例上同样耗尽额度。使用相同 Q4 GGUF 反量化的完整 24 层 Transformers BF16 参考在 8K 时答对，但在 32K 时也耗尽额度。这些仅是少量检索检查，不代表通用问答质量，也不能保证原生 128000-token 范围内的回答准确性。在 120000 token 位置，Q4 六层目标注意力最后三个因果查询与相同 Q/K/V 的 FP32 参考相对 L2 误差均为 0.16%～0.17%。
 
 在 gfx1151 上，使用上述默认上下文和分块、BF16 KV、启用 graph、前缀缓存比例 0.08 时，设备显存实测如下：

@@ -177,6 +177,7 @@
   "Stop generation before starting a new conversation.": "Stop generation before starting a new conversation.",
   "Off": "Off",
   "On": "On",
+  "Always on": "Always on",
   "This thinking level is not supported by the selected model.": "This thinking level is not supported by the selected model.",
   "Request failed ({0})": "Request failed ({0})",
   "Bundled: {0}": "Bundled: {0}",

@@ -103,6 +103,8 @@ class Layer(nn.Module):
 
 
 class Lfm2MoeForCausalLM(nn.Module):
+    thinking_required = True
+
     def __init__(self, cfg, geo, layers, embed, norm, head):
         super().__init__()
         self.config, self.geo = cfg, geo

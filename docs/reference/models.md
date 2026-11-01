@@ -39,6 +39,11 @@ LFM Python-style tool-call lists are parsed by the shared service pipeline for C
 Completions, Responses and Messages, including streaming. Arguments are decoded as
 literals without executing model text. Generated leading `<think>` blocks are separated
 into reasoning fields; raw text completions preserve the generated text.
+LFM2.5-8B-A1B requires thinking: attempts to disable it with `enable_thinking=false`,
+`thinking=false` / `thinking.type=disabled`, or `reasoning_effort=none` return HTTP 400,
+including through `chat_template_kwargs` and Responses `reasoning.effort`.
+`/v1/models` advertises `thinking.required=true` and `switch=false`; the Web UI shows
+"Always on". `preserve_thinking=false` only removes historical reasoning and remains allowed.
 
 On gfx1151, both targets retrieved a code embedded halfway through roughly 8K, 16K and
 32K tokens of prose. Repeated Chinese inventory records were harder: both DSpark targets

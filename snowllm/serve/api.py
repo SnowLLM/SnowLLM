@@ -79,7 +79,7 @@ async def stop_profile() -> dict:
 @app.get("/v1/models")
 async def models() -> dict:
     st = serving()
-    thinking = thinking_capabilities(st.tokenizer)
+    thinking = thinking_capabilities(st.tokenizer, required=getattr(st.model, "thinking_required", False))
     return {"object": "list",
             "data": [{"id": name, "object": "model", "owned_by": "snowllm",
                       "created": st.created, "thinking": thinking,

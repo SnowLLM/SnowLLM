@@ -44,6 +44,8 @@ the workspace across decode and prefill shapes to check all expert tiles are com
 multiple calls, fragmented markers and rejection of executable expressions.
 `test_reasoning_splitter.py` checks generated and pre-opened thinking tags while
 preserving raw completion text.
+`test_thinking_controls.py` checks mandatory thinking metadata and rejects disabling
+across the chat protocols before rendering or streaming, while allowing history controls.
 `test_lfm2_server.py` exercises real-weight Chat Completions, Responses and Messages:
 plain/streaming tools, Chat/Responses result history, Chinese factual questions, sampling
 and penalties, eight staggered requests over four slots, and cancellation followed by recovery.

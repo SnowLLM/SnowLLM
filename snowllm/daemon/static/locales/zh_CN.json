@@ -177,6 +177,7 @@
   "Stop generation before starting a new conversation.": "请停止生成后再开始新聊天。",
   "Off": "关闭",
   "On": "开启",
+  "Always on": "始终开启",
   "This thinking level is not supported by the selected model.": "所选模型不支持此思考等级。",
   "Request failed ({0})": "请求失败（{0}）",
   "Bundled: {0}": "内置：{0}",

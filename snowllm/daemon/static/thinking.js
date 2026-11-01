@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 export function thinkingProfile(capabilities) {
-  const options = [['', 'Model default']];
-  if (capabilities?.switch) options.push(['off', 'Off'], ['on', 'On']);
+  const options = [['', capabilities?.required ? 'Always on' : 'Model default']];
+  if (capabilities?.switch && !capabilities?.required) options.push(['off', 'Off'], ['on', 'On']);
   for (const level of capabilities?.levels || []) {
-    if (typeof level === 'string') options.push([`effort:${level}`, level]);
+    if (typeof level === 'string' && !(capabilities?.required && level.trim().toLowerCase() === 'none')) {
+      options.push([`effort:${level}`, level]);
+    }
   }
   return { options };
 }

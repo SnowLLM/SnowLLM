@@ -393,6 +393,13 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
 
 
 def check_unsupported(req: Common) -> None:
+    st = serving()
+    if getattr(getattr(st, "model", None), "thinking_required", False):
+        from .thinking import thinking_disabled
+        controls = {k: getattr(req, k, None) for k in ("enable_thinking", "thinking", "reasoning_effort")}
+        if thinking_disabled(controls) or thinking_disabled(getattr(req, "chat_template_kwargs", {})):
+            raise HTTPException(400, f"{st.model_name} requires thinking and cannot disable it; "
+                                     "remove the thinking-off option")
     if req.seed is not None and params(req, 0).temperature > 0.0:
         raise HTTPException(400, "seed is unsupported when sampling: every request draws from "
                                  "one shared random stream, so a seed cannot make one "

@@ -7,6 +7,18 @@ import vm from 'node:vm';
 const source = await readFile(new URL('../snowllm/daemon/static/stream.js', import.meta.url), 'utf8');
 const { parseOptions, readEvents } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
+test('required thinking cannot be switched off, including stale saved levels', async () => {
+  const source = await readFile(new URL('../snowllm/daemon/static/thinking.js', import.meta.url), 'utf8');
+  const { thinkingProfile, thinkingParameters } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const required = { required: true, switch: true, levels: ['none', 'low'] };
+  assert.deepEqual(thinkingProfile(required).options, [['', 'Always on'], ['effort:low', 'low']]);
+  assert.deepEqual(thinkingParameters('', required), {});
+  assert.throws(() => thinkingParameters('off', required), /not supported/);
+  assert.throws(() => thinkingParameters('effort:none', required), /not supported/);
+  assert.deepEqual(thinkingParameters('off', { switch: true }), { enable_thinking: false });
+  assert.deepEqual(thinkingProfile({ switch: false }).options, [['', 'Model default']]);
+});
+
 test('extra inference options preserve Windows paths and quoted spaces', () => {
   assert.deepEqual(parseOptions('--device-map auto --dflash "C:\\Models\\Draft Model"'), ['--device-map', 'auto', '--dflash', 'C:\\Models\\Draft Model']);
   assert.deepEqual(parseOptions("--served-model-name 'model name' --num-spec 2"), ['--served-model-name', 'model name', '--num-spec', '2']);
