@@ -1,6 +1,21 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.21 — 2026-11-01
+
+Add LFM2.5-8B-A1B with DSpark and improve speculative decoding, API compatibility and benchmark validation.
+
+- Add official Q4_K_M and Q8_0 LFM2.5-8B-A1B recipes with the Q8_0 DSpark draft, reusing the existing memory planner, cache, scheduler and inference operators.
+  新增 LFM2.5-8B-A1B 官方 Q4_K_M 与 Q8_0 DSpark 配方，复用现有显存规划、缓存、调度和推理算子。
+- Fix attention scheduling for active request counts and reserve prefill outputs for every request slot; require SnowLLM-Kernels 0.3.13 for the LFM operators and MoE sorting fixes.
+  修复 attention 按活跃请求数调度及多请求 prefill 输出预留，依赖 SnowLLM-Kernels 0.3.13 提供 LFM 算子与 MoE 排序修复。
+- Parse LFM tool calls and model-generated thinking tags across chat APIs. Reject requests that disable thinking for this LFM checkpoint while preserving other models' controls.
+  支持 LFM 工具调用和模型生成的 thinking 标签；该 LFM 模型拒绝关闭 thinking，其他模型保留原有开关。
+- Validate benchmark hardware and thinking settings, measure output rates from reported token usage, and omit local model paths from exported runtime metadata.
+  校验 benchmark 硬件与 thinking 设置，按接口报告的 token 数统计吞吐，导出运行参数时移除本机模型路径。
+- Publish Q4 results measured on Ryzen 9 7940HS / Radeon 780M (RDNA3, gfx1103). The 16 GiB minimum RAM remains an estimate; the test machine has 32 GiB installed.
+  发布 Ryzen 9 7940HS / Radeon 780M（RDNA3、gfx1103）Q4 实测；16 GiB 最低内存仍为估算，测试机实际安装 32 GiB。
+
 ## 0.3.20 — 2026-10-31
 
 Report startup memory shortages sooner and hide superseded development releases on the website.

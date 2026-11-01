@@ -15,7 +15,7 @@
   ],
   "spec": "DSpark",
   "priority": 61,
-  "requires": "0.3.20",
+  "requires": "0.3.21",
   "summary": "LFM2.5-8B-A1B official Q4_K_M with its Q8_0 DSpark draft.",
   "serve_as": "LFM2.5-8B-A1B",
   "defaults": {
