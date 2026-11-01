@@ -15,7 +15,7 @@ from jinja2 import TemplateError
 from ..engine import Request, SamplingParams
 from ..models import multimodal
 from . import tool_parser
-from .protocol import Common
+from .protocol import Common, CompletionRequest
 from .state import Alias, serving
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ def usage(prompt: list[int], r: Request | None) -> dict:
             "timings": r.timing.snapshot() if r is not None else {}}
 
 
-THINK_CLOSE = "</think>"
+THINK_OPEN, THINK_CLOSE = "<think>", "</think>"
 
 
 def thinking_open(ids: list[int]) -> bool:
@@ -102,12 +102,24 @@ def thinking_open(ids: list[int]) -> bool:
 
 
 class ReasoningSplitter:
-    def __init__(self, in_reasoning: bool) -> None:
+    def __init__(self, in_reasoning: bool, *, detect_open: bool = False) -> None:
         self.in_reasoning = in_reasoning
+        self.detect_open = detect_open and not in_reasoning
         self.pending = ""
         self.strip = False
 
     def push(self, delta: str) -> tuple[str, str]:
+        if self.detect_open:
+            self.pending += delta
+            head = self.pending.lstrip()
+            if head.startswith(THINK_OPEN):
+                delta = head[len(THINK_OPEN):]
+                self.pending, self.in_reasoning = "", True
+            elif THINK_OPEN.startswith(head):
+                return "", ""
+            else:
+                delta, self.pending = self.pending, ""
+            self.detect_open = False
         if not self.in_reasoning:
             if self.strip:
                 delta = delta.lstrip("\n")
@@ -189,7 +201,8 @@ async def _run(prompt: list[int], req: Common,
 
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                    types: dict | None, mm: dict | None = None) -> AsyncIterator[object]:
-    split = ReasoningSplitter(reasoning)
+    split = ReasoningSplitter(reasoning, detect_open=not isinstance(req, CompletionRequest)
+                              and serving().think_open_id is not None)
     tp = tool_parser.StreamingToolParser(types) if types is not None else None
     idx = 0
     r: Request | None = None
