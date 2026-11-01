@@ -19,6 +19,19 @@ class Load(BaseModel):
     force: bool = False
 
 
+class AddModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str = Field(min_length=1)
+    options: list[str] = Field(default_factory=list)
+    id: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class SelectModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1)
+    force: bool = False
+
+
 class Directory(BaseModel):
     model_config = ConfigDict(extra="forbid")
     models_dir: str | None = Field(None, min_length=1)
@@ -144,7 +157,28 @@ def create_app(manager: DaemonManager):
 
     @app.get("/daemon/status")
     async def status():
-        return manager.status()
+        return await manager.refresh()
+
+    @app.post('/daemon/models/load')
+    async def add_model(body: AddModel):
+        try:
+            return await manager.add_model(body.model, body.options, body.id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.post('/daemon/models/unload')
+    async def unload_model(body: SelectModel):
+        try:
+            return await manager.unload_model(body.id, body.force)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+
+    @app.post('/daemon/models/default')
+    async def default_model(body: SelectModel):
+        try:
+            return await manager.set_default(body.id)
+        except (ValueError, httpx.HTTPError) as exc:
+            raise HTTPException(409, str(exc))
 
     @app.post("/daemon/load")
     async def load(body: Load):

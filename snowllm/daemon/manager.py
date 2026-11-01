@@ -43,6 +43,13 @@ class DaemonManager:
         self.transition_stage = None
         self.state = "idle"
         self.model = None
+        self.models = []
+        self.default_model = None
+        self.operation = None
+        self.shared_worker = False
+        self.cancel_requested = False
+        self.process_config = None
+        self.memory = {}
         self.error = None
         self.backend = None
         self.active = 0
@@ -79,6 +86,7 @@ class DaemonManager:
         if self.process and self.process.poll() is not None and self.state == "ready":
             self.state = "failed"
             self.error = self.worker_error()
+            self.models = [{**row, "state": "failed", "error": self.error} for row in self.models]
         recipe_url, recipe_source = recipes_source(self.config_path, self.config)
         library, lib_source = library_path(self.config_path, self.config)
         progress = None
@@ -87,7 +95,7 @@ class DaemonManager:
                 progress = json.loads(self.progress_path.read_text())
             except (OSError, ValueError):
                 pass
-        return dict(last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
+        return dict(process_config=self.process_config, memory=self.memory, cancel_requested=self.cancel_requested, models=self.models, default_model=self.default_model, operation=self.operation, last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
                     error_kind="capacity" if self.error and is_capacity_error(self.error) else None,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
@@ -118,6 +126,8 @@ class DaemonManager:
                 pass
             updated["models_dir"] = str(path)
         for key, value in settings.items():
+            if key == "library_path" and self.backend and value != self.config.get(key):
+                raise ValueError("unload all models before changing the kernel library")
             if key not in ("recipes_url", "library_path"):
                 raise ValueError(f"unknown setting: {key}")
             if value is None or value == "":
@@ -173,6 +183,13 @@ class DaemonManager:
         else:
             env.pop("SNOWLLM_DOWNLOAD_PROGRESS", None)
         command = [sys.executable, "-m", "snowllm.cli", *args]
+        if args and args[0] != 'pull':
+            command.append('--managed-worker')
+            wrapper = Path('/home/cwind/withgpu/withgpu')
+            if not wrapper.is_file():
+                wrapper = Path.home() / 'withgpu' / 'withgpu'
+            if wrapper.is_file():
+                command = [str(wrapper), *command]
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("wb") as output:
             return subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
@@ -202,12 +219,14 @@ class DaemonManager:
 
     async def switch(self, model, options, force=False):
         async with self.lock:
+            if self.process and self.process.poll() is None and len([row for row in self.models if row.get("runtime_config")]) > 1:
+                raise ValueError("multiple models are loaded; select a model in the Web UI or model management API")
             if self.closing or (self.task and not self.task.done()):
                 raise ValueError("a model transition is already in progress")
             # The supervisor owns the backend address; callers cannot override it.
             if any(not isinstance(x, str) for x in options):
                 raise ValueError("options must be strings")
-            if any(x.split("=", 1)[0] in ("--host", "--port", "--model") for x in options):
+            if any(x.split("=", 1)[0] in ("--host", "--port", "--model", "--managed-worker") for x in options):
                 raise ValueError("--host, --port and --model are managed by the daemon")
             if model is not None:
                 self.last_load = dict(model=model, options=list(options), force=force)
@@ -227,6 +246,11 @@ class DaemonManager:
             await self.stop_process(self.process)
             self.process = None
             self.backend = None
+            self.models = []
+            self.default_model = None
+            self.shared_worker = False
+            self.process_config = None
+            self.memory = {}
             self.model = model
             self.runtime_config = None
             if model is None:
@@ -245,8 +269,12 @@ class DaemonManager:
                 try:
                     response = await self.client.get(self.backend + "/health", timeout=1)
                     if response.status_code == 200:
-                        self.runtime_config = response.json().get("runtime_config")
+                        data = response.json()
+                        self.runtime_config = data.get("runtime_config")
                         self.state = "ready"
+                        if "models" in data:
+                            self.shared_worker = True
+                            self.accept_snapshot(data)
                         if self.telemetry:
                             self.telemetry.loaded(response.json().get("telemetry"))
                         return
@@ -262,6 +290,139 @@ class DaemonManager:
             await self.stop_process(self.process)
             self.process = None
             self.backend = None
+
+    def accept_snapshot(self, snapshot):
+        self.models = snapshot.get('models', [])
+        self.process_config = snapshot.get('process_config')
+        self.memory = snapshot.get('memory', {})
+        self.default_model = snapshot.get('default_model')
+        previous = self.operation
+        self.operation = snapshot.get('operation')
+        if self.operation is None and previous and previous.get('stage') == 'queued' and self.task and not self.task.done():
+            self.operation = previous
+        self.cancel_requested = snapshot.get('cancel_requested', False)
+        default = next((row for row in self.models if row['id'] == self.default_model), None)
+        self.model = self.default_model
+        self.runtime_config = default.get('runtime_config') if default else None
+        ready = any(row['state'] == 'ready' for row in self.models)
+        if ready:
+            self.state = 'ready'
+        elif self.operation:
+            self.state = 'draining' if self.operation.get('kind') == 'unload' else 'loading'
+        else:
+            self.state = 'idle'
+        if snapshot.get('worker_error'):
+            self.error = snapshot['worker_error']
+            self.models = [{**row, 'state': 'failed', 'error': self.error} for row in self.models]
+            self.state = 'failed'
+        elif not ready and any(row['state'] == 'failed' for row in self.models):
+            self.state = 'failed'
+
+    async def refresh(self):
+        if self.shared_worker and self.backend and self.process and self.process.poll() is None:
+            try:
+                response = await self.client.get(self.backend + '/worker/status', timeout=2)
+                response.raise_for_status()
+                snapshot = response.json()
+                self.accept_snapshot(snapshot)
+                if snapshot.get('worker_error'):
+                    await self.stop_process(self.process)
+                    self.process = self.backend = None
+                    self.shared_worker = False
+            except httpx.HTTPError:
+                pass
+        return self.status()
+
+    async def add_model(self, model, options, model_id=None):
+        from ..serve.state import validate_model_id
+        validate_model_id(model_id)
+        if any(not isinstance(value, str) for value in options):
+            raise ValueError('model options must be strings')
+        if any(value.split('=', 1)[0] in ('--host', '--port', '--model', '--managed-worker') for value in options):
+            raise ValueError('--host, --port and --model are managed by the daemon')
+        if not self.backend or not self.process or self.process.poll() is not None:
+            if model_id:
+                options = ['--served-model-name', model_id, *options]
+            return await self.switch(model, options)
+        self.last_load = dict(model=model, options=list(options), id=model_id)
+        return await self.model_operation('load', dict(model=model, options=options, id=model_id,
+                                                     models_dir=self.models_dir, recipes_url=recipes_source(self.config_path, self.config)[0]))
+
+    async def unload_model(self, model_id, force=False):
+        if not self.backend or not self.process or self.process.poll() is not None:
+            async with self.lock:
+                if self.task and not self.task.done():
+                    raise ValueError('wait for the model operation to finish')
+                if not any(row['id'] == model_id for row in self.models):
+                    raise ValueError(f'unknown model: {model_id}')
+                await self.stop_process(self.process)
+                self.process = self.backend = None
+                self.shared_worker = False
+                self.models = [row for row in self.models if row['id'] != model_id]
+                if self.default_model == model_id:
+                    self.model = self.default_model = self.runtime_config = None
+                self.state = 'failed' if self.models else 'idle'
+                if not self.models:
+                    self.error = None
+                    self.memory = {}
+                    self.process_config = None
+                return self.status()
+        return await self.model_operation('unload', dict(id=model_id, force=force))
+
+    async def set_default(self, model_id):
+        if not self.backend:
+            raise ValueError('no GPU worker is running')
+        async with self.lock:
+            if self.task and not self.task.done():
+                raise ValueError('wait for the model operation to finish')
+            response = await self.client.post(self.backend + '/worker/default', json=dict(id=model_id))
+            if not response.is_success:
+                raise ValueError(response.json().get('detail', 'could not set default model'))
+            self.accept_snapshot(response.json())
+            return self.status()
+
+    async def model_operation(self, kind, payload):
+        async with self.lock:
+            if self.closing or self.storage_busy or (self.task and not self.task.done()):
+                raise ValueError('a model operation is already in progress')
+            self.error = None
+            self.operation = dict(kind=kind, model=payload.get('id') or payload.get('model'), stage='queued')
+            self.task = asyncio.create_task(self._model_operation(kind, payload))
+        return self.status()
+
+    async def _model_operation(self, kind, payload):
+        try:
+            pending = asyncio.create_task(self.client.post(self.backend + '/worker/' + kind, json=payload))
+            try:
+                response = await asyncio.wait_for(asyncio.shield(pending), self.load_timeout) if kind == 'load' else await pending
+            except asyncio.TimeoutError:
+                self.error = f'model loading exceeded {self.load_timeout:g}s; cancelling at a safe boundary'
+                await self.client.post(self.backend + '/worker/load/cancel')
+                response = await pending
+            except asyncio.CancelledError:
+                pending.cancel()
+                try:
+                    await pending
+                except asyncio.CancelledError:
+                    pass
+                raise
+            if not response.is_success:
+                raise ValueError(response.json().get('detail', 'model operation failed'))
+            self.accept_snapshot(response.json())
+            if not any(row.get('runtime_config') for row in self.models):
+                await self.stop_process(self.process)
+                self.process = self.backend = None
+                self.shared_worker = False
+                self.process_config = None
+                self.memory = {}
+                self.state = 'idle'
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.error = str(exc)
+            await self.refresh()
+        finally:
+            self.operation = None
 
     def pull(self, recipe):
         if self.closing or self.storage_busy or (self.download and self.download.poll() is None):
@@ -281,6 +442,14 @@ class DaemonManager:
         async with self.lock:
             if not self.task or self.task.done():
                 raise ValueError("no model transition is in progress")
+            if self.shared_worker and self.backend and self.operation and self.operation.get('kind') == 'load':
+                response = await self.client.post(self.backend + '/worker/load/cancel')
+                if not response.is_success:
+                    raise ValueError(response.json().get('detail', 'could not cancel model loading'))
+                self.accept_snapshot(response.json())
+                return self.status()
+            if self.shared_worker and self.operation:
+                raise ValueError('only loading can be cancelled; an unload is already in progress')
             self.task.cancel()
             try:
                 await self.task
@@ -314,6 +483,11 @@ class DaemonManager:
                 raise ValueError("the daemon configuration directory cannot be deleted")
             if not target.is_dir():
                 raise ValueError("model directory does not exist")
+            for row in self.models:
+                runtime = row.get('runtime_config') or {}
+                for used in (runtime.get('model_path'), runtime.get('dflash_path')):
+                    if used and (Path(used).resolve() == target or target in Path(used).resolve().parents):
+                        raise ValueError('unload the model before deleting files used by inference')
             # Resolve recipes as well as bare paths before checking the active worker.
             active = self.runtime_config and self.runtime_config.get("model_path")
             if self.model:
