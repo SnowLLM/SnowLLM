@@ -4,7 +4,7 @@ import { parseOptions, readEvents } from './stream.js';
 import { thinkingProfile, thinkingParameters } from './thinking.js';
 
 const $ = (id) => document.getElementById(id);
-const stateLabels = () => ({ idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
+const stateLabels = () => ({ queued: t("Queued"), unloading: t("Unloading"), idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
 let savedRecipesUrl, savedLibraryPath;
 let status = null, recipes = [], localModels = [], source = 'recipe', page = 'workspace';
 let bundleCatalog = false;
@@ -13,10 +13,12 @@ let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit 
 let catalogRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
+const activeChats = new Map();
+let modelSignature = '', aliasRequest = 0;
 let preferredThinkingLevel = '';
 let conversation = [];
 let sessions = [], sessionId = crypto.randomUUID(), loadSettings = {};
-const loadFieldIds = ['context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
+const loadFieldIds = ['load-id', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
 try { loadSettings = JSON.parse(localStorage.getItem('snowllm.load-settings') || '{}'); if (!loadSettings || Array.isArray(loadSettings) || typeof loadSettings !== 'object') loadSettings = {}; } catch {}
 try {
   const saved = JSON.parse(localStorage.getItem('snowllm.conversation') || '{}');
@@ -47,11 +49,11 @@ function renderSessions() {
   $('chat-session').replaceChildren(...sessions.map(item => new Option(item.title || t('New conversation'), item.id)));
   if (!sessions.some(item => item.id === sessionId)) $('chat-session').append(new Option(t('New conversation'), sessionId));
   $('chat-session').value = sessionId;
-  $('chat-session').disabled = Boolean(chatController);
+  $('chat-session').disabled = false;
   $('delete-chat').disabled = Boolean(chatController);
-  $('new-chat').disabled = Boolean(chatController);
+  $('new-chat').disabled = false;
   $('regenerate-chat').hidden = Boolean(chatController) || conversation.at(-1)?.role !== 'assistant';
-  $('regenerate-chat').disabled = status?.state !== 'ready' || Boolean(currentChatModel && currentChatModel !== status?.model);
+  $('regenerate-chat').disabled = !chatModelReady();
 }
 function selectSession(id) {
   const item = sessions.find(item => item.id === id);
@@ -62,12 +64,12 @@ function selectSession(id) {
   $('temperature').value = item?.temperature || '';
   $('max-tokens').value = item?.maxTokens || '2048';
   preferredThinkingLevel = item?.thinkingLevel || '';
-  updateThinkingLevels(); renderConversation(); saveConversation();
+  syncChatControls(); updateThinkingLevels(); renderChatModels(); renderConversation(); saveConversation(); controls();
 }
 function newSession() {
   saveConversation();
-  sessionId = crypto.randomUUID(); conversation = []; currentChatModel = status?.model || null;
-  saveConversation(); renderConversation();
+  sessionId = crypto.randomUUID(); conversation = []; currentChatModel = status?.default_model || status?.model || null;
+  syncChatControls(); renderChatModels(); updateThinkingLevels(); saveConversation(); renderConversation(); controls();
 }
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast(t('Copied')); } catch { toast(t('Copy failed')); }
@@ -91,7 +93,7 @@ function element(tag, className = '', text = '') {
 }
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 5500); }
 function bytes(value) { if (!Number.isFinite(value) || value <= 0) return '—'; return `${(value / 2 ** 30).toFixed(1)} GiB`; }
-function transition() { return status && ['loading', 'draining'].includes(status.state); }
+function transition() { return Boolean(status?.operation || status && ['loading', 'draining'].includes(status.state)); }
 async function api(path, options = {}) {
   const response = await fetch(path, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
   if (!response.ok) {
@@ -120,14 +122,15 @@ function controls() {
   const online = !$('connection-banner').hidden ? false : Boolean(status);
   $('load-button').disabled = !online || transition();
   $('unload-button').disabled = !online || transition() || !status?.model;
-  $('send-chat').disabled = !online || status?.state !== 'ready' || Boolean(chatController);
-  $('cancel-load').hidden = !transition();
-  $('cancel-load').disabled = !online;
+  $('send-chat').disabled = !online || !chatModelReady() || Boolean(chatController);
+  $('chat-model').disabled = Boolean(chatController);
+  $('cancel-load').hidden = !transition() || status?.operation?.kind === 'unload';
+  $('cancel-load').disabled = !online || status?.cancel_requested;
   $('retry-load').disabled = !online;
-  $('retry-load').hidden = status?.state !== 'failed' || !status?.last_load;
+  $('retry-load').hidden = !status?.error || !status?.last_load;
   renderSessions();
   document.querySelectorAll('[data-download]').forEach(button => button.disabled = !online || status?.download?.exit_code === null);
-  document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online || transition() || Boolean(chatController));
+  document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online || transition());
 }
 function renderLoadError(next) {
   const banner = $('model-error');
@@ -163,11 +166,56 @@ function renderUpdate(update) {
     return row;
   }));
 }
+function selectedModel() { return currentChatModel || status?.default_model || status?.model; }
+function selectedAlias() { return aliases.find(item => item.id === selectedModel()); }
+function chatModelReady() {
+  const name = selectedModel();
+  return (status?.models || []).some(row => row.state === 'ready' && (row.id === name || row.aliases?.includes(name)))
+    || !status?.models?.length && status?.state === 'ready' && (!currentChatModel || currentChatModel === status.model);
+}
+function syncChatControls() {
+  chatController = activeChats.get(sessionId)?.controller || null;
+  $('stop-chat').hidden = !chatController; $('send-chat').hidden = Boolean(chatController);
+  $('chat-status').textContent = chatController ? t('Generating…') : t('Enter to send');
+}
+function renderChatModels() {
+  const name = selectedModel();
+  const names = aliases.map(item => item.id);
+  if (name && !names.includes(name)) names.unshift(name);
+  $('chat-model').replaceChildren(...names.map(id => new Option(id + (aliases.some(item => item.id === id) ? '' : ` · ${t('Not loaded')}`), id)));
+  $('chat-model').value = name || '';
+  $('chat-model-label').textContent = name ? name + (chatModelReady() ? '' : ` · ${t('Reload this model to continue the conversation.')}`) : t('Load a model to start a conversation.');
+}
+function renderResidentModels(next) {
+  const operation = next.operation;
+  $('model-operation').textContent = !operation ? '' : operation.kind === 'load'
+    ? next.cancel_requested ? t('Cancelling after the current build finishes.') : t('Loading {0}. GPU inference resumes after initialization.', operation.model)
+    : t('Unloading {0}.', operation.model);
+  const list = $('resident-models'); list.replaceChildren();
+  if (!next.models?.length) list.append(element('p', 'muted', t('None loaded')));
+  for (const row of next.models || []) {
+    const card = element('section', 'resident-model');
+    const title = element('div', 'resident-model-title');
+    title.append(element('strong', '', row.id), element('span', 'muted', `${stateLabels()[row.state] || t(row.state)}${next.default_model === row.id ? ` · ${t('Default model')}` : ''}`));
+    card.append(title, element('p', 'field-hint', row.source));
+    if (row.engine) card.append(element('p', 'field-hint', t('Running {0} · Queued {1} · Tensors {2} · Scheduler wait {3} s', row.engine.running, row.engine.waiting, bytes(row.memory?.total), (row.scheduling?.wait_seconds || 0).toFixed(2))));
+    if (row.error) card.append(element('p', 'message-error', row.error));
+    const buttons = element('div', 'runtime-actions');
+    const use = element('button', 'button secondary', t('Set as default'));
+    use.disabled = Boolean(operation) || row.state !== 'ready' || next.default_model === row.id;
+    use.addEventListener('click', () => action(use, async () => renderStatus(await post('/daemon/models/default', {id: row.id}))));
+    const unload = element('button', 'button secondary', t('Unload model'));
+    unload.disabled = Boolean(operation);
+    unload.addEventListener('click', () => action(unload, async () => renderStatus(await post('/daemon/models/unload', {id: row.id, force: $('force-switch').checked}))));
+    buttons.append(use, unload); card.append(buttons); list.append(card);
+  }
+}
 function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
   status = next;
   renderUpdate(next.update);
+  renderResidentModels(next);
   renderEffectiveSettings(next);
   const inferenceUrl = `${next.inference_url}/v1`;
   $('api-address').textContent = inferenceUrl.replace(/^https?:\/\//, '');
@@ -230,10 +278,14 @@ function renderStatus(next) {
     lastDownloadExit = download.exit_code;
   } else lastDownloadExit = null;
   if (modelRoot !== next.models_dir) { modelRoot = next.models_dir; refreshCatalog(false); storageSpace(); }
-  if (next.state === 'ready' && (oldState !== 'ready' || oldModel !== next.model || !aliases.length)) refreshAliases();
-  if (oldModel !== next.model) { aliases = []; updateThinkingLevels(); }
-  if (next.state !== 'ready') $('chat-model-label').textContent = next.model ? `${next.model} · ${stateLabels()[next.state]}` : t("Load a model to start a conversation.");
-  if (oldModel && oldModel !== next.model && chatController) chatController.abort();
+  const signature = JSON.stringify((next.models || []).map(row => [row.id, row.instance, row.state]));
+  const refresh = next.state === 'ready' && (signature !== modelSignature || !aliases.length);
+  modelSignature = signature;
+  if (refresh) refreshAliases();
+  else if (next.state !== 'ready') { aliases = []; aliasRequest++; }
+  const legacy = (next.models || []).filter(row => row.source === currentChatModel);
+  if (legacy.length === 1 && legacy[0].id !== currentChatModel) { currentChatModel = legacy[0].id; saveConversation(); }
+  renderChatModels();
   controls();
 }
 async function refreshStatus() {
@@ -241,14 +293,17 @@ async function refreshStatus() {
   catch (error) { $('connection-banner').hidden = false; $('connection-dot').className = 'dot red'; $('connection-title').textContent = t("Disconnected"); $('connection-detail').textContent = t("Reconnecting\u2026"); controls(); throw error; }
 }
 async function refreshAliases() {
+  const request = ++aliasRequest, signature = modelSignature;
   try {
-    const result = await api('/daemon/inference/models'); aliases = result.data || [];
-    $('chat-model-label').textContent = aliases[0]?.id || status.model;
+    const result = await api('/daemon/inference/models');
+    if (request !== aliasRequest || signature !== modelSignature) return;
+    aliases = result.data || [];
+    renderChatModels();
     updateThinkingLevels();
-  } catch { aliases = []; updateThinkingLevels(); }
+  } catch { if (request === aliasRequest) { aliases = []; updateThinkingLevels(); } }
 }
 function updateThinkingLevels() {
-  const profile = thinkingProfile(aliases[0]?.thinking);
+  const profile = thinkingProfile(selectedAlias()?.thinking);
   $('thinking-level').replaceChildren(...profile.options.map(([value, label]) => new Option(value.startsWith('effort:') ? label : t(label), value)));
   $('thinking-level').value = profile.options.some(([value]) => value === preferredThinkingLevel) ? preferredThinkingLevel : '';
 }
@@ -256,7 +311,8 @@ async function refreshMetrics() {
   const ready = status?.state === 'ready';
   let data = null;
   if (ready) { try { data = await api('/daemon/metrics?format=json'); } catch {} }
-  const engine = data?.engine;
+  const selected = data?.models?.find(row => row.id === selectedModel() || row.aliases?.includes(selectedModel()));
+  const engine = selected?.engine || data?.engine;
   $('metrics-requests').textContent = engine ? `${engine.running} / ${engine.waiting}` : '—';
   $('metrics-kv').textContent = engine?.free_kv_blocks ?? '—';
   $('metrics-cache').textContent = engine ? `${engine.cache_hits} / ${engine.cache_misses}` : '—';
@@ -408,7 +464,7 @@ function saveConversation() {
     thinkingLevel: preferredThinkingLevel, temperature: $('temperature').value, maxTokens: $('max-tokens').value};
   const index = sessions.findIndex(session => session.id === sessionId);
   if (index >= 0) sessions[index] = item; else sessions.push(item);
-  sessions = sessions.slice(-50);
+  sessions = sessions.filter((item, index) => activeChats.has(item.id) || index >= sessions.length - 50);
   try {
     localStorage.setItem('snowllm.conversation', JSON.stringify(item));
     localStorage.setItem('snowllm.sessions', JSON.stringify({current: sessionId, sessions}));
@@ -447,6 +503,7 @@ function messageNode(message) {
   root.append(reasoning, content);
   function update() { if (message.role === 'user') content.textContent = message.content; else markdown(content, message.content); reasoning.hidden = !message.reasoning; reasoning.lastElementChild.textContent = message.reasoning || ''; }
   if (message.role === 'assistant') { const copy = element('button', 'button secondary answer-copy', t('Copy answer')); copy.addEventListener('click', () => copyText(message.content)); root.append(copy); }
+  if (message.error) root.append(element('p', 'message-error', message.error));
   if (message.stats) root.append(element('div', 'chat-token-line', message.stats));
   update(); return { root, update };
 }
@@ -459,23 +516,25 @@ const emptyChat = $('chat-empty');
 async function sendMessage(event) {
   event.preventDefault();
   const text = $('chat-input').value.trim();
-  if (!text || chatController || status?.state !== 'ready') return;
-  if (currentChatModel && currentChatModel !== status.model) newSession();
-  currentChatModel = status.model;
+  if (!text || chatController || !chatModelReady()) return;
+  currentChatModel = selectedModel();
+  const runningSession = sessionId, runningConversation = conversation;
   chatController = new AbortController(); const controller = chatController;
+  activeChats.set(runningSession, {controller, model: currentChatModel});
   const user = { role: 'user', content: text };
   conversation.push(user); $('chat-input').value = ''; saveConversation(); renderConversation();
   const assistant = { role: 'assistant', content: '', reasoning: '' };
-  const node = messageNode(assistant); $('messages').append(node.root); conversation.push(assistant);
+  const node = messageNode(assistant); $('messages').append(node.root); conversation.push(assistant); saveConversation();
+  const update = () => { node.update(); if (sessionId === runningSession && !node.root.isConnected) renderConversation(); };
   $('stop-chat').hidden = false; $('send-chat').hidden = true; $('chat-status').textContent = t("Generating\u2026"); controls();
   const started = performance.now(); let firstToken = null, usage = null;
   const messages = conversation.slice(0, -1).map(({ role, content }) => ({ role, content }));
   if ($('system-prompt').value.trim()) messages.unshift({ role: 'system', content: $('system-prompt').value.trim() });
-  const payload = { model: aliases[0]?.id || status.model, messages, stream: true, stream_options: { include_usage: true } };
+  const payload = { model: currentChatModel, messages, stream: true, stream_options: { include_usage: true } };
   if ($('max-tokens').value) payload.max_tokens = Number($('max-tokens').value);
   if ($('temperature').value) payload.temperature = Number($('temperature').value);
   try {
-    Object.assign(payload, thinkingParameters($('thinking-level').value, aliases[0]?.thinking));
+    Object.assign(payload, thinkingParameters($('thinking-level').value, selectedAlias()?.thinking));
     const response = await fetch('/daemon/inference/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
     if (!response.ok) { let detail = t("Generation failed ({0})", response.status); try { const data = await response.json(); detail = data.detail || data.error?.message || detail; } catch {} throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail)); }
     let framePending = false;
@@ -487,26 +546,30 @@ async function sendMessage(event) {
       if (chunk.usage) usage = chunk.usage;
       if (!framePending) {
         framePending = true;
-        requestAnimationFrame(() => { framePending = false; const atBottom = $('messages').scrollTop + $('messages').clientHeight >= $('messages').scrollHeight - 100; node.update(); if (atBottom) $('messages').scrollTop = $('messages').scrollHeight; });
+        requestAnimationFrame(() => { framePending = false; const atBottom = $('messages').scrollTop + $('messages').clientHeight >= $('messages').scrollHeight - 100; node.update(); if (atBottom && sessionId === runningSession) $('messages').scrollTop = $('messages').scrollHeight; });
       }
     });
-    node.update();
-    if (firstToken !== null) $('chat-ttft').textContent = `${((firstToken - started) / 1000).toFixed(2)} s`;
+    update();
+    if (sessionId === runningSession && firstToken !== null) $('chat-ttft').textContent = `${((firstToken - started) / 1000).toFixed(2)} s`;
     if (usage) {
-      $('chat-tokens').textContent = usage.completion_tokens;
+      if (sessionId === runningSession) $('chat-tokens').textContent = usage.completion_tokens;
       const timing = usage.timings || {};
       const rate = value => Number.isFinite(value) ? `${value.toFixed(1)} tok/s` : '—';
       assistant.stats = t("{0} output tokens \u00b7 {1} s \u00b7 Prefill {2} \u00b7 Decode {3}", usage.completion_tokens, ((performance.now() - started) / 1000).toFixed(1), rate(timing.prefill_tok_s), rate(timing.decode_tok_s));
       node.root.append(element('div', 'chat-token-line', assistant.stats));
     }
   } catch (error) {
-    node.update(); const message = error.name === 'AbortError' ? t("Generation stopped.") : t(error.message);
-    node.root.append(element('p', 'message-error', message));
+    update(); const message = error.name === 'AbortError' ? t("Generation stopped.") : t(error.message);
+    assistant.error = message; node.root.append(element('p', 'message-error', message));
     if (error.name !== 'AbortError') toast(message);
   } finally {
-    if (!assistant.content && !assistant.reasoning) conversation.pop();
-    chatController = null; $('stop-chat').hidden = true; $('send-chat').hidden = false;
-    $('chat-status').textContent = t("Enter to send"); saveConversation(); controls(); refreshStatus().catch(() => {});
+    if (!assistant.content && !assistant.reasoning) runningConversation.pop();
+    activeChats.delete(runningSession);
+    const saved = sessions.find(item => item.id === runningSession);
+    if (saved) saved.messages = runningConversation.slice(-100);
+    if (sessionId === runningSession) { conversation = runningConversation; saveConversation(); renderConversation(); }
+    else { try { localStorage.setItem('snowllm.sessions', JSON.stringify({current: sessionId, sessions})); } catch {} }
+    syncChatControls(); controls(); refreshStatus().catch(() => {});
   }
 }
 async function copyApi(target = 'api-url') {
@@ -540,8 +603,8 @@ $('load-recipe').addEventListener('change', () => { restoreLoadSettings(); recip
 $('load-path').addEventListener('change', restoreLoadSettings);
 $('save-load-settings').addEventListener('click', () => saveLoadSettings());
 $('reset-load-settings').addEventListener('click', () => { for (const id of loadFieldIds) $(id).value = ''; saveLoadSettings(); });
-$('cancel-load').addEventListener('click', () => action($('cancel-load'), async () => { renderStatus(await post('/daemon/load/cancel')); toast(t('Model loading cancelled')); }));
-$('retry-load').addEventListener('click', () => action($('retry-load'), async () => { renderStatus(await post('/daemon/load', status.last_load)); }));
+$('cancel-load').addEventListener('click', () => action($('cancel-load'), async () => { renderStatus(await post('/daemon/load/cancel')); toast(t('Load cancellation requested')); }));
+$('retry-load').addEventListener('click', () => action($('retry-load'), async () => { const {model, options, id} = status.last_load; renderStatus(await post('/daemon/models/load', {model, options, id})); }));
 $('local-model').addEventListener('change', () => { if ($('local-model').value) { $('load-path').value = $('local-model').value; restoreLoadSettings(); } });
 $('model-search').addEventListener('input', renderRecipes); $('installed-only').addEventListener('change', renderRecipes);
 $('refresh-state').addEventListener('click', () => action($('refresh-state'), refreshStatus));
@@ -569,11 +632,11 @@ $('load-form').addEventListener('submit', (event) => {
     for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if ($(id).value.trim()) options.push(flag, $(id).value.trim());
     options.push(...parseOptions($('extra-options').value));
     saveLoadSettings(false);
-    const result = await post('/daemon/load', { model, options, force: $('force-switch').checked }); renderStatus(result);
-    $('load-feedback').textContent = t("Model change requested. Watch engine status and activity for progress."); toast(t("Model change requested"));
+    const result = await post('/daemon/models/load', { model, options, id: $('load-id').value.trim() || null }); renderStatus(result);
+    $('load-feedback').textContent = t("Model load requested. Watch model status for progress."); toast(t("Model load requested"));
   });
 });
-$('unload-button').addEventListener('click', () => action($('unload-button'), async () => { renderStatus(await post(`/daemon/unload?force=${$('force-switch').checked}`)); toast(t("Model unload requested")); }));
+$('unload-button').addEventListener('click', () => action($('unload-button'), async () => { renderStatus(await post('/daemon/models/unload', {id: status.default_model || status.model, force: $('force-switch').checked})); toast(t("Model unload requested")); }));
 $('cancel-download').addEventListener('click', () => action($('cancel-download'), async () => { renderStatus(await post('/daemon/download/cancel')); toast(t("Download stopped. Partial files are kept for resuming.")); }));
 $('download-logs-button').addEventListener('click', () => action($('download-logs-button'), () => showLogs('download')));
 $('storage-form').addEventListener('submit', (event) => { event.preventDefault(); action(event.submitter, async () => { renderStatus(await api('/daemon/config', { method: 'PUT', body: JSON.stringify({ models_dir: $('models-dir').value.trim() }) })); await refreshCatalog(false); toast(['command-line', 'environment'].includes(status.models_dir_source) ? t("Directory saved to JSON. The startup override is still active.") : t("Model directory saved")); }); });
@@ -587,8 +650,9 @@ $('select-directory').addEventListener('click', () => { $(directoryTarget).value
 $('chat-form').addEventListener('submit', sendMessage);
 $('chat-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!$('send-chat').disabled) $('chat-form').requestSubmit(); } });
 $('stop-chat').addEventListener('click', () => chatController?.abort());
-$('new-chat').addEventListener('click', () => { if (!chatController) newSession(); });
-$('chat-session').addEventListener('change', () => { if (!chatController) { const next = $('chat-session').value; saveConversation(); selectSession(next); } });
+$('new-chat').addEventListener('click', newSession);
+$('chat-session').addEventListener('change', () => { const next = $('chat-session').value; saveConversation(); selectSession(next); });
+$('chat-model').addEventListener('change', () => { const next = $('chat-model').value; if (conversation.length) newSession(); currentChatModel = next; renderChatModels(); updateThinkingLevels(); saveConversation(); controls(); });
 $('delete-chat').addEventListener('click', () => {
   if (chatController || !confirm(t('Delete this conversation?'))) return;
   sessions = sessions.filter(item => item.id !== sessionId);
