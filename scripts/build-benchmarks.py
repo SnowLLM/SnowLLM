@@ -12,6 +12,7 @@ PAGE = ROOT / "web" / "benchmark" / "index.html"
 START = "<!-- BEGIN GENERATED BENCHMARK DATA -->"
 END = "<!-- END GENERATED BENCHMARK DATA -->"
 GFX1103_LABELS = {
+    "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http",
     "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http",
     "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http",
 }
@@ -64,6 +65,8 @@ COMPARISONS = [
 
 
 ARMS = {
+    "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http":
+        ("SnowLLM", "LFM2.5-8B-A1B Q4_K_M", "DSpark block 9, HTTP, usage tokens"),
     "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http":
         ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, static eager, HTTP"),
     "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http":

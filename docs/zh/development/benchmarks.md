@@ -22,7 +22,7 @@ ISL=8192 OSL=256 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl --num-spec 2
 
 | 指标 | 含义 |
 | --- | --- |
-| 生成 tok/s | 首个输出块之后，客户端观察到的流式输出速率。 |
+| 生成 tok/s | `(usage.completion_tokens - 1) / (流结束时间 - 首个可见输出时间)`，包含思考 token。 |
 | 步/秒 | 每秒执行的验证步数。 |
 | 毫秒/步 | 每个验证步的耗时。 |
 | AL | 每步输出的 token 数，包含修正 token。SnowLLM 直接报告 AL；llama.cpp 的接受率换算为估算 AL。 |
@@ -30,6 +30,10 @@ ISL=8192 OSL=256 benchmarks/run.sh snowllm qwen3.6-35b-a3b-q4-k-xl --num-spec 2
 | TTFT | 从客户端发起请求到首个流式输出的时间。 |
 
 不计入预热请求。生成速率采用保留请求的中位数，TTFT 和预填充速率使用第一个保留请求。这些客户端速率包含传输开销，与 Web UI 的引擎计时不同。提示词缓存状态取决于运行中的服务端。
+
+新版客户端使用 `measurement=http_stream_usage_tokens`，以 usage 中的 token 数计算吞吐，避免将 Unicode 缓冲或一个 SSE 块中的多个 token 只计为一个 token。首个可见输出可能晚于隐藏标记或包含多个 token，因此这是客户端速率估计；各样本另行保留引擎阶段计时。历史 HTTP 数据保留原有的块计数结果。
+
+结果保存全部保留样本、实际输出长度、结束原因、TTFT 中位数及最近秩 p95、语料 SHA-256 和服务端运行配置。`--thinking auto` 保持必须开启的思考，关闭支持切换的思考，其余模型使用默认模式；提示词长度计算与实际请求使用相同设置。`--platform gfx1103` 会在测速前核对服务端实际架构。运行信息包括 GPU 名称和主机可见内存，后者可能不含 BIOS 预留的 UMA。输入长度加输出上限必须落在服务端上下文范围内；仅保留以 `stop` 或 `length` 完整结束的流。
 
 ## 换算 {#conversion}
 
@@ -44,6 +48,19 @@ Ms/step = 1000 × AL / Decode tok/s
 图表和对比数据对两种引擎统一使用 AL。llama.cpp 原始数据将接受率存为 0–1 的小数，因此换算为 `AL = 1 + N × accept_mean`。图表使用配置的最大草稿长度估算；实际提出的草稿更短时，所得 AL 和每步耗时为上界，并非直接测量值。
 
 公开数据位于 [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs)。[性能测试页](https://snowllm.dev/benchmark/)读取 [benchmarks.json](https://snowllm.dev/benchmarks.json)。
+
+## Radeon 780M 上的 LFM2.5 {#lfm25-780m}
+
+LFM2.5-8B-A1B Q4_K_M 在 Windows 的 Ryzen 9 7940HS / Radeon 780M（`gfx1103`）上实测；CPU 名称来自注册表，GPU 架构来自服务端运行信息。整机安装 32 GiB 内存，主机可见内存不含 BIOS 预留的 UMA。README 的 16 GiB 为部署估计，并非物理 16 GiB 整机实测。
+
+使用官方 Q4 主模型和 Q8_0 DSpark 草稿、block 9、graph、BF16 KV、9216-token 共享容量、单请求槽位、512-token prefill 分块，并关闭前缀缓存。标准客户端沿用 PG19 任务，构造精确的 1K／8K 聊天输入。思考开启，temperature 为零，遵守 EOS，输出上限 256 token。每个长度预热一次、保留四次请求；八次保留请求均到达输出上限。这是吞吐测试，不代表回答质量。
+
+| 输入 | 预填充 tok/s | 生成 tok/s | TTFT 秒 | AL |
+| --- | ---: | ---: | ---: | ---: |
+| 1K | 1174.2 | 44.94 | 0.872 | 2.656 |
+| 8K | 1234.6 | 42.34 | 6.635 | 2.796 |
+
+客户端在预热前核对服务端架构。原始样本、语料哈希和运行配置见 [`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json)。源码包含上述 benchmark 修正，测试时尚未提交，数据已标记 `source_dirty`。
 
 ## Radeon 780M MiniCPM 对比（2026-10-29） {#radeon-780m}
 

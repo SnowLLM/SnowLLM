@@ -75,7 +75,8 @@ class BenchmarkPageTests(unittest.TestCase):
                 self.assertEqual(parser.result_rows[s["key"], p["isl_target"]], expected)
         self.assertLess(content.index('id="benchmark-results"'), content.index('id="benchmarks-780m"'))
         for s in secondary:
-            self.assertEqual([p["isl_target"] for p in s["points"]], [1024, 8192, 32768, 122880])
+            lengths = [1024, 8192] if s["model"] == "LFM2.5-8B-A1B Q4_K_M" else [1024, 8192, 32768, 122880]
+            self.assertEqual([p["isl_target"] for p in s["points"]], lengths)
 
     def test_cached_scripts_can_render_charts_without_removing_hidden_attributes(self):
         parser = ResultsParser()

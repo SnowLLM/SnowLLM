@@ -34,7 +34,7 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 | Qwen3.8-Flash-Next | UD-Q3_K_XL | MTP k=2 | 128 GiB | AI Max+ 395 | **1812.2** | **42.9** | **1723.8** | **38.6** |
 | MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark, block 8 | 64 GiB | AI Max+ 395 | **4323.9** | **63.7** | **1257.3** | **18.0** |
 | MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark, block 8 | 32 GiB | 7940HS (RDNA3) | **1041.8** | **19.6** | — | — |
-| LFM2.5-8B-A1B | Q4_K_M | DSpark, block 9 | 16 GiB* | 7940HS (RDNA3) | **1269.1** | **41.8** | — | — |
+| LFM2.5-8B-A1B | Q4_K_M | DSpark, block 9 | 16 GiB* | 7940HS (RDNA3) | **1234.6** | **42.3** | — | — |
 | DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB (Linux); 192 GiB (Windows) | AI Max+ 395 | TBD | TBD | TBD | TBD |
 | GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | AI Max+ 395 | **517.1** | **25.8** | **480.7** | **26.8** |
 | DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | **862.6** | **26.0** | **631.8** | **22.3** |
@@ -42,7 +42,8 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 
 *LFM's 16 GiB system RAM requirement is estimated for an 8K-context, single-request deployment (~6.6 GiB device memory). The test machine has 32 GiB RAM.*
 
-LFM rates use 8192 PG19 input tokens and 256 output tokens, ignoring EOS: Engine phase timings, one warm-up and the median of three runs.
+LFM rates use the standard HTTP benchmark: exact 8K input, a 256-token output cap,
+thinking on, one warm-up and four retained requests. See [the run details](docs/development/benchmarks.md#lfm25-780m).
 
 More: [Benchmarks](https://snowllm.dev/benchmark/) · [Supported Models](docs/reference/models.md).
 

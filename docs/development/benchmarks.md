@@ -22,7 +22,7 @@ Chart dots are measurements. Connecting lines are guides; the context axis is li
 
 | Metric | Meaning |
 | --- | --- |
-| Decode tok/s | Client-side stream rate after the first output chunk. |
+| Decode tok/s | `(usage.completion_tokens - 1) / (stream end - first visible output)`, including reasoning tokens. |
 | Step/s | Verification steps per second. |
 | Ms/step | Time per verification step. |
 | AL | Emitted tokens per step, including the correction token. SnowLLM reports AL directly; llama.cpp acceptance rates are converted to estimated AL. |
@@ -30,6 +30,21 @@ Chart dots are measurements. Connecting lines are guides; the context axis is li
 | TTFT | Client request start to first streamed output. |
 
 Warm-up requests are excluded. Decode rate uses the median retained run; TTFT and prefill rate use the first retained run. These client-side rates include transport overhead and differ from the Web UI's engine timings. Prompt cache state depends on the running server.
+
+New client runs use `measurement=http_stream_usage_tokens`. Token counts come from usage,
+so Unicode buffering and multiple tokens in one SSE chunk do not count as one token.
+The first visible output can follow hidden markers or contain multiple tokens; this is a
+client rate estimate. Native request phase timings are retained separately in each sample.
+Historical HTTP rows retain their original chunk-counting measurements.
+
+The client records all retained samples, actual output lengths, finish reasons, TTFT
+median and nearest-rank p95, corpus SHA-256 and the server runtime configuration.
+`--thinking auto` keeps mandatory thinking on, switches it off when supported, and
+otherwise preserves the model default; prompt sizing and requests use the same choice.
+`--platform gfx1103` verifies the server's architecture before measuring. The runtime
+includes the GPU name and host-visible RAM, which can exclude BIOS-reserved UMA.
+Input plus the output cap must fit the advertised context, and only complete streams
+ending in `stop` or `length` are retained.
 
 ## Conversion
 
@@ -44,6 +59,30 @@ Ms/step = 1000 × AL / Decode tok/s
 The chart and comparison data use AL for both engines. Raw llama.cpp runs store acceptance rates as fractions from 0 to 1, so the conversion is `AL = 1 + N × accept_mean`. The chart estimates llama.cpp AL using its configured maximum draft width. If fewer tokens are proposed, this is an upper bound on AL and derived ms/step, not a direct measurement.
 
 Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/tree/main/benchmarks/runs). The [Benchmark page](https://snowllm.dev/benchmark/) reads [benchmarks.json](https://snowllm.dev/benchmarks.json).
+
+## LFM2.5 on Radeon 780M {#lfm25-780m}
+
+The LFM2.5-8B-A1B Q4_K_M run uses Windows on the Ryzen 9 7940HS / Radeon 780M
+(`gfx1103`), verified from the CPU registry entry and server GPU metadata. The machine
+has 32 GiB installed RAM; its host-visible RAM excludes BIOS-reserved UMA. The README's
+16 GiB entry is a deployment estimate, not a measurement on a physical 16 GiB machine.
+
+The official Q4 target and Q8_0 DSpark draft use block 9, graphs, BF16 KV, a shared
+9216-token capacity, one request slot, 512-token prefill chunks and no prefix reuse.
+The unchanged standard client workload constructs exact 1K/8K chat inputs from PG19.
+Thinking stays on, temperature is zero, EOS is honored and the output cap is 256 tokens.
+Each length has one warm-up and four retained requests. All eight retained requests
+reached the output cap; these measurements evaluate throughput, not answer quality.
+
+| Input | Prefill tok/s | Decode tok/s | TTFT s | AL |
+| --- | ---: | ---: | ---: | ---: |
+| 1K | 1174.2 | 44.94 | 0.872 | 2.656 |
+| 8K | 1234.6 | 42.34 | 6.635 | 2.796 |
+
+The client rejects a server architecture mismatch before warm-up. Raw samples, the
+corpus hash and runtime settings are in
+[`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json).
+The source was dirty: it includes the benchmark fixes described above.
 
 ## Radeon 780M MiniCPM comparison (2026-10-29) {#radeon-780m}
 
