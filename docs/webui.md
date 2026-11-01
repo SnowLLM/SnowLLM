@@ -28,8 +28,8 @@ snowllm unload
 
 ## Browser interface
 
-- **Models:** download recipes, load local checkpoints, save per-model load settings and manage storage. Downloads show progress and can resume after stopping.
-- **Chat:** use browser-local sessions, template-based thinking controls, saved sampling settings, copy, regenerate and export.
+- **Models:** download recipes, keep multiple checkpoints loaded, choose a default model, save per-model load settings and manage storage. Downloads show progress and can resume after stopping.
+- **Chat:** bind each browser-local session to a model, switch sessions while generation continues, stop one session independently, and use template-based thinking controls, saved sampling settings, copy, regenerate and export.
 - **Language:** English and Simplified Chinese follow the browser language; select manually in Settings.
 
 Conversations and UI preferences stay in the current browser. The UI needs no external frontend service; model downloads need network access unless configured locally.
@@ -49,18 +49,60 @@ temperature, VRAM, and shared memory when Linux DRM/hwmon sensors provide them.
 Unsupported sensors show as unavailable. Device power follows the driver's sensor
 scope (on integrated GPUs it may include the APU). The inference listener exposes
 `GET /metrics` in Prometheus text format and `GET /metrics?format=json` for the same
-snapshot. The management listener proxies it at `/daemon/metrics`. Metrics reset
-when the model worker restarts; `--stats-interval 0` disables aggregate engine
+snapshot. JSON includes per-model engine and scheduling statistics; Prometheus adds `snowllm_model_*{model="ID"}` series. GPU sensors are collected once for the device. Request `usage.timings` includes `queue_seconds` until first admission and `scheduler_wait_seconds` for shared-executor waiting; these overlap and should not be added together. The management listener proxies it at `/daemon/metrics`. Metrics reset
+when a model is unloaded or the worker restarts; `--stats-interval 0` disables aggregate engine
 accounting, but per-request chat timing and GPU sensors remain available.
 
 ## Model lifecycle
 
-Model changes are asynchronous: check `snowllm status` for `draining`, `loading`,
-`ready`, or `failed` (`idle` means no model is loaded). By default a change waits for active requests to finish before
-stopping the old model. `snowllm load --force RECIPE` or `snowllm unload --force`
-interrupts them. Put `--force` before the model name (`snowllm load --force RECIPE`). Only one model transition and one download can run at a time;
-downloads continue across model changes. Changing the model root affects future
-loads/downloads and does not move existing files.
+Web UI loads add resident models to one GPU worker. Weights, KV caches, workspaces
+and captured graphs remain private to each model. One execution thread and GPU
+stream serialize complete engine steps: a prefill chunk, decode step or speculative
+step. Requests for another model can run between these steps without reloading
+weights. A long step or model loading/capture can delay other models; steps are not
+preempted midway.
+
+Choose an optional unique **Model ID** when loading another instance of a checkpoint.
+IDs and served aliases must not conflict. `GET /v1/models` lists ready aliases;
+Chat Completions, Completions, Responses and Messages route by the request's `model`.
+Omitting it uses the explicitly selected default. Unknown models return 404;
+unready or draining models return 503. Unloading the default clears it; choose a
+new default explicitly. Existing sessions keep their model and history.
+
+Each model reports `loading`, `ready`, `draining`, `unloading` or `failed`.
+Unloading waits for that model's requests, or cancels only those requests when
+**Interrupt this model’s requests when unloading** is enabled. Load cancellation
+and timeout wait for the current build to reach a safe cleanup boundary. An ordinary
+load failure preserves resident models. A fatal HIP error affects the shared worker
+and requires reloading its models. The last resident model's removal exits the
+worker and releases its GPU lock; the management service stays running.
+
+GPU/host memory ceilings, the disk offload ceiling and host allocation mode belong
+to the worker. The first load establishes them; later loads inherit them unless
+explicit settings are supplied, which must agree. Context, batching, sampling,
+weight placement and speculative options remain per model. All independent Tensor
+allocations are budgeted together, including the new model's loading/conversion
+peak. Driver startup and retained graph allocations are measured separately. New
+loads cannot resize or evict resident models to make room. Changing the kernel
+library requires unloading all models first. Model directory and catalogue changes
+apply to subsequent loads/downloads without moving existing files.
+
+Only one load/unload and one download run at a time. The management API supports
+these asynchronous operations:
+
+| Endpoint | JSON body |
+| --- | --- |
+| `POST /daemon/models/load` | `{"model":"PATH_OR_RECIPE","id":"main","options":["--max-model-len","32k"]}` |
+| `POST /daemon/models/unload` | `{"id":"main","force":false}` |
+| `POST /daemon/models/default` | `{"id":"main"}` |
+| `POST /daemon/load/cancel` | No body |
+| `GET /daemon/status` | Returns `models`, `default_model`, `operation`, and shared configuration |
+
+The existing `snowllm load`/`unload` commands retain single-model replacement
+behavior and reject ambiguous operations when multiple models are resident. Use
+the Web UI or targeted management endpoints for multiple models. Direct
+`snowllm PATH|RECIPE` serving remains single-model. Embedding/reranker adapters
+and RAG orchestration are separate from this multi-model execution support.
 
 The daemon runs two separate listeners:
 
@@ -72,17 +114,17 @@ The daemon runs two separate listeners:
 Clients keep using the same inference port and the existing `/v1` APIs. The daemon
 streams requests to a separate inference process; while no model is ready, model inference
 endpoints return HTTP 503. The management service stays available if model loading
-fails. The default load timeout is 600 seconds (`--load-timeout` changes it), including worker startup. An active GPU wrapper can also consume this timeout.
+fails. The default load timeout is 600 seconds (`--load-timeout` changes it), including worker startup and GPU-lock waiting. Subsequent load timeouts request safe cancellation without terminating resident models. On hosts with `~/withgpu/withgpu`, the daemon wraps the GPU child itself; do not acquire the same lock around the daemon as well.
 
 The inference listener does not expose model management, filesystem browsing, or
 Web UI assets. Web UI chat uses dedicated same-origin endpoints on the management
 listener (`/daemon/inference/models` and `/daemon/inference/chat/completions`), which
 reuse the inference forwarding logic. Profiling controls are management endpoints:
-`POST /daemon/profile/start` and `POST /daemon/profile/stop`.
+`POST /daemon/profile/start` and `POST /daemon/profile/stop`. Start uses the default model's `--profile-dir`; one profiler captures the shared executor and labels model steps by ID.
 
 ## Configuration
 
-Set model storage, the recipe catalogue and the kernel library in Settings. Changes apply to future loads and downloads; existing files are not moved.
+Set model storage, the recipe catalogue and the kernel library in Settings. Directory/catalogue changes apply to future loads and downloads; unload all models before changing the library. Existing files are not moved.
 
 See [Configuration](./reference/configuration) for JSON paths, overrides and CLI commands.
 

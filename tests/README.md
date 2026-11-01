@@ -62,3 +62,40 @@ long repeated records expose looping reasoning within the 512-token output budge
 `test_lfm2_long_attention.py` separately compares all six target attention layers at identical
 Q/K/V against FP32 attention, including the final three causal queries of a long prefill.
 `SNOWLLM_LFM_ATTENTION_TOKENS` selects its length (default 8192; tested at 120000 on gfx1151).
+
+Multi-model coverage: `test_multimodel.py` and `test_multimodel_management.py` are CPU-only
+scheduler, streaming-binding and lifecycle tests. `node --test tests/test_webui.mjs`
+checks the frontend helpers. The optional CPU-only `test_multimodel_browser.py` uses
+Playwright/Chromium with GPU acceleration disabled to check background sessions,
+model selection and targeted cancellation; `SNOWLLM_TEST_BROWSER` selects Chromium.
+
+`test_multimodel_e2e.py` loads LFM and Qwen together, compares independent and
+interleaved generation, and checks targeted unloading. Run it through withgpu.
+`SNOWLLM_MULTI_MODEL_A` / `SNOWLLM_MULTI_MODEL_B` override the checkpoints;
+`SNOWLLM_MULTI_EAGER=0` enables graphs; `SNOWLLM_MULTI_DRAFT_A` /
+`SNOWLLM_MULTI_DRAFT_B` enable each model's drafter.
+`SNOWLLM_MULTI_IMAGE_B=1` additionally compares isolated and interleaved image requests
+using a MiniCPM-V 4.7 checkpoint as model B.
+
+`test_single_model_path.py` is a CPU-only check of the original standalone executor
+and recovery after a failed step. `test_single_model_e2e.py` checks standalone Chat,
+Responses and Messages with ordinary and streaming responses, plus legacy model-name
+fallback. Run the latter through withgpu; `SNOWLLM_SINGLE_MODEL` selects its checkpoint.
+`SNOWLLM_SINGLE_REPORT` saves deterministic protocol outputs for baseline comparison.
+`test_capacity.py` and `test_startup_planning.py` cover a shared 12 GB/GiB ceiling
+with 8 GB/GiB already occupied, including loading peaks and reusable host pool blocks.
+
+Run `python tests/check_multimodel_daemon.py` directly: its CPU supervisor starts
+the GPU child through withgpu, so wrapping the whole test in the same lock would
+nest it. The test skips when invoked inside an inherited default withgpu lock.
+It checks one worker PID across loads, streaming proxying, labelled metrics,
+failed-load isolation and final worker shutdown.
+
+`test_multimodel_capacity_e2e.py` uses two small resident instances under a 16 GiB
+ceiling, rejects a larger model without evicting either instance, checks targeted
+force unloading, and verifies identical live Tensor allocation counts after repeated
+load/unload cycles. Run it through withgpu with the same checkpoint overrides.
+
+`SNOWLLM_MULTI_HOST_ALLOC=1` repeats the capacity/lifetime test with mapped host Tensor pools; live allocations are distinguished from reusable allocator segments.
+
+Set `SNOWLLM_MULTI_PROFILE_DIR` and `SNOWLLM_TRACE=1` for a per-model CPU/GPU trace of the interleaved inference test. `SNOWLLM_MULTI_EAGER_A=1` / `SNOWLLM_MULTI_EAGER_B=1` select mixed eager/graph execution when `SNOWLLM_MULTI_EAGER=0`.
