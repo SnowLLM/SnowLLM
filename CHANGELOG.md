@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.22.dev1 — 2026-11-01
+
+Add multi-model serving in the Web UI with shared execution and memory budgets.
+
+- Keep multiple models loaded at one inference address, with per-session model selection and targeted unloading.
+  WebUI 支持多个模型常驻、共用推理地址，可按会话选择模型和单独卸载。
+- Share memory ceilings across models and serialize engine steps while preserving the standalone single-model path.
+  模型共享内存上限，按步骤交替执行，保留原有单模型执行路径。
+- Add per-model metrics and regression coverage for interleaved inference, capacity limits and allocation cleanup. SnowLLM-Kernels remains at 0.3.13.
+  新增分模型指标及交错推理、容量限制和内存清理回归测试；SnowLLM-Kernels 依赖保持 0.3.13。
+
 ## 0.3.21 — 2026-11-01
 
 Add LFM2.5-8B-A1B with DSpark and improve speculative decoding, API compatibility and benchmark validation.
