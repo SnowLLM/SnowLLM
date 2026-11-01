@@ -26,7 +26,7 @@
     "max_model_len": 8192,
     "max_num_batched_tokens": 512
   },
-  "note": "Shares target weights with the recipe without DSpark. The draft is downloaded into dspark/.",
+  "note": "Downloads the target into the model directory and the Q8_0 DSpark draft into dspark/.",
   "sources": [
     {
       "repo": "LiquidAI/LFM2.5-8B-A1B-DSpark-GGUF",

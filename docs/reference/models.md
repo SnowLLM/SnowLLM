@@ -17,18 +17,18 @@ lot; a recipe that names a snowllm newer than yours says so instead of serving:
 | `qwen3.6-27b-fp8`            | [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B-FP8)                           | FP8             | 28.8 GiB |
 | `qwen3.6-27b-q4-k-s`         | [Qwen3.6-27B](https://huggingface.co/unsloth/Qwen3.6-27B-MTP-GGUF)                                                                          | Q4_K_S GGUF     | 17.9 GiB |
 
-`lfm2.5-8b-a1b-q4-k-m` runs the official [LFM2.5-8B-A1B GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF).
-It supports ordinary text decoding, chunked and batched prefill, and prefix snapshots of the short-convolution history.
-Use `snowllm pull lfm2.5-8b-a1b-q4-k-m --bundle` with a kernel build that includes LFM geometry 6.
+LFM2.5-8B-A1B has two recipes, both enabling DSpark by default:
+`lfm2.5-8b-a1b-q4-k-m-dspark` and `lfm2.5-8b-a1b-q8-0-dspark`.
+They use the official [target GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF)
+and the same official Q8_0 DSpark draft in `dspark/`.
+Use `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` to download the Q4 target and draft,
+or substitute the Q8 recipe ID. The kernel build must include LFM target geometry 6
+and DSpark draft geometry 4.
+Both recipes default to one request, 8192 shared cache tokens, 512-token prefill chunks
+and a nine-token draft block. Adaptive blocks, batched decoding, chunked and batched prefill,
+and prefix snapshots of the short-convolution history are supported.
+Add `--dflash ''` when serving either recipe to use ordinary decoding.
 Dense projections and experts support BF16 safetensors and Q4_K/Q6_K/Q8_0 GGUF storage.
-`lfm2.5-8b-a1b-q8-0` uses the official Q8_0 target. Both base recipes default to one
-request, 8192 shared cache tokens, 512-token prefill chunks and speculative decoding disabled.
-Use `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` for the same target plus the
-official Q8_0 DSpark draft in `dspark/`. It uses a nine-token draft block; adaptive
-blocks, batched decoding and prefix reuse are supported. The kernel build must include
-LFM target geometry 6 and DSpark draft geometry 4. DSpark needs a separate draft checkpoint.
-The corresponding Q8_0 target recipe is `lfm2.5-8b-a1b-q8-0-dspark`;
-all four recipes share the implementation and the DSpark variants use the same draft weights.
 The model's native context limit is 128000 tokens. Runtime validation covers gfx1151
 and Windows Radeon 780M (gfx1103). The new attention and convolution kernels also
 compile for gfx1150, which still needs hardware validation.

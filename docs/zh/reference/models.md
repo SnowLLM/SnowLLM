@@ -50,11 +50,11 @@ MiniCPM-V 4.7 支持文本、单图、多图和高分辨率图片切片，图像
 上述大小是参考值，并非内存预留量，草稿权重和运行时缓冲还会增加占用。方案的默认值也可能不同：`qwen3.6-35b-a3b-fp8` 设置 `--num-spec 0`，其 `-mtp` 方案则开启 MTP。实测性能见[性能测试](https://snowllm.dev/benchmark/)。
 
 
-`lfm2.5-8b-a1b-q4-k-m` 使用官方 [LFM2.5-8B-A1B GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF)，支持普通文本解码、分块和批量 prefill，以及保存短卷积历史的前缀缓存。运行 `snowllm pull lfm2.5-8b-a1b-q4-k-m --bundle` 下载，需要包含 LFM geometry 6 的内核构建。支持 BF16 safetensors，以及投影和专家使用 Q4_K、Q6_K、Q8_0 的 GGUF；基础方案默认单请求、关闭推测解码。模型原生上下文上限为 128000 token。已在 gfx1151 和 Windows Radeon 780M（gfx1103）上实测；新增注意力和卷积内核也通过了 gfx1150 交叉编译，仍需对应硬件验证。专家路由分数接近时，不同批量或分块大小可能产生不同的贪心输出。
+LFM2.5-8B-A1B 只提供两个方案：`lfm2.5-8b-a1b-q4-k-m-dspark` 和 `lfm2.5-8b-a1b-q8-0-dspark`，默认均开启 DSpark。两者使用官方 [主模型 GGUF](https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-GGUF) 和相同的官方 Q8_0 草稿。运行 `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` 下载 Q4 主模型和 `dspark/` 下的草稿；Q8 使用对应方案 ID。内核构建需包含 LFM target geometry 6 和 DSpark draft geometry 4。
 
-使用 `snowllm pull lfm2.5-8b-a1b-q4-k-m-dspark --bundle` 下载开启 DSpark 的方案，复用主模型，并将官方 Q8_0 草稿下载到 `dspark/`。默认草稿块为 9 token，支持自适应块长、批量解码和前缀复用。内核构建还需包含 DSpark draft geometry 4；DSpark 需要单独的草稿权重。
+两种方案默认单请求、8192 个共享缓存 token、512-token prefill 分块、9-token 草稿块，支持自适应块长、批量解码、分块和批量 prefill，以及保存短卷积历史的前缀缓存。启动时添加 `--dflash ''` 可切换为普通解码。
 
-Q8_0 主模型对应 `lfm2.5-8b-a1b-q8-0` 和 `lfm2.5-8b-a1b-q8-0-dspark`。四个方案复用相同实现，两种 DSpark 方案使用同一份草稿权重；默认单请求、8192 个共享缓存 token、512-token prefill 分块。
+加载器支持 BF16 safetensors，以及投影和专家使用 Q4_K、Q6_K、Q8_0 的 GGUF。模型原生上下文上限为 128000 token。已在 gfx1151 和 Windows Radeon 780M（gfx1103）上实测；新增注意力和卷积内核也通过了 gfx1150 交叉编译，仍需对应硬件验证。专家路由分数接近时，不同批量或分块大小可能产生不同的贪心输出。
 
 在 gfx1151 上，使用上述默认上下文和分块、BF16 KV、启用 graph、前缀缓存比例 0.08 时，设备显存实测如下：
 
