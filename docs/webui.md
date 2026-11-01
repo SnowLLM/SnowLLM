@@ -55,54 +55,11 @@ accounting, but per-request chat timing and GPU sensors remain available.
 
 ## Model lifecycle
 
-Web UI loads add resident models to one GPU worker. Weights, KV caches, workspaces
-and captured graphs remain private to each model. One execution thread and GPU
-stream serialize complete engine steps: a prefill chunk, decode step or speculative
-step. Requests for another model can run between these steps without reloading
-weights. A long step or model loading/capture can delay other models; steps are not
-preempted midway.
+The Web UI keeps multiple models loaded at one inference address, alternating between engine steps. Choose a model per chat session or specify `model` in API requests; omitted values use the default. Choose a new default after unloading it.
 
-Choose an optional unique **Model ID** when loading another instance of a checkpoint.
-IDs and served aliases must not conflict. `GET /v1/models` lists ready aliases;
-Chat Completions, Completions, Responses and Messages route by the request's `model`.
-Omitting it uses the explicitly selected default. Unknown models return 404;
-unready or draining models return 503. Unloading the default clears it; choose a
-new default explicitly. Existing sessions keep their model and history.
+Unloading waits for that model’s requests or interrupts them on request. Ordinary load failures preserve other loaded models.
 
-Each model reports `loading`, `ready`, `draining`, `unloading` or `failed`.
-Unloading waits for that model's requests, or cancels only those requests when
-**Interrupt this model’s requests when unloading** is enabled. Load cancellation
-and timeout wait for the current build to reach a safe cleanup boundary. An ordinary
-load failure preserves resident models. A fatal HIP error affects the shared worker
-and requires reloading its models. The last resident model's removal exits the
-worker and releases its GPU lock; the management service stays running.
-
-GPU/host memory ceilings, the disk offload ceiling and host allocation mode belong
-to the worker. The first load establishes them; later loads inherit them unless
-explicit settings are supplied, which must agree. Context, batching, sampling,
-weight placement and speculative options remain per model. All independent Tensor
-allocations are budgeted together, including the new model's loading/conversion
-peak. Driver startup and retained graph allocations are measured separately. New
-loads cannot resize or evict resident models to make room. Changing the kernel
-library requires unloading all models first. Model directory and catalogue changes
-apply to subsequent loads/downloads without moving existing files.
-
-Only one load/unload and one download run at a time. The management API supports
-these asynchronous operations:
-
-| Endpoint | JSON body |
-| --- | --- |
-| `POST /daemon/models/load` | `{"model":"PATH_OR_RECIPE","id":"main","options":["--max-model-len","32k"]}` |
-| `POST /daemon/models/unload` | `{"id":"main","force":false}` |
-| `POST /daemon/models/default` | `{"id":"main"}` |
-| `POST /daemon/load/cancel` | No body |
-| `GET /daemon/status` | Returns `models`, `default_model`, `operation`, and shared configuration |
-
-The existing `snowllm load`/`unload` commands retain single-model replacement
-behavior and reject ambiguous operations when multiple models are resident. Use
-the Web UI or targeted management endpoints for multiple models. Direct
-`snowllm PATH|RECIPE` serving remains single-model. Embedding/reranker adapters
-and RAG orchestration are separate from this multi-model execution support.
+Models share the memory ceilings set by the first load; subsequent loads use the remaining capacity. Context and other model settings are independent. Manage multiple models through the Web UI; direct serving remains single-model.
 
 The daemon runs two separate listeners:
 
