@@ -116,7 +116,9 @@ def server_runtime(base_url: str) -> dict:
     url = base_url.rstrip("/").removesuffix("/v1") + "/health"
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
-            return json.load(response).get("runtime_config") or {}
+            runtime = json.load(response).get("runtime_config") or {}
+            return {k: v for k, v in runtime.items()
+                    if k not in ("model_path", "dflash_path", "profile_dir")}
     except (OSError, ValueError):
         return {}
 
