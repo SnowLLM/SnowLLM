@@ -19,12 +19,17 @@ PORT=${PORT:-8000}
 "$PY" -c "
 import sys
 from snowllm.hub import recipes
-got = [r for r in recipes.catalogue() if r.id == '$RECIPE']
-sys.exit(0 if got else 1)
-" || {
+from snowllm.errors import SnowLLMError
+name = sys.argv[1]
+try:
+    got = recipes.find(name, recipes.catalogue(bundle=name.startswith('b/')))
+except SnowLLMError as exc:
+    sys.exit(str(exc))
+sys.exit(0 if got.servable else 1)
+" "$RECIPE" || {
     echo "$RECIPE is not in the recipe catalogue this machine can reach, so its serving defaults" >&2
     echo "would not be applied. Point SNOWLLM_RECIPES_URL at one:" >&2
-    echo "    python scripts/build-recipes.py && export SNOWLLM_RECIPES_URL=\$PWD/web/recipe.json" >&2
+    echo "    python scripts/build-recipes.py && export SNOWLLM_RECIPES_URL=\$PWD/web/recipe-v2.json" >&2
     exit 1
 }
 

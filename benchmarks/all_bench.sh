@@ -6,6 +6,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 source benchmarks/_jobs.sh
 
+CTX=9216 ISL=1024,8192 LABEL=lfm2_5_8b_a1b_q4_k_m_dspark9_snowllm benchmarks/run.sh snowllm b/lfm2.5-8b-a1b-q4-k-m-dspark --prefix-memory-ratio 0 & wait $!
+
 ISL=1024,8192,32768,131072 COOL=60 benchmarks/run.sh snowllm qwen3.8-27b-q4-k-xl & wait $!
 
 CTX=227328 ISL=225280 COOL=60 benchmarks/run.sh snowllm qwen3.8-27b-q4-k-xl & wait $!

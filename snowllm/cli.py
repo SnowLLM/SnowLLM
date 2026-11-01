@@ -213,7 +213,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                           else dflash_p_min),
             dspark_adaptive=dspark_adaptive,
             prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
-            account=stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
+            account=exact_stats or stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
             gpu_memory_utilization=kv['util'],
             prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft)
     from ._platform import device_mem_info
@@ -251,7 +251,11 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
          f'context {engine.max_model_len} tokens per request (input + output), '
          f'offload {actual_offload:.4%}, '
          f'{max_num_seqs} concurrent requests; chunk {engine.prefill_chunk}')
+    import torch
+    gpu = torch.cuda.get_device_properties(torch.cuda.current_device())
     engine.runtime_config = dict(model_path=str(root.resolve()), moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
+                                 gpu_arch=gpu.gcnArchName.split(":", 1)[0], gpu_name=gpu.name,
+                                 host_total_bytes=host_total(), version=__version__,
                                  max_disk_mem_gib=limits.max_disk_mem_gib,
                                  disk_offloaded_weight_bytes=getattr(store, "disk_weight_bytes", 0),
                                  host_offload=host_offload,

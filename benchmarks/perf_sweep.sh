@@ -32,10 +32,11 @@ if [ -n "$RECIPE" ]; then
     read -r RECIPE_DIR RECIPE_MODEL RECIPE_SLUG <<EOF
 $("$PY" -c "
 from snowllm.hub import recipes
-d, r = recipes.locate('$RECIPE')
+import sys
+d, r = recipes.locate(sys.argv[1])
 i = r.id if r else ''
 print(d, r.model if r else '', i.replace('.', '_').replace('-', '_'))
-")
+" "$RECIPE")
 EOF
     [ -n "$RECIPE_DIR" ] || exit 1
     : "${TOKENIZER:=$RECIPE_DIR}"
@@ -83,9 +84,13 @@ fi
 
 echo "=== $LABEL -> http://$ADDR/v1  isl $ISL  osl $OSL  reps $REPS  warm $WARM  conc $CONC"
 echo "=== edge before: $(edge) degC"
+META=()
+[[ -n "${PLATFORM:-}" ]] && META+=(--platform "$PLATFORM")
+[[ -n "${HARDWARE:-}" ]] && META+=(--hardware "$HARDWARE")
 "$PY" benchmarks/bench_context.py --base-url "http://$ADDR/v1" --model "$MODEL" \
     --label "$LABEL" --isl "$ISL" --osl "$OSL" --reps "$REPS" --warm "$WARM" --conc "$CONC" \
-    --tokenizer "$TOKENIZER" --out "$OUT" --version "$VERSION" --commit "$COMMIT" "$@"
+    --tokenizer "$TOKENIZER" --out "$OUT" --version "$VERSION" --commit "$COMMIT" \
+    --thinking "${THINKING:-auto}" "${META[@]}" "$@"
 rc=$?
 echo "=== edge after: $(edge) degC"
 echo "=== $OUT"

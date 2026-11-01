@@ -2,7 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import pathlib
 import statistics as st
@@ -85,18 +87,60 @@ def _messages(text: str) -> list[dict]:
     return [{"role": "user", "content": text + "\n\nSummarise the passage above."}]
 
 
-def _prompt_tokens(tok: "PreTrainedTokenizerBase", text: str) -> int:
+def _thinking_options(thinking: bool | None) -> dict:
+    return {} if thinking is None else {"thinking": thinking, "enable_thinking": thinking}
+
+
+def resolve_thinking(mode: str, capabilities: dict) -> bool | None:
+    if capabilities.get("required"):
+        if mode == "off":
+            raise ValueError("this model requires thinking; use --thinking auto or on")
+        return True
+    if mode == "auto":
+        return False if capabilities.get("switch") else None
+    if not capabilities.get("switch"):
+        raise ValueError("this model does not advertise a thinking switch; use --thinking auto")
+    return mode == "on"
+
+
+def model_info(base_url: str, model: str) -> dict:
+    with urllib.request.urlopen(base_url.rstrip("/") + "/models", timeout=30) as response:
+        models = json.load(response)["data"]
+    selected = next((item for item in models if item.get("id") == model), None)
+    if selected is None:
+        raise ValueError(f"model {model!r} is not advertised by {base_url}/models")
+    return selected
+
+
+def server_runtime(base_url: str) -> dict:
+    url = base_url.rstrip("/").removesuffix("/v1") + "/health"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return json.load(response).get("runtime_config") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def check_platform(expected: str, runtime: dict) -> None:
+    actual = runtime.get("gpu_arch")
+    if expected and actual != expected:
+        raise ValueError(f"expected {expected}, but server GPU architecture is {actual!r}; "
+                         "benchmark hardware must match before measuring")
+
+
+def _prompt_tokens(tok: "PreTrainedTokenizerBase", text: str,
+                   thinking: bool | None = False) -> int:
     encoded = tok.apply_chat_template(
         _messages(text), add_generation_prompt=True, tokenize=True, return_dict=True,
-        tools=None, thinking=False, enable_thinking=False)
+        tools=None, **_thinking_options(thinking))
     ids = encoded["input_ids"]
     return len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
 
 
 def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
-              lane: int = 0) -> str:
+              lane: int = 0, thinking: bool | None = False) -> str:
     tok = _tokenizer(tokenizer)
-    minimum = _prompt_tokens(tok, "")
+    minimum = _prompt_tokens(tok, "", thinking)
     if target_tokens < minimum:
         raise ValueError(f"input length {target_tokens} is below the {minimum} tokens needed "
                          "for the chat template and instruction")
@@ -108,7 +152,7 @@ def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
             break
         seen.add(budget)
         text = _passage_of(budget, rep, tokenizer, warm, lane, target_tokens)
-        actual = _prompt_tokens(tok, text)
+        actual = _prompt_tokens(tok, text, thinking)
         if actual == target_tokens:
             return text
         if actual > target_tokens and (over is None or actual < over[0]):
@@ -118,7 +162,7 @@ def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
     if over is not None:
         for cut in range(1, min(128, len(over[1])) + 1):
             text = over[1][:-cut]
-            if _prompt_tokens(tok, text) == target_tokens:
+            if _prompt_tokens(tok, text, thinking) == target_tokens:
                 return text
     raise ValueError(f"cannot construct an exact {target_tokens}-token chat prompt "
                      f"for rep {rep}, lane {lane}; last length was {actual}")
@@ -137,13 +181,13 @@ def loop_period(text: str, min_reps: int = 3, min_span: int = 24, max_period: in
     return 0
 
 
-def one(url: str, model: str, text: str, osl: int) -> dict:
+def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False) -> dict:
     body = json.dumps({
         "model": model,
         "messages": _messages(text),
         "max_tokens": osl, "temperature": 0.0, "stream": True,
         "stream_options": {"include_usage": True},
-        "thinking": False, "enable_thinking": False,
+        **_thinking_options(thinking),
     }).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     t0 = time.perf_counter()
@@ -152,6 +196,8 @@ def one(url: str, model: str, text: str, osl: int) -> dict:
     got: list[str] = []
     usage = None
     timings = None
+    finish_reason = None
+    done = False
     with urllib.request.urlopen(req, timeout=7200) as r:
         for raw in r:
             line = raw.decode().strip()
@@ -159,13 +205,19 @@ def one(url: str, model: str, text: str, osl: int) -> dict:
                 continue
             payload = line[5:].strip()
             if payload == "[DONE]":
+                done = True
                 break
             ev = json.loads(payload)
+            if ev.get("error"):
+                raise RuntimeError(f"server stream error: {ev['error']}")
             if ev.get("usage"):
                 usage = ev["usage"]
+                timings = usage.get("timings") or timings
             if ev.get("timings"):
                 timings = ev["timings"]
             ch = ev.get("choices") or []
+            if ch and ch[0].get("finish_reason"):
+                finish_reason = ch[0]["finish_reason"]
             delta = (ch[0].get("delta") or {}) if ch else {}
             if not (delta.get("content") or delta.get("reasoning_content")):
                 continue
@@ -179,12 +231,20 @@ def one(url: str, model: str, text: str, osl: int) -> dict:
     if not (usage or {}).get("prompt_tokens"):
         raise RuntimeError("the server streamed no usage block; this client needs "
                            "stream_options.include_usage to know the achieved input length")
+    tokens = usage.get("completion_tokens")
+    if not isinstance(tokens, int) or isinstance(tokens, bool) or not 0 < tokens <= osl:
+        raise RuntimeError(f"invalid completion_tokens={tokens!r} for output cap {osl}")
+    if not done or finish_reason not in ("stop", "length"):
+        raise RuntimeError(f"incomplete or failed stream: finish_reason={finish_reason!r}, done={done}")
     return {
         "ttft_s": first - t0,
-        "decode_tok_s": (out - 1) / (end - first) if out > 1 and end > first else 0.0,
+        "decode_tok_s": (tokens - 1) / (end - first) if tokens > 1 and end > first else 0.0,
+        "decode_seconds": end - first,
+        "stream_chunks": out,
+        "finish_reason": finish_reason,
         "total_s": end - t0,
         "isl": (usage or {}).get("prompt_tokens"),
-        "osl": (usage or {}).get("completion_tokens", out),
+        "osl": tokens,
         "timings": timings,
         "loop_period": loop_period("".join(got)),
         "text_tail": "".join(got)[-160:],
@@ -211,9 +271,9 @@ def draft_accept_len(base_url: str) -> tuple[int, int] | None:
 
 
 def one_at(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
-          tokenizer: str, lane: int = 0) -> dict:
-    text = prompt_of(isl, rep, tokenizer, warm=warm, lane=lane)
-    result = one(url, model, text, osl)
+          tokenizer: str, lane: int = 0, thinking: bool | None = False) -> dict:
+    text = prompt_of(isl, rep, tokenizer, warm=warm, lane=lane, thinking=thinking)
+    result = one(url, model, text, osl, thinking=thinking)
     if result["isl"] != isl:
         raise ValueError(f"requested {isl} input tokens but server reported {result['isl']}; "
                          "check that the local tokenizer and chat template match the server")
@@ -221,15 +281,15 @@ def one_at(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
 
 
 def one_rep(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
-           tokenizer: str, conc: int) -> dict:
+           tokenizer: str, conc: int, thinking: bool | None = False) -> dict:
     if conc == 1:
-        return one_at(url, model, isl, rep, osl, warm, tokenizer)
+        return one_at(url, model, isl, rep, osl, warm, tokenizer, thinking=thinking)
     out: list = [None] * conc
     err: list = []
 
     def lane(i: int) -> None:
         try:
-            out[i] = one_at(url, model, isl, rep, osl, warm, tokenizer, lane=i)
+            out[i] = one_at(url, model, isl, rep, osl, warm, tokenizer, lane=i, thinking=thinking)
         except BaseException as e:                                                # noqa: BLE001
             err.append(e)
 
@@ -249,6 +309,7 @@ def one_rep(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
         "isl": out[0]["isl"],
         "isl_total": sum(r["isl"] for r in out),
         "osl": sum(r["osl"] for r in out),
+        "lanes": out,
         "timings": ({"draft_n": drafted,
                      "draft_n_accepted": sum((r["timings"] or {}).get("draft_n_accepted", 0)
                                              for r in out)} if drafted else None),
@@ -283,14 +344,43 @@ def main() -> None:
     ap.add_argument("--label", default="", help="which configuration these rows describe")
     ap.add_argument("--version", default="", help="the serving engine's own version string")
     ap.add_argument("--commit", default="", help="the source revision these rows were served from")
+    ap.add_argument("--thinking", choices=("auto", "on", "off"), default="auto",
+                    help="auto enables required thinking, disables switchable thinking, otherwise uses the model default")
+    ap.add_argument("--platform", default="", help="expected GPU architecture, checked against server metadata")
+    ap.add_argument("--hardware", default="", help="machine description recorded with these measurements")
     ap.add_argument("--out", default="benchmarks/results/results_dsv4_context.json")
     ap.add_argument("--tokenizer", required=True,
                     help="local tokenizer matching the server, including its chat template")
     a = ap.parse_args()
+    try:
+        concs = [int(v) for v in a.conc.split(",")]
+        lengths = [int(v) for v in a.isl.split(",")]
+    except ValueError:
+        ap.error("--isl and --conc must be comma-separated integers")
+    if a.reps < 1 or a.warm < 0 or a.osl < 1 or not all(v > 0 for v in concs+lengths):
+        ap.error("lengths, concurrency, output cap and repetitions must be positive; warm-up may be zero")
+    info = model_info(a.base_url, a.model)
+    runtime = server_runtime(a.base_url)
+    try:
+        check_platform(a.platform, runtime)
+    except ValueError as exc:
+        ap.error(str(exc))
+    capabilities = info.get("thinking")
+    if not isinstance(capabilities, dict):
+        from snowllm.serve.thinking import thinking_capabilities
+        capabilities = thinking_capabilities(_tokenizer(a.tokenizer))
+    try:
+        thinking = resolve_thinking(a.thinking, capabilities)
+    except ValueError as exc:
+        ap.error(str(exc))
+    if info.get("context_length") and max(lengths)+a.osl > info["context_length"]:
+        ap.error(f"input + output needs {max(lengths)+a.osl} tokens, but model context is "
+                 f"{info['context_length']}; increase server context or reduce --isl/--osl")
 
     url = a.base_url.rstrip("/") + "/chat/completions"
     print(f"  using local tokenizer {a.tokenizer!r} for exact prompt lengths", flush=True)
     rows = []
+    corpus_sha256 = hashlib.sha256(_CORPUS_PATH.read_bytes()).hexdigest()
 
     def save() -> None:
         out = pathlib.Path(a.out)
@@ -300,15 +390,14 @@ def main() -> None:
         old = [r for r in old if (r.get("label"), r.get("isl_target")) not in mine]
         out.write_text(json.dumps(old + rows, indent=1) + "\n")
 
-    concs = [int(v) for v in a.conc.split(",")]
     for conc in concs:
-        for isl in [int(v) for v in a.isl.split(",")]:
+        for isl in lengths:
             edge_before = edge()
             got, accepts, steps_s, unit = [], [], [], None
             for i in range(a.reps + a.warm):
                 is_warm = i < a.warm
                 h0 = draft_accept_len(a.base_url)
-                r = one_rep(url, a.model, isl, i, a.osl, is_warm, a.tokenizer, conc)
+                r = one_rep(url, a.model, isl, i, a.osl, is_warm, a.tokenizer, conc, thinking=thinking)
                 h1 = draft_accept_len(a.base_url)
                 if is_warm:
                     continue
@@ -348,9 +437,27 @@ def main() -> None:
                 "step_s_reps": steps_s,
                 "loop_period_reps": [r["loop_period"] for r in got],
                 "text_tails": [r["text_tail"] for r in got],
+                "measurement": "http_stream_usage_tokens",
+                "decode_token_count": "usage.completion_tokens_minus_first",
+                "aggregation": "decode median; TTFT and prefill first retained request",
+                "thinking": "default" if thinking is None else "on" if thinking else "off",
+                "thinking_requested": a.thinking,
+                "thinking_capabilities": capabilities,
+                "output_cap": a.osl,
+                "ttft_s_median": st.median(r["ttft_s"] for r in got),
+                "ttft_s_p95": sorted(r["ttft_s"] for r in got)[math.ceil(.95*len(got))-1],
+                "decode_tok_s_reps": [r["decode_tok_s"] for r in got],
+                "osl_reps": [r["osl"] for r in got],
+                "samples": got,
+                "runtime_config": runtime,
+                "corpus_sha256": corpus_sha256,
             }
-            if a.version:
-                row["version"] = a.version
+            if runtime.get("gpu_arch"):
+                row["platform"] = runtime["gpu_arch"]
+            if a.hardware:
+                row["hardware"] = a.hardware
+            if a.version or runtime.get("version"):
+                row["version"] = a.version or runtime["version"]
             if a.commit:
                 row["commit"] = a.commit
             rows.append(row)
