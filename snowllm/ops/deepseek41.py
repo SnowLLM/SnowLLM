@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-from .operation import operator
-import functools
+from .operation import operator, geometry_cache
 
 import torch
 
@@ -20,7 +19,7 @@ def hc_init(mix, pre=None):
           0 if pre is None else pre.stride(0), _stream()), "dsv41_hc_init")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def attention_scratch_bytes(rows, compressed):
     query = getattr(lib, "snowllm_dsv41_attention_scratch_bytes", None)

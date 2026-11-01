@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """DSpark arithmetic. Native owns weight layout, row dispatch and Markov scheduling."""
-from .operation import operator
-import functools
+from .operation import operator, geometry_cache
 from .allocation import empty
 import torch
 from .._capi import lib,check,SnowLLMError
@@ -27,7 +26,7 @@ def dspark_tap_mean(streams,out):
     check(lib.snowllm_dspark_tap_mean(_p(streams),_p(out),m,hc,h,streams.stride(0),out.stride(0),_stream()),'dspark_tap_mean')
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def dspark_context_workspace_bytes(m,n,k):return lib.snowllm_dspark_context_workspace_bytes(m,n,k)
 
@@ -46,7 +45,7 @@ def dspark_context(x,weight,out,workspace=None):
     return out
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def dspark_markov_workspace_bytes(b,v,rank,block):return lib.snowllm_dspark_markov_workspace_bytes(b,v,rank,block)
 

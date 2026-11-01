@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
+from .operation import operator, geometry_cache
 import enum
 import ctypes
-import functools
 from typing import TYPE_CHECKING
 
 from .allocation import empty
@@ -47,11 +46,6 @@ def select(geo: "DFlashGeometry") -> None:
                            f"{have}")
     global _G
     _G = geo
-    _activation_workspace_bytes.cache_clear()
-    proj_shape.cache_clear()
-    _projection_plan.cache_clear()
-    projections_workspace_bytes.cache_clear()
-    _norm_rope_store_layout.cache_clear()
 
 
 @operator
@@ -62,7 +56,7 @@ def selected() -> "DFlashGeometry":
     return _G
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def proj_shape(which: Proj) -> tuple[int, int]:
     nk = (ctypes.c_int64*2)()
@@ -70,7 +64,7 @@ def proj_shape(which: Proj) -> tuple[int, int]:
     return tuple(nk)
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _projection_plan(which: Proj, m: int, kind: int, fmt: int) -> tuple[int,int,int]:
     # Planning consumes storage metadata, not pointers. Rebuild the live descriptor
     # for execution so replacing a weight cannot leave a cached stale address.
@@ -92,7 +86,7 @@ def proj_workspace_bytes(which: Proj, w, m: int) -> int:
     return proj_plan(which,w,m)[2]
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def projections_workspace_bytes(m: int) -> int:
     return lib.snowllm_draft_projections_workspace_bytes(m)
@@ -267,7 +261,7 @@ def k_norm_rope(ctx_kv: torch.Tensor, layer: int, k_gamma: torch.Tensor, cos: to
           "draft_k_norm_rope")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _norm_rope_store_layout(stride,layer,block_size):
     layout=(ctypes.c_int64*5)()
     check(lib.snowllm_draft_norm_rope_store_layout(stride,int(layer is not None),
@@ -356,7 +350,7 @@ def gated_delta_rule_advance(qkv: torch.Tensor, b_logit: torch.Tensor, a_logit: 
           "gated_delta_rule_advance")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _activation_workspace_bytes(m: int,packed: bool,fmt: int) -> int:
     return lib.snowllm_draft_mlp_activation_workspace_bytes(m,int(packed),fmt)
 

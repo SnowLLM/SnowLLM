@@ -9,13 +9,14 @@ from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 
 from .. import term
+from ..execution import ModelExecutionContext
 from ..host_alloc import enter_thread
 from . import Engine, EngineStats, Request, SamplingParams
 
 
 class AsyncEngine:
     def __init__(self, engine: Engine, profile_dir: str | None = None,
-                 stats_interval: float = 0.0) -> None:
+                 stats_interval: float = 0.0, scheduler=None) -> None:
         self.engine = engine
         self.stats_interval = stats_interval
         self._last_stats = (0.0, None)
@@ -23,32 +24,52 @@ class AsyncEngine:
         if self.profile_dir:
             self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._profiler = None
-        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="snowllm-engine",
-                                          initializer=enter_thread)
+        self.scheduler = scheduler
+        self.context = ModelExecutionContext(engine) if scheduler is not None else None
+        self._worker = (ThreadPoolExecutor(max_workers=1, thread_name_prefix="snowllm-engine", initializer=enter_thread)
+                        if scheduler is None else None)
+        self.error = None
+        self.accepting = True
         self._live: list[Request] = []
         self._queues: dict[int, asyncio.Queue] = {}
         self._sent: dict[int, int] = {}
+        self._submitted = {}
         self._inbox: list[Request] = []
         self._aborts: list[tuple[Request, str]] = []
         self._wake = asyncio.Event()
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
-        self._task = asyncio.create_task(self._run())
+        if self.scheduler is None or self._task is None:
+            self._task = asyncio.create_task(self._run())
 
     async def start_profile(self) -> None:
         if self.profile_dir is None:
             raise RuntimeError("profiling is off; start the server with --profile-dir")
         if self._profiler is not None:
             raise RuntimeError("a profile is already running")
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(self._worker, self._profiler_start)
+        if self.scheduler is None:
+            await self.call(self._profiler_start)
+            return
+        if self.scheduler.profiler_owner is not None:
+            raise RuntimeError("a profile is already running on this GPU worker")
+        self.scheduler.profiler_owner = self
+        try:
+            await self.scheduler.run(self._profiler_start)
+        except BaseException:
+            if self._profiler is None:
+                self.scheduler.profiler_owner = None
+            raise
 
     async def stop_profile(self) -> str:
         if self._profiler is None:
             raise RuntimeError("no profile is running")
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._worker, self._profiler_stop)
+        if self.scheduler is None:
+            return await self.call(self._profiler_stop)
+        try:
+            return await self.scheduler.run(self._profiler_stop)
+        finally:
+            self.scheduler.profiler_owner = None
 
     def _profiler_start(self) -> None:
         import torch
@@ -73,18 +94,46 @@ class AsyncEngine:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        self._worker.shutdown(wait=True)
+        if self.scheduler is None:
+            self._worker.shutdown(wait=True)
+            return
+        if self._profiler is not None:
+            await self.stop_profile()
+        self._fail_all()
+
+    async def call(self, function):
+        if self.scheduler is None:
+            return await asyncio.get_running_loop().run_in_executor(self._worker, function)
+        return await self.scheduler.run(function, context=self.context)
+
+    @property
+    def busy(self):
+        return bool(not self.error and (self._live or self.engine.waiting or self.engine.running))
+
+    def cancel_all(self):
+        self.accepting = False
+        for request in list(self._live):
+            self.abort(request)
 
     def stats(self) -> EngineStats:
         return self.engine.stats()
 
     def submit(self, prompt: list[int], params: SamplingParams, rope_factor: float | None = None,
                **mm: object) -> Request:
+        if self.error or self.scheduler is not None and self.scheduler.failed:
+            raise RuntimeError(self.error or self.scheduler.failed)
         r = self.engine.add(prompt, params, rope_factor=rope_factor, queue=False, **mm)
+        if not self.accepting:
+            r.done, r.finish_reason = True, 'abort'
+            self._queues[id(r)] = asyncio.Queue()
+            self._queues[id(r)].put_nowait(None)
+            return r
         self._inbox.append(r)
         self._live.append(r)
         self._queues[id(r)] = asyncio.Queue()
         self._sent[id(r)] = 0
+        if self.scheduler is not None:
+            self._submitted[id(r)] = time.monotonic()
         self._wake.set()
         return r
 
@@ -100,6 +149,8 @@ class AsyncEngine:
             if not r.done:
                 self.abort(r)
             self._queues.pop(id(r), None)
+            if r.done and self.scheduler is not None:
+                self._close(r)
 
     def abort(self, r: Request, reason: str = "abort") -> None:
         self._aborts.append((r, reason))
@@ -127,13 +178,39 @@ class AsyncEngine:
                 self._wake.clear()
                 continue
             try:
-                await loop.run_in_executor(self._worker, self.engine.step)
+                if self.scheduler is None:
+                    await loop.run_in_executor(self._worker, self.engine.step)
+                else:
+                    queued = time.monotonic()
+                    requests = tuple(r for r in self._live if not r.done)
+                    def step():
+                        started = time.monotonic()
+                        waited = started - queued
+                        self.context.wait_seconds += waited
+                        for request in requests:
+                            request.timing.scheduler_wait_seconds += waited
+                        try:
+                            result = self.engine.step()
+                            for request in requests:
+                                if request.slot >= 0:
+                                    submitted = self._submitted.pop(id(request), None)
+                                    if submitted is not None:
+                                        request.timing.queue_seconds = started - submitted
+                            return result
+                        finally:
+                            self.context.steps += 1
+                            self.context.execute_seconds += time.monotonic() - started
+                    await self.call(step)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 traceback.print_exc()
+                if self.scheduler is None:
+                    self._fail_all()
+                    continue
+                self.error = f"{type(exc).__name__}: {exc}"
                 self._fail_all()
-                continue
+                return
             self._dispatch()
             self._log_stats()
 
@@ -203,4 +280,5 @@ class AsyncEngine:
         if r in self._live:
             self._live.remove(r)
         self._sent.pop(id(r), None)
+        self._submitted.pop(id(r), None)
         self._queues.pop(id(r), None)

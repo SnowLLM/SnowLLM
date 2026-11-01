@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
+from .operation import operator, geometry_cache
 import ctypes
 import enum
-import functools
 from typing import NamedTuple
 
 from .allocation import empty
@@ -43,7 +42,7 @@ class Dsv4ProjectionPlan(NamedTuple):
     dtype: torch.dtype
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def dsv4_projection_plan(m: int, decode_rows: int, wide_columns: int = 0,
                           narrow_columns: int = 0) -> Dsv4ProjectionPlan:
@@ -53,7 +52,7 @@ def dsv4_projection_plan(m: int, decode_rows: int, wide_columns: int = 0,
     return Dsv4ProjectionPlan(Path(out[0]),out[1],out[2],(torch.bfloat16,torch.float32)[out[3]])
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _attn_output_plan(geometry: int, m: int, prefill: bool, kv_int8: bool) -> tuple[int,int]:
     out=(ctypes.c_int64*2)()
     check(lib.snowllm_attn_output_plan(m,int(prefill),int(kv_int8),out),'attn_output_plan')
@@ -103,13 +102,13 @@ class _PagedAttentionStep(ctypes.Structure):
         ('scale',ctypes.c_float),('varlen',ctypes.c_int)]
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def paged_attention_scratch_bytes(batch: int,tokens: int,varlen: bool) -> int:
     return lib.snowllm_paged_attention_scratch_bytes(batch,tokens,int(varlen))
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def paged_attention_varlen(prefill: bool,tokens: int,chunk_decode: bool) -> bool:
     return bool(lib.snowllm_paged_attention_varlen(int(prefill),tokens,int(chunk_decode)))
@@ -658,7 +657,7 @@ def qk_norm_rope(proj: torch.Tensor, q_gamma: torch.Tensor, k_gamma: torch.Tenso
                                    _p(sin), _p(q), _p(k), M, eps, _stream()), "qk_norm_rope")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _latent_norm_store_layout(rows,width,stride,heads,mode,dtype):
     layout=(ctypes.c_int64*6)()
     check(lib.snowllm_latent_norm_store_layout(rows,width,stride,heads,mode,

@@ -10,6 +10,8 @@ class RequestTiming:
     prefill_seconds: float = 0.0
     decode_tokens: int = 0
     decode_seconds: float = 0.0
+    queue_seconds: float = 0.0
+    scheduler_wait_seconds: float = 0.0
 
     def add(self, kind, tokens, seconds):
         if tokens > 0:
@@ -82,6 +84,20 @@ def prometheus(snapshot):
         else:
             emit('snowllm_' + key + ('_total' if key in counters else ''), value,
                  'counter' if key in counters else 'gauge')
+    model_rows = {}
+    for row in snapshot.get('models', []):
+        label = str(row['id']).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+        engine = row.get('engine') or {}
+        values = {**engine, **engine.get('accounting', {}), **(row.get('scheduling') or {})}
+        for key, value in values.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                model_rows.setdefault(key, []).append((label, value))
+    for key, values in model_rows.items():
+        counter = key in counters or key.endswith(('_tokens', '_seconds', '_steps', '_rows')) or key == 'steps'
+        name = 'snowllm_model_' + key + ('_total' if counter else '')
+        lines.extend([f'# HELP {name} Per-model {key.replace("_", " ")}.',
+                      f'# TYPE {name} {"counter" if counter else "gauge"}'])
+        lines.extend(f'{name}{{model="{label}"}} {value}' for label, value in values)
     # Each metric's HELP/TYPE lines must appear only once for multiple GPUs.
     sensor_rows = {}
     for gpu in snapshot.get('gpus', []):

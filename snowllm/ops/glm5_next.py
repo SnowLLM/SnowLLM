@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-from .operation import operator, workspace_capacity
+from .operation import operator, geometry_cache, workspace_capacity
 import ctypes
-import functools
 from types import SimpleNamespace
 
 from .allocation import empty, empty_like
@@ -25,7 +24,7 @@ def _projection_weight(p):
     return _Weight((ctypes.c_void_p*3)(_p(p.quant),_p(p.meta),0),0,2,p.fmt)
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _projection_plan(m,n,k,kind,fmt,output_type):
     weight=_Weight(kind=kind,fmt=fmt)
     plan=(ctypes.c_int64*4)()
@@ -209,7 +208,7 @@ def kda(qkv, forget, beta, conv, a_log, dt, batch, history, state, lower_bound, 
     return out
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _sparse_entry(name):
     try:
         fn = getattr(lib, "snowllm_glm_sparse_" + name)
@@ -294,7 +293,7 @@ def sparse_attention(q, kv, index, iq, iw, batch, meta, topk, scale, workspace, 
     return out
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def sparse_workspace_bytes(m, max_pools, topk):
     return _sparse_entry("attention_workspace_bytes")(m,max_pools,topk)
@@ -361,7 +360,7 @@ def hc_weighted_norm(streams, weights, gamma, out, eps):
                                            m, eps, _stream()), "glm_hc_weighted_norm")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def hc_norm_proj_workspace_bytes(m):
     fn = lib.snowllm_glm_hc_norm_proj_workspace_bytes

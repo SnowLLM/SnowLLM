@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
-import functools
+from .operation import operator, geometry_cache
 from .allocation import empty
 import torch
 
@@ -26,7 +25,7 @@ def uniform_(out, generator):
     return out
 
 
-@functools.lru_cache(None)
+@geometry_cache
 @operator
 def sample_workspace_bytes(batch, vocab, width):
     return lib.snowllm_sampling_workspace_bytes(batch,vocab,width)

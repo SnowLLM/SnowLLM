@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
+from .operation import operator, geometry_cache
 import ctypes
-import functools
 
 from .allocation import empty
 import torch
@@ -112,7 +111,7 @@ def qwen4exp_qsa_gather(k_cache: torch.Tensor, v_cache: torch.Tensor,
         max_blocks, ratio, topk, block_size, _stream()), "qwen4exp_qsa_gather")
 
 
-@functools.lru_cache(None)
+@geometry_cache
 def _qsa_produce_workspace_bytes(batch, width, ratio):
     return lib.snowllm_qwen4exp_qsa_produce_workspace_bytes(batch, width, ratio)
 

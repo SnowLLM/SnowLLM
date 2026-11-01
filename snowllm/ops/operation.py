@@ -1,9 +1,27 @@
 # SPDX-License-Identifier: Apache-2.0
 import functools
+import sys
 
 from .trace import tracing
 
 _workspace_bounds = {}
+
+
+def geometry_cache(fn):
+    @functools.lru_cache(None)
+    def cached(namespace, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    @functools.wraps(fn)
+    def call(*args, **kwargs):
+        from .._capi import geometry_id, DRAFT_SHAPE_FIELDS
+        draft = getattr(sys.modules.get('snowllm.ops.dflash'), '_G', None)
+        shape = tuple(getattr(draft, name) for name in DRAFT_SHAPE_FIELDS) if draft is not None else ()
+        return cached((geometry_id(), shape), *args, **kwargs)
+
+    call.cache_clear = cached.cache_clear
+    call.cache_info = cached.cache_info
+    return call
 
 
 def workspace_capacity(key, rows, query):
