@@ -105,6 +105,39 @@ class CapacityTests(unittest.TestCase):
                     lib.snowllm_host_set_limit.assert_called_with(total - (3 << 30))
                     self.assertEqual(host_alloc.memory_info(), (5 << 30, total))
 
+    def test_host_ceiling_deducts_existing_tensor_pools(self):
+        for unit in (10**9, 1 << 30):
+            with self.subTest(unit=unit), \
+                 patch.object(capacity, 'budget', MemoryBudget(max_host_mem_gib=12*unit/(1 << 30))), \
+                 patch.object(capacity, '_host_reserved', 0), \
+                 patch('snowllm._platform.host_total', return_value=32*unit), \
+                 patch('snowllm._platform.host_available', return_value=24*unit), \
+                 patch('snowllm._platform.host_mapping_room', return_value=None):
+                self.assertEqual(capacity.host_room(8*unit), 4*unit)
+                capacity.check_host(4*unit, 8*unit)
+                with self.assertRaises(SnowLLMError):
+                    capacity.check_host(4*unit+1, 8*unit)
+                with patch.object(capacity, '_host_reserved', unit):
+                    self.assertEqual(capacity.host_room(9*unit), 2*unit)
+                self.assertEqual(capacity.host_room(12*unit), 0)
+
+    def test_host_tensor_cache_is_counted_once_as_reusable_space(self):
+        from snowllm import host_alloc
+        unit = 1 << 30
+        for reserved, cached in ((8*unit, 0), (10*unit, 2*unit)):
+            pool = SimpleNamespace(snapshot=lambda **kw: [dict(total_size=reserved, active_size=reserved-cached)])
+            ops = SimpleNamespace(host_pinned_bytes=lambda: reserved)
+            with self.subTest(reserved=reserved, cached=cached), \
+                 patch.dict(sys.modules, {'snowllm.ops': ops}), \
+                 patch.object(host_alloc, '_pool', pool), \
+                 patch.object(host_alloc, '_threads', SimpleNamespace()), \
+                 patch.object(capacity, 'budget', MemoryBudget(max_host_mem_gib=12)), \
+                 patch.object(capacity, '_host_reserved', 0), \
+                 patch('snowllm._platform.host_total', return_value=32*unit), \
+                 patch('snowllm._platform.host_available', return_value=24*unit), \
+                 patch('snowllm._platform.host_mapping_room', return_value=None):
+                self.assertEqual(host_alloc.memory_info(), (4*unit, 12*unit))
+
     def test_memory_sizes_preserve_exact_bytes_and_distinguish_units(self):
         for value, expected in [('80GiB', 80 << 30), ('80GB', 80*10**9),
                                 (' 1.5 gib ', 3 << 29), ('1024', 1024), (1024, 1024),

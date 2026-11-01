@@ -111,4 +111,5 @@ def memory_info():
     limit = capacity.budget.host_limit(total)
     if limit is not None:
         total = limit
+    # host_pinned_bytes includes tensor pools; add back only their reusable inactive blocks.
     return min(total, capacity.host_room(ops.host_pinned_bytes()) + cached), total

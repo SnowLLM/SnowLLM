@@ -161,5 +161,78 @@ class WeightCapacityTests(unittest.TestCase):
         self.assertIsNone(report.suggestion)
 
 
+class RemainingBudgetTests(unittest.TestCase):
+    def test_native_host_pools_are_deducted_once_and_cached_blocks_are_reusable(self):
+        from types import SimpleNamespace
+        from snowllm import capacity, host_alloc
+        from snowllm.ops import _common
+        unit = 1 << 30
+        for reserved, cached in ((8*unit, 0), (10*unit, 2*unit)):
+            pool = SimpleNamespace(snapshot=lambda **kw: [dict(total_size=reserved, active_size=reserved-cached)])
+            with self.subTest(reserved=reserved, cached=cached), \
+                 patch.object(host_alloc, 'allocated_bytes', return_value=reserved), \
+                 patch.object(host_alloc, '_pool', pool), \
+                 patch.object(host_alloc, '_threads', SimpleNamespace()), \
+                 patch.object(_common, '_host_pinned', 0), \
+                 patch.object(capacity, 'budget', capacity.MemoryBudget(max_host_mem_gib=12)), \
+                 patch.object(capacity, '_host_reserved', 0), \
+                 patch('snowllm._platform.host_total', return_value=32*unit), \
+                 patch('snowllm._platform.host_available', return_value=24*unit), \
+                 patch('snowllm._platform.host_mapping_room', return_value=None):
+                self.assertEqual(ops.host_pinned_bytes(), reserved)
+                self.assertEqual(capacity.host_room(ops.host_pinned_bytes()), 12*unit-reserved)
+                self.assertEqual(host_alloc.memory_info(), (4*unit, 12*unit))
+
+    def test_gpu_runner_deducts_existing_allocations_from_the_shared_ceiling(self):
+        from snowllm.capacity import MemoryBudget
+        from snowllm.engine.runner import BaseRunner
+        from types import SimpleNamespace
+        for unit in (10**9, 1 << 30):
+            total, used = 96*unit, 8*unit
+            limits = MemoryBudget(max_gpu_mem_gib=12*unit/(1 << 30))
+            runner = SimpleNamespace(gpu_util=limits.gpu_utilization(total), reserve_bytes=0)
+            with self.subTest(unit=unit), \
+                 patch('snowllm.engine.runner.gpu_mem_info', return_value=(total-used, total)):
+                self.assertEqual(BaseRunner._allowance(runner), 4*unit)
+                runner.reserve_bytes = unit
+                self.assertEqual(BaseRunner._allowance(runner), 3*unit)
+
+    def test_weight_admission_sees_only_the_remaining_four_gib(self):
+        from snowllm.capacity import MemoryBudget
+        unit = 1 << 30
+        kv = dict(util=MemoryBudget(max_gpu_mem_gib=12).gpu_utilization(96*unit))
+        report = MemoryReport()
+        with patch('snowllm._platform.gpu_mem_info', return_value=(88*unit, 96*unit)), \
+             patch('snowllm.memory_report.current', return_value=report):
+            loader._check_weight_capacity(4*unit, kv, 0)
+            with self.assertRaisesRegex(RuntimeError, 'weights alone'):
+                loader._check_weight_capacity(4*unit+1, kv, 0)
+            self.assertEqual(report.weight_lower_bound, (4*unit+1, 4*unit, 0))
+
+    def test_runtime_and_loading_plans_do_not_reset_or_double_deduct_the_budget(self):
+        import snowllm.engine as engine
+        from types import SimpleNamespace
+        unit = 1 << 30
+        model = SimpleNamespace(config={'max_position_embeddings': 1024})
+        runner = SimpleNamespace(candidates=lambda: [128], minimum_bytes=lambda rows: unit,
+                                 act_bytes_for=lambda rows: unit)
+        for total, util in ((96*unit, .125), (12*unit, 1.)):
+            for loaded in (False, True):
+                kv = dict(ctx=512, slots=1, chunk=128, util=util)
+                used = 8*unit
+                if loaded:
+                    used += 2*unit
+                    kv['loaded_weight_bytes'] = 2*unit
+                with self.subTest(total=total, loaded=loaded), \
+                     patch.object(engine, 'gpu_mem_info', return_value=(total-used, total)), \
+                     patch.object(engine, '_runner_for', return_value=lambda *a, **kw: runner), \
+                     patch('snowllm.engine.capacity.auxiliary_bytes', return_value=0), \
+                     patch('snowllm.engine.capacity.record_memory') as record:
+                    self.assertEqual(engine.carve_out_need(model, {}, kv, 1, 2*unit, load_peak=4*unit), 0)
+                    self.assertEqual(record.call_args.kwargs['room'], 4*unit)
+                    need = engine.carve_out_need(model, {}, kv, 1, 2*unit, load_peak=4*unit+1)
+                    self.assertEqual(need, 0 if loaded else 1)
+
+
 if __name__ == '__main__':
     unittest.main()
