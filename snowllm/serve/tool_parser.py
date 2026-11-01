@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import ast
 import json
 import re
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 TOOL_OPEN = "<tool_call>"
 TOOL_CLOSE = "</tool_call>"
 DSML_OPEN = "<｜DSML｜tool_calls>"
+LFM_OPEN = "<|tool_call_start|>"
 
 _BLOCK = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FUNC = re.compile(r"<function=(.*?)>", re.DOTALL)
@@ -20,7 +22,9 @@ _DSML_FUNC = re.compile(r"<(?:｜DSML｜ ?)?invoke name=\"(.*?)\">", re.DOTALL)
 _DSML_PARAM = re.compile(r"<(?:｜DSML｜ ?)?parameter name=\"(?P<name>.*?)\" "
                          r"string=\"(?P<string>true|false)\">(?P<value>.*?)"
                          r"</(?:｜DSML｜ ?)?parameter>", re.DOTALL)
-_BLOCKS = {TOOL_OPEN: _BLOCK, DSML_OPEN: _DSML_BLOCK, "<｜DSML｜ calls>": _DSML_BLOCK}
+_LFM_BLOCK = re.compile(r"<\|tool_call_start\|>\s*(.*?)\s*<\|tool_call_end\|>", re.DOTALL)
+_BLOCKS = {TOOL_OPEN: _BLOCK, DSML_OPEN: _DSML_BLOCK, "<｜DSML｜ calls>": _DSML_BLOCK,
+           LFM_OPEN: _LFM_BLOCK}
 _FORMATS = ((_DSML_FUNC, _DSML_PARAM), (_FUNC, _PARAM), (_TAGGED_FUNC, _TAGGED_PARAM))
 
 
@@ -85,11 +89,58 @@ def _parse_block(body: str, types: dict[str, dict[str, str]] | None) -> ToolCall
     return ToolCall(name, args)
 
 
+def _literal(node: ast.AST) -> object:
+    if isinstance(node, ast.Name) and node.id in ("true", "false", "null"):
+        return {"true": True, "false": False, "null": None}[node.id]
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_literal(v) for v in node.elts]
+    if isinstance(node, ast.Dict):
+        keys = [_literal(k) for k in node.keys]
+        if not all(isinstance(k, str) for k in keys):
+            raise ValueError("tool argument object keys must be strings")
+        return dict(zip(keys, (_literal(v) for v in node.values)))
+    value = ast.literal_eval(node)
+    json.dumps(value, allow_nan=False)
+    return value
+
+
+def _parse_calls(body: str, types: dict[str, dict[str, str]] | None,
+                 block: re.Pattern) -> list[ToolCall]:
+    if block is not _LFM_BLOCK:
+        call = _parse_block(body, types)
+        return [call] if call else []
+    body = body.removeprefix(LFM_OPEN).removesuffix("<|tool_call_end|>").strip()
+    try:
+        expr = ast.parse(body, mode="eval").body
+        if not isinstance(expr, ast.List):
+            return []
+        calls = []
+        for node in expr.elts:
+            if not isinstance(node, ast.Call) or node.args:
+                return []
+            func, parts = node.func, []
+            while isinstance(func, ast.Attribute):
+                parts.append(func.attr)
+                func = func.value
+            if not isinstance(func, ast.Name):
+                return []
+            name = ".".join([func.id, *reversed(parts)])
+            args = {}
+            for kw in node.keywords:
+                if kw.arg is None or kw.arg in args:
+                    return []
+                args[kw.arg] = _literal(kw.value)
+            calls.append(ToolCall(name, args))
+        return calls
+    except (SyntaxError, ValueError, TypeError, RecursionError):
+        return []
+
+
 def parse_tool_calls(text: str, types: dict[str, dict[str, str]] | None) -> tuple[str, list[ToolCall]]:
     i, block = _open(text)
     if i < 0:
         return text, []
-    calls = [c for body in block.findall(text[i:]) if (c := _parse_block(body, types))]
+    calls = [c for body in block.findall(text[i:]) for c in _parse_calls(body, types, block)]
     return text[:i], calls
 
 
@@ -117,9 +168,7 @@ class StreamingToolParser:
             return tail, []
         calls = self._drain()
         if self.buf.strip():
-            c = _parse_block(self.buf, self.types)
-            if c:
-                calls.append(c)
+            calls.extend(_parse_calls(self.buf, self.types, self.block))
         self.buf = ""
         return "", calls
 
@@ -127,6 +176,5 @@ class StreamingToolParser:
         calls = []
         while m := self.block.search(self.buf):
             self.buf = self.buf[m.end():]
-            if c := _parse_block(m.group(1), self.types):
-                calls.append(c)
+            calls.extend(_parse_calls(m.group(1), self.types, self.block))
         return calls
