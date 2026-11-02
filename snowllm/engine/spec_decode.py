@@ -484,7 +484,7 @@ class DFlashDecoder(DSparkScheduling):
             raise SnowLLMError('draft workspace must be planned before graph capture')
         noise = self.noise
         frozen = arena.planner.buf
-        before = arena.buf.numel() if arena.buf is not None else 0
+        before = self.runner.arena_bytes
         arena.planner.buf = None
         try:
             for batch in range(1, self.runner.max_num_seqs + 1):
@@ -498,7 +498,9 @@ class DFlashDecoder(DSparkScheduling):
             arena.planner.buf = frozen
         need = arena.bytes_after(self.runner.arena_after)
         if need > before:
-            arena.buf = torch.empty(need,dtype=torch.uint8,device='cuda')
+            if arena.shared_workspace is None:
+                arena.buf = None
+            arena.freeze(need)
             self.runner.arena_bytes = need
             self.runner.act_bytes += need-before
         if self.runner.plan_activations:

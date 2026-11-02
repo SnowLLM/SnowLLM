@@ -25,7 +25,7 @@ class AsyncEngine:
             self.profile_dir.mkdir(parents=True, exist_ok=True)
         self._profiler = None
         self.scheduler = scheduler
-        self.context = ModelExecutionContext(engine) if scheduler is not None else None
+        self.context = ModelExecutionContext(engine, scheduler.target) if scheduler is not None else None
         self._worker = (ThreadPoolExecutor(max_workers=1, thread_name_prefix="snowllm-engine", initializer=enter_thread)
                         if scheduler is None else None)
         self.error = None
@@ -46,6 +46,8 @@ class AsyncEngine:
             self._task = asyncio.create_task(self._run())
 
     async def start_profile(self) -> None:
+        if self.scheduler is not None and self.scheduler.target != 'gpu':
+            raise RuntimeError('profiling is not available for this target')
         if self.profile_dir is None:
             raise RuntimeError("profiling is off; start the server with --profile-dir")
         if self._profiler is not None:

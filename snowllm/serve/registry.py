@@ -5,9 +5,17 @@ import time
 import traceback
 import uuid
 from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
 
 from ..execution import ExecutionScheduler
+from ..targets import TARGETS, NPU_UNAVAILABLE, Target, normalize_target, resolve_target
 from .state import validate_model_id
+
+
+@dataclass(frozen=True)
+class ModelBackend:
+    build: Callable
+    dispose: Callable
 
 
 @dataclass
@@ -15,6 +23,7 @@ class ModelRecord:
     id: str
     source: str
     options: list
+    target: Target = 'gpu'
     instance: str = field(default_factory=lambda: uuid.uuid4().hex)
     state: object = None
     phase: str = 'loading'
@@ -27,24 +36,35 @@ class ModelRecord:
             return {**self.frozen, 'state': self.phase, 'active_requests': self.active}
         engine = self.state.engine if self.state is not None else None
         error = engine.error if engine is not None else None
+        memory = dict(getattr(engine, 'memory', {}) if engine else {})
+        arena = getattr(getattr(getattr(engine, 'engine', None), 'runner', None), 'arena', None)
+        if arena is not None and getattr(arena, 'shared_workspace', None) is not None:
+            shared = arena.required_bytes
+            memory['total'] = max(0, memory.get('total', 0) - shared)
+            memory['workspace'] = max(0, memory.get('workspace', 0) - shared)
+            memory['shared_workspace_bytes'] = shared
         return dict(
             id=self.id,
             source=self.source,
+            target=self.target,
             instance=self.instance,
             state='failed' if error else self.phase,
             active_requests=self.active,
             error=error or self.error,
             aliases=list(self.state.aliases) if self.state else [],
             runtime_config=getattr(engine.engine, 'runtime_config', None) if engine else None,
-            memory=getattr(engine, 'memory', {}) if engine else {},
+            memory=memory,
             engine=asdict(engine.stats()) if engine else None,
             scheduling=engine.context.snapshot() if engine else None,
         )
 
 
 class ModelRegistry:
-    def __init__(self, builder=None, disposer=None):
-        self.scheduler = ExecutionScheduler()
+    def __init__(self, builder=None, disposer=None, *, backends=None):
+        self.schedulers = {target: ExecutionScheduler(target) for target in TARGETS}
+        self.scheduler = self.schedulers['gpu']
+        for target, scheduler in self.schedulers.items():
+            scheduler.workspace.before_resize = lambda target=target: self._invalidate_target(target)
         self.records = {}
         self.default = None
         self.operation = None
@@ -52,6 +72,13 @@ class ModelRegistry:
         self.cancel_requested = False
         self.builder = builder or self._build
         self.disposer = disposer or self._dispose
+        self.backends = {
+            'gpu': ModelBackend(
+                lambda source, options, model_id, *, scheduler: self.builder(source, options, model_id),
+                lambda state: self.disposer(state),
+            ),
+            **{normalize_target(key): value for key, value in (backends or {}).items()},
+        }
         self.process_config = None
         self.closing = False
         self.runtime_overhead = None
@@ -75,39 +102,53 @@ class ModelRegistry:
             raise RuntimeError('no default model is ready')
         if (
             self.closing
-            or self.scheduler.failed
+            or self.schedulers[record.target].failed
             or record.phase != 'ready'
             or record.state.engine.error
         ):
             raise RuntimeError(
-                self.scheduler.failed or record.error or f'model {record.id} is {record.phase}'
+                self.schedulers[record.target].failed or record.error or f'model {record.id} is {record.phase}'
             )
         record.active += 1
         return record
 
     def snapshot(self):
-        failed = self.scheduler.failed
-        rows = [record.snapshot() for record in self.records.values()]
-        if failed:
-            rows = [{**row, 'state': 'failed', 'error': failed} for row in rows]
+        workspaces = {target: scheduler.workspace.snapshot() for target, scheduler in self.schedulers.items()}
+        shared_bytes = sum(row['bytes'] for row in workspaces.values())
+        shared_host = sum(scheduler.workspace.nbytes for scheduler in self.schedulers.values()
+                          if scheduler.workspace.allocation == 'host')
+        errors = {target: scheduler.failed for target, scheduler in self.schedulers.items() if scheduler.failed}
+        rows = []
+        for record in self.records.values():
+            row = record.snapshot()
+            if error := errors.get(record.target):
+                row = {**row, 'state': 'failed', 'error': error}
+            rows.append(row)
+        failed = next(iter(errors.values()), None) if not any(
+            row['target'] not in errors and row['state'] != 'failed' for row in rows
+        ) else None
         return dict(
             default_model=self.default,
             models=rows,
             operation=self.operation,
             cancel_requested=self.cancel_requested,
             worker_error=failed,
+            target_errors=errors,
+            queues={target: {**scheduler.snapshot(), 'available': target in self.backends}
+                    for target, scheduler in self.schedulers.items()},
             process_config=self.process_config,
             memory=dict(
-                tensor_bytes=sum((row.get('memory') or {}).get('total', 0) for row in rows),
+                tensor_bytes=shared_bytes + sum((row.get('memory') or {}).get('total', 0) for row in rows),
+                shared_workspaces=workspaces,
                 host_weight_bytes=sum(
                     (row.get('memory') or {}).get('host_weights', 0) for row in rows
                 ),
-                device_tensor_bytes=sum(
+                device_tensor_bytes=shared_bytes - shared_host + sum(
                     (row.get('memory') or {}).get('total', 0)
                     for row in rows
                     if (row.get('memory') or {}).get('allocation', 'GPU') != 'host'
                 ),
-                host_tensor_bytes=sum(
+                host_tensor_bytes=shared_host + sum(
                     (row.get('memory') or {}).get('host_weights', 0)
                     + (
                         (row.get('memory') or {}).get('total', 0)
@@ -121,91 +162,178 @@ class ModelRegistry:
                     (row.get('memory') or {}).get('driver_graph_bytes', 0) for row in rows
                 ),
                 runtime_overhead_bytes=self.runtime_overhead,
+                by_target={target: dict(
+                    tensor_bytes=workspaces[target]['bytes'] + sum((row.get('memory') or {}).get('total', 0)
+                                     for row in rows if row['target'] == target),
+                    host_weight_bytes=sum((row.get('memory') or {}).get('host_weights', 0)
+                                          for row in rows if row['target'] == target),
+                ) for target in TARGETS},
             ),
         )
 
-    async def load(self, source, options, model_id=None, *, sources=None):
+    async def load(self, source, options, model_id=None, *, sources=None, target=None):
+        return await self.load_many([dict(model=source, options=options, id=model_id, target=target)], sources=sources)
+
+    def _validate_loads(self, models):
+        from ..loading import LoadBatch
+        entries = [item.model_dump() for item in LoadBatch(models=models).models]
+        keys = set()
+        for item in entries:
+            if not item['model'].strip():
+                raise ValueError('model source must not be empty')
+            item['target'] = resolve_target(item['options'], item['target'])
+            if item['target'] not in self.backends:
+                raise ValueError(NPU_UNAVAILABLE)
+            if self.schedulers[item['target']].failed:
+                raise RuntimeError(self.schedulers[item['target']].failed)
+            validate_model_id(item['id'])
+            key = item['id'] or item['model']
+            if key in keys:
+                raise ValueError(f'duplicate model in load batch: {key}')
+            keys.add(key)
+            if any((key == record.id or item['id'] and record.state and key in record.state.aliases)
+                   and record.phase != 'failed' for record in self.records.values()):
+                raise ValueError(f'model id or alias is already loaded: {key}')
+        return entries
+
+    async def load_many(self, models, *, sources=None):
         if self.closing or self.operation:
             raise ValueError('a model operation is already in progress')
-        if not isinstance(source, str) or not source.strip():
-            raise ValueError('model source must not be empty')
-        if not isinstance(options, list) or any(not isinstance(value, str) for value in options):
-            raise ValueError('model options must be strings')
-        validate_model_id(model_id)
-        if model_id and any(
-            model_id == item.id or (item.state and model_id in item.state.aliases)
-            for item in self.records.values()
-            if item.phase != 'failed'
-        ):
-            raise ValueError(f'model id or alias is already loaded: {model_id}')
-        key = model_id or source
-        record = ModelRecord(key, source, list(options))
-        if key in self.records and self.records[key].state is not None:
-            raise ValueError(f'model is already loaded: {key}')
-        self.records[key] = record
-        self.operation = dict(kind='load', model=key, stage='loading', started=time.time())
+        entries = self._validate_loads(models)
+        targets = {item['target'] for item in entries}
+        parked = [record for record in self.records.values()
+                  if record.target in targets and record.state and record.phase == 'ready']
+        created = []
+        self.operation = dict(kind='load', model=entries[0]['id'] or entries[0]['model'],
+                              target=entries[0]['target'], stage='draining', total=len(entries), index=0,
+                              started=time.time())
         self.cancel_requested = False
         self._operation_task = asyncio.current_task()
+        for record in parked:
+            record.phase = 'draining'
+        for target in targets:
+            self.schedulers[target].defer_capture = True
+        try:
+            while any(record.active or record.state.engine.busy for record in parked):
+                if self.cancel_requested or self.closing:
+                    raise RuntimeError('model loading cancelled')
+                await asyncio.sleep(0.02)
+            for index, item in enumerate(entries, 1):
+                if self.cancel_requested or self.closing:
+                    raise RuntimeError('model loading cancelled')
+                self.operation.update(model=item['id'] or item['model'], target=item['target'],
+                                      stage='loading', index=index)
+                created.append(await self._load_one(item, sources))
+        finally:
+            async def finish():
+                self.operation['stage'] = 'capturing'
+                try:
+                    if not self.closing:
+                        for target in sorted(targets):
+                            await self.schedulers[target].run(lambda target=target: self._capture_target(target))
+                finally:
+                    for record in parked + created:
+                        if record.state and record.phase != 'failed':
+                            record.phase = 'ready'
+                    for record in created:
+                        if record.phase == 'ready' and not self.closing:
+                            record.state.engine.start()
+                    for target in targets:
+                        self.schedulers[target].defer_capture = False
+                    self.operation = None
+                    self._operation_task = None
+            task = asyncio.create_task(finish())
+            cancelled = False
+            while True:
+                try:
+                    await asyncio.shield(task)
+                    break
+                except asyncio.CancelledError:
+                    cancelled = True
+            if cancelled:
+                raise asyncio.CancelledError
+        return self.snapshot()
+
+    async def _load_one(self, item, sources):
+        source, options, model_id, target = (item[key] for key in ('model', 'options', 'id', 'target'))
+        scheduler, backend = self.schedulers[target], self.backends[target]
+        key = model_id or source
+        if any(other.state and (key == other.id or model_id and key in other.state.aliases)
+               for other in self.records.values()):
+            raise ValueError(f'model id or alias is already loaded: {key}')
+        record = ModelRecord(key, source, list(options), target=target)
+        self.records[key] = record
         state = None
         try:
-
             def build_model():
                 import os
-
-                for key, value in (sources or {}).items():
-                    if key not in ('SNOWLLM_MODELS', 'SNOWLLM_RECIPES_URL'):
+                for name, value in (sources or {}).items():
+                    if name not in ('SNOWLLM_MODELS', 'SNOWLLM_RECIPES_URL'):
                         raise ValueError('unknown model source setting')
                     if value is not None:
-                        os.environ[key] = value
-                return self.builder(source, options, model_id)
+                        os.environ[name] = value
+                return backend.build(source, options, model_id, scheduler=scheduler)
 
-            build = asyncio.create_task(self.scheduler.run(build_model))
+            build = asyncio.create_task(scheduler.run(build_model))
             cancelled = False
             while True:
                 try:
                     state = await asyncio.shield(build)
                     break
                 except asyncio.CancelledError:
-                    cancelled = True
-                    self.cancel_requested = True
+                    cancelled = self.cancel_requested = True
             if cancelled:
                 raise asyncio.CancelledError
-            name = state.model_name
-            aliases = set(state.aliases)
-            for other in self.records.values():
-                if (
-                    other is not record
-                    and other.state
-                    and (aliases & (set(other.state.aliases) | {other.id}) or name == other.id)
-                ):
-                    raise ValueError(
-                        'model id or aliases conflict with a loaded model; choose a unique id'
-                    )
+            name, aliases = state.model_name, set(state.aliases)
+            if any(other is not record and other.state and
+                   (aliases & (set(other.state.aliases) | {other.id}) or name == other.id)
+                   for other in self.records.values()):
+                raise ValueError('model id or aliases conflict with a loaded model; choose a unique id')
             if self.cancel_requested or self.closing:
                 raise RuntimeError('model loading cancelled')
-            if self.process_config is None:
+            if target == 'gpu' and self.process_config is None:
                 self.process_config = state.engine.process_config
             del self.records[key]
             record.id = model_id or name
-            record.state, record.phase = state, 'ready'
+            record.state = state
             state.engine.context.name = record.id
             self.records[record.id] = record
-            if (
-                self.default is None
-                and sum(item.state is not None for item in self.records.values()) == 1
-            ):
+            if self.default is None and sum(row.state is not None for row in self.records.values()) == 1:
                 self.default = record.id
-            state.engine.start()
-            return self.snapshot()
+            return record
         except BaseException as exc:
             if state is not None:
                 await state.engine.close()
-                await self.scheduler.run(lambda: self.disposer(state), context=state.engine.context)
+                await scheduler.run(lambda: backend.dispose(state), context=state.engine.context)
             record.phase, record.error = 'failed', str(exc)
             raise
-        finally:
-            self.operation = None
-            self._operation_task = None
+
+    def _invalidate_target(self, target):
+        for record in self.records.values():
+            if record.target == target and record.state:
+                engine = record.state.engine.engine
+                if hasattr(engine, 'invalidate_graphs'):
+                    engine.invalidate_graphs()
+                record.state.engine.memory.update(graph_bytes=0, driver_graph_bytes=0)
+        gc.collect()
+
+    def _capture_target(self, target):
+        for record in self.records.values():
+            if record.target != target or not record.state or record.phase == 'failed':
+                continue
+            engine = record.state.engine.engine
+            if not hasattr(engine, 'capture_graphs'):
+                continue
+            try:
+                record.state.engine.context.activate()
+                engine.capture_graphs()
+                budget = engine.runner.budget
+                record.state.engine.memory.update(graph_bytes=budget.retained_bytes,
+                                                  driver_graph_bytes=budget.driver_bytes)
+            except Exception as exc:
+                record.phase, record.error = 'failed', f'graph initialization failed: {exc}'
+                record.state.engine.error = record.error
+                raise
 
     def _build(self, source, options, model_id):
         import torch
@@ -281,7 +409,7 @@ class ModelRegistry:
                     'disk_offloaded_weight_bytes', 0
                 )
                 for record in self.records.values()
-                if record.state is not None
+                if record.state is not None and record.target == 'gpu'
             )
             args.max_disk_mem_gib = max(0, disk_limit - used) / (1 << 30)
         if self.runtime_overhead is None:
@@ -352,7 +480,9 @@ class ModelRegistry:
         record = self.records.get(model_id)
         if record is None:
             raise LookupError(f'unknown model: {model_id}')
-        self.operation = dict(kind='unload', model=model_id, stage='draining', started=time.time())
+        scheduler = self.schedulers[record.target]
+        backend = self.backends[record.target]
+        self.operation = dict(kind='unload', model=model_id, target=record.target, stage='draining', started=time.time())
         record.phase = 'draining'
         releasing = False
         self._operation_task = asyncio.current_task()
@@ -369,8 +499,8 @@ class ModelRegistry:
 
                 async def release():
                     await engine.close()
-                    await self.scheduler.run(
-                        lambda: self.disposer(record.state), context=engine.context
+                    await scheduler.run(
+                        lambda: backend.dispose(record.state), context=engine.context
                     )
 
                 task = asyncio.create_task(release())
@@ -423,9 +553,10 @@ class ModelRegistry:
                 record.frozen = record.snapshot()
                 record.phase = 'unloading'
                 await record.state.engine.close()
-                if not self.scheduler.failed:
-                    await self.scheduler.run(
-                        lambda: self.disposer(record.state), context=record.state.engine.context
+                scheduler = self.schedulers[record.target]
+                if not scheduler.failed:
+                    await scheduler.run(
+                        lambda: self.backends[record.target].dispose(record.state), context=record.state.engine.context
                     )
         self.records.clear()
-        await self.scheduler.close()
+        await asyncio.gather(*(scheduler.close() for scheduler in self.schedulers.values()))

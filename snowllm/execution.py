@@ -5,11 +5,18 @@ import contextlib
 import functools
 from concurrent.futures import ThreadPoolExecutor
 
+from .targets import normalize_target
+from .workspace import SharedWorkspace
+
 
 class ExecutionScheduler:
-    def __init__(self):
-        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix='snowllm-gpu')
+    def __init__(self, target='gpu'):
+        self.target = normalize_target(target)
+        self.workspace = SharedWorkspace(self.target)
+        self.defer_capture = False
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f'snowllm-{self.target}')
         self._lock = asyncio.Lock()
+        self.waiting = 0
         self.closed = False
         self.failed = None
         self.profiler_owner = None
@@ -17,10 +24,15 @@ class ExecutionScheduler:
 
     async def run(self, function, *, context=None):
         if self.closed:
-            raise RuntimeError('the GPU executor is closed')
-        async with self._lock:
+            raise RuntimeError(f'the {self.target.upper()} executor is closed')
+        self.waiting += 1
+        try:
+            await self._lock.acquire()
+        finally:
+            self.waiting -= 1
+        try:
             if self.closed:
-                raise RuntimeError('the GPU executor is closed')
+                raise RuntimeError(f'the {self.target.upper()} executor is closed')
             if self.failed:
                 raise RuntimeError(self.failed)
             self.current = context
@@ -44,12 +56,18 @@ class ExecutionScheduler:
                 raise
             finally:
                 self.current = None
+        finally:
+            self._lock.release()
+
+    def snapshot(self):
+        return dict(target=self.target, waiting=self.waiting, running=self._lock.locked() and not self.closed,
+                    model=getattr(self.current, 'name', None), error=self.failed, closed=self.closed)
 
     def _execute(self, context, function):
-        if context is not None:
-            context.activate()
         try:
-            with (
+            if context is not None:
+                context.activate()
+            with self.workspace.scope(), (
                 context.scope()
                 if context is not None and hasattr(context, 'scope')
                 else contextlib.nullcontext()
@@ -75,13 +93,16 @@ class ExecutionScheduler:
         async with self._lock:
             self.closed = True
         self._worker.shutdown(wait=True)
+        self.workspace.close()
 
 
 class ModelExecutionContext:
-    def __init__(self, engine):
-        from . import ops
-
-        self.geometry = ops.geometry_id()
+    def __init__(self, engine, target='gpu'):
+        self.target = normalize_target(target)
+        self.geometry = None
+        if self.target == 'gpu':
+            from . import ops
+            self.geometry = ops.geometry_id()
         draft = getattr(engine, 'dflash_geo', None)
         self.draft = (
             draft if getattr(engine, 'dflash', None) and not hasattr(draft, 'stack') else None
@@ -93,6 +114,8 @@ class ModelExecutionContext:
         self.execute_seconds = 0.0
 
     def activate(self):
+        if self.target != 'gpu':
+            return
         import torch
         from . import ops
         from .host_alloc import enter_thread
@@ -110,6 +133,8 @@ class ModelExecutionContext:
                 dflash.select(self.draft)
 
     def scope(self):
+        if self.target != 'gpu':
+            return contextlib.nullcontext()
         from .trace import span
 
         return span(f'model {self.name}')

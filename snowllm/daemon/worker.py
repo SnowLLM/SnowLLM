@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from ..targets import Target
+from ..loading import LoadBatch
 
 
 class LoadModel(BaseModel):
@@ -10,12 +12,18 @@ class LoadModel(BaseModel):
     id: str | None = Field(default=None, min_length=1, max_length=256)
     models_dir: str | None = None
     recipes_url: str | None = None
+    target: Target | None = None
 
 
 class SelectModel(BaseModel):
     model_config = ConfigDict(extra='forbid')
     id: str = Field(min_length=1)
     force: bool = False
+
+
+class BatchLoad(LoadBatch):
+    models_dir: str | None = None
+    recipes_url: str | None = None
 
 
 def configure(app, registry):
@@ -32,6 +40,7 @@ def configure(app, registry):
                 body.model,
                 body.options,
                 body.id,
+                target=body.target,
                 sources={
                     'SNOWLLM_MODELS': body.models_dir,
                     'SNOWLLM_RECIPES_URL': body.recipes_url,
@@ -45,6 +54,14 @@ def configure(app, registry):
         try:
             return await registry.unload(body.id, body.force)
         except (ValueError, RuntimeError, LookupError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post('/worker/load-many')
+    async def load_many(body: BatchLoad):
+        try:
+            return await registry.load_many([item.model_dump() for item in body.models], sources={
+                'SNOWLLM_MODELS': body.models_dir, 'SNOWLLM_RECIPES_URL': body.recipes_url})
+        except (ValueError, RuntimeError, MemoryError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.post('/worker/default')
@@ -70,11 +87,9 @@ def main(argv):
 
     args = parser().parse_args(argv)
     source = getattr(args, 'model', None) or args.model_flag
-    if not source:
-        raise SystemExit('a managed worker needs an initial model')
     # Keep the recipe source so its defaults are resolved by the same builder as later loads.
-    index = argv.index(source)
-    options = argv[:index] + argv[index + 1 :]
-    app.state.initial_model = (source, options)
+    index = argv.index(source) if source else None
+    options = argv[:index] + argv[index + 1 :] if source else []
+    app.state.initial_model = (source, options) if source else None
     configure(app, ModelRegistry())
     uvicorn.run(app, host=args.host, port=args.port, log_level='info')

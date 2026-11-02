@@ -13,6 +13,47 @@ from unittest.mock import Mock, patch
 
 
 class CLITests(unittest.TestCase):
+    def test_batch_load_cli_preserves_options_and_target_prefixes(self):
+        from snowllm.daemon import cli
+        import httpx
+        captured = []
+        def request(method, url, **kwargs):
+            captured.append((url, kwargs['json']))
+            return httpx.Response(200, json={'state': 'loading'}, request=httpx.Request(method, url))
+        with patch.object(cli.httpx.Client, 'request', side_effect=request), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(['load', 'gpu:/models/Large', 'npu:/models/Small', '--', '--max-model-len', '32k']), 0)
+        self.assertTrue(captured[0][0].endswith('/daemon/models/load'))
+        models = captured[0][1]['models']
+        self.assertEqual([item['target'] for item in models], ['gpu', 'npu'])
+        self.assertEqual([item['model'] for item in models], ['/models/Large', '/models/Small'])
+        self.assertEqual(models[0]['options'], ['--max-model-len', '32k'])
+        self.assertEqual(models[1]['options'], models[0]['options'])
+
+    def test_cli_prints_loading_advice_only_when_the_server_marks_it_new(self):
+        from snowllm.daemon import cli
+        import httpx
+        notice = dict(message='Load models together.', url='https://snowllm.dev/docs/webui#loading-multiple-models')
+        responses = [dict(state='loading', load_advice=notice, load_advice_new=notice),
+                     dict(state='loading', load_advice=notice)]
+        def request(method, url, **kwargs):
+            return httpx.Response(200, json=responses.pop(0), request=httpx.Request(method, url))
+        output, error = io.StringIO(), io.StringIO()
+        with patch.object(cli.httpx.Client, 'request', side_effect=request), \
+             contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            self.assertEqual(cli.main(['load', 'a']), 0)
+            self.assertEqual(cli.main(['load', 'b']), 0)
+        self.assertEqual(error.getvalue().count(notice['url']), 1)
+        self.assertNotIn('load_advice', output.getvalue())
+
+    def test_target_defaults_to_gpu_and_rejects_unconfigured_npu_without_gpu_imports(self):
+        from snowllm.cli import parser
+        self.assertEqual(parser().parse_args(['MODEL']).target, 'gpu')
+        self.assertEqual(parser().parse_args(['MODEL', '--target', 'NPU']).target, 'npu')
+        result = self.run_cli('MODEL', '--target', 'npu')
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('dedicated runtime', result.stderr)
+        self.assertNotIn('CLI loaded GPU code', result.stderr)
+
     def test_context_capacity_alias_reaches_build(self):
         args, _ = self.launch_options(('--max-ctx-len', '2M'))
         self.assertEqual(args[2], 2 << 20)
@@ -112,6 +153,14 @@ class CLITests(unittest.TestCase):
         _, kw = self.launch_options()
         self.assertNotIn('static_runtime', kw)
         self.assertFalse(kw['enforce_eager'])
+
+    def test_mineru_equivalent_command_preserves_bundle_runtime(self):
+        from snowllm.cli import _equivalent_command, parser
+        recipe = SimpleNamespace(id='mineru', bundle=True, runtime='mineru',
+                                 serve_as='MinerU', defaults={})
+        command = shlex.split(_equivalent_command(parser(), parser().parse_args(['b/mineru']),
+                                                  '/models/MinerU-4.1', recipe))
+        self.assertEqual(command[:2], ['snowllm', 'b/mineru'])
 
     def test_32g_recipe_applies_its_profile_and_allows_explicit_capacity_overrides(self):
         import json

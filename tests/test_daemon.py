@@ -290,8 +290,9 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.manager.spawn(["x"], self.manager.log_path)
             command = popen.call_args.args[0]
             self.assertEqual(command[-5:], [sys.executable, "-m", "snowllm.cli", "x", "--managed-worker"])
-            if Path("/home/cwind/withgpu/withgpu").is_file():
-                self.assertEqual(command[0], "/home/cwind/withgpu/withgpu")
+            wrapper = Path.home() / "withgpu" / "withgpu"
+            if wrapper.is_file():
+                self.assertEqual(command[0], str(wrapper))
             env = popen.call_args.kwargs["env"]
             self.assertEqual(env["SNOWLLM_CONFIG"], str(self.manager.config_path))
             self.assertEqual(env["SNOWLLM_MODELS"], self.manager.models_dir)

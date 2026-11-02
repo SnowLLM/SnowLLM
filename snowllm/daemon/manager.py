@@ -10,6 +10,7 @@ import signal
 import socket
 import subprocess
 import sys
+import uuid
 
 import httpx
 from ..updates import Update
@@ -50,6 +51,11 @@ class DaemonManager:
         self.cancel_requested = False
         self.process_config = None
         self.memory = {}
+        self.queues = {}
+        self.target_errors = {}
+        self.load_advice = None
+        self._load_advice_shown = False
+        self.instance = uuid.uuid4().hex
         self.error = None
         self.backend = None
         self.active = 0
@@ -95,7 +101,7 @@ class DaemonManager:
                 progress = json.loads(self.progress_path.read_text())
             except (OSError, ValueError):
                 pass
-        return dict(process_config=self.process_config, memory=self.memory, cancel_requested=self.cancel_requested, models=self.models, default_model=self.default_model, operation=self.operation, last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
+        return dict(load_advice=self.load_advice, process_config=self.process_config, memory=self.memory, queues=self.queues, target_errors=self.target_errors, cancel_requested=self.cancel_requested, models=self.models, default_model=self.default_model, operation=self.operation, last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
                     error_kind="capacity" if self.error and is_capacity_error(self.error) else None,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
@@ -185,9 +191,7 @@ class DaemonManager:
         command = [sys.executable, "-m", "snowllm.cli", *args]
         if args and args[0] != 'pull':
             command.append('--managed-worker')
-            wrapper = Path('/home/cwind/withgpu/withgpu')
-            if not wrapper.is_file():
-                wrapper = Path.home() / 'withgpu' / 'withgpu'
+            wrapper = Path.home() / 'withgpu' / 'withgpu'
             if wrapper.is_file():
                 command = [str(wrapper), *command]
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +222,7 @@ class DaemonManager:
             terminate(signal.SIGKILL)
 
     async def switch(self, model, options, force=False):
+        from ..targets import NPU_UNAVAILABLE, resolve_target
         async with self.lock:
             if self.process and self.process.poll() is None and len([row for row in self.models if row.get("runtime_config")]) > 1:
                 raise ValueError("multiple models are loaded; select a model in the Web UI or model management API")
@@ -228,6 +233,10 @@ class DaemonManager:
                 raise ValueError("options must be strings")
             if any(x.split("=", 1)[0] in ("--host", "--port", "--model", "--managed-worker") for x in options):
                 raise ValueError("--host, --port and --model are managed by the daemon")
+            if model is not None and resolve_target(options) == 'npu':
+                raise ValueError(NPU_UNAVAILABLE)
+            if model is not None:
+                self._advise_batch_load()
             if model is not None:
                 self.last_load = dict(model=model, options=list(options), force=force)
             self.state = "draining"
@@ -251,6 +260,8 @@ class DaemonManager:
             self.shared_worker = False
             self.process_config = None
             self.memory = {}
+            self.queues = {}
+            self.target_errors = {}
             self.model = model
             self.runtime_config = None
             if model is None:
@@ -295,6 +306,8 @@ class DaemonManager:
         self.models = snapshot.get('models', [])
         self.process_config = snapshot.get('process_config')
         self.memory = snapshot.get('memory', {})
+        self.queues = snapshot.get('queues', {})
+        self.target_errors = snapshot.get('target_errors', {})
         self.default_model = snapshot.get('default_model')
         previous = self.operation
         self.operation = snapshot.get('operation')
@@ -333,20 +346,84 @@ class DaemonManager:
                 pass
         return self.status()
 
-    async def add_model(self, model, options, model_id=None):
+    async def add_model(self, model, options, model_id=None, *, target=None):
         from ..serve.state import validate_model_id
+        from ..targets import resolve_target
         validate_model_id(model_id)
         if any(not isinstance(value, str) for value in options):
             raise ValueError('model options must be strings')
         if any(value.split('=', 1)[0] in ('--host', '--port', '--model', '--managed-worker') for value in options):
             raise ValueError('--host, --port and --model are managed by the daemon')
+        target = resolve_target(options, target)
+        options = list(options)
+        if not any(value.split('=', 1)[0] == '--target' for value in options):
+            options.extend(['--target', target])
         if not self.backend or not self.process or self.process.poll() is not None:
             if model_id:
                 options = ['--served-model-name', model_id, *options]
             return await self.switch(model, options)
-        self.last_load = dict(model=model, options=list(options), id=model_id)
+        self.last_load = dict(model=model, options=list(options), id=model_id, target=target)
         return await self.model_operation('load', dict(model=model, options=options, id=model_id,
+                                                     target=target,
                                                      models_dir=self.models_dir, recipes_url=recipes_source(self.config_path, self.config)[0]))
+
+    async def add_models(self, models):
+        from ..loading import LoadBatch
+        from ..targets import resolve_target
+        entries = [item.model_dump() for item in LoadBatch(models=models).models]
+        for item in entries:
+            item['target'] = resolve_target(item['options'], item['target'])
+            if any(value.split('=', 1)[0] in ('--host', '--port', '--model', '--managed-worker')
+                   for value in item['options']):
+                raise ValueError('--host, --port and --model are managed by the daemon')
+        if len(entries) == 1:
+            item = entries[0]
+            return await self.add_model(item['model'], item['options'], item['id'], target=item['target'])
+        self.last_load = dict(models=entries)
+        return await self.model_operation('load', dict(models=entries, models_dir=self.models_dir,
+            recipes_url=recipes_source(self.config_path, self.config)[0]))
+
+    def _advise_batch_load(self):
+        from ..loading import MODEL_LOADING_GUIDE
+        if self._load_advice_shown or not any(row['state'] == 'ready' for row in self.models):
+            return
+        self._load_advice_shown = True
+        if os.environ.get('SNOWLLM_NO_LOAD_ADVICE', '').lower() in ('1', 'true', 'yes', 'on'):
+            return
+        message = ('Load all models together, or load the model with the largest workspace first. '
+                   'Growing a shared workspace replans and recaptures models on that target. '
+                   'GPU and NPU use separate workspaces.')
+        self.load_advice = dict(id=self.instance, message=message, url=MODEL_LOADING_GUIDE)
+        print(f'[snowllm] {message} {MODEL_LOADING_GUIDE} '
+              '(hide with SNOWLLM_NO_LOAD_ADVICE=1)', flush=True)
+        return self.load_advice
+
+    async def _start_shared_worker(self):
+        self.state = 'loading'
+        self.shared_worker = False
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+        self.backend = f'http://127.0.0.1:{port}'
+        self.process = self.spawn(['--host', '127.0.0.1', '--port', str(port)], self.log_path)
+        try:
+            deadline = asyncio.get_running_loop().time() + self.load_timeout
+            while asyncio.get_running_loop().time() < deadline:
+                if self.process.poll() is not None:
+                    raise RuntimeError(self.worker_error())
+                try:
+                    response = await self.client.get(self.backend + '/health', timeout=1)
+                    if response.is_success:
+                        self.shared_worker = True
+                        return
+                except httpx.HTTPError:
+                    pass
+                await asyncio.sleep(.1)
+            raise RuntimeError(f'worker startup timed out after {self.load_timeout:g}s')
+        except BaseException:
+            await self.stop_process(self.process)
+            self.process = self.backend = None
+            raise
 
     async def unload_model(self, model_id, force=False):
         if not self.backend or not self.process or self.process.poll() is not None:
@@ -382,17 +459,29 @@ class DaemonManager:
             return self.status()
 
     async def model_operation(self, kind, payload):
+        notice = None
         async with self.lock:
             if self.closing or self.storage_busy or (self.task and not self.task.done()):
                 raise ValueError('a model operation is already in progress')
             self.error = None
-            self.operation = dict(kind=kind, model=payload.get('id') or payload.get('model'), stage='queued')
+            if kind == 'load':
+                notice = self._advise_batch_load()
+            row = next((row for row in self.models if row['id'] == payload.get('id')), None)
+            first = payload.get('models', [{}])[0]
+            self.operation = dict(kind=kind, model=payload.get('id') or payload.get('model') or first.get('id') or first.get('model'),
+                                  target=payload.get('target') or (row or {}).get('target', 'gpu'), stage='queued')
             self.task = asyncio.create_task(self._model_operation(kind, payload))
-        return self.status()
+        result = self.status()
+        if notice is not None:
+            result['load_advice_new'] = notice
+        return result
 
     async def _model_operation(self, kind, payload):
         try:
-            pending = asyncio.create_task(self.client.post(self.backend + '/worker/' + kind, json=payload))
+            if not self.backend or not self.process or self.process.poll() is not None:
+                await self._start_shared_worker()
+            endpoint = 'load-many' if kind == 'load' and 'models' in payload else kind
+            pending = asyncio.create_task(self.client.post(self.backend + '/worker/' + endpoint, json=payload))
             try:
                 response = await asyncio.wait_for(asyncio.shield(pending), self.load_timeout) if kind == 'load' else await pending
             except asyncio.TimeoutError:
@@ -420,6 +509,9 @@ class DaemonManager:
             raise
         except Exception as exc:
             self.error = str(exc)
+            if self.process is None or self.process.poll() is not None:
+                self.state = 'failed'
+                self.shared_worker = False
             await self.refresh()
         finally:
             self.operation = None

@@ -28,8 +28,9 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     registry = getattr(_app.state, 'registry', None)
     if registry is not None:
         try:
-            source, options = _app.state.initial_model
-            await registry.load(source, options)
+            if _app.state.initial_model is not None:
+                source, options = _app.state.initial_model
+                await registry.load(source, options)
             yield
         finally:
             await registry.close()
@@ -65,7 +66,7 @@ async def health() -> dict:
         if telemetry_enabled() and default and default.state and default.phase == 'ready':
             runtime = default.state.engine.engine.runtime_config
             telemetry['telemetry'] = model_snapshot(default.state, runtime.get('gpu_arch'))
-        return {"status": "failed" if registry.scheduler.failed else "ok", **snapshot, **telemetry}
+        return {"status": "failed" if snapshot['worker_error'] else "ok", **snapshot, **telemetry}
     return {"status": "ok", "runtime_config": getattr(serving().engine.engine, "runtime_config", None),
             **({"telemetry": model_snapshot(serving(), app.state.telemetry_arch)}
                if getattr(app.state, "telemetry_enabled", False) else {}),
@@ -102,7 +103,8 @@ async def start_profile() -> dict:
 async def stop_profile() -> dict:
     try:
         registry = getattr(app.state, "registry", None)
-        engine = registry.scheduler.profiler_owner if registry else serving().engine
+        engine = next((scheduler.profiler_owner for scheduler in registry.schedulers.values()
+                       if scheduler.profiler_owner is not None), None) if registry else serving().engine
         if engine is None:
             raise RuntimeError("no profile is running")
         out = await engine.stop_profile()
@@ -115,7 +117,8 @@ async def stop_profile() -> dict:
 async def models() -> dict:
     registry = getattr(app.state, 'registry', None)
     states = ([record.state for record in registry.records.values()
-               if record.phase == 'ready' and record.state and not record.state.engine.error and not registry.scheduler.failed]
+               if record.phase == 'ready' and record.state and not record.state.engine.error
+               and not registry.schedulers[record.target].failed]
               if registry else [serving()])
     rows = []
     for st in states:

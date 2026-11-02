@@ -11,12 +11,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 
 from .manager import DaemonManager
+from ..targets import Target
+from ..loading import LoadBatch
 
 
 class Load(BaseModel):
     model: str = Field(min_length=1)
     options: list[str] = Field(default_factory=list)
     force: bool = False
+    target: Target | None = None
 
 
 class AddModel(BaseModel):
@@ -24,6 +27,7 @@ class AddModel(BaseModel):
     model: str = Field(min_length=1)
     options: list[str] = Field(default_factory=list)
     id: str | None = Field(default=None, min_length=1, max_length=256)
+    target: Target | None = None
 
 
 class SelectModel(BaseModel):
@@ -160,9 +164,11 @@ def create_app(manager: DaemonManager):
         return await manager.refresh()
 
     @app.post('/daemon/models/load')
-    async def add_model(body: AddModel):
+    async def add_model(body: AddModel | LoadBatch):
         try:
-            return await manager.add_model(body.model, body.options, body.id)
+            if isinstance(body, LoadBatch):
+                return await manager.add_models([item.model_dump() for item in body.models])
+            return await manager.add_model(body.model, body.options, body.id, target=body.target)
         except ValueError as exc:
             raise HTTPException(409, str(exc))
 
@@ -183,7 +189,12 @@ def create_app(manager: DaemonManager):
     @app.post("/daemon/load")
     async def load(body: Load):
         try:
-            return await manager.switch(body.model, body.options, body.force)
+            options = list(body.options)
+            if body.target is not None:
+                from ..targets import resolve_target
+                target = resolve_target(options, body.target)
+                options.extend(['--target', target])
+            return await manager.switch(body.model, options, body.force)
         except ValueError as exc:
             raise HTTPException(409, str(exc))
 

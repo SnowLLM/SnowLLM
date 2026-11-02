@@ -10,8 +10,8 @@ from starlette.applications import Starlette
 from starlette.responses import StreamingResponse
 from starlette.routing import Route
 
-from snowllm.execution import ExecutionScheduler
-from snowllm.serve.registry import ModelRegistry
+from snowllm.execution import ExecutionScheduler, ModelExecutionContext
+from snowllm.serve.registry import ModelBackend, ModelRegistry
 from snowllm.serve.routing import ModelRouting
 from snowllm.serve.state import serving
 
@@ -23,7 +23,8 @@ class Stats:
 
 
 class FakeEngine:
-    def __init__(self):
+    def __init__(self, scheduler=None):
+        self.scheduler = scheduler
         self.context = SimpleNamespace(activate=lambda: None, snapshot=lambda: {})
         self.engine = SimpleNamespace(runtime_config={'model_path': '/models/fake'})
         self.error = None
@@ -45,11 +46,86 @@ class FakeEngine:
         self.busy = False
 
 
-def state(name):
-    return SimpleNamespace(model_name=name, aliases={name: object()}, engine=FakeEngine())
+def state(name, scheduler=None):
+    return SimpleNamespace(model_name=name, aliases={name: object()}, engine=FakeEngine(scheduler))
 
 
 class ExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_gpu_and_npu_run_in_parallel_but_each_target_serializes(self):
+        schedulers = [ExecutionScheduler(target) for target in ('gpu', 'npu')]
+        barrier = threading.Barrier(2, timeout=2)
+        finish = threading.Event()
+        entered = {target: threading.Event() for target in ('gpu', 'npu')}
+        events = []
+
+        def first(target):
+            entered[target].set()
+            barrier.wait()
+            finish.wait(3)
+            events.append(target)
+
+        jobs = [asyncio.create_task(scheduler.run(lambda s=scheduler: first(s.target)))
+                for scheduler in schedulers]
+        try:
+            async def started():
+                while not all(event.is_set() for event in entered.values()):
+                    await asyncio.sleep(0.001)
+            await asyncio.wait_for(started(), 2)
+            following = [asyncio.create_task(s.run(lambda s=s: events.append(s.target + '-next')))
+                         for s in schedulers]
+            jobs.extend(following)
+            await asyncio.sleep(0.01)
+            for scheduler in schedulers:
+                self.assertTrue(scheduler.snapshot()['running'])
+                self.assertEqual(scheduler.snapshot()['waiting'], 1)
+            self.assertEqual(events, [])
+            finish.set()
+            await asyncio.gather(*jobs)
+            for target in ('gpu', 'npu'):
+                self.assertLess(events.index(target), events.index(target + '-next'))
+        finally:
+            finish.set()
+            await asyncio.gather(*jobs, return_exceptions=True)
+            await asyncio.gather(*(s.close() for s in schedulers))
+
+    async def test_npu_context_does_not_import_gpu_modules(self):
+        from unittest.mock import patch
+        with patch.dict('sys.modules', {'torch': None, 'snowllm.ops': None, 'snowllm.trace': None}):
+            context = ModelExecutionContext(SimpleNamespace(runner=SimpleNamespace(model=object())), 'npu')
+            scheduler = ExecutionScheduler('npu')
+            try:
+                self.assertEqual(await scheduler.run(lambda: 42, context=context), 42)
+            finally:
+                await scheduler.close()
+
+    async def test_cancel_queued_npu_work_preserves_running_work_and_queue_count(self):
+        scheduler = ExecutionScheduler('npu')
+        entered, finish = threading.Event(), threading.Event()
+
+        def native():
+            entered.set()
+            finish.wait(3)
+
+        first = asyncio.create_task(scheduler.run(native))
+        try:
+            async def started():
+                while not entered.is_set():
+                    await asyncio.sleep(0.001)
+            await asyncio.wait_for(started(), 2)
+            pending = asyncio.create_task(scheduler.run(lambda: self.fail('cancelled work ran')))
+            await asyncio.sleep(0.01)
+            self.assertEqual(scheduler.snapshot()['waiting'], 1)
+            pending.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await pending
+            self.assertEqual(scheduler.snapshot()['waiting'], 0)
+            self.assertTrue(scheduler.snapshot()['running'])
+            self.assertFalse(first.done())
+        finally:
+            finish.set()
+            await first
+            await scheduler.close()
+
     async def test_round_robin_uses_one_thread_and_never_overlaps(self):
         scheduler = ExecutionScheduler()
         events, threads = [], set()
@@ -111,6 +187,97 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.registry.close()
+
+    def install_npu(self, build=None):
+        self.registry.backends['npu'] = ModelBackend(
+            build or (lambda source, options, model_id, *, scheduler: state(model_id or source, scheduler)),
+            lambda item: self.disposed.append('npu:' + item.model_name),
+        )
+
+    async def test_npu_unavailable_never_falls_back_to_gpu(self):
+        with self.assertRaisesRegex(ValueError, 'dedicated runtime'):
+            await self.registry.load('model.gguf', [], target='npu')
+        self.assertFalse(self.registry.records)
+        self.assertFalse(self.registry.snapshot()['queues']['npu']['available'])
+
+    async def test_worker_load_endpoint_routes_target_to_backend(self):
+        from fastapi import FastAPI
+        from snowllm.daemon.worker import configure
+
+        self.install_npu()
+        app = FastAPI()
+        configure(app, self.registry)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://worker') as client:
+            response = await client.post('/worker/load', json={'model': 'native-weights', 'id': 'n', 'target': 'npu'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['models'][0]['target'], 'npu')
+            self.assertEqual(response.json()['default_model'], 'n')
+            response = await client.post('/worker/load', json={
+                'model': 'b', 'target': 'npu', 'options': ['--target', 'gpu']})
+            self.assertEqual(response.status_code, 409)
+            response = await client.post('/worker/load', json={'model': 'b', 'target': 'cpu'})
+            self.assertEqual(response.status_code, 422)
+            response = await client.post('/worker/unload', json={'id': 'n'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self.disposed, ['npu:n'])
+
+    async def test_target_options_and_api_target_must_agree(self):
+        self.install_npu()
+        with self.assertRaisesRegex(ValueError, 'conflicts'):
+            await self.registry.load('a', ['--target', 'gpu'], target='npu')
+        await self.registry.load('a', ['--target=NPU'])
+        self.assertEqual(self.registry.records['a'].target, 'npu')
+        self.assertIs(self.registry.records['a'].state.engine.scheduler, self.registry.schedulers['npu'])
+        self.assertIsNone(self.registry.process_config)
+        await self.registry.unload('a')
+        self.assertEqual(self.disposed, ['npu:a'])
+
+    async def test_npu_lifecycle_does_not_wait_for_busy_gpu(self):
+        self.install_npu()
+        entered, finish = threading.Event(), threading.Event()
+
+        def gpu_work():
+            entered.set()
+            finish.wait(3)
+
+        work = asyncio.create_task(self.registry.scheduler.run(gpu_work))
+        try:
+            async def started():
+                while not entered.is_set():
+                    await asyncio.sleep(0.001)
+            await asyncio.wait_for(started(), 2)
+            await asyncio.wait_for(self.registry.load('npu-model', [], target='npu'), 1)
+            await asyncio.wait_for(self.registry.unload('npu-model'), 1)
+            self.assertFalse(work.done())
+            self.assertEqual(self.disposed, ['npu:npu-model'])
+        finally:
+            finish.set()
+            await work
+
+    async def test_device_failure_only_rejects_that_targets_models(self):
+        self.install_npu()
+        await self.registry.load('gpu-model', [])
+        await self.registry.load('npu-model', [], target='npu')
+
+        def fail():
+            raise RuntimeError('device lost')
+
+        for failed, healthy in (('gpu', 'npu'), ('npu', 'gpu')):
+            with self.subTest(target=failed):
+                scheduler = self.registry.schedulers[failed]
+                with self.assertRaisesRegex(RuntimeError, 'device lost'):
+                    await scheduler.run(fail)
+                snapshot = self.registry.snapshot()
+                self.assertIsNone(snapshot['worker_error'])
+                self.assertIn(failed, snapshot['target_errors'])
+                self.assertEqual({row['id']: row['state'] for row in snapshot['models']},
+                                 {failed + '-model': 'failed', healthy + '-model': 'ready'})
+                with self.assertRaises(RuntimeError):
+                    self.registry.acquire(failed + '-model')
+                record = self.registry.acquire(healthy + '-model')
+                record.active -= 1
+                self.assertEqual(await self.registry.schedulers[healthy].run(lambda: 42), 42)
+                scheduler.failed = None
 
     async def test_duplicate_names_failure_and_default_are_isolated(self):
         await self.registry.load('a', [])

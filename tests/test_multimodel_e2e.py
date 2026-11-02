@@ -83,7 +83,14 @@ async def main():
         try:
             await registry.load(str(paths[0]), options_a, "small")
             baseline_a = await generate("small")
+            original_workspace = registry.scheduler.workspace.nbytes
+            original_generation = registry.scheduler.workspace.generation
             await registry.load(str(paths[1]), options_b, "main")
+            a_runner, b_runner = (registry.records[name].state.engine.engine.runner for name in ('small', 'main'))
+            assert a_runner.arena.buf.data_ptr() == b_runner.arena.buf.data_ptr()
+            assert registry.scheduler.workspace.nbytes == max(a_runner.arena.required_bytes, b_runner.arena.required_bytes)
+            if b_runner.arena.required_bytes > original_workspace:
+                assert registry.scheduler.workspace.generation == original_generation + 1
             baseline_b = await generate("main")
             profiler = (
                 registry.records["small"].state.engine

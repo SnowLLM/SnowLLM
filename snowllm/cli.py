@@ -382,6 +382,8 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--model", dest="model_flag", metavar="PATH", help=argparse.SUPPRESS)
     g.add_argument("--bundle", action="store_true",
                    help="Use recipes bundled with this wheel (also available as b/RECIPE).")
+    g.add_argument('--target', type=str.lower, choices=('gpu', 'npu'), default='gpu',
+                   help='Execution device; NPU requires a dedicated backend and weights.')
     g.add_argument("--host", default="127.0.0.1", help="API listener address.")
     g.add_argument("--port", type=int, default=8000, help="API listener port.")
     g.add_argument("--served-model-name", action="append", metavar="NAME=FACTOR",
@@ -526,6 +528,9 @@ def prepare(argv, *, managed=False):
         p.print_help()
         return
     a = p.parse_args(argv)
+    if a.target == 'npu':
+        from .targets import NPU_UNAVAILABLE
+        p.error(NPU_UNAVAILABLE)
     from .capacity import MemoryBudget, placement_options
     from .errors import SnowLLMError
     def check_allocation(*, complete=True):
@@ -597,6 +602,9 @@ def prepare(argv, *, managed=False):
 
 
 def build_prepared(a, model, recipe, scheduler=None):
+    if getattr(a, 'target', 'gpu') != 'gpu':
+        from .targets import NPU_UNAVAILABLE
+        raise ValueError(NPU_UNAVAILABLE)
     mineru = None
     owns_scheduler = False
     if recipe and getattr(recipe, 'runtime', 'llm') == 'mineru':

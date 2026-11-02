@@ -45,9 +45,9 @@ def parser():
 def arguments(p, name):
     if name == "load":
         p.add_argument("--force", action="store_true", help="interrupt active requests")
-        p.add_argument("model")
+        p.add_argument("model", nargs='+', metavar='MODEL')
         p.add_argument("options", nargs=argparse.REMAINDER,
-                       help="inference options after MODEL, optionally separated by --")
+                       help="shared inference options after the model list, optionally separated by --")
     elif name == "unload":
         p.add_argument("--force", action="store_true")
     elif name == "logs":
@@ -62,6 +62,10 @@ def arguments(p, name):
 
 def main(argv):
     p = parser()
+    trailing = []
+    if '--' in argv and (argv[:1] == ['load'] or argv[:1] == ['webui'] and 'load' in argv):
+        index = argv.index('--')
+        argv, trailing = argv[:index], argv[index + 1:]
     a = p.parse_args(argv)
     action = a.action if a.command == "webui" else a.command
     if not 1 <= a.admin_port <= 65535:
@@ -108,8 +112,24 @@ def main(argv):
     method, endpoint, payload, params = "GET", action, None, None
     if action == "load":
         method = "POST"
-        options = a.options[1:] if a.options[:1] == ["--"] else a.options
-        payload = dict(model=a.model, options=options, force=a.force)
+        options = [*(a.options[1:] if a.options[:1] == ["--"] else a.options), *trailing]
+        from ..targets import resolve_target
+        entries = []
+        for source in a.model:
+            prefix, separator, path = source.partition(':')
+            target = prefix if separator and prefix in ('gpu', 'npu') else None
+            try:
+                selected = resolve_target(options, target)
+            except ValueError as exc:
+                p.error(str(exc))
+            entries.append(dict(model=path if target else source, options=list(options), target=selected))
+        if a.force:
+            if len(entries) != 1:
+                p.error('--force supports switching to one model; omit it for a batch load')
+            item = entries[0]
+            payload = dict(model=item['model'], options=item['options'], target=item['target'], force=True)
+        else:
+            endpoint, payload = 'models/load', dict(models=entries)
     elif action == "unload":
         method, params = "POST", {"force": str(a.force).lower()}
     elif action == "config":
@@ -127,6 +147,11 @@ def main(argv):
                                       json=payload, params=params)
             response.raise_for_status()
             result = response.json()
+        notice = result.pop('load_advice_new', None)
+        result.pop('load_advice', None)
+        if notice is not None:
+            print(f"snowllm: {notice['message']} {notice['url']} "
+                  '(hide with SNOWLLM_NO_LOAD_ADVICE=1)', file=sys.stderr)
         print(result["text"] if action == "logs" else json.dumps(result, indent=2, ensure_ascii=False))
         return 0
     except httpx.HTTPStatusError as exc:

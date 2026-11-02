@@ -112,8 +112,17 @@ async def main():
             await generate('small')
             await operation('/daemon/models/unload', {'id': 'small'})
             assert manager.process is None and manager.backend is None
+            await operation('/daemon/models/load', {'models': [
+                dict(model=str(path), id=name, options=options, target='gpu')
+                for path, name in zip(paths, ('small', 'main'))]})
+            assert len(manager.models) == 2, manager.read_log()
+            shared = manager.memory['shared_workspaces']
+            assert shared['gpu']['bytes'] > 0 and shared['npu']['bytes'] == 0, shared
+            await asyncio.gather(generate('small'), generate('main'))
+            await operation('/daemon/models/unload', {'id': 'small'})
+            await operation('/daemon/models/unload', {'id': 'main'})
             print(
-                'PASS: managed worker, two models, streaming proxy, labelled metrics, failed load isolation and final shutdown'
+                'PASS: managed worker, incremental and cold batch loading, shared workspace, streaming proxy, failed load isolation and final shutdown'
             )
         finally:
             await client.aclose()
