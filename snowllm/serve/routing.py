@@ -13,6 +13,13 @@ class ModelRouting:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
+        if (state := scope.get('snowllm.internal_state')) is not None:
+            # Internal model calls remain covered by the document request's lease while draining.
+            token = _REQUEST_STATE.set(state)
+            try:
+                return await self.app(scope, receive, send)
+            finally:
+                _REQUEST_STATE.reset(token)
         registry = getattr(scope['app'].state, 'registry', None)
         path = scope['path']
         if registry is None or not path.startswith('/v1/') or path == '/v1/models':

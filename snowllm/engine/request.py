@@ -20,6 +20,7 @@ class SamplingParams:
     presence_penalty: float = 0.0
     frequency_penalty: float = 0.0
     repetition_penalty: float = 1.0
+    no_repeat_ngram_size: int = 0
 
     def penalized(self) -> bool:
         return bool(self.presence_penalty or self.frequency_penalty

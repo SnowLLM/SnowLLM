@@ -32,7 +32,7 @@ jobs:
         run: python -m pip install --upgrade pip packaging fastapi httpx uvicorn
 
       - name: Update checker, management API and installer
-        run: scripts/run-tests.sh test_updates test_daemon test_install_channels test_install_targets
+        run: scripts/run-tests.sh test_updates test_daemon test_install_channels test_install_targets test_mineru.py test_miopen_loader
 
       - name: Web UI and install selector
         run: node --test tests/test_webui.mjs tests/test_install_ui.mjs

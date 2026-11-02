@@ -100,6 +100,9 @@ class Source:
 class Recipe:
     def __init__(self, raw: dict, *, bundle: bool = False) -> None:
         self.raw = raw
+        self.runtime = raw.get('runtime', 'llm')
+        if self.runtime not in ('llm', 'mineru'):
+            raise SnowLLMError(f'unsupported recipe runtime: {self.runtime!r}')
         self.bundle = bundle
         self.id = raw["id"]
         self.serve_as = raw.get("serve_as", "")
@@ -370,11 +373,27 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "defaults": recipe.defaults,
         "status": recipe.status,
         "requires": recipe.requires,
+        "runtime": recipe.runtime,
+        "source_digest": source_digest(recipe),
         "fetched": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "bytes": sum(b.size for b in blobs),
         "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
                   for b in blobs],
     }, indent=2) + "\n")
+
+
+def source_digest(recipe):
+    sources = [vars(source) for source in recipe.sources]
+    return hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
+
+
+def complete(recipe, dest):
+    saved = manifest(recipe, dest)
+    return bool(saved and saved.get('source_digest') == source_digest(recipe)
+                and saved.get('files') and all(
+                    under(dest, entry['path']).is_file()
+                    and under(dest, entry['path']).stat().st_size == entry['size']
+                    for entry in saved['files']))
 
 
 def plan(blobs: list[Blob], dest: pathlib.Path) -> list[tuple[str, str, int, int]]:
@@ -658,6 +677,11 @@ def locate(name: str, *, bundle: bool = False) -> tuple[pathlib.Path, "Recipe | 
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
     dest = installed(recipe, root)
+    if recipe.runtime == 'mineru':
+        dest = recipe.path(root)
+        if not complete(recipe, dest):
+            pull(recipe, dest)
+        return dest, recipe
     if dest is not None:
         if unfetched(recipe, dest):
             short = shortfall(recipe, dest)

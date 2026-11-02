@@ -46,6 +46,8 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="SnowLLM", lifespan=_lifespan)
 from .routing import ModelRouting
 app.add_middleware(ModelRouting)
+from ..mineru.api import configure as configure_mineru
+configure_mineru(app)
 
 
 @app.exception_handler(TemplateError)

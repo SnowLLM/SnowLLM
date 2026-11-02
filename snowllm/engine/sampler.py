@@ -9,6 +9,7 @@ import torch
 from .. import ops
 from ..trace import span
 from ..errors import SnowLLMError
+from ..ngram import banned_ngram_tokens
 from ..ops.sampling import penalties, probabilities, sample_workspace_bytes
 from .host_io import HostArena, MappedBuffer
 from .request import Request
@@ -55,6 +56,7 @@ class Sampler:
         self._penalty_slab.reserve(self._penalty_id_bytes+rows*limit*4,exact=True)
         self._penalty_ids = self._penalty_slab.device[:self._penalty_id_bytes].view(torch.int64).view(requests,limit)
         self._penalty_counts = self._penalty_slab.device[self._penalty_id_bytes:].view(torch.int32).view(rows,limit)
+        self._ngram_slab = None
 
     def reserve_device(self, rows, vocab, *, arena=None):
         self.uniforms = torch.empty(rows,dtype=torch.float32,device="cuda")
@@ -89,6 +91,8 @@ class Sampler:
             try:
                 if any(r.params.penalized() for r in rows):
                     self._penalize(logits,rows,prepared=True)
+                if any(r.params.no_repeat_ngram_size for r in rows):
+                    self._mask_ngrams(logits, rows)
                 if all(r.params.temperature<=0 for r in rows):
                     return ops.argmax(logits,out=out)
                 k, top_p, temp, width = self._parameters(rows, logits.shape[1])
@@ -103,6 +107,8 @@ class Sampler:
         with self.inputs.reading(reuse=True):
             if any(r.params.penalized() for r in rows):
                 self._penalize(logits, rows, prepared=True)
+            if any(r.params.no_repeat_ngram_size for r in rows):
+                self._mask_ngrams(logits, rows)
             top_k, top_p, temp, width = self._parameters(rows, logits.shape[1])
             n = len(rows) * width
             values, ids = out[:n].view(-1, width), indices[:n].view(-1, width)
@@ -145,6 +151,30 @@ class Sampler:
         finally:
             if not prepared:
                 self.inputs.used()
+
+    def _mask_ngrams(self, logits, rows):
+        if self._ngram_slab is None:
+            self._ngram_slab = MappedBuffer(torch.int64)
+            self._ngram_slab.reserve(self._penalty_rows * self._penalty_limit, exact=True)
+        depths = Counter()
+        for row, request in enumerate(rows):
+            size = request.params.no_repeat_ngram_size
+            depth = depths[id(request)]
+            depths[id(request)] += 1
+            if not size:
+                continue
+            tokens = request.tokens + request.drafts[:depth]
+            banned = banned_ngram_tokens(tokens, size)
+            if not banned:
+                continue
+            if len(banned) > self._penalty_limit:
+                raise SnowLLMError('n-gram token capacity exceeded')
+            values = array.array('q', banned)
+            offset = row * self._penalty_limit
+            ctypes.memmove(self._ngram_slab.host.data_ptr() + offset * 8,
+                           values.buffer_info()[0], len(values) * 8)
+            logits[row].index_fill_(0, self._ngram_slab.device[offset:offset + len(values)],
+                                    float('-inf'))
 
     def _penalty_write(self, values, code, offset):
         if len(values)>self._penalty_limit:

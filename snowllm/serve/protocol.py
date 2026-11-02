@@ -10,6 +10,11 @@ class StreamOptions(BaseModel):
     include_usage: bool = False
 
 
+class VllmOptions(BaseModel):
+    no_repeat_ngram_size: int = Field(0, ge=0, le=1024)
+    debug: bool = False
+
+
 class Common(BaseModel):
     model: str | None = None
     max_tokens: int | None = Field(None, ge=1)
@@ -25,6 +30,8 @@ class Common(BaseModel):
     seed: int | None = None
     n: int | None = None
     logprobs: bool | int | None = None
+    skip_special_tokens: bool = False
+    vllm_xargs: VllmOptions | None = None
 
     @model_validator(mode="before")
     @classmethod

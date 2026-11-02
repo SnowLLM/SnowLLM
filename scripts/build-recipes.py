@@ -53,7 +53,7 @@ def needs_newer(r: dict) -> bool:
 
 REQUIRED = ("id", "model", "precision", "dir", "repo")
 OPTIONAL = ("revision", "include", "exclude", "bytes", "priority", "requires", "summary", "note",
-            "files", "sources", "defaults", "serve_as", "spec", "status", "family", "modalities")
+            "files", "sources", "defaults", "serve_as", "spec", "status", "family", "modalities", "runtime")
 LISTS = ("include", "exclude")
 SOURCE_FIELDS = ("repo", "revision", "include", "exclude", "subdir")
 
@@ -101,6 +101,8 @@ def load(path: pathlib.Path) -> dict | None:
         complain(path, "status must be 'supported' or 'coming soon'")
     if "family" in r and not (isinstance(r["family"], str) and r["family"].strip()):
         complain(path, "family must be a nonempty string")
+    if r.get('runtime', 'llm') not in ('llm', 'mineru'):
+        complain(path, 'runtime must be llm or mineru')
     if "modalities" in r and not (isinstance(r["modalities"], list) and r["modalities"]
                                   and all(m in ("text", "image", "audio", "video") for m in r["modalities"])
                                   and len(set(r["modalities"])) == len(r["modalities"])):

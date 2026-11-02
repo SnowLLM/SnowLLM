@@ -1,0 +1,32 @@
+{
+  "id": "mineru",
+  "model": "MinerU",
+  "serve_as": "MinerU",
+  "runtime": "mineru",
+  "requires": "0.3.22",
+  "family": "MinerU",
+  "modalities": ["text", "image"],
+  "precision": "BF16 + original auxiliary weights",
+  "dir": "MinerU-4.1",
+  "bytes": 3222892908,
+  "repo": "opendatalab/MinerU2.5-Pro-2605-1.2B",
+  "revision": "08aaea840498d49ce16247b6263196cf02814885",
+  "include": ["*.json", "*.jinja", "*.txt", "*.safetensors"],
+  "sources": [
+    {
+      "repo": "opendatalab/MinerU-4_models_torch",
+      "revision": "2b3afb86f4d23fa623f6b2f4b2279ed4ef93a89d",
+      "subdir": "small-models",
+      "include": ["Layout/*", "MFR/*", "OCR/*", "Table/*"]
+    }
+  ],
+  "spec": "none",
+  "status": "supported",
+  "summary": "MinerU document parsing with the vision model and the complete auxiliary model bundle.",
+  "defaults": {
+    "num_spec": 0,
+    "max_model_len": 8192,
+    "max_num_seqs": 1,
+    "max_num_batched_tokens": 512
+  }
+}

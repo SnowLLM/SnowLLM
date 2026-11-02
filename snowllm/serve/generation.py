@@ -28,6 +28,8 @@ async def prepare_prompt(function, messages):
     images = any(part.get('type') in ('image', 'image_url')
                  for content in contents if isinstance(content, list) for part in content if isinstance(part, dict))
     if images and getattr(state, 'processor', None) is not None and state.engine.scheduler is not None:
+        if (runtime := getattr(state.engine, 'mineru', None)) is not None:
+            return await state.engine.call(lambda: runtime.gpu_call(function))
         return await state.engine.call(function)
     return function()
 
@@ -77,6 +79,7 @@ def params(req: Common, want: int) -> SamplingParams:
         presence_penalty=req.presence_penalty,
         frequency_penalty=req.frequency_penalty,
         repetition_penalty=req.repetition_penalty,
+        no_repeat_ngram_size=req.vllm_xargs.no_repeat_ngram_size if req.vllm_xargs else 0,
     )
 
 
@@ -191,7 +194,7 @@ async def _run(prompt: list[int], req: Common,
         if t in stop_ids:
             continue
         out.append(t)
-        text = tok.decode(out)
+        text = tok.decode(out, skip_special_tokens=True) if req.skip_special_tokens else tok.decode(out)
         if text.endswith("�"):
             continue
         cut, hit = _cut(text, at)

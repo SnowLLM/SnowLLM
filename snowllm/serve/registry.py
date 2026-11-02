@@ -220,6 +220,11 @@ class ModelRegistry:
             p, args, path, recipe = cli.prepare([source, *options], managed=True)
         except SystemExit as exc:
             raise ValueError('invalid model load options') from exc
+        if recipe and getattr(recipe, 'runtime', 'llm') == 'mineru' and any(
+            item.state and getattr(item.state.engine, 'mineru', None) is not None
+            for item in self.records.values()
+        ):
+            raise ValueError('this worker already has a MinerU pipeline loaded')
         if self.process_config is not None:
             shared = self.process_config['budget']
             flags = {value.split('=', 1)[0] for value in options}
@@ -321,6 +326,8 @@ class ModelRegistry:
 
         engine = state.engine.engine
         torch.cuda.current_stream().synchronize()
+        if getattr(state.engine, 'mineru', None) is not None:
+            state.engine.mineru.close()
         if hasattr(engine.runner, '_discard_pools'):
             engine.runner._discard_pools()
         for obj in (engine, state.engine):

@@ -40,6 +40,8 @@ class AsyncEngine:
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
+        if getattr(self, 'mineru', None) is not None and self.mineru.loop is None:
+            self.mineru.start()
         if self.scheduler is None or self._task is None:
             self._task = asyncio.create_task(self._run())
 
@@ -88,6 +90,8 @@ class AsyncEngine:
         return str(self.profile_dir)
 
     async def close(self) -> None:
+        if getattr(self, 'mineru', None) is not None:
+            await self.mineru.aclose()
         if self._task:
             self._task.cancel()
             try:
@@ -100,6 +104,10 @@ class AsyncEngine:
         if self._profiler is not None:
             await self.stop_profile()
         self._fail_all()
+        if getattr(self, 'mineru', None) is not None:
+            await self.call(self.mineru.close)
+        if getattr(self, '_owns_scheduler', False):
+            await self.scheduler.close()
 
     async def call(self, function):
         if self.scheduler is None:
@@ -112,6 +120,8 @@ class AsyncEngine:
 
     def cancel_all(self):
         self.accepting = False
+        if getattr(self, 'mineru', None) is not None:
+            self.mineru.cancel()
         for request in list(self._live):
             self.abort(request)
 

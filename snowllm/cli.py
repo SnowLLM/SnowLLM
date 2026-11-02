@@ -218,7 +218,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
             prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
             account=exact_stats or stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
             gpu_memory_utilization=kv['util'],
-            prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft)
+            prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft,
+            defer_capture=getattr(scheduler, 'defer_capture', False))
     from ._platform import device_mem_info
     release_device_cache()
     free, total = device_mem_info()
@@ -281,7 +282,9 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  dspark_adaptive=dspark_adaptive,
                                  enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
-    _log(f"decode graphs: {engine.graph_sizes or 'off (eager)'} "
+    graph_status = ('pending shared workspace initialization' if getattr(scheduler, 'defer_capture', False)
+                    and not enforce_eager else engine.graph_sizes or 'off (eager)')
+    _log(f"decode graphs: {graph_status} "
          f"(engine init + capture {time.time() - t1:.1f}s total)")
 
     orig_max = engine._rope_orig_max
@@ -492,6 +495,8 @@ def _equivalent_command(p, a, model, recipe):
     important = set(recipe.defaults) | {'max_model_len', 'max_num_seqs',
         'max_num_batched_tokens', 'num_spec', 'kv_cache_dtype', 'prefix_memory_ratio'}
     command = ['snowllm', str(pathlib.Path(model).resolve())]
+    if getattr(recipe, 'runtime', 'llm') == 'mineru':
+        command[1] = ('b/' if recipe.bundle else '') + recipe.id
     for action in p._actions:
         if not action.option_strings or action.dest in (
                 'model_flag', 'bundle', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
@@ -592,6 +597,37 @@ def prepare(argv, *, managed=False):
 
 
 def build_prepared(a, model, recipe, scheduler=None):
+    mineru = None
+    owns_scheduler = False
+    if recipe and getattr(recipe, 'runtime', 'llm') == 'mineru':
+        if a.host_alloc or a.host_offload or a.offload_ratio or a.device_map not in ('', 'off'):
+            raise ValueError('MinerU recipe uses GPU memory for all models')
+        from .mineru.runtime import MinerURuntime
+        from .capacity import MemoryBudget
+        a.device_map = 'off'
+        if scheduler is None:
+            from .execution import ExecutionScheduler
+            scheduler = ExecutionScheduler()
+            owns_scheduler = True
+        limits = MemoryBudget(a.max_gpu_mem_util, a.max_host_mem_util, a.max_host_mem_gib,
+                              max_gpu_mem_gib=a.max_gpu_mem_gib)
+    try:
+        if recipe and getattr(recipe, 'runtime', 'llm') == 'mineru':
+            mineru = MinerURuntime(model, limits, enforce_eager=a.enforce_eager)
+        state = _build_prepared(a, model, recipe, scheduler)
+        if mineru is not None:
+            mineru.bind(state)
+            state.engine._owns_scheduler = owns_scheduler
+        return state
+    except BaseException:
+        if mineru is not None:
+            mineru.close()
+        if owns_scheduler:
+            scheduler._worker.shutdown(wait=True)
+        raise
+
+
+def _build_prepared(a, model, recipe, scheduler=None):
     return build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
               default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
               stats_interval=a.stats_interval, exact_stats=a.stats_exact,
