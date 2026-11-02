@@ -10,6 +10,7 @@ let status = null, recipes = [], localModels = [], source = 'recipe', page = 'wo
 let bundleCatalog = false;
 let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
 let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit = null;
+let documentParsing = false, documentFilename = 'document';
 let catalogRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
@@ -18,7 +19,10 @@ let modelSignature = '', aliasRequest = 0;
 let preferredThinkingLevel = '';
 let conversation = [];
 let sessions = [], sessionId = crypto.randomUUID(), loadSettings = {};
-const loadFieldIds = ['load-id', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
+const loadFieldIds = ['load-id', 'load-target', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
+let pendingLoads = [];
+let seenLoadAdvice = null;
+try { seenLoadAdvice = sessionStorage.getItem('snowllm.load-advice'); } catch {}
 try { loadSettings = JSON.parse(localStorage.getItem('snowllm.load-settings') || '{}'); if (!loadSettings || Array.isArray(loadSettings) || typeof loadSettings !== 'object') loadSettings = {}; } catch {}
 try {
   const saved = JSON.parse(localStorage.getItem('snowllm.conversation') || '{}');
@@ -44,6 +48,40 @@ function saveLoadSettings(notify = true) {
 function restoreLoadSettings() {
   const saved = loadSettings[loadKey()] || {};
   for (const id of loadFieldIds) $(id).value = typeof saved[id] === 'string' ? saved[id] : '';
+  if (!['gpu', 'npu'].includes($('load-target').value)) $('load-target').value = 'gpu';
+  updateTargetSettings();
+}
+function updateTargetSettings() {
+  const npu = $('load-target').value === 'npu';
+  $('npu-load-hint').hidden = !npu;
+  for (const id of ['context-length', 'gpu-budget', 'spec-depth', 'kv-type']) $(id).disabled = npu;
+}
+function modelLoadRequest() {
+  const model = (source === 'recipe' ? $('load-recipe').value : $('load-path').value).trim();
+  if (!model) throw new Error(t('Choose a recipe or enter a checkpoint directory.'));
+  const options = [];
+  for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if (!$(id).disabled && $(id).value.trim()) options.push(flag, $(id).value.trim());
+  options.push(...parseOptions($('extra-options').value));
+  return {model, options, target: $('load-target').value, id: $('load-id').value.trim() || null};
+}
+function renderPendingLoads() {
+  const list = $('pending-loads'); list.replaceChildren();
+  for (const [index, item] of pendingLoads.entries()) {
+    const row = element('div', 'input-action');
+    const remove = element('button', 'button secondary', t('Remove'));
+    remove.type = 'button';
+    remove.addEventListener('click', () => { pendingLoads.splice(index, 1); renderPendingLoads(); });
+    row.append(element('span', 'field-hint', `${item.id || item.model} · ${item.target.toUpperCase()}`), remove);
+    list.append(row);
+  }
+  $('load-batch-button').disabled = !pendingLoads.length || Boolean(status?.operation);
+}
+function renderLoadAdvice(notice) {
+  if (!notice || seenLoadAdvice === notice.id) return;
+  seenLoadAdvice = notice.id;
+  try { sessionStorage.setItem('snowllm.load-advice', notice.id); } catch {}
+  $('load-advice-link').href = notice.url;
+  $('load-advice').hidden = false;
 }
 function renderSessions() {
   $('chat-session').replaceChildren(...sessions.map(item => new Option(item.title || t('New conversation'), item.id)));
@@ -111,16 +149,18 @@ async function action(button, task) {
 }
 function navigate() {
   const next = location.hash.slice(1);
-  page = ['workspace', 'models', 'chat', 'settings'].includes(next) ? next : 'workspace';
-  for (const name of ['workspace', 'models', 'chat', 'settings']) $('page-' + name).hidden = name !== page;
+  page = ['workspace', 'models', 'chat', 'documents', 'settings'].includes(next) ? next : 'workspace';
+  for (const name of ['workspace', 'models', 'chat', 'documents', 'settings']) $('page-' + name).hidden = name !== page;
   document.querySelectorAll('nav a').forEach(link => { link.classList.toggle('active', link.dataset.page === page); if (link.dataset.page === page) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
-  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), settings: t("Settings") }[page];
+  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), documents: t('Documents'), settings: t("Settings") }[page];
   if (page === 'workspace') refreshLogs().catch(error => toast(error.message));
   if (page === 'settings') storageSpace();
 }
 function controls() {
   const online = !$('connection-banner').hidden ? false : Boolean(status);
   $('load-button').disabled = !online || transition();
+  $('load-batch-button').disabled = !online || transition() || !pendingLoads.length;
+  $('queue-load-model').disabled = !online;
   $('unload-button').disabled = !online || transition() || !status?.model;
   $('send-chat').disabled = !online || !chatModelReady() || Boolean(chatController);
   $('chat-model').disabled = Boolean(chatController);
@@ -189,14 +229,21 @@ function renderChatModels() {
 function renderResidentModels(next) {
   const operation = next.operation;
   $('model-operation').textContent = !operation ? '' : operation.kind === 'load'
-    ? next.cancel_requested ? t('Cancelling after the current build finishes.') : t('Loading {0}. GPU inference resumes after initialization.', operation.model)
+    ? next.cancel_requested ? t('Cancelling after the current build finishes.') : t('Loading {0} on {1}. Inference on this target resumes after initialization.', operation.model, (operation.target || 'gpu').toUpperCase())
     : t('Unloading {0}.', operation.model);
+  const queues = $('execution-queues'); queues.replaceChildren();
+  for (const target of ['gpu', 'npu']) {
+    const queue = next.queues?.[target];
+    const detail = queue?.error || (queue?.available === false || !queue && target === 'npu' ? t('Backend not configured')
+      : t('Running {0} · Queued {1}', queue?.running ? 1 : 0, queue?.waiting || 0));
+    queues.append(element('p', 'field-hint', `${target.toUpperCase()} · ${detail}`));
+  }
   const list = $('resident-models'); list.replaceChildren();
   if (!next.models?.length) list.append(element('p', 'muted', t('None loaded')));
   for (const row of next.models || []) {
     const card = element('section', 'resident-model');
     const title = element('div', 'resident-model-title');
-    title.append(element('strong', '', row.id), element('span', 'muted', `${stateLabels()[row.state] || t(row.state)}${next.default_model === row.id ? ` · ${t('Default model')}` : ''}`));
+    title.append(element('strong', '', row.id), element('span', 'muted', `${(row.target || 'gpu').toUpperCase()} · ${stateLabels()[row.state] || t(row.state)}${next.default_model === row.id ? ` · ${t('Default model')}` : ''}`));
     card.append(title, element('p', 'field-hint', row.source));
     if (row.engine) card.append(element('p', 'field-hint', t('Running {0} · Queued {1} · Tensors {2} · Scheduler wait {3} s', row.engine.running, row.engine.waiting, bytes(row.memory?.total), (row.scheduling?.wait_seconds || 0).toFixed(2))));
     if (row.error) card.append(element('p', 'message-error', row.error));
@@ -209,12 +256,19 @@ function renderResidentModels(next) {
     unload.addEventListener('click', () => action(unload, async () => renderStatus(await post('/daemon/models/unload', {id: row.id, force: $('force-switch').checked}))));
     buttons.append(use, unload); card.append(buttons); list.append(card);
   }
+  const selected = $('document-model').value;
+  const documents = (next.models || []).filter(row => row.state === 'ready' && row.runtime_config?.runtime === 'mineru');
+  $('document-model').replaceChildren(...documents.map(row => new Option(row.id, row.id)));
+  if (documents.some(row => row.id === selected)) $('document-model').value = selected;
+  $('parse-document').disabled = !documents.length || documentParsing;
 }
 function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
   status = next;
   renderUpdate(next.update);
+  renderLoadAdvice(next.load_advice);
+  renderPendingLoads();
   renderResidentModels(next);
   renderEffectiveSettings(next);
   const inferenceUrl = `${next.inference_url}/v1`;
@@ -400,6 +454,15 @@ function renderRecipes() {
     const footer = element('div', 'recipe-footer');
     footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
     const buttons = element('div', 'download-actions');
+    if (recipe.runtime === 'mineru' && recipe.servable) {
+      const start = element('button', 'button primary', t('Start MinerU'));
+      start.disabled = transition() || (status?.models || []).some(row => row.runtime_config?.runtime === 'mineru' && row.state !== 'failed');
+      start.addEventListener('click', () => action(start, async () => {
+        renderStatus(await post('/daemon/models/load', {model: recipe.id, options: []}));
+        location.hash = 'documents';
+      }));
+      buttons.append(start);
+    }
     if (recipe.loadable && recipe.servable) {
       const use = element('button', 'button secondary', t("Configure & load")); use.dataset.use = recipe.id;
       use.addEventListener('click', () => { chooseSource('recipe'); $('load-recipe').value = recipe.id; restoreLoadSettings(); recipeDescription(); location.hash = 'workspace'; $('load-recipe').focus(); }); buttons.append(use);
@@ -602,9 +665,26 @@ document.querySelectorAll('[data-source]').forEach(button => button.addEventList
 $('load-recipe').addEventListener('change', () => { restoreLoadSettings(); recipeDescription(); });
 $('load-path').addEventListener('change', restoreLoadSettings);
 $('save-load-settings').addEventListener('click', () => saveLoadSettings());
-$('reset-load-settings').addEventListener('click', () => { for (const id of loadFieldIds) $(id).value = ''; saveLoadSettings(); });
+$('reset-load-settings').addEventListener('click', () => { for (const id of loadFieldIds) $(id).value = ''; $('load-target').value = 'gpu'; updateTargetSettings(); saveLoadSettings(); });
+$('load-target').addEventListener('change', updateTargetSettings);
 $('cancel-load').addEventListener('click', () => action($('cancel-load'), async () => { renderStatus(await post('/daemon/load/cancel')); toast(t('Load cancellation requested')); }));
-$('retry-load').addEventListener('click', () => action($('retry-load'), async () => { const {model, options, id} = status.last_load; renderStatus(await post('/daemon/models/load', {model, options, id})); }));
+$('retry-load').addEventListener('click', () => action($('retry-load'), async () => {
+  const {model, options, id, target, models} = status.last_load;
+  const remaining = models?.filter(item => !(status.models || []).some(row => row.state === 'ready'
+    && (item.id ? row.id === item.id : row.source === item.model && (!item.target || row.target === item.target))));
+  if (remaining && !remaining.length) throw new Error(t('All listed models are already loaded.'));
+  renderStatus(await post('/daemon/models/load', remaining ? {models: remaining} : {model, options, id, target}));
+}));
+$('dismiss-load-advice').addEventListener('click', () => { $('load-advice').hidden = true; });
+$('queue-load-model').addEventListener('click', () => {
+  try { const item = modelLoadRequest(); pendingLoads.push(item); saveLoadSettings(false); renderPendingLoads(); }
+  catch (error) { toast(error.message); }
+});
+$('load-batch-button').addEventListener('click', () => action($('load-batch-button'), async () => {
+  const result = await post('/daemon/models/load', {models: pendingLoads});
+  pendingLoads = []; renderStatus(result); renderPendingLoads();
+  toast(t('Model load requested'));
+}));
 $('local-model').addEventListener('change', () => { if ($('local-model').value) { $('load-path').value = $('local-model').value; restoreLoadSettings(); } });
 $('model-search').addEventListener('input', renderRecipes); $('installed-only').addEventListener('change', renderRecipes);
 $('refresh-state').addEventListener('click', () => action($('refresh-state'), refreshStatus));
@@ -626,13 +706,9 @@ $('adjust-load-settings').addEventListener('click', () => {
 $('load-error-logs').addEventListener('click', () => action($('load-error-logs'), () => showLogs('inference')));
 $('load-form').addEventListener('submit', (event) => {
   event.preventDefault(); action($('load-button'), async () => {
-    const model = (source === 'recipe' ? $('load-recipe').value : $('load-path').value).trim();
-    if (!model) throw new Error(t("Choose a recipe or enter a checkpoint directory."));
-    const options = [];
-    for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if ($(id).value.trim()) options.push(flag, $(id).value.trim());
-    options.push(...parseOptions($('extra-options').value));
+    const payload = modelLoadRequest();
     saveLoadSettings(false);
-    const result = await post('/daemon/models/load', { model, options, id: $('load-id').value.trim() || null }); renderStatus(result);
+    const result = await post('/daemon/models/load', payload); renderStatus(result);
     $('load-feedback').textContent = t("Model load requested. Watch model status for progress."); toast(t("Model load requested"));
   });
 });
@@ -662,6 +738,33 @@ $('export-chat').addEventListener('click', () => {
   const text = conversation.map(message => `${message.role === 'user' ? 'User' : 'SnowLLM'}\n\n${message.reasoning ? `[Thinking]\n${message.reasoning}\n\n` : ''}${message.content}`).join('\n\n---\n\n');
   const url = URL.createObjectURL(new Blob([text], {type: 'text/plain;charset=utf-8'}));
   const link = element('a'); link.href = url; link.download = `snowllm-chat-${new Date().toISOString().slice(0, 10)}.txt`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+$('document-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const file = $('document-file').files[0];
+  if (!file || documentParsing || !$('document-model').value) return;
+  documentParsing = true; $('parse-document').disabled = true;
+  $('document-status').textContent = t('Parsing document…');
+  try {
+    const encoded = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1]);
+      reader.onerror = () => reject(new Error(t('Could not read the document.')));
+      reader.readAsDataURL(file);
+    });
+    const result = await post('/daemon/inference/documents/parse', { model: $('document-model').value,
+      filename: file.name, file: encoded, tier: $('document-tier').value, page_range: $('document-pages').value.trim() });
+    $('document-result').value = result.markdown;
+    documentFilename = file.name.replace(/\.[^.]+$/, '') || 'document';
+    $('download-document').disabled = false;
+    $('document-status').textContent = t('Document parsed');
+  } catch (error) { $('document-status').textContent = error.message; }
+  finally { documentParsing = false; $('parse-document').disabled = !$('document-model').value; }
+});
+$('download-document').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([$('document-result').value], {type: 'text/markdown;charset=utf-8'}));
+  const link = document.createElement('a'); link.href = url; link.download = documentFilename + '.md'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 $('regenerate-chat').addEventListener('click', () => {
   if (chatController || status?.state !== 'ready' || conversation.at(-1)?.role !== 'assistant' || conversation.at(-2)?.role !== 'user') return;

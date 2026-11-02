@@ -24,6 +24,7 @@ async def main():
         dict(
             id=name,
             source='/models/' + name,
+            target='gpu' if name == 'a' else 'npu',
             state='ready',
             instance=name,
             aliases=[name],
@@ -33,6 +34,10 @@ async def main():
         )
         for name in ('a', 'b')
     ]
+    manager.queues = {target: dict(available=True, running=False, waiting=0)
+                      for target in ('gpu', 'npu')}
+    manager.load_advice = dict(id='browser-startup', message='batch loading advice',
+                              url='https://snowllm.dev/docs/webui#loading-multiple-models')
     done = threading.Event()
     sent = []
     app = FastAPI()
@@ -62,18 +67,24 @@ async def main():
         if path == 'models/default':
             manager.default_model = manager.model = (await request.json())['id']
             return manager.status()
+        if path == 'inference/documents/parse':
+            body = await request.json()
+            sent.append(body)
+            return {'model': body['model'], 'markdown': 'GPU document result', 'document': {}}
         if path == 'models/load':
             body = await request.json()
             sent.append(body)
-            manager.models.append(
-                dict(
-                    id=body['id'],
-                    source=body['model'],
-                    state='ready',
-                    instance=body['id'],
-                    aliases=[body['id']],
+            for item in body.get('models', [body]):
+                manager.models.append(
+                    dict(
+                        id=item['id'],
+                        source=item['model'],
+                        target=item.get('target', 'gpu'),
+                        state='ready',
+                        instance=item['id'],
+                        aliases=[item['id']],
+                    )
                 )
-            )
             return manager.status()
         if path == 'inference/chat/completions':
             body = await request.json()
@@ -127,6 +138,15 @@ async def main():
             await page.wait_for_function(
                 "document.querySelectorAll('.resident-model').length === 2"
             )
+            assert await page.locator('#load-advice').is_visible()
+            assert await page.locator('#load-advice-link').get_attribute('href') == manager.load_advice['url']
+            await page.locator('#dismiss-load-advice').click()
+            await page.reload()
+            await page.wait_for_function("document.querySelectorAll('.resident-model').length === 2")
+            assert not await page.locator('#load-advice').is_visible()
+            assert 'GPU' in await page.locator('.resident-model').nth(0).inner_text()
+            assert 'NPU' in await page.locator('.resident-model').nth(1).inner_text()
+            assert 'NPU' in await page.locator('#execution-queues').inner_text()
             await page.locator('nav [data-page="settings"]').click()
             await page.select_option('#language', 'zh_CN')
             assert '已加载模型' in await page.locator('.resident-panel').inner_text()
@@ -135,11 +155,29 @@ async def main():
             await page.locator('[data-source="path"]').click()
             await page.locator('#load-path').fill('/models/third')
             await page.locator('#load-id').fill('third')
+            assert await page.locator('#load-target').input_value() == 'gpu'
+            await page.select_option('#load-target', 'npu')
+            assert await page.locator('#npu-load-hint').is_visible()
+            assert await page.locator('#gpu-budget').is_disabled()
             await page.locator('#load-button').click()
             await page.wait_for_function(
                 "document.querySelectorAll('.resident-model').length === 3"
             )
             assert sent[0]['id'] == 'third' and sent[0]['model'] == '/models/third'
+            assert sent[0]['target'] == 'npu'
+            await page.select_option('#load-target', 'gpu')
+            await page.locator('#load-path').dispatch_event('change')
+            assert await page.locator('#load-target').input_value() == 'npu'
+            for model_id, target in (('fourth', 'gpu'), ('fifth', 'npu')):
+                await page.locator('#load-path').fill('/models/' + model_id)
+                await page.locator('#load-id').fill(model_id)
+                await page.select_option('#load-target', target)
+                await page.locator('#queue-load-model').click()
+            assert await page.locator('#pending-loads > div').count() == 2
+            await page.locator('#load-batch-button').click()
+            await page.wait_for_function("document.querySelectorAll('.resident-model').length === 5")
+            assert [item['target'] for item in sent[1]['models']] == ['gpu', 'npu']
+            assert await page.locator('#load-batch-button').is_disabled()
             await page.locator('nav [data-page="chat"]').click()
             await page.select_option('#chat-model', 'a')
             await page.locator('#chat-input').fill('first')
@@ -165,6 +203,19 @@ async def main():
             await page.screenshot(path='/tmp/snowllm-multimodel-ui.png', full_page=True)
             assert not errors, errors
             assert [row['model'] for row in sent if 'messages' in row] == ['a', 'b']
+            manager.models.append(dict(id='mineru', source='mineru', state='ready',
+                                       instance='mineru', aliases=['mineru'],
+                                       runtime_config={'runtime': 'mineru'}))
+            await page.locator('nav [data-page="documents"]').click()
+            await page.wait_for_function("document.getElementById('document-model').value === 'mineru'")
+            await page.locator('#document-file').set_input_files({
+                'name': 'page.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7\n'})
+            await page.locator('#parse-document').click()
+            await page.wait_for_function("document.getElementById('document-result').value === 'GPU document result'")
+            assert await page.locator('#download-document').is_enabled()
+            assert sent[-1]['model'] == 'mineru'
+            assert sent[-1]['filename'] == 'page.pdf'
+            assert not errors, errors
             print(
                 'PASS: browser load, Chinese labels, model selection, two background sessions, targeted stop and persistence; no JavaScript errors'
             )
