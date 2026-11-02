@@ -288,12 +288,14 @@ from .trace import (
     tracing,
 )
 from .vision import (
+    vision_bias_act,
     vision_attn,
     vision_attention,
     vision_merge_norm,
     vision_pos_embed_add,
     vision_gemm_bias_act,
     vision_gemm_scratch_bytes,
+    vision_gemm_workspace_bytes,
     vision_layernorm,
     vision_rope_qk,
 )

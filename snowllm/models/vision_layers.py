@@ -33,7 +33,7 @@ class VisionLinear(NamedTuple):
     def forward(self, x, out, scratch, act=0, residual=None):
         arena = active_arena()
         if arena is not None:
-            scratch = arena.workspace(ops.vision_gemm_scratch_bytes(x.shape[0],self.k))
+            scratch = arena.workspace(ops.vision_gemm_workspace_bytes(x.shape[0],self.n,self.k))
         ops.vision_gemm_bias_act(x, self.weight, scratch, out, self.bias, residual,
                                  x.shape[0], self.n, self.k, act)
         return out
@@ -47,6 +47,7 @@ class VisionBlock:
     proj: VisionLinear
     fc1: VisionLinear
     fc2: VisionLinear
+    activation: int = 1
 
     def attention(self, x, cu, buffers, heads, dim, eps, cos=None, sin=None):
         m = x.shape[0]
@@ -75,5 +76,5 @@ class VisionBlock:
         scratch = buffers["scratch"]
         ops.vision_layernorm(x, *self.norm2, ln, eps)
         if arena is not None:ff = arena.new(m,self.fc1.n)
-        self.fc1.forward(ln, ff, scratch, act=1)
+        self.fc1.forward(ln, ff, scratch, act=self.activation)
         self.fc2.forward(ff, x, scratch, residual=x)

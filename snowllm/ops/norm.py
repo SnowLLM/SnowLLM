@@ -14,8 +14,16 @@ def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
         raise SnowLLMError("RMSNorm needs rows with a positive final dimension")
     if tuple(out.shape) != tuple(x.shape):
         raise SnowLLMError("RMSNorm output must match the input shape")
+    width = x.shape[-1]
     if gamma is not None:
-        _chk(gamma, "gamma", torch.bfloat16, x.shape[-1])
+        _chk(gamma, "gamma", torch.bfloat16, width)
+    if round_before_weight and gamma is not None and x.dtype == torch.bfloat16 and width == 896:
+        _chk_norm_x(x, torch.bfloat16)
+        _chk(out, "out", torch.bfloat16)
+        check(lib.snowllm_rmsnorm_rows_rounded(_p(x), _p(gamma), _p(out), width,
+                                               x.numel() // width, x.stride(-2), eps, _stream()),
+              "rmsnorm_rows_rounded")
+        return
     dsv4_rmsnorm(x, None if round_before_weight else gamma, out, eps)
     # Planning can combine a meta output with resident weights; scaling needs no new storage.
     if round_before_weight and gamma is not None and out.device.type != "meta":

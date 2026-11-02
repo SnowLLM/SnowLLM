@@ -17,6 +17,10 @@ from ..memory_plan import Buffer, allocate, live_peak
 ALIGN = 512
 
 
+class PlanMismatch(SnowLLMError):
+    pass
+
+
 class Trace:
     def __init__(self, launch: bool, *, lifetimes: str = 'references') -> None:
         if lifetimes not in ('references', 'uses'):
@@ -84,13 +88,15 @@ class Trace:
         if isinstance(value, torch.Tensor):
             with torch._C.DisableTorchFunction():
                 key = value.untyped_storage()._cdata
+                if key not in self._storage_refs or self._storage_refs[key]() is None:
+                    return set()
                 start = value.storage_offset() * value.element_size()
                 span = ((1 + sum((n-1)*s for n,s in zip(value.shape,value.stride())))
                         * value.element_size()) if value.numel() else 0
-            if key not in self._storage_refs or self._storage_refs[key]() is None:
-                return set()
             candidates = [tag for tag,lo,hi in self._owners.get(key, ()) if lo <= start and start+span <= hi]
             return {max(candidates)} if candidates else set()
+        if value is None or isinstance(value,(int,float,bool,str,bytes,torch.dtype,torch.device,torch.Size)):
+            return set()
         seen = set() if seen is None else seen
         if id(value) in seen:
             return set()
@@ -139,10 +145,12 @@ class Trace:
             raise SnowLLMError('use-based planning requires one ordered stream; cross-stream events are not declared')
         self._stream = stream
         self.tick += 1
-        tags = self._tags((reads,writes))
+        read_tags = self._tags(reads)
+        write_tags = read_tags if writes is reads else self._tags(writes)
+        tags = read_tags.union(write_tags)
         self._touch(tags)
-        op = dict(name=name, first=self.tick, reads=sorted(self._tags(reads)),
-                  writes=sorted(self._tags(writes)), allocated=[], uses=set(tags), stream=stream)
+        op = dict(name=name, first=self.tick, reads=sorted(read_tags),
+                  writes=sorted(write_tags), allocated=[], uses=set(tags), stream=stream)
         self._ops.append(op)
         self.operations.append(op)
         try:
@@ -157,6 +165,11 @@ class Trace:
 
     def torch_call(self, func, args, kwargs, out):
         if self.lifetimes != 'uses' or self._observing:
+            return
+        if getattr(func,'__name__','') in (
+                '__len__','dim','ndimension','numel','size','stride','storage_offset','element_size',
+                'untyped_storage','data_ptr','is_contiguous') or (
+                getattr(func,'__name__','') == '__get__' and not isinstance(out,torch.Tensor)):
             return
         self._observing = True
         try:
@@ -350,10 +363,10 @@ class Planner:
         want = p.sizes.get(k)
         if want is None or nbytes > want or p.sigs[k] != sig:
             self.active = None
-            raise SnowLLMError(
+            expected = 'nothing more' if want is None else f'{sig_str(p.sigs[k])} in {want} bytes for {p.names[k]}'
+            raise PlanMismatch(
                 f"the activation plan does not describe this walk: at placement {k} it expected "
-                f"{'nothing more' if want is None else f'{sig_str(p.sigs[k])} in {want} bytes for '
-                                                       f'{p.names[k]}'} and the walk asked for "
+                f"{expected} and the walk asked for "
                 f"{sig_str(sig)} in {nbytes}. A plan is built by tracing one walk and is served to "
                 f"walks that ask for the same things in the same order; this one diverged, so it "
                 f"is refused rather than given ground that belongs to something else.")

@@ -217,11 +217,14 @@ class Reader(FileReader):
                  chunk_bytes: int = 4 << 20, num_buffers: int = 12,
                  shard_cache: int = 0) -> None:
         self.root = pathlib.Path(root)
+        selected = self.root.name if self.root.is_file() else None
+        if selected is not None:
+            self.root = self.root.parent
         index = self.root / "model.safetensors.index.json"
-        if index.exists():
+        if selected is None and index.exists():
             self.weight_map = json.loads(index.read_text())["weight_map"]
         else:
-            only = next(self.root.glob("*.safetensors")).name
+            only = selected or next(self.root.glob("*.safetensors")).name
             self.weight_map = {}
             for k in Shard(self.root / only).meta:
                 self.weight_map[k] = only
@@ -335,3 +338,66 @@ class Reader(FileReader):
         if getattr(self, "_cache", None) is not None:
             self._cache.clear()
         super().close()
+
+
+class TorchReader:
+    def __init__(self, path):
+        import zipfile
+        self.weights = torch.load(path, map_location='cpu', weights_only=True,
+                                  mmap=zipfile.is_zipfile(path))
+        if 'state_dict' in self.weights:
+            self.weights = self.weights['state_dict']
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.weights.clear()
+
+    def loading(self):
+        return contextlib.nullcontext()
+
+    def keys(self):
+        return self.weights.keys()
+
+    def spec(self, key):
+        value = self.weights[key]
+        return value.dtype, tuple(value.shape), 0, value.numel() * value.element_size()
+
+    def to_device(self, key, out=None):
+        value = self.weights[key]
+        if out is None:
+            return value.cuda()
+        out.copy_(value)
+        return out
+
+
+class ONNXReader(TorchReader):
+    def __init__(self, path):
+        import onnx
+        from onnx import helper, numpy_helper
+        model = onnx.load(str(path))
+        self.root = pathlib.Path(path).parent
+        self.weights = {}
+        self.convolutions = []
+        self.normalizations = {}
+        self.metadata = {item.key: item.value for item in model.metadata_props}
+        self.inputs = [x.name for x in model.graph.input]
+        self.outputs = [x.name for x in model.graph.output]
+        def read_graph(graph):
+            for value in graph.initializer:
+                self.weights[value.name] = torch.from_numpy(numpy_helper.to_array(value).copy())
+            for node in graph.node:
+                attributes = {value.name: helper.get_attribute_value(value) for value in node.attribute}
+                if node.op_type == 'Constant':
+                    self.weights[node.output[0]] = torch.from_numpy(numpy_helper.to_array(attributes['value']).copy())
+                elif node.op_type == 'Identity' and node.input[0] in self.weights:
+                    self.weights[node.output[0]] = self.weights[node.input[0]]
+                elif node.op_type in ('Conv', 'ConvTranspose'):
+                    self.convolutions.append((tuple(node.input[1:]), attributes, node.op_type == 'ConvTranspose', node.output[0]))
+                elif node.op_type == 'BatchNormalization':
+                    self.normalizations[node.input[0]] = (tuple(node.input[1:]), attributes.get('epsilon', 1e-5))
+                for attribute in node.attribute:
+                    if attribute.type == onnx.AttributeProto.GRAPH:
+                        read_graph(attribute.g)
+        read_graph(model.graph)

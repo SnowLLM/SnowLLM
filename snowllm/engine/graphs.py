@@ -18,12 +18,12 @@ def _capture_stream(device):
 
 
 @contextlib.contextmanager
-def capture_graph(graph, *, pool):
-    if not retain_device_cache():
+def capture_graph(graph, *, pool, preserve_cache=False):
+    if not preserve_cache and not retain_device_cache():
         with torch.cuda.graph(graph, pool=pool):
             yield
         return
-    # Public capture calls avoid torch.cuda.graph's implicit cache flush on Windows HIP.
+    # Lazy captures reuse the public path to avoid per-shape full GC and cache flushing.
     torch.cuda.synchronize()
     with torch.cuda.stream(_capture_stream(torch.cuda.current_device())):
         graph.capture_begin(pool=pool)
@@ -132,6 +132,9 @@ class GraphInputs:
                 if host_view(target) is not None and host_view(source) is not None:
                     copy_message(target, source)
                 elif target.is_cuda and source.is_cuda:
+                    # Row copies preserve FP16 bits through the existing 16-bit storage path.
+                    if target.dtype == torch.float16:
+                        target, source = target.view(torch.bfloat16), source.view(torch.bfloat16)
                     gpu_dst.append(target)
                     gpu_src.append(source)
                 else:
@@ -147,6 +150,7 @@ class CapturedGraph:
     inputs: GraphInputs
     output: object
     hidden: torch.Tensor | None = None
+    workspace: torch.Tensor | None = None
 
     def replay(self, values):
         self.inputs.replay(self.graph, values)

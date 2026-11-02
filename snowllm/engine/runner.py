@@ -104,6 +104,9 @@ class BaseRunner:
 
     def _initialize(self):
         self._setup_resources()
+        if self.arena is not None and ops.drying() is None:
+            from ..workspace import current_workspace
+            self.shared_workspace = current_workspace()
         self.model.runtime_resources = self.resources
         self.resources.add(lambda slabs: self,
             [(self, ('graphs', 'last_hidden', 'inputs', '_pool'))],
@@ -419,6 +422,7 @@ class BaseRunner:
 
     def _freeze_arena(self, extra: int = 0) -> int:
         a = self.arena
+        a.shared_workspace = getattr(self, 'shared_workspace', None)
         n = a.freeze(a.bytes_after(extra))
         if self.plan_activations:
             a.planner.buf = a.buf

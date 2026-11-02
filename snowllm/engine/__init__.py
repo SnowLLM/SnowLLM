@@ -286,6 +286,9 @@ def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
 
 
 def _runner_for(model: "TargetModel") -> type[BaseRunner]:
+    if getattr(model, 'multimodal_type', None) == 'qwen2_vl':
+        from .qwen2_runner import Qwen2Runner
+        return Qwen2Runner
     if getattr(model, "config", {}).get("model_type") == "lfm2_moe":
         from .lfm2_runner import Lfm2Runner
         return Lfm2Runner
@@ -359,7 +362,7 @@ class Engine:
                  account: bool = True, exact_stats: bool = False,
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
-                 draft_plan: DraftPlan | None = None) -> None:
+                 draft_plan: DraftPlan | None = None, defer_capture: bool = False) -> None:
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dspark_adaptive and not (_dspark(self.dflash_geo)
@@ -491,17 +494,39 @@ class Engine:
                 profile(self.dflash, warmup=True)
                 self.runner.ensure_capacity()
             self.graph_sizes = []
-            if not enforce_eager:
-                self.graph_sizes = self.runner.capture(shapes)
-            if self.dflash and not enforce_eager:
-                self.dflash.capture(self.runner)
-            if dspark_adaptive:
-                from .dspark_profile import profile
-                profile(self.dflash)
+            self._capture_shapes = tuple(shapes)
+            self._capture_enabled = not enforce_eager
+            self._graphs_dirty = not enforce_eager
+            self._profile_after_capture = dspark_adaptive
+            if not defer_capture:
+                self.capture_graphs()
 
         except BaseException:
             self.runner._discard_pools()
             raise
+
+    def invalidate_graphs(self):
+        self.runner._init_graphs()
+        self.runner._host_graph_pool = None
+        self.runner.last_hidden = None
+        if self.dflash is not None and hasattr(self.dflash, 'graphs'):
+            self.dflash.graphs.clear()
+        self.graph_sizes = []
+        self._graphs_dirty = self._capture_enabled
+
+    def capture_graphs(self):
+        if self._graphs_dirty:
+            if self.cache is not None:
+                while self.cache.evict():
+                    pass
+            self.graph_sizes = self.runner.capture(self._capture_shapes)
+            if self.dflash is not None:
+                self.dflash.capture(self.runner)
+            self._graphs_dirty = False
+        if self._profile_after_capture:
+            from .dspark_profile import profile
+            profile(self.dflash)
+            self._profile_after_capture = False
 
     def _retake_draft(self, blocks: int) -> None:
         self._draft_pool.allocate(blocks)

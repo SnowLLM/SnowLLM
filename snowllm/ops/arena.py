@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
+import copy
 import itertools
 from collections.abc import Callable, Iterator
 
@@ -9,7 +10,7 @@ import torch
 
 from .._capi import SnowLLMError
 from ._common import dry_alloc
-from .trace import Planner, dummy_run, own, pack, tracing
+from .trace import Planner, PlanMismatch, dummy_run, own, pack, tracing
 
 _reports = itertools.count()
 
@@ -26,6 +27,8 @@ class Arena:
         self.high = 0
         self.tail_high = 0
         self.planner = Planner()
+        self.shared_workspace = None
+        self.required_bytes = 0
 
     def reset(self) -> None:
         self.at = 0
@@ -34,7 +37,7 @@ class Arena:
         from .allocation import activate
         return activate(self)
 
-    def execute(self, key, rows, fn):
+    def execute(self, key, rows, fn, *, admit=None, lifetimes='uses'):
         def walk():
             self.planner.begin(key)
             self.reset()
@@ -43,7 +46,9 @@ class Arena:
                     return fn()
             finally:
                 self.end_plan()
-        self.plan(key,rows,walk,lifetimes='uses')
+        self.plan(key,rows,walk,lifetimes=lifetimes)
+        if admit is not None:
+            admit(self.planner.high)
         self.freeze(self.planner.high)
         self.planner.buf = self.buf
         return walk()
@@ -74,7 +79,7 @@ class Arena:
         n = 1
         for s in shape:
             n *= s
-        out = self.flat(n, dtype, (dtype, len(shape)),name=name).view(*shape)
+        out = self.flat(n, dtype, (dtype, len(shape)),name=name).view(shape)
         trace = tracing()
         if trace is not None:
             for tag in trace._tags(out):
@@ -152,17 +157,7 @@ class Arena:
             raise SnowLLMError('changing lifetime mode requires rebuilding the activation arena and graphs')
         if rows <= 0 or (have is not None and rows <= have.rows and have.lifetimes == lifetimes):
             return False
-        # Inference tensors do not retain view bases, which would end allocation lifetimes too early.
-        at,high = self.at,self.high
-        try:
-            with torch.inference_mode(False), torch.no_grad(), dummy_run(lifetimes=lifetimes) as trace, dry_alloc(), self.activate():
-                held = walk()
-                if lifetimes == 'uses':
-                    trace.retain(held)
-                    trace.validate_escapes()
-        finally:
-            if lifetimes == 'uses':
-                self.at,self.high = at,high
+        trace, held = self.trace(walk, lifetimes=lifetimes)
         plan = pack(trace, rows, after=after)
         del held
         if planner.buf is not None and max(plan.high, plan.live_high + after) > planner.buf.numel():
@@ -180,16 +175,172 @@ class Arena:
             plan.write_report(folder/f'{os.getpid()}-{next(_reports)}-{rows}.json')
         return True
 
+    def trace(self, walk, *, lifetimes='references'):
+        # Inference tensors do not retain view bases, which would end allocation lifetimes too early.
+        at,high = self.at,self.high
+        try:
+            with torch.inference_mode(False), torch.no_grad(), dummy_run(lifetimes=lifetimes) as trace, dry_alloc(), self.activate():
+                held = walk()
+                if lifetimes == 'uses':
+                    trace.retain(held)
+                    trace.validate_escapes()
+        finally:
+            if lifetimes == 'uses':
+                self.at,self.high = at,high
+        return trace, held
+
     def bytes_after(self, extra: int = 0) -> int:
         return max(self.high, self.planner.high, self.tail_high + extra)
 
     def freeze(self, planned: int = 0) -> int:
+        self.required_bytes = max(self.required_bytes, self.high, planned)
+        if self.shared_workspace is not None:
+            from ..host_alloc import enabled
+            self.shared_workspace.allocation = 'host' if enabled() else self.shared_workspace.target.upper()
+            self.shared_workspace.bind(self, self.required_bytes,
+                lambda size: torch.empty(size, dtype=torch.uint8, device='cuda'))
+            return self.required_bytes
         if self.buf is None:
             self.buf = torch.empty(max(self.high, planned), dtype=torch.uint8, device="cuda")
         return self.buf.numel()
 
     def release(self) -> None:
+        if self.shared_workspace is not None:
+            self.shared_workspace.release(self)
         self.buf = None
         self.at = self.high = self.tail_high = 0
+        self.required_bytes = 0
         self.planner = Planner()
+
+
+class CapacityArena(Arena):
+    def __init__(self):
+        super().__init__()
+        self.capacities = {}
+        self.checked = {}
+        self.families = {}
+        self.probes = self.rebuilds = self.reuses = 0
+        self.scratch = None
+        self.scratch_bytes = self.workspace_required = 0
+        self._admit = None
+
+    def workspace(self, n, name='workspace'):
+        # These model walks consume scratch on one stream before requesting the next workspace.
+        self.workspace_required = max(self.workspace_required, n)
+        slot = super().workspace(0, name)
+        if tracing() is not None or not n:
+            return slot
+        if n > self.scratch_bytes:
+            if self._admit is not None:
+                self._admit(n)
+            self.scratch = torch.empty(n, dtype=torch.uint8, device='cuda')
+            self.scratch_bytes = n
+        return self.scratch[:n]
+
+    def prepare(self, key, rows, fn):
+        if key in self.checked:
+            self.reuses += 1
+            return self.checked[key]
+        self.probes += 1
+        self.planner.active = self.planner.buf = None
+
+        def walk():
+            self.reset()
+            with self.activate():
+                return fn()
+
+        trace, held = self.trace(walk)
+        schema = tuple(trace.calls), tuple(sig for _, _, _, sig in trace.owned)
+        previous = self.capacities.get(schema)
+        ranges = trace.ranges()
+        fits = previous is not None and all(
+            size <= previous.sizes[tag]
+            and previous.ranges[tag][0] <= ranges[tag][0]
+            and ranges[tag][1] <= previous.ranges[tag][1]
+            for tag, _, size, _ in trace.owned
+        )
+        if fits:
+            plan = previous
+            self.reuses += 1
+        else:
+            if previous is not None:
+                retained = previous.retained.union(trace.live())
+                trace.owned = [
+                    (tag, name, max(size, previous.sizes[tag]), sig)
+                    for tag, name, size, sig in trace.owned
+                ]
+                for tag, (first, last) in ranges.items():
+                    old_first, old_last = previous.ranges[tag]
+                    trace._range[tag] = [min(first, old_first), max(last, old_last)]
+                trace.tick = max(trace.tick, max((b for _, b in previous.ranges.values()), default=0))
+                for tag in retained:
+                    trace._range[tag][1] = None
+            plan = pack(trace, max(rows, previous.rows if previous else 0))
+            self.capacities[schema] = plan
+            self.rebuilds += 1
+        del held
+        self.checked[key] = plan
+        return plan
+
+    def execute(self, key, rows, fn, *, admit=None, lifetimes='references', family=None, probe=None):
+        plan = self.checked.get(key)
+        # Only model-declared shape families may bypass a new allocation walk.
+        if plan is None and family is not None:
+            plan = self.families.get(family)
+        if plan is not None:
+            try:
+                result = self.run(key, plan, fn, admit)
+            except PlanMismatch:
+                pass
+            else:
+                if rows > plan.rows:
+                    plan = copy.copy(plan)
+                    plan.rows = rows
+                self.checked[key] = plan
+                self.reuses += 1
+                return result
+        plan = self.prepare(key, rows, probe or fn)
+        try:
+            result = self.run(key, plan, fn, admit)
+        except PlanMismatch:
+            self.checked.pop(key, None)
+            plan = self.prepare(key, rows, fn)
+            result = self.run(key, plan, fn, admit)
+        if family is not None:
+            self.families[family] = plan
+        return result
+
+    def run(self, key, plan, fn, admit):
+        required = max(plan.high, self.required_bytes)
+        grow = self.buf is None or self.buf.numel() < required
+        scratch = self.workspace_required > self.scratch_bytes
+        if admit is not None and (grow or scratch):
+            admit((required if grow else 0) + (self.workspace_required if scratch else 0))
+        if grow:
+            self.buf = torch.empty(required, dtype=torch.uint8, device='cuda')
+            self.required_bytes = required
+        if scratch:
+            self.scratch = torch.empty(self.workspace_required, dtype=torch.uint8, device='cuda')
+            self.scratch_bytes = self.workspace_required
+        self._admit = admit
+        self.planner.plans = {key: plan}
+        self.planner.buf = self.buf
+        self.planner.begin(key)
+        self.reset()
+        try:
+            with self.activate():
+                result = fn()
+            if self.planner.seq != len(plan.sizes):
+                raise PlanMismatch('the capacity walk changed its allocation count')
+            return result
+        finally:
+            self.end_plan()
+
+    def release(self):
+        super().release()
+        self.scratch = None
+        self.scratch_bytes = self.workspace_required = 0
+        self.capacities.clear()
+        self.checked.clear()
+        self.families.clear()
 

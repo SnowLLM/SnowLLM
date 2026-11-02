@@ -253,7 +253,10 @@ def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int
                 model = load_weights(w, cfg, want, fp8, mtp, device_map=dmap)
                 model.multimodal_config = raw
                 model.vision_config = raw.get("vision_config")
-                if raw.get("model_type") == "minicpmv4_7" and vision:
+                if raw.get("model_type") == "qwen2_vl" and vision:
+                    from ..models.mineru.qwen2_vl.vision import Qwen2Vision
+                    model.visual = Qwen2Vision(w, model.vision_config)
+                elif raw.get("model_type") == "minicpmv4_7" and vision:
                     from ..models.minicpmv.vision import MiniCPMVision
                     vc = {**model.vision_config, "downsample_mode": raw.get("downsample_mode", "16x"),
                           "insert_layer_id": raw.get("insert_layer_id", 6), "out_hidden_size": cfg["hidden_size"],
@@ -277,6 +280,8 @@ def load(path: str | pathlib.Path, layers: range | None = None, shard_cache: int
                                total_bytes=total, host_offload=host_offload)
         if dmap is None:
             dmap = placement.DeviceMap(frozenset(), sizes, per_layer=by, total_bytes=total)
+        else:
+            dmap = dataclasses.replace(dmap, total_bytes=total)
         model = _load_placed(build, cfg, kv, dmap, device_map,
                              host_offload=host_offload, eligibility=eligibility)
     release_device_cache()
@@ -608,4 +613,23 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
         model = _load_placed(build, cfg, kv, dmap, device_map,
                              host_offload=host_offload, eligibility=eligibility)
     release_device_cache()
+    return model
+
+
+def load_auxiliary(path, architecture, *, admit=None, **options):
+    from .reader import TorchReader, ONNXReader
+    from .. import ops
+    module, load_weights = models.resolve([architecture])
+    reader_type = {'.safetensors': Reader, '.onnx': ONNXReader}.get(pathlib.Path(path).suffix, TorchReader)
+    reader = reader_type(path)
+    with reader as source:
+        weights = WeightSource(source)
+        with ops.dry_load() as planned:
+            probe = load_weights(weights, **options)
+            peak = planned.peak_device
+        del probe
+        if admit is not None:
+            admit(peak)
+        model = load_weights(weights, **options)
+    model.load_peak_bytes = peak
     return model

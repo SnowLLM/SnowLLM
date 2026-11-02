@@ -144,6 +144,35 @@ def _bilinear_pos_inputs(grid_thw: torch.Tensor, side: int,
     return indices, weights
 
 
+def prepare_vision_inputs(pixel_values, grid_thw, g, *, admit=None):
+    if grid_thw.dim() != 2 or grid_thw.shape[1] != 3:
+        raise SnowLLMError("vision grid_thw must be an [images,3] tensor")
+    grid_thw = grid_thw.cpu()
+    grids = grid_thw.tolist()
+    if not grids or any(int(v) != v or v <= 0 for row in grids for v in row):
+        raise SnowLLMError("vision grids must contain positive integer dimensions")
+    if any(h % g.spatial_merge or w % g.spatial_merge for _, h, w in grids):
+        raise SnowLLMError("vision spatial grids must be divisible by spatial_merge")
+    if pixel_values.dim() != 2 or pixel_values.shape[1] != g.patch_in:
+        raise SnowLLMError("vision pixel_values has the wrong patch shape")
+    if sum(t * h * w for t, h, w in grids) != pixel_values.shape[0]:
+        raise SnowLLMError("vision grid patch count does not match pixel_values")
+    if admit is not None:
+        sizes = [pixel_values.shape[0] * g.head_dim * 4] * 2
+        sizes.append((sum(t for t, _, _ in grids) + 1) * 4)
+        if not pixel_values.is_cuda or pixel_values.dtype != torch.bfloat16:
+            sizes.append(pixel_values.numel() * 2)
+        admit(sum((size + 511) // 512 * 512 for size in sizes))
+    x = pixel_values.to(torch.bfloat16).cuda()
+
+    cos, sin = _rope_cos_sin(grid_thw, "cuda", g)
+    cu = [0]
+    for length in _seg_lengths(grid_thw):
+        cu.append(cu[-1] + length)
+    cu = torch.tensor(cu, dtype=torch.int32, device=x.device)
+    return x, grid_thw, cos, sin, cu
+
+
 class VisionModel:
     def __init__(self, patch_w: torch.Tensor, patch_b: torch.Tensor, pos_embed: torch.Tensor,
                  blocks: list[VisionBlock], merger: dict[str, torch.Tensor],
@@ -155,6 +184,32 @@ class VisionModel:
         self.blocks = blocks
         self.merger = merger
         self._cache: dict[str, torch.Tensor] = {}
+
+    def execute_plan(self, key, rows, walk, *, arena=None, admit=True, family=None, probe=None):
+        key = (*key, rows)
+        if getattr(self, '_native_eager', False):
+            capacity = self.__dict__.get('_eager_arena')
+            if capacity is None:
+                from ..ops.arena import CapacityArena
+                capacity = self._eager_arena = CapacityArena()
+            memory = getattr(self, '_memory_admit', None) if admit else None
+            if arena is None:
+                return capacity.execute(key, rows, walk, admit=memory, family=family, probe=probe)
+            plan = capacity.prepare(key, rows, walk)
+            arena.planner.install(key, plan)
+            return ops.Arena.execute(arena, key, rows, walk, admit=memory, lifetimes='references')
+        plans = self.__dict__.setdefault('_plans', {})
+        if arena is None:
+            arena = ops.Arena()
+        if key in plans:
+            arena.planner.install(key, plans[key])
+        result = arena.execute(key, rows, walk,
+                               admit=getattr(self, '_memory_admit', None) if admit else None)
+        if key not in plans:
+            if len(plans) >= 16:
+                plans.pop(next(iter(plans)))
+            plans[key] = arena.planner.plans[key]
+        return result
 
     def _buf(self, name: str, rows: int, cols: int,
              dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
@@ -219,44 +274,24 @@ class VisionModel:
               residual: torch.Tensor | None = None) -> torch.Tensor:
         m = a.shape[0]
         scratch = (None if active_arena() is not None else
-                   self._byte_buf("agemm",ops.vision_gemm_scratch_bytes(m,K)))
+                   self._byte_buf("agemm",ops.vision_gemm_workspace_bytes(m,N,K)))
         return VisionLinear(w_shuffled, bias, N, K).forward(a, out, scratch, act, residual)
 
     @torch.no_grad()
     def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         g = self.geo
-        HIDDEN, PATCH_IN, OUT_HIDDEN = g.hidden, g.patch_in, g.out_hidden
-        INTERMEDIATE_PAD, MERGE_IN, MERGE_UNIT = g.intermediate_pad, g.merge_in, g.merge_unit
-        if grid_thw.dim() != 2 or grid_thw.shape[1] != 3:
-            raise SnowLLMError("vision grid_thw must be an [images,3] tensor")
-        grid_thw = grid_thw.cpu()
-        grids = grid_thw.tolist()
-        if not grids or any(int(v) != v or v <= 0 for row in grids for v in row):
-            raise SnowLLMError("vision grids must contain positive integer dimensions")
-        if any(h % g.spatial_merge or w % g.spatial_merge for _, h, w in grids):
-            raise SnowLLMError("vision spatial grids must be divisible by spatial_merge")
-        if pixel_values.dim() != 2 or pixel_values.shape[1] != PATCH_IN:
-            raise SnowLLMError("vision pixel_values has the wrong patch shape")
-        if sum(t * h * w for t, h, w in grids) != pixel_values.shape[0]:
-            raise SnowLLMError("vision grid patch count does not match pixel_values")
-        x = pixel_values.to(torch.bfloat16).cuda()
+        OUT_HIDDEN, MERGE_UNIT = g.out_hidden, g.merge_unit
+        x, grid_thw, cos, sin, cu = prepare_vision_inputs(pixel_values, grid_thw, g)
         M = x.shape[0]
-
         indices, weights = _bilinear_pos_inputs(grid_thw, g.grid_side, g.spatial_merge)
-        indices,weights = indices.to(x.device),weights.to(x.device)
-        cos, sin = _rope_cos_sin(grid_thw, "cuda", g)
-        cu = [0]
-        for length in _seg_lengths(grid_thw):
-            cu.append(cu[-1] + length)
-        cu = torch.tensor(cu, dtype=torch.int32, device=x.device)
+        indices, weights = indices.to(x.device), weights.to(x.device)
         out = torch.empty(M // MERGE_UNIT,OUT_HIDDEN,dtype=torch.bfloat16,device=x.device)
-        arena = ops.Arena()
-        return arena.execute(('vision',),M,
+        return self.execute_plan(('vision',),M,
             lambda: self._forward_gpu(x,indices,weights,cos,sin,cu,out))
 
     def _forward_gpu(self,x,indices,weights,cos,sin,cu,out):
         g = self.geo
-        HIDDEN,INTERMEDIATE_PAD = g.hidden,g.intermediate_pad
+        HIDDEN = g.hidden
         MERGE_IN,MERGE_UNIT,OUT_HIDDEN,PATCH_IN = g.merge_in,g.merge_unit,g.out_hidden,g.patch_in
         M = x.shape[0]
         hidden = self._buf("hidden", M, HIDDEN)

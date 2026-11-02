@@ -34,6 +34,21 @@ def vision_layernorm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
 
 
 vision_gemm_scratch_bytes = _passthru("vision_gemm_scratch_bytes")
+def vision_gemm_workspace_bytes(M, N, K):
+    from .operation import workspace_capacity
+    return workspace_capacity(
+        ("vision_gemm", N, K), M,
+        lambda rows: lib.snowllm_vision_gemm_workspace_bytes(rows, N, K),
+    )
+
+
+@operator
+def vision_bias_act(x, bias, residual, out, act=0):
+    rows, columns = x.shape
+    _chk(x, 'x', torch.float32, rows, columns)
+    _chk(out, 'out', torch.bfloat16, rows, columns)
+    check(lib.snowllm_vision_bias_act(_p(x), _p(bias), _p(residual), _p(out),
+                                     rows, columns, act, _stream()), 'vision_bias_act')
 
 
 @operator

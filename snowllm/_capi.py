@@ -28,7 +28,7 @@ os.environ.setdefault("ROCSHMEM_DEBUG_LEVEL", "NONE")
 __all__ = ["SnowLLMError", "build_geometry", "draft_count", "draft_name", "draft_shape", "lib",
            "select_draft", "select_geometry", "geometry_id", "geometry_name", "synchronize",
            "assert_single_hip_runtime", "GEO_QWEN36_35B_A3B", "GEO_QWEN36_27B",
-           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH", "GEO_LFM25_8B_A1B"]
+           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH", "GEO_LFM25_8B_A1B", "GEO_MINERU_12B"]
 
 GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
@@ -37,6 +37,7 @@ GEO_QWEN38_FLASH_NEXT = 3
 GEO_GLM53_FLASH = 4
 GEO_DEEPSEEK_V41_FLASH = 5
 GEO_LFM25_8B_A1B = 6
+GEO_MINERU_12B = 7
 
 
 class BuildGeometry(ctypes.Structure):
@@ -96,7 +97,7 @@ def select_geometry(geo: int) -> None:
             + ", ".join(f"{i} ({geometry_name(i)})"
                         for i in (GEO_QWEN36_35B_A3B, GEO_QWEN36_27B,
                                   GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH,
-                                  GEO_DEEPSEEK_V41_FLASH, GEO_LFM25_8B_A1B)
+                                  GEO_DEEPSEEK_V41_FLASH, GEO_LFM25_8B_A1B, GEO_MINERU_12B)
                         if geometry_name(i))
         )
 
@@ -171,7 +172,7 @@ except OSError as exc:
     raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
 _lib_path = lib._name
 
-ABI_VERSION = 80
+ABI_VERSION = 87
 
 
 def _check_abi() -> None:
@@ -370,6 +371,8 @@ _SIGS = [
 
     ("snowllm_gather_embedding", c_int, [P, P, P, c_int64, S]),
     ("snowllm_rmsnorm", c_int, [P, P, P, c_int64, c_float, S]),
+    ("snowllm_rmsnorm_rows_rounded", c_int,
+     [P, P, P, c_int64, c_int64, c_int64, c_float, S]),
     ("snowllm_dsv4_rmsnorm", c_int,
      [P, P, P, c_int64, c_int64, c_float, c_int64, c_int64, S]),
     ("snowllm_rmsnorm_residual", c_int, [P, P, P, P, c_int64, c_float, S]),
@@ -645,6 +648,13 @@ _SIGS = [
     ("snowllm_glm_proj_fanout", c_int, [P,P,c_int,c_int,c_int,P,c_int64,S]),
     ("snowllm_vision_layernorm", c_int, [P, P, P, P, c_int64, c_int64, c_float, S]),
     ("snowllm_vision_gemm_scratch_bytes", c_int64, [c_int64, c_int64]),
+    ("snowllm_auxiliary_affine_activation", c_int, [P,P,P,P,c_int64,c_int64,c_int64,c_int,c_int,S]),
+    ("snowllm_vision_gemm_workspace_bytes", c_int64, [c_int64, c_int64, c_int64]),
+    ("snowllm_auxiliary_gemm_half_workspace_bytes", c_int64, [c_int64,c_int64,c_int64]),
+    ("snowllm_auxiliary_gemm_half", c_int, [P,P,P,P,P,c_int64,c_int64,c_int64,S]),
+    ("snowllm_auxiliary_depthwise", c_int, [P,P,P,P,P,P,c_int,c_int,c_int,c_int,c_int,c_int,c_int,c_int,S]),
+    ("snowllm_auxiliary_pointwise_f32", c_int, [P,P,P,P,P,P,c_int,c_int,c_int,c_int,c_int,c_int,S]),
+    ("snowllm_vision_bias_act", c_int, [P, P, P, P, c_int64, c_int64, c_int, S]),
     ("snowllm_vision_gemm_bias_act", c_int,
      [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int, S]),
     ("snowllm_vision_rope_qk", c_int, [P, P, P, c_int64, c_int64, c_int64, c_int64, S]),

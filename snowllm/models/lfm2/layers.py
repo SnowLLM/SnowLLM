@@ -51,10 +51,12 @@ class Attention(FullAttention):
             q, k, v = (q.view(M, g.num_heads, g.head_size),
                        k.view(M, g.num_kv_heads, g.head_size),
                        v.view(M, g.num_kv_heads, g.head_size))
-            ops.rmsnorm_rows(q.view(-1,g.head_size), self.qnorm,
-                             q.view(-1,g.head_size), ctx.eps, round_before_weight=True)
-            ops.rmsnorm_rows(k.view(-1,g.head_size), self.knorm,
-                             k.view(-1,g.head_size), ctx.eps, round_before_weight=True)
+            if self.qnorm is not None:
+                ops.rmsnorm_rows(q.view(-1,g.head_size), self.qnorm,
+                                 q.view(-1,g.head_size), ctx.eps, round_before_weight=True)
+            if self.knorm is not None:
+                ops.rmsnorm_rows(k.view(-1,g.head_size), self.knorm,
+                                 k.view(-1,g.head_size), ctx.eps, round_before_weight=True)
             rope(q, ctx.cos, ctx.sin)
             rope(k, ctx.cos, ctx.sin)
             if ctx.kv_int8:

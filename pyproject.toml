@@ -29,6 +29,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+mineru = ["mineru[torch]==4.1.3; python_version >= '3.11'", "onnx>=1.19,<2", "safetensors>=0.4"]
 test = ["openai", "anthropic", "httpx", "safetensors", "transformers", "numpy", "pillow"]
 
 [project.scripts]

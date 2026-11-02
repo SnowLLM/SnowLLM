@@ -41,8 +41,9 @@ def operator(fn):
         trace = tracing()
         if trace is None or trace.lifetimes != 'uses':
             return fn(*args, **kwargs)
+        values = args,kwargs
         with trace.operation(fn.__module__.rsplit('.',1)[-1]+'.'+fn.__name__,
-                             reads=(args,kwargs),writes=(args,kwargs)):
+                             reads=values,writes=values):
             result = fn(*args, **kwargs)
             trace._ops[-1]['uses'].update(trace._tags(result))
             return result

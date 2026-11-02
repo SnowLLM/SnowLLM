@@ -7,6 +7,11 @@ from collections.abc import Callable
 from types import ModuleType
 
 _MODELS = {
+    "PPOCRModel": ("mineru.ppocr", "load_weights"),
+    "MinerUTableModel": ("mineru.table", "load_weights"),
+    "PPFormulaNetModel": ("mineru.pp_formulanet", "load_weights"),
+    "PPDocLayoutV2Model": ("mineru.pp_doclayout_v2", "load_weights"),
+    "Qwen2VLForConditionalGeneration": ("mineru.qwen2_vl", "load_weights"),
     "Lfm2MoeForCausalLM": ("lfm2", "load_weights"),
     "MiniCPMV4_7ForConditionalGeneration": ("minicpmv", "load_weights"),
     "Glm5NextForConditionalGeneration": ("glm5_next", None),
