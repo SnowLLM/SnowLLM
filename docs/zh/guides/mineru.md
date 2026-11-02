@@ -11,7 +11,7 @@ MinerU 将 PDF、扫描件和图片解析成 Markdown 与结构化文档，识�
 - 安装包含 MinerU 额外依赖的 SnowLLM：
 
 ```sh
-python -m pip install --upgrade 'snowllm[mineru]'
+python -m pip install --upgrade --pre 'snowllm[mineru]'
 ```
 
 依赖固定使用 `mineru[torch]==4.1.3`。源码安装可在 SnowLLM 目录运行 `python -m pip install -e '.[mineru]'`，并通过 `SNOWLLM_LIB` 指向配套构建的 `libsnowllm.so`；WebUI 也可在设置中选择内核库。

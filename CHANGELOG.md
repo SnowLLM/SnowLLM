@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.22.dev2 — 2026-11-02
+
+Add MinerU document parsing and improve loading multiple models in the Web UI.
+
+- Add the bundled MinerU recipe, GPU document models, a Documents page and a document parsing API for PDF files and images.
+  新增 MinerU 整套模型配方、GPU 文档模型、「文档」页面及 PDF、图片解析 API。
+- Load multiple models in one operation and reuse their working memory to reduce repeated initialization.
+  支持一次加载多个模型并复用工作内存，减少重复初始化。
+- Improve visual inference and memory reuse, use MIOpen from the installed ROCm PyTorch, and require SnowLLM-Kernels 0.3.14.
+  优化视觉推理与内存复用，使用当前 ROCm PyTorch 的 MIOpen，依赖升级至 SnowLLM-Kernels 0.3.14。
+
 ## 0.3.22.dev1 — 2026-11-01
 
 Add multi-model serving in the Web UI with shared execution and memory budgets.
