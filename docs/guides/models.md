@@ -1,6 +1,6 @@
 # Model downloads
 
-A recipe is one model at one precision. `snowllm pull` fetches it:
+A recipe defines model files and launch settings, including model bundles. `snowllm pull` fetches it:
 
 ```sh
 snowllm recipes                      # what there is
@@ -31,6 +31,26 @@ hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
 
 A GGUF works too — `snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash` gets the UD-Q4_K_XL quant with
 its DFlash drafter beside it: a smaller download, and llama.cpp serves the same file.
+
+## MinerU
+
+Install `snowllm[mineru]` with Python 3.11 or newer and a kernel library that includes
+MinerU support. Start the complete bundle with:
+
+```sh
+snowllm b/mineru
+```
+
+The first start downloads the pinned vision and auxiliary models from Hugging Face
+(about 3.22 GB); later starts reuse the local files. All model inference uses the
+GPU. In the Web UI, select **Start MinerU**, then upload a PDF or image under
+**Documents** to obtain Markdown. Basic, Standard and Advanced share the same bundle.
+One MinerU pipeline can reside alongside chat models in each worker.
+
+`POST /v1/documents/parse` accepts `model`, `filename`, a base64 `file`, optional
+`tier` (`basic`, `standard`, `advanced`) and `page_range`. The response contains
+`markdown` and the structured `document`. The bundle shares the worker's memory
+ceiling and unloads as one model.
 
 ## Choosing a model
 

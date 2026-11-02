@@ -8,6 +8,8 @@
 | OpenAI Responses | `POST /v1/responses` |
 | Anthropic Messages | `POST /v1/messages` |
 
+文档解析使用 `POST /v1/documents/parse`，支持 PDF 和图片，返回 Markdown 与结构化文档。安装与调用示例见 [MinerU 接入指南](./mineru)。
+
 三种 API 均支持流式输出和工具调用。图片输入需要带视觉模块的模型；可发送 data URL，或通过 `--allow-image-urls` 启用 HTTP(S) 图片下载。
 
 兼容范围限于已实现的推理端点，并非上游 API 的全部功能。Responses 不保存会话状态：请在 `input` 中重新发送历史消息；不支持 `previous_response_id` 和后台请求。暂不支持内置工具、语法约束 JSON 输出与强制工具选择。

@@ -64,13 +64,18 @@ Q/K/V against FP32 attention, including the final three causal queries of a long
 `SNOWLLM_LFM_ATTENTION_TOKENS` selects its length (default 8192; tested at 120000 on gfx1151).
 
 Multi-model coverage: `test_multimodel.py` and `test_multimodel_management.py` are CPU-only
-scheduler, streaming-binding and lifecycle tests. `node --test tests/test_webui.mjs`
+scheduler, streaming-binding and lifecycle tests, including independent GPU/NPU queues,
+target routing, cancellation, unavailable backends and device failure isolation using fake backends.
+`test_shared_workspace.py` checks per-target sharing, final batch capture, growth/recapture,
+failed allocations, partial batch failures and memory accounting without hardware.
+`node --test tests/test_webui.mjs`
 checks the frontend helpers. The optional CPU-only `test_multimodel_browser.py` uses
 Playwright/Chromium with GPU acceleration disabled to check background sessions,
-model selection and targeted cancellation; `SNOWLLM_TEST_BROWSER` selects Chromium.
+model selection, batch loading, target persistence, once-per-startup advice and targeted cancellation;
+`SNOWLLM_TEST_BROWSER` selects Chromium.
 
-`test_multimodel_e2e.py` loads LFM and Qwen together, compares independent and
-interleaved generation, and checks targeted unloading. Run it through withgpu.
+`test_multimodel_e2e.py` loads LFM and Qwen together, checks shared workspace addresses and growth,
+compares independent and interleaved generation, and checks targeted unloading. Run it through withgpu.
 `SNOWLLM_MULTI_MODEL_A` / `SNOWLLM_MULTI_MODEL_B` override the checkpoints;
 `SNOWLLM_MULTI_EAGER=0` enables graphs; `SNOWLLM_MULTI_DRAFT_A` /
 `SNOWLLM_MULTI_DRAFT_B` enable each model's drafter.
@@ -99,3 +104,54 @@ load/unload cycles. Run it through withgpu with the same checkpoint overrides.
 `SNOWLLM_MULTI_HOST_ALLOC=1` repeats the capacity/lifetime test with mapped host Tensor pools; live allocations are distinguished from reusable allocator segments.
 
 Set `SNOWLLM_MULTI_PROFILE_DIR` and `SNOWLLM_TRACE=1` for a per-model CPU/GPU trace of the interleaved inference test. `SNOWLLM_MULTI_EAGER_A=1` / `SNOWLLM_MULTI_EAGER_B=1` select mixed eager/graph execution when `SNOWLLM_MULTI_EAGER=0`.
+
+MinerU CPU checks: `python -m unittest discover -s tests -p test_mineru.py`.
+`python tests/test_miopen_loader.py` checks that convolution symbols come from
+PyTorch's dependencies and cannot fall back to a system MIOpen installation.
+The GPU checks require the `mineru` extra, the complete recipe download and a
+kernel library with MinerU support; launch each through `~/withgpu/withgpu`:
+
+```sh
+python tests/test_mineru_reference.py
+python tests/test_mineru_tables.py
+python tests/test_mineru_memory.py
+python tests/test_mineru_native_models.py
+python tests/test_mineru_projections.py
+python tests/test_mineru_norm.py
+python tests/test_mineru_graphs.py
+python tests/test_mineru_capacity.py
+python tests/test_mineru_vision_graphs.py
+python tests/test_mineru_vision_attention.py
+python tests/test_mineru_formula.py
+python tests/test_mineru_e2e.py
+```
+
+`SNOWLLM_MINERU_DIR` selects the bundle directory. `SNOWLLM_MINERU_EAGER=0` checks
+HIP graph execution; `SNOWLLM_MINERU_COEXIST=1` also checks LFM interleaving and
+targeted cancellation while document parsing is active. Browser checks include
+the Documents upload and Markdown result controls.
+`SNOWLLM_MINERU_AUXILIARY=1` also exercises formula and seal inference directly.
+`SNOWLLM_MINERU_GPU_LIMIT_GIB` selects the worker ceiling (default 12 GiB).
+`SNOWLLM_MINERU_OCCUPIED_GIB` allocates an existing occupancy before loading and
+checks rejection of an allocation larger than the remaining budget. For example,
+10 GiB / 5 GiB checks a 5 GiB remaining allowance. These are test inputs, not model
+capacity requirements; the model's loading and inference peaks must also fit.
+
+The projection test covers BF16 bias/activation/residual fusion, native FP16
+projections, aliased residuals and the shared workspace query. Graph tests cover
+shared Arena plans, admission of a whole forward, changed inputs,
+independent vision outputs, pool eviction/recapture and formula KV growth.
+The vision attention test checks head dimensions 72/80 against FP32 attention,
+8/16-key boundaries, packed output dispatch, unaligned output views, ragged and
+empty image segments, varied input scales, and graph input refresh.
+
+`test_mineru_memory.py` checks remaining shared GPU allowance and rejects oversized
+Arena plans before allocation, including eager mode. `test_mineru_native_models.py`
+compares own OCR, seal and layout definitions against official checkpoint models.
+`test_mineru_graphs.py` verifies input refresh, output independence and cache eviction
+through the shared graph runner. `test_mineru_formula.py` checks 130 decode steps,
+KV capacity growth and repeated requests against the official formula decoder.
+`test_mineru_capacity.py` checks capacity reuse across OCR and vision shapes,
+non-monotone workspace growth, graph promotion, output independence and budget
+rejection before allocation. Dynamic OCR, seal and vision outputs must match the
+original exact-shape execution bit for bit.

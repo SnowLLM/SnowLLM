@@ -1,6 +1,6 @@
 # 下载模型 {#model-downloads}
 
-一个方案对应一种模型和精度。使用 `snowllm pull` 下载：
+方案定义模型文件与启动参数，也可以组合一套模型。使用 `snowllm pull` 下载：
 
 ```sh
 snowllm recipes                      # what there is
@@ -28,6 +28,24 @@ hf download Qwen/Qwen3.6-35B-A3B-FP8 --local-dir ~/models/Qwen3.6-35B-A3B-FP8
 ```
 
 GGUF 也受支持。`snowllm pull qwen3.6-35b-a3b-q4-k-xl-dflash` 会同时下载 UD-Q4_K_XL 量化权重及 DFlash 草稿模型。下载体积更小，llama.cpp 也能使用同一份 GGUF 文件。
+
+## MinerU
+
+使用 Python 3.11 及以上版本，安装 `snowllm[mineru]` 并配套支持 MinerU 的内核库：
+
+```sh
+snowllm b/mineru
+```
+
+首次启动从 Hugging Face 下载固定版本的视觉模型和辅助模型（约 3.22 GB），后续复用本地文件。
+所有模型推理均在 GPU 上执行。WebUI 点击「启动 MinerU」，在「文档」页面上传 PDF 或图片即可获得 Markdown。
+Basic、Standard、Advanced 共用整套模型。每个 worker 可加载一套 MinerU，并与聊天模型共同常驻。
+
+`POST /v1/documents/parse` 接收 `model`、`filename`、base64 编码的 `file`，以及可选的
+`tier`（`basic`、`standard`、`advanced`）和 `page_range`；返回 `markdown` 和结构化的 `document`。
+整套模型共用 worker 的内存上限，作为一个模型卸载。
+
+安装、API 调用示例和显存说明见 [MinerU 接入指南](./mineru)。
 
 ## 选择模型 {#choosing-a-model}
 

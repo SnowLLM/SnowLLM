@@ -38,46 +38,42 @@ Deletion requires confirmation. Loaded models, their drafters and symlinks are p
 
 ## Monitoring
 
-Chat replies show per-request prefill and decode throughput (tok/s), including
-thinking tokens. Prefill counts only tokens actually processed, excluding cached
-prefixes; decode excludes the first token emitted during prefill. Timing covers
-active engine steps, including scheduling and sampling, rather than browser/network
-latency. Statistics remain visible after refreshing the conversation.
+Chat replies show prefill and generation speed (tok/s), including thinking tokens. These figures exclude browser and network delays and remain visible after refreshing the conversation.
 
-The Overview shows engine queue/cache statistics and GPU utilization, device power,
-temperature, VRAM, and shared memory when Linux DRM/hwmon sensors provide them.
-Unsupported sensors show as unavailable. Device power follows the driver's sensor
-scope (on integrated GPUs it may include the APU). The inference listener exposes
-`GET /metrics` in Prometheus text format and `GET /metrics?format=json` for the same
-snapshot. JSON includes per-model engine and scheduling statistics; Prometheus adds `snowllm_model_*{model="ID"}` series. GPU sensors are collected once for the device. Request `usage.timings` includes `queue_seconds` until first admission and `scheduler_wait_seconds` for shared-executor waiting; these overlap and should not be added together. The management listener proxies it at `/daemon/metrics`. Metrics reset
-when a model is unloaded or the worker restarts; `--stats-interval 0` disables aggregate engine
-accounting, but per-request chat timing and GPU sensors remain available.
+The Overview shows request and cache statistics, plus GPU utilization, power, temperature and memory when Linux sensors provide them. Unsupported readings appear as unavailable. On integrated GPUs, power readings may include the entire APU.
 
-## Model lifecycle
+For external monitoring, use `/metrics` (Prometheus) or `/metrics?format=json` on the inference port. Statistics reset when a model is unloaded or the service restarts.
 
-The Web UI keeps multiple models loaded at one inference address, alternating between engine steps. Choose a model per chat session or specify `model` in API requests; omitted values use the default. Choose a new default after unloading it.
+## Using multiple models {#model-lifecycle}
 
-Unloading waits for that model’s requests or interrupts them on request. Ordinary load failures preserve other loaded models.
+Load multiple models on the **Models** page and choose a default. Each chat session can select its own model. Choose a new default after unloading it.
 
-Models share the memory ceilings set by the first load; subsequent loads use the remaining capacity. Context and other model settings are independent. Manage multiple models through the Web UI; direct serving remains single-model.
+When unloading, wait for the model's requests to finish or interrupt them. If one model fails to load, other loaded models remain available.
 
-The daemon runs two separate listeners:
+GPU models share the memory limit set during the first load. New models use the remaining space; context length and other settings can be set separately. Select GPU for now; NPU is not yet available.
 
-| Listener | Default address | Endpoints |
-| --- | --- | --- |
-| Inference | `127.0.0.1:8000` | `/v1/*`, `/health`, `/metrics` |
-| Management | `127.0.0.1:8001` | Web UI, `/daemon/*` |
+## Service addresses {#service-addresses}
 
-Clients keep using the same inference port and the existing `/v1` APIs. The daemon
-streams requests to a separate inference process; while no model is ready, model inference
-endpoints return HTTP 503. The management service stays available if model loading
-fails. The default load timeout is 600 seconds (`--load-timeout` changes it), including worker startup and GPU-lock waiting. Subsequent load timeouts request safe cancellation without terminating resident models. On hosts with `~/withgpu/withgpu`, the daemon wraps the GPU child itself; do not acquire the same lock around the daemon as well.
+| Use | Default address |
+| --- | --- |
+| Chat clients and API | `http://127.0.0.1:8000/v1` |
+| Browser Web UI | `http://127.0.0.1:8001` |
 
-The inference listener does not expose model management, filesystem browsing, or
-Web UI assets. Web UI chat uses dedicated same-origin endpoints on the management
-listener (`/daemon/inference/models` and `/daemon/inference/chat/completions`), which
-reuse the inference forwarding logic. Profiling controls are management endpoints:
-`POST /daemon/profile/start` and `POST /daemon/profile/stop`. Start uses the default model's `--profile-dir`; one profiler captures the shared executor and labels model steps by ID.
+If loading fails, check the logs, adjust the settings and try again.
+
+## Loading multiple models {#loading-multiple-models}
+
+Load the models you plan to use together to reduce repeated initialization. Configure each model, choose **Add to load list**, then **Load all listed models**.
+
+Or specify multiple models in the terminal:
+
+```sh
+snowllm load /models/Large /models/Small -- --max-model-len 32k
+```
+
+Options after the model list apply to every model; recipe defaults remain independent. Existing models may temporarily stop accepting new requests while loading. Wait for loading to finish before continuing.
+
+Set `SNOWLLM_NO_LOAD_ADVICE=1` to hide loading advice.
 
 ## Configuration
 
