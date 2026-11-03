@@ -1,41 +1,9 @@
 # Integrations
 
-## Supported APIs
+Connect applications through the OpenAI- and Anthropic-compatible inference APIs, or use the MinerU adapter for document model inference.
 
-| API | Request endpoint |
+| Integration | Use |
 | --- | --- |
-| OpenAI Chat Completions | `POST /v1/chat/completions` |
-| OpenAI Responses | `POST /v1/responses` |
-| Anthropic Messages | `POST /v1/messages` |
-
-All three support streaming and function tool calls. Image input requires a checkpoint with a vision tower; send data URLs, or enable HTTP(S) image fetching with `--allow-image-urls`.
-
-Compatibility covers the implemented inference endpoints, not the entire upstream APIs. Responses is stateless: resend the conversation in `input`; `previous_response_id` and background requests are unsupported. Built-in tools, grammar-constrained JSON output and forced tool selection are unsupported.
-
-Client base URLs:
-
-- **OpenAI** (Chat Completions or Responses): `http://127.0.0.1:8000/v1`
-- **Anthropic** (Messages): `http://127.0.0.1:8000`
-
-## First request
-
-Load a model first. Replace `model` with its ID from `GET /v1/models`.
-
-```sh
-curl http://127.0.0.1:8000/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"Qwen3.8-Flash-Next","messages":[{"role":"user","content":"Hello!"}],"stream":true}'
-```
-
-## Pi
-
-Configure [Pi](https://pi.dev) to connect to a SnowLLM server:
-
-```sh
-snowllm pi --port 8000
-snowllm pi --host 192.168.1.10 --port 8000
-```
-
-This writes all models from the recipe catalogue to `~/.pi/agent/models.json`, without requiring a running server or a loaded model. Context comes from each recipe's `max_model_len`, or the default when omitted. `--host` defaults to `localhost`; use the inference server's port.
-
-For LAN access, serve with `--host 0.0.0.0`. Model management uses a separate listener; see [Web UI](../webui).
+| [pi.dev](../integrations/pi) | Write the model catalogue to Pi configuration |
+| [HTTP API](../integrations/http-api) | Chat Completions, Responses, Messages and SnowLLM extensions |
+| [MinerU](../integrations/mineru) | Connect native document parsing to SnowLLM model inference |

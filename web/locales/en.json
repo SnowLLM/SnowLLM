@@ -153,6 +153,8 @@
   "docs.guides": "Guides",
   "docs.models": "Model downloads",
   "docs.webui": "Web UI",
+  "docs.httpApi": "HTTP API",
+  "docs.changelog": "Changelog",
   "docs.integrations": "Integrations",
   "docs.performance": "Performance tuning",
   "docs.windowsPagefile": "Windows additional settings",

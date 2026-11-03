@@ -34,23 +34,12 @@ its DFlash drafter beside it: a smaller download, and llama.cpp serves the same 
 
 ## MinerU
 
-Install `snowllm[mineru]` with Python 3.11 or newer and a kernel library that includes
-MinerU support. Start the complete bundle with:
+| Recipe | Models | Integration |
+| --- | --- | --- |
+| `b/mineru-vlm` | VLM only | Change MinerU's VLM API address |
+| `b/mineru` | VLM, layout, OCR, table and formula | Install `snowllm[mineru]` and launch with `snowllm-mineru` |
 
-```sh
-snowllm b/mineru
-```
-
-The first start downloads the pinned vision and auxiliary models from Hugging Face
-(about 3.22 GB); later starts reuse the local files. All model inference uses the
-GPU. In the Web UI, select **Start MinerU**, then upload a PDF or image under
-**Documents** to obtain Markdown. Basic, Standard and Advanced share the same bundle.
-One MinerU pipeline can reside alongside chat models in each worker.
-
-`POST /v1/documents/parse` accepts `model`, `filename`, a base64 `file`, optional
-`tier` (`basic`, `standard`, `advanced`) and `page_range`. The response contains
-`markdown` and the structured `document`. The bundle shares the worker's memory
-ceiling and unloads as one model.
+See [MinerU](../integrations/mineru) for startup commands and configuration.
 
 ## Choosing a model
 
