@@ -1,0 +1,31 @@
+{
+  "id": "mineru-vlm",
+  "model": "MinerU VLM",
+  "serve_as": "MinerU-VLM",
+  "requires": "0.3.22",
+  "family": "MinerU",
+  "modalities": [
+    "text",
+    "image"
+  ],
+  "precision": "BF16",
+  "dir": "MinerU2.5-Pro-2605-1.2B",
+  "repo": "opendatalab/MinerU2.5-Pro-2605-1.2B",
+  "revision": "08aaea840498d49ce16247b6263196cf02814885",
+  "include": [
+    "*.json",
+    "*.jinja",
+    "*.txt",
+    "*.safetensors"
+  ],
+  "spec": "none",
+  "status": "supported",
+  "summary": "MinerU vision-language model only, served through the OpenAI-compatible API.",
+  "defaults": {
+    "num_spec": 0,
+    "max_model_len": 8192,
+    "max_num_seqs": 1,
+    "max_num_batched_tokens": 512
+  },
+  "bytes": 2328011610
+}
