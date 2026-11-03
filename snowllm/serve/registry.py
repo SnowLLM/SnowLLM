@@ -352,7 +352,7 @@ class ModelRegistry:
             item.state and getattr(item.state.engine, 'mineru', None) is not None
             for item in self.records.values()
         ):
-            raise ValueError('this worker already has a MinerU pipeline loaded')
+            raise ValueError('this worker already has a MinerU model bundle loaded')
         if self.process_config is not None:
             shared = self.process_config['budget']
             flags = {value.split('=', 1)[0] for value in options}

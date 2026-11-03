@@ -34,6 +34,7 @@ test = ["openai", "anthropic", "httpx", "safetensors", "transformers", "numpy", 
 
 [project.scripts]
 snowllm = "snowllm.cli:main"
+snowllm-mineru = "snowllm.mineru.cli:main"
 
 
 [project.urls]

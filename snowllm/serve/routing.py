@@ -2,6 +2,7 @@
 import json
 
 from starlette.responses import JSONResponse
+from starlette.datastructures import QueryParams
 
 from .state import _REQUEST_STATE
 
@@ -13,13 +14,6 @@ class ModelRouting:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.app(scope, receive, send)
-        if (state := scope.get('snowllm.internal_state')) is not None:
-            # Internal model calls remain covered by the document request's lease while draining.
-            token = _REQUEST_STATE.set(state)
-            try:
-                return await self.app(scope, receive, send)
-            finally:
-                _REQUEST_STATE.reset(token)
         registry = getattr(scope['app'].state, 'registry', None)
         path = scope['path']
         if registry is None or not path.startswith('/v1/') or path == '/v1/models':
@@ -39,17 +33,22 @@ class ModelRouting:
                 body = {'detail': str(exc)}
             return JSONResponse(body, status_code=status)
 
+        tensors = path == '/v1/inference' or path.startswith('/v1/inference/')
         chunks = []
-        while True:
-            message = await receive()
-            if message['type'] == 'http.disconnect':
-                return
-            chunks.append(message)
-            if not message.get('more_body'):
-                break
+        if not tensors:
+            while True:
+                message = await receive()
+                if message['type'] == 'http.disconnect':
+                    return
+                chunks.append(message)
+                if not message.get('more_body'):
+                    break
         try:
-            body = json.loads(b''.join(item.get('body', b'') for item in chunks) or b'{}')
-            name = body.get('model') if isinstance(body, dict) else None
+            if tensors:
+                name = QueryParams(scope.get('query_string', b'')).get('model')
+            else:
+                body = json.loads(b''.join(item.get('body', b'') for item in chunks) or b'{}')
+                name = body.get('model') if isinstance(body, dict) else None
             record = registry.acquire(name)
         except (ValueError, TypeError) as exc:
             return await error(400, exc)(scope, receive, send)

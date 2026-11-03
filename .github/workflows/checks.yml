@@ -29,7 +29,7 @@ jobs:
           node-version: "24"
 
       - name: Install CPU test dependencies
-        run: python -m pip install --upgrade pip packaging fastapi httpx uvicorn
+        run: python -m pip install --upgrade pip packaging fastapi httpx uvicorn numpy
 
       - name: Update checker, management API and installer
         run: scripts/run-tests.sh test_updates test_daemon test_install_channels test_install_targets test_mineru.py test_miopen_loader

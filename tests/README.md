@@ -117,6 +117,8 @@ python tests/test_mineru_tables.py
 python tests/test_mineru_memory.py
 python tests/test_mineru_native_models.py
 python tests/test_mineru_projections.py
+python tests/test_mineru_transpose.py
+python tests/test_mineru_relation.py
 python tests/test_mineru_norm.py
 python tests/test_mineru_graphs.py
 python tests/test_mineru_capacity.py
@@ -126,11 +128,11 @@ python tests/test_mineru_formula.py
 python tests/test_mineru_e2e.py
 ```
 
-`SNOWLLM_MINERU_DIR` selects the bundle directory. `SNOWLLM_MINERU_EAGER=0` checks
-HIP graph execution; `SNOWLLM_MINERU_COEXIST=1` also checks LFM interleaving and
-targeted cancellation while document parsing is active. Browser checks include
-the Documents upload and Markdown result controls.
-`SNOWLLM_MINERU_AUXILIARY=1` also exercises formula and seal inference directly.
+`test_mineru_e2e.py` checks model-only serving without importing MinerU, the native
+parser through all three model tiers, formula/seal/table inference, the adapter CLI,
+and the native WebUI managed API subprocess with the upstream Tasks client.
+`SNOWLLM_MINERU_COEXIST=1` also checks colocated LFM inference.
+`SNOWLLM_MINERU_DIR` selects the bundle directory.
 `SNOWLLM_MINERU_GPU_LIMIT_GIB` selects the worker ceiling (default 12 GiB).
 `SNOWLLM_MINERU_OCCUPIED_GIB` allocates an existing occupancy before loading and
 checks rejection of an allocation larger than the remaining budget. For example,

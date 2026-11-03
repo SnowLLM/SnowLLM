@@ -15,7 +15,6 @@
       <a href="#workspace" data-page="workspace"><span class="nav-icon">⌘</span><span data-i18n="Overview">Overview</span></a>
       <a href="#models" data-page="models"><span class="nav-icon">▦</span><span data-i18n="Models">Models</span><span id="nav-count" class="nav-count">—</span></a>
       <a href="#chat" data-page="chat"><span class="nav-icon">▤</span><span data-i18n="Chat">Chat</span></a>
-      <a href="#documents" data-page="documents"><span class="nav-icon">▧</span><span data-i18n="Documents">Documents</span></a>
       <a href="#settings" data-page="settings"><span class="nav-icon">⚙</span><span data-i18n="Settings">Settings</span></a>
     </nav>
     <div class="connection"><span id="connection-dot" class="dot"></span><div><strong id="connection-title"><span data-i18n="Connecting…">Connecting…</span></strong><span id="connection-detail"><span data-i18n="Local Web UI">Local Web UI</span></span></div></div>
@@ -62,17 +61,6 @@
       </div>
       <article class="panel server-metrics-panel"><div class="panel-heading"><h2><span data-i18n="Server metrics">Server metrics</span></h2><a id="metrics-link" class="text-link" target="_blank" rel="noopener">/metrics ↗</a></div><dl class="runtime-list"><div><dt><span data-i18n="Running / waiting">Running / waiting</span></dt><dd id="metrics-requests">—</dd></div><div><dt><span data-i18n="Free KV blocks">Free KV blocks</span></dt><dd id="metrics-kv">—</dd></div><div><dt><span data-i18n="Cache hits / misses">Cache hits / misses</span></dt><dd id="metrics-cache">—</dd></div><div><dt><span data-i18n="Avg. prefill / decode">Avg. prefill / decode</span></dt><dd id="metrics-throughput">—</dd></div></dl><div id="gpu-metrics"><p class="muted">—</p></div></article>
       <article class="panel logs-panel"><div class="panel-heading"><div><h2><span data-i18n="Activity">Activity</span></h2></div><div class="log-controls"><label class="sr-only" for="log-kind"><span data-i18n="Log source">Log source</span></label><select id="log-kind"><option value="inference" data-i18n="Inference">Inference</option><option value="download" data-i18n="Download">Download</option></select><button id="refresh-logs" class="button secondary">↻</button></div></div><pre id="logs" class="terminal" tabindex="0"><span data-i18n="No activity.">No activity.</span></pre></article>
-    </section>
-    <section id="page-documents" class="page" hidden>
-      <div class="page-heading"><div><h1 data-i18n="Documents">Documents</h1><p data-i18n="Load the MinerU recipe to parse PDF files and images.">Load the MinerU recipe to parse PDF files and images.</p></div></div>
-      <article class="panel settings-panel"><form id="document-form">
-        <label for="document-model" data-i18n="MinerU model">MinerU model</label><select id="document-model" required></select>
-        <label for="document-file" data-i18n="PDF or image">PDF or image</label><input id="document-file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp" required>
-        <label for="document-tier" data-i18n="Parsing quality">Parsing quality</label><select id="document-tier"><option value="basic">Basic</option><option value="standard" selected>Standard</option><option value="advanced">Advanced</option></select>
-        <label for="document-pages" data-i18n="Pages (optional)">Pages (optional)</label><input id="document-pages" placeholder="1-5">
-        <div class="settings-footer"><span id="document-status" role="status"></span><button id="parse-document" class="button primary" disabled data-i18n="Parse document">Parse document</button></div>
-      </form></article>
-      <article class="panel settings-panel"><label for="document-result">Markdown</label><textarea id="document-result" rows="20" readonly></textarea><button id="download-document" class="button secondary" disabled data-i18n="Download Markdown">Download Markdown</button></article>
     </section>
     <section id="page-models" class="page" hidden>
       <div class="page-heading"><div><h1><span data-i18n="Models">Models</span></h1></div><button id="refresh-recipes" class="button secondary"><span data-i18n="↻ Refresh catalog">↻ Refresh catalog</span></button></div>

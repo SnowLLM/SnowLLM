@@ -254,10 +254,6 @@ def create_app(manager: DaemonManager):
     async def chat(request: Request):
         return await forward(manager, "v1/chat/completions", request)
 
-    @app.post('/daemon/inference/documents/parse')
-    async def parse_document(request: Request):
-        return await forward(manager, 'v1/documents/parse', request)
-
     @app.post("/daemon/profile/{action}")
     async def profile(action: str, request: Request):
         if action not in ("start", "stop"):

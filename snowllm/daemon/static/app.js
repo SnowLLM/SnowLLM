@@ -10,7 +10,6 @@ let status = null, recipes = [], localModels = [], source = 'recipe', page = 'wo
 let bundleCatalog = false;
 let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
 let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit = null;
-let documentParsing = false, documentFilename = 'document';
 let catalogRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
@@ -149,10 +148,10 @@ async function action(button, task) {
 }
 function navigate() {
   const next = location.hash.slice(1);
-  page = ['workspace', 'models', 'chat', 'documents', 'settings'].includes(next) ? next : 'workspace';
-  for (const name of ['workspace', 'models', 'chat', 'documents', 'settings']) $('page-' + name).hidden = name !== page;
+  page = ['workspace', 'models', 'chat', 'settings'].includes(next) ? next : 'workspace';
+  for (const name of ['workspace', 'models', 'chat', 'settings']) $('page-' + name).hidden = name !== page;
   document.querySelectorAll('nav a').forEach(link => { link.classList.toggle('active', link.dataset.page === page); if (link.dataset.page === page) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
-  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), documents: t('Documents'), settings: t("Settings") }[page];
+  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), settings: t("Settings") }[page];
   if (page === 'workspace') refreshLogs().catch(error => toast(error.message));
   if (page === 'settings') storageSpace();
 }
@@ -256,11 +255,6 @@ function renderResidentModels(next) {
     unload.addEventListener('click', () => action(unload, async () => renderStatus(await post('/daemon/models/unload', {id: row.id, force: $('force-switch').checked}))));
     buttons.append(use, unload); card.append(buttons); list.append(card);
   }
-  const selected = $('document-model').value;
-  const documents = (next.models || []).filter(row => row.state === 'ready' && row.runtime_config?.runtime === 'mineru');
-  $('document-model').replaceChildren(...documents.map(row => new Option(row.id, row.id)));
-  if (documents.some(row => row.id === selected)) $('document-model').value = selected;
-  $('parse-document').disabled = !documents.length || documentParsing;
 }
 function renderStatus(next) {
   const oldModel = status?.model;
@@ -454,15 +448,6 @@ function renderRecipes() {
     const footer = element('div', 'recipe-footer');
     footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
     const buttons = element('div', 'download-actions');
-    if (recipe.runtime === 'mineru' && recipe.servable) {
-      const start = element('button', 'button primary', t('Start MinerU'));
-      start.disabled = transition() || (status?.models || []).some(row => row.runtime_config?.runtime === 'mineru' && row.state !== 'failed');
-      start.addEventListener('click', () => action(start, async () => {
-        renderStatus(await post('/daemon/models/load', {model: recipe.id, options: []}));
-        location.hash = 'documents';
-      }));
-      buttons.append(start);
-    }
     if (recipe.loadable && recipe.servable) {
       const use = element('button', 'button secondary', t("Configure & load")); use.dataset.use = recipe.id;
       use.addEventListener('click', () => { chooseSource('recipe'); $('load-recipe').value = recipe.id; restoreLoadSettings(); recipeDescription(); location.hash = 'workspace'; $('load-recipe').focus(); }); buttons.append(use);
@@ -738,33 +723,6 @@ $('export-chat').addEventListener('click', () => {
   const text = conversation.map(message => `${message.role === 'user' ? 'User' : 'SnowLLM'}\n\n${message.reasoning ? `[Thinking]\n${message.reasoning}\n\n` : ''}${message.content}`).join('\n\n---\n\n');
   const url = URL.createObjectURL(new Blob([text], {type: 'text/plain;charset=utf-8'}));
   const link = element('a'); link.href = url; link.download = `snowllm-chat-${new Date().toISOString().slice(0, 10)}.txt`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-});
-$('document-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const file = $('document-file').files[0];
-  if (!file || documentParsing || !$('document-model').value) return;
-  documentParsing = true; $('parse-document').disabled = true;
-  $('document-status').textContent = t('Parsing document…');
-  try {
-    const encoded = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.onerror = () => reject(new Error(t('Could not read the document.')));
-      reader.readAsDataURL(file);
-    });
-    const result = await post('/daemon/inference/documents/parse', { model: $('document-model').value,
-      filename: file.name, file: encoded, tier: $('document-tier').value, page_range: $('document-pages').value.trim() });
-    $('document-result').value = result.markdown;
-    documentFilename = file.name.replace(/\.[^.]+$/, '') || 'document';
-    $('download-document').disabled = false;
-    $('document-status').textContent = t('Document parsed');
-  } catch (error) { $('document-status').textContent = error.message; }
-  finally { documentParsing = false; $('parse-document').disabled = !$('document-model').value; }
-});
-$('download-document').addEventListener('click', () => {
-  const url = URL.createObjectURL(new Blob([$('document-result').value], {type: 'text/markdown;charset=utf-8'}));
-  const link = document.createElement('a'); link.href = url; link.download = documentFilename + '.md'; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 $('regenerate-chat').addEventListener('click', () => {
   if (chatController || status?.state !== 'ready' || conversation.at(-1)?.role !== 'assistant' || conversation.at(-2)?.role !== 'user') return;

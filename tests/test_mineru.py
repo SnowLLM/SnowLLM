@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-import base64
 import asyncio
 import contextlib
 import json
@@ -16,7 +15,6 @@ from snowllm.hub import recipes
 from snowllm.mineru.api import configure
 from snowllm.mineru.assets import configure_models
 from snowllm._platform import DeviceMemory
-from snowllm.mineru.transport import InternalAsyncTransport
 from snowllm.ngram import banned_ngram_tokens
 from snowllm.serve.state import _REQUEST_STATE
 from snowllm.serve.routing import ModelRouting
@@ -130,118 +128,176 @@ class MinerURecipeTests(unittest.TestCase):
         self.assertEqual(banned_ngram_tokens([1, 2], 4), [])
 
 
-class MinerUApiTests(unittest.IsolatedAsyncioTestCase):
-    async def test_internal_calls_keep_document_binding_during_draining(self):
+class MinerUInferenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_binary_inference_routes_selected_model_and_releases_lease(self):
+        import numpy as np
+        from snowllm.mineru.wire import pack, unpack
+
+        calls = []
+
+        async def infer(component, inputs):
+            calls.append((component, inputs))
+            return {'maps': inputs['input'] * 2}
+
+        state = SimpleNamespace(engine=SimpleNamespace(mineru=SimpleNamespace(
+            infer=infer, describe=lambda: {'protocol': 1})), model_name='documents')
+        record = SimpleNamespace(state=state, active=0)
+
+        def acquire(name):
+            self.assertEqual(name, 'documents')
+            record.active += 1
+            return record
+
         app = FastAPI()
+        app.state.registry = SimpleNamespace(acquire=acquire)
         app.add_middleware(ModelRouting)
-        state = SimpleNamespace(model_name="documents")
-        registry = SimpleNamespace(
-            acquire=lambda name: self.fail("must reuse the document lease")
-        )
-        app.state.registry = registry
+        configure(app)
+        values = np.arange(12, dtype=np.float32).reshape(1, 3, 2, 2)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as client:
+            response = await client.post('/v1/inference/ocr_det?model=documents',
+                                         content=pack({'input': values}))
+            self.assertEqual(response.status_code, 200, response.text)
+            np.testing.assert_array_equal(unpack(response.content)['maps'], values * 2)
+            self.assertEqual(record.active, 0)
+            self.assertEqual(calls[0][0], 'ocr_det')
+            response = await client.get('/v1/inference?model=documents')
+            self.assertEqual(response.json(), {'protocol': 1})
+            self.assertEqual(record.active, 0)
 
-        @app.post("/v1/chat/completions")
-        async def chat():
-            self.assertIs(_REQUEST_STATE.get(), state)
-            return {"choices": []}
-
-        runtime = SimpleNamespace(
-            loop=asyncio.get_running_loop(), state=state, check_cancelled=lambda: None
-        )
-        with patch.dict("sys.modules", {"snowllm.serve.api": SimpleNamespace(app=app)}):
-            async with httpx.AsyncClient(
-                transport=InternalAsyncTransport(runtime)
-            ) as client:
-                response = await client.post(
-                    "http://snowllm.internal/v1/chat/completions", json={}
-                )
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(_REQUEST_STATE.get())
-
-    async def test_vlm_requests_return_to_the_serving_loop(self):
-        loop = asyncio.get_running_loop()
-        app = FastAPI()
-
-        @app.post("/v1/chat/completions")
-        async def chat():
-            self.assertIs(asyncio.get_running_loop(), loop)
-            return {"choices": []}
-
-        runtime = SimpleNamespace(loop=loop, check_cancelled=lambda: None)
-
-        def other_loop():
-            async def send():
-                async with httpx.AsyncClient(
-                    transport=InternalAsyncTransport(runtime)
-                ) as client:
-                    return await client.post(
-                        "http://snowllm.internal/v1/chat/completions", json={}
-                    )
-
-            return asyncio.run(send())
-
-        with patch.dict("sys.modules", {"snowllm.serve.api": SimpleNamespace(app=app)}):
-            response = await asyncio.wait_for(asyncio.to_thread(other_loop), timeout=5)
-        self.assertEqual(response.status_code, 200)
-
-    async def test_parse_routes_selected_model_and_cleans_upload(self):
+    async def test_document_business_route_is_absent(self):
         app = FastAPI()
         configure(app)
-        paths = []
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as client:
+            response = await client.post('/v1/documents/parse', json={})
+            self.assertEqual(response.status_code, 404)
 
-        async def parse(path, **kwargs):
-            self.assertEqual(path.read_bytes(), b"example pdf")
-            self.assertEqual(kwargs, dict(tier="standard", page_range="1-2"))
-            paths.append(path)
-            return dict(markdown="Result", document={})
+    async def test_invalid_tensor_does_not_reach_executor(self):
+        called = False
 
-        state = SimpleNamespace(
-            engine=SimpleNamespace(mineru=SimpleNamespace(parse=parse)),
-            model_name="documents",
-        )
-        token = _REQUEST_STATE.set(state)
-        try:
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://test"
-            ) as client:
-                response = await client.post(
-                    "/v1/documents/parse",
-                    json=dict(
-                        filename="../../report.pdf",
-                        file=base64.b64encode(b"example pdf").decode(),
-                        model="documents",
-                        page_range="1-2",
-                    ),
-                )
-                self.assertEqual(response.status_code, 200, response.text)
-                self.assertEqual(response.json()["model"], "documents")
-                self.assertEqual(response.json()["filename"], "report.pdf")
-            self.assertFalse(paths[0].exists())
-        finally:
-            _REQUEST_STATE.reset(token)
+        async def infer(*args):
+            nonlocal called
+            called = True
 
-    async def test_invalid_document_rejected_before_execution(self):
+        token = _REQUEST_STATE.set(SimpleNamespace(engine=SimpleNamespace(
+            mineru=SimpleNamespace(infer=infer))))
         app = FastAPI()
         configure(app)
-        token = _REQUEST_STATE.set(
-            SimpleNamespace(engine=SimpleNamespace(mineru=object()))
-        )
         try:
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app), base_url="http://test"
-            ) as client:
-                for filename, content in [
-                    ("file.pdf", "not base64"),
-                    ("file.exe", "eA=="),
-                ]:
-                    response = await client.post(
-                        "/v1/documents/parse",
-                        json=dict(filename=filename, file=content),
-                    )
-                    self.assertEqual(response.status_code, 400)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url='http://test') as client:
+                response = await client.post('/v1/inference/ocr_det', content=b'%PDF-1.7')
+                self.assertEqual(response.status_code, 400)
+            self.assertFalse(called)
         finally:
             _REQUEST_STATE.reset(token)
 
 
-if __name__ == "__main__":
+class MinerUTransportTests(unittest.TestCase):
+    def test_forged_tensor_shape_is_rejected_before_allocation(self):
+        import io
+        import zipfile
+        import numpy as np
+        from snowllm.mineru.wire import unpack
+
+        header = io.BytesIO()
+        np.lib.format.write_array_header_1_0(header, dict(
+            descr='<f4', fortran_order=False, shape=(1 << 40,)))
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, 'w') as archive:
+            archive.writestr('input.npy', header.getvalue())
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            unpack(payload.getvalue())
+
+    def test_tensors_round_trip_without_pickle(self):
+        import io
+        import numpy as np
+        from snowllm.mineru.wire import pack, unpack
+
+        values = {'image': np.arange(24, dtype=np.float16).reshape(2, 3, 4),
+                  'ids': np.array([1, 2], dtype=np.int64), 'flag': True}
+        received = unpack(pack(values))
+        for name, expected in values.items():
+            np.testing.assert_array_equal(received[name], expected)
+        bad = io.BytesIO()
+        np.savez(bad, item=np.array([{}], dtype=object))
+        with self.assertRaises(ValueError):
+            unpack(bad.getvalue())
+
+    def test_model_client_pins_resolved_model_and_sends_binary_arrays(self):
+        import numpy as np
+        from snowllm.mineru.client import ModelClient, RemoteSession
+        from snowllm.mineru.wire import pack, unpack
+
+        def handle(request):
+            if request.method == 'GET':
+                return httpx.Response(200, json={'protocol': 1, 'model': 'resolved', 'assets': {},
+                    'components': {'table_cls': {'checkpoint': 'Table/cls.onnx',
+                        'architecture': 'MinerUTableModel', 'options': {'kind': 'classifier'},
+                        'kind': 'tensor', 'inputs': ['x'], 'outputs': ['scores'], 'metadata': {}}}})
+            self.assertEqual(request.url.params['model'], 'resolved')
+            values = unpack(request.content)
+            return httpx.Response(200, content=pack({'scores': values['input'] + 1}))
+
+        client = ModelClient('http://test/v1', transport=httpx.MockTransport(handle))
+        try:
+            session = RemoteSession(client, '/models/cls.onnx')
+            actual = session.run(None, {'x': np.array([2], dtype=np.float32)})
+            np.testing.assert_array_equal(actual[0], [3])
+            with self.assertRaises(ValueError):
+                session.run(None, {'wrong': np.array([2])})
+        finally:
+            client.close()
+
+
+class MinerUEntryTests(unittest.TestCase):
+    def test_webui_child_uses_injected_entry_and_preserves_native_arguments(self):
+        import sys
+        from snowllm.mineru.cli import patch_webui
+
+        class Managed:
+            def _command(self, port, directory):
+                return [sys.executable, '-m', 'mineru.kit.main', 'api-server',
+                        '--port', str(port), '--upload-dir', str(directory)]
+
+        original = Managed._command
+        with patch.dict('sys.modules', {'mineru.kit.gradio.client': SimpleNamespace(
+                ManagedLocalApiServer=Managed)}):
+            with contextlib.ExitStack() as stack:
+                patch_webui(stack, 'http://inference:8000', 'documents')
+                command = Managed()._command(1234, '/uploads')
+                self.assertEqual(command[:3], [sys.executable, '-m', 'snowllm.mineru.cli'])
+                self.assertIn('documents', command)
+                self.assertEqual(command[-5:], ['api-server', '--port', '1234', '--upload-dir', '/uploads'])
+            self.assertIs(Managed._command, original)
+
+    def test_help_forwards_without_opening_model_connection(self):
+        import sys
+        from snowllm.mineru.cli import main
+
+        seen = []
+        with (
+            patch('snowllm.mineru.injection.require_version'),
+            patch.dict('sys.modules', {'mineru.kit.main': SimpleNamespace(
+                main=lambda: seen.append(list(sys.argv)))}),
+            patch('snowllm.mineru.client.ModelClient') as client,
+        ):
+            main(['--snowllm-url', 'http://test', 'api-server', '--help'])
+        self.assertEqual(seen, [['snowllm-mineru', 'api-server', '--help']])
+        client.assert_not_called()
+
+    def test_adapter_refuses_late_injection(self):
+        from snowllm.mineru.injection import install
+
+        hybrid = SimpleNamespace(AtomModelSingleton=SimpleNamespace(_models={'loaded': object()}))
+        with (
+            patch('snowllm.mineru.injection.require_version'),
+            patch.dict('sys.modules', {
+                'mineru.config': SimpleNamespace(get_config=lambda: None),
+                'mineru.model.runtime': SimpleNamespace(hybrid=hybrid)}),
+            contextlib.ExitStack() as stack,
+            self.assertRaisesRegex(RuntimeError, 'before loading'),
+        ):
+            install(stack, None)
+
+
+if __name__ == '__main__':
     unittest.main()

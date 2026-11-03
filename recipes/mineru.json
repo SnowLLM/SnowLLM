@@ -22,7 +22,7 @@
   ],
   "spec": "none",
   "status": "supported",
-  "summary": "MinerU document parsing with the vision model and the complete auxiliary model bundle.",
+  "summary": "MinerU vision and auxiliary models served by the shared inference engine.",
   "defaults": {
     "num_spec": 0,
     "max_model_len": 8192,

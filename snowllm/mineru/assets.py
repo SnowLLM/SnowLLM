@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-def configure_models(stack, root, table_session):
+def configure_models(stack, root, table_session, *, device="cuda", require_weights=True):
     from mineru.config import get_config
     from mineru.model import download
     from mineru.model.runtime import hybrid, onnx
@@ -23,7 +23,7 @@ def configure_models(stack, root, table_session):
         candidate = (root / "small-models" / path.relative_path).resolve()
         if (
             not candidate.is_relative_to(root / "small-models")
-            or not candidate.exists()
+            or (require_weights and not candidate.exists())
         ):
             raise FileNotFoundError(
                 f"MinerU recipe asset is missing: {path.relative_path}"
@@ -31,7 +31,7 @@ def configure_models(stack, root, table_session):
         return candidate
 
     stack.enter_context(patch.object(download.ModelPath, "ensure", local_path))
-    stack.enter_context(patch.object(hybrid, "get_device", lambda: "cuda"))
+    stack.enter_context(patch.object(hybrid, "get_device", lambda: device))
     for name in (
         "",
         "cls.paddle_table_cls",

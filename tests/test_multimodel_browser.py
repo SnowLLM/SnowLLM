@@ -67,10 +67,7 @@ async def main():
         if path == 'models/default':
             manager.default_model = manager.model = (await request.json())['id']
             return manager.status()
-        if path == 'inference/documents/parse':
-            body = await request.json()
-            sent.append(body)
-            return {'model': body['model'], 'markdown': 'GPU document result', 'document': {}}
+
         if path == 'models/load':
             body = await request.json()
             sent.append(body)
@@ -203,19 +200,6 @@ async def main():
             await page.screenshot(path='/tmp/snowllm-multimodel-ui.png', full_page=True)
             assert not errors, errors
             assert [row['model'] for row in sent if 'messages' in row] == ['a', 'b']
-            manager.models.append(dict(id='mineru', source='mineru', state='ready',
-                                       instance='mineru', aliases=['mineru'],
-                                       runtime_config={'runtime': 'mineru'}))
-            await page.locator('nav [data-page="documents"]').click()
-            await page.wait_for_function("document.getElementById('document-model').value === 'mineru'")
-            await page.locator('#document-file').set_input_files({
-                'name': 'page.pdf', 'mimeType': 'application/pdf', 'buffer': b'%PDF-1.7\n'})
-            await page.locator('#parse-document').click()
-            await page.wait_for_function("document.getElementById('document-result').value === 'GPU document result'")
-            assert await page.locator('#download-document').is_enabled()
-            assert sent[-1]['model'] == 'mineru'
-            assert sent[-1]['filename'] == 'page.pdf'
-            assert not errors, errors
             print(
                 'PASS: browser load, Chinese labels, model selection, two background sessions, targeted stop and persistence; no JavaScript errors'
             )
