@@ -654,6 +654,8 @@ _SIGS = [
     ("snowllm_auxiliary_gemm_half", c_int, [P,P,P,P,P,c_int64,c_int64,c_int64,S]),
     ("snowllm_auxiliary_depthwise", c_int, [P,P,P,P,P,P,c_int,c_int,c_int,c_int,c_int,c_int,c_int,c_int,S]),
     ("snowllm_auxiliary_pointwise_f32", c_int, [P,P,P,P,P,P,c_int,c_int,c_int,c_int,c_int,c_int,S]),
+    ("snowllm_auxiliary_pointwise_64_8_f32", c_int, [P,P,P,P,c_int,c_int,S]),
+    ("snowllm_auxiliary_transpose_f32", c_int, [P,P,c_int,c_int,c_int,c_int64,S]),
     ("snowllm_vision_bias_act", c_int, [P, P, P, P, c_int64, c_int64, c_int, S]),
     ("snowllm_vision_gemm_bias_act", c_int,
      [P, P, P, P, P, P, c_int64, c_int64, c_int64, c_int, S]),

@@ -31,7 +31,27 @@ def dense(value):
     if value.is_contiguous():
         return value
     out = empty(value.shape, dtype=value.dtype, device=value.device)
+    if (
+        value.device.type in ("cuda", "meta") and value.dtype == torch.float32
+        and value.ndim == 3
+        and 0 < value.shape[0] <= 65535
+        and 0 < value.shape[1] <= 2**31 - 1
+        and 0 < value.shape[2] <= 2**31 - 1
+        and value.stride(1) == 1 and value.stride(2) == value.shape[1]
+        and value.stride(0) >= value.shape[1] * value.shape[2]
+    ):
+        return transpose_f32(out, value)
     return copy(out, value)
+
+
+@operator
+def transpose_f32(out, value):
+    if drying() is None and out.device.type != "meta":
+        check(lib.snowllm_auxiliary_transpose_f32(
+            _p(value), _p(out), value.shape[0], value.shape[2], value.shape[1],
+            value.stride(0), _stream(),
+        ), "auxiliary transpose")
+    return out
 
 
 @operator
@@ -547,6 +567,15 @@ def prepare_input(x, dtype, admit=None):
 
 @operator
 def pointwise_f32(x, weight, bias=None, scale=None, shift=None, act=0, config=0):
+    if (
+        x.dtype == torch.float32 and x.ndim == 4 and x.shape[1] == 64
+        and weight.shape == (8, 64, 1, 1) and weight.is_contiguous()
+        and x.is_contiguous(memory_format=torch.channels_last)
+        and x.storage_offset() % 4 == 0 and weight.storage_offset() % 4 == 0
+        and scale is None and shift is None and act == 0 and config == 0
+        and (bias is None or bias.is_contiguous())
+    ):
+        return pointwise_64_8_f32(x, weight, bias)
     x = dense(x)
     out = empty(
         (x.shape[0], weight.shape[0], *x.shape[2:]), dtype=x.dtype, device=x.device
@@ -569,6 +598,17 @@ def pointwise_f32(x, weight, bias=None, scale=None, shift=None, act=0, config=0)
         ),
         "image_pointwise",
     )
+    return out
+
+
+@operator
+def pointwise_64_8_f32(x, weight, bias=None):
+    out = empty((x.shape[0], 8, *x.shape[2:]), dtype=x.dtype, device=x.device)
+    if drying() is None and out.device.type != "meta":
+        check(lib.snowllm_auxiliary_pointwise_64_8_f32(
+            _p(x), _p(weight), _p(bias), _p(out), x.shape[0], math.prod(x.shape[2:]),
+            _stream(),
+        ), "image_pointwise_64_8")
     return out
 
 
