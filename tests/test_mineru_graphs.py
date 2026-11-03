@@ -7,6 +7,7 @@ def main():
     from snowllm._platform import DeviceMemory
     from snowllm.models.vision import VisionModel
     from snowllm.mineru.graphs import GraphCache
+    from snowllm.engine.graphs import GraphInputs
     from snowllm.ops import image as op
 
     class Model(VisionModel):
@@ -87,6 +88,24 @@ def main():
             "PASS: a graph that does not fit falls back to the same Arena plan",
             flush=True,
         )
+        for dtype in (torch.float32, torch.float16):
+            source = torch.empty((1, 3, 19, 17), dtype=dtype, device="cuda").transpose(-1, -2)
+            target = torch.empty_strided(source.shape, source.stride(), dtype=dtype, device="cuda")
+            copied = torch.empty_like(target)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                copied.copy_(target)
+            inputs = GraphInputs({0: target}, batch_copies=False)
+            for _ in range(3):
+                source.normal_()
+                source[..., 0, :5] = torch.tensor(
+                    [0.0, -0.0, float("inf"), -float("inf"), float("nan")],
+                    dtype=dtype, device="cuda",
+                )
+                inputs.replay(graph, {0: source})
+                bits = torch.int16 if dtype == torch.float16 else torch.int32
+                torch.testing.assert_close(copied.view(bits), source.view(bits), atol=0, rtol=0)
+        print("PASS: direct graph input copies preserve strided image data and floating-point bits", flush=True)
 
 
 if __name__ == "__main__":

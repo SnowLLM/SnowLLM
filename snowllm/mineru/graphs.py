@@ -106,7 +106,7 @@ class GraphCache:
             self.release_pool(function)
             return self.fallback(key, values, out)
         case = CapturedGraph(
-            graph, GraphInputs(dict(enumerate(static))), static_out, arena.buf,
+            graph, GraphInputs(dict(enumerate(static)), batch_copies=False), static_out, arena.buf,
             workspace=getattr(arena, 'scratch', None),
         )
         case.planned_bytes = planned

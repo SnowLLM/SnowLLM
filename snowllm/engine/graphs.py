@@ -92,9 +92,10 @@ class GraphBudget:
 
 
 class GraphInputs:
-    def __init__(self, tensors, messages=None):
+    def __init__(self, tensors, messages=None, *, batch_copies=True):
         self.tensors = tensors
         self.messages = messages
+        self.batch_copies = batch_copies
 
     @staticmethod
     def batch_values(batch, fields):
@@ -132,6 +133,9 @@ class GraphInputs:
                 if host_view(target) is not None and host_view(source) is not None:
                     copy_message(target, source)
                 elif target.is_cuda and source.is_cuda:
+                    if not self.batch_copies:
+                        target.copy_(source)
+                        continue
                     # Row copies preserve FP16 bits through the existing 16-bit storage path.
                     if target.dtype == torch.float16:
                         target, source = target.view(torch.bfloat16), source.view(torch.bfloat16)
