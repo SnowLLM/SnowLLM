@@ -1,6 +1,19 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.22.dev3 — 2026-11-05
+
+Add Flash-Next Q4-Fast and improve document parsing and model compatibility.
+
+- Add the Q4-Fast recipe and mixed-quantization checkpoint support for Flash-Next.
+  新增 Flash-Next Q4-Fast 配方和混合量化模型支持。
+- Separate document parsing from model serving, add a MinerU vision-language recipe, and improve visual inference and graph replay.
+  分离文档解析与模型服务，新增 MinerU 视觉语言模型配方，改进视觉推理和图回放。
+- Generate supported-model documentation from bundled recipes and clarify DeepSeek V4.1 model naming.
+  根据内置配方生成支持模型文档，明确 DeepSeek V4.1 模型命名。
+- Require SnowLLM-Kernels 0.3.15.
+  依赖升级至 SnowLLM-Kernels 0.3.15。
+
 ## 0.3.22.dev2 — 2026-11-02
 
 Add MinerU document parsing and improve loading multiple models in the Web UI.

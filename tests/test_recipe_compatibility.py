@@ -140,7 +140,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         book = builder.recipes()
         for view in (book, builder.for_client(book, '0.3.13')):
             selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
-            self.assertEqual(len(selected), 5)
+            self.assertEqual(len(selected), 6 if view is book else 5)
             for raw in selected:
                 with self.subTest(recipe=raw['id'], legacy=view is not book):
                     defaults = raw['defaults']
