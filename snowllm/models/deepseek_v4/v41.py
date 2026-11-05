@@ -226,7 +226,7 @@ class Layer(nn.Module):
             self.attn.write_kv(ctx, lp, self.attn_norm(ctx, folded))
 
 
-class Model(nn.Module):
+class DeepSeekV41ForCausalLM(nn.Module):
     mtp = None
 
     def __init__(self, geo, layers, embed, norm, head, rope, engram):
@@ -367,4 +367,4 @@ def load(rd, geo, progress=None, device_map=None, *, target=None):
     else:
         with placement.place(device_map, "head"):
             head = ops.lm_head_kquant_shuffle_weight(rd.raw("output.weight"), KQUANT[rd.gguf["output.weight"].quant.name])
-    return Model(geo, layers, embed, RMSNorm(_bf16(rd, "output_norm.weight")), head, rope, tables)
+    return DeepSeekV41ForCausalLM(geo, layers, embed, RMSNorm(_bf16(rd, "output_norm.weight")), head, rope, tables)
