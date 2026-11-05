@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import sys
+from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 
 import torch
@@ -28,6 +30,22 @@ def blocks(name, n, k):
 
 def main():
     ck = _harness.Checks()
+    from snowllm.checkpoint.gguf.source import find_gguf, models_in
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        model = root / 'checkpoint.GGUF'
+        for name in (model.name, 'mmproj-Test.GGUF', 'mtp-Test.GGUF', 'checkpoint.vision.GGUF'):
+            (root / name).touch()
+        ck('uppercase GGUF discovery excludes sidecars', models_in(root) == [model])
+        ck('uppercase GGUF directory resolves the requested model', find_gguf(root) == model)
+        (root / 'other.gguf').touch()
+        try:
+            find_gguf(root)
+        except _capi.SnowLLMError:
+            ambiguous = True
+        else:
+            ambiguous = False
+        ck('mixed-case GGUF ambiguity is rejected', ambiguous)
     torch.manual_seed(42)
     _capi.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
     for fmt, name, block, size in FORMATS:

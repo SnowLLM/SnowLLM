@@ -64,8 +64,8 @@ def find_dspark_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
 
 
 def models_in(d: pathlib.Path) -> list:
-    return [p for p in (*d.glob("*.gguf"), *d.glob("*.gguf.part*-of-*"))
-            if not p.name.startswith(SIDECARS) and not p.name.endswith(".vision.gguf")]
+    return [p for p in (*d.glob("*.[gG][gG][uU][fF]"), *d.glob("*.[gG][gG][uU][fF].part*-of-*"))
+            if not p.name.lower().startswith(SIDECARS) and not p.name.lower().endswith(".vision.gguf")]
 
 
 def find_mmproj(root: str | pathlib.Path) -> pathlib.Path | None:

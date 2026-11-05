@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import sys
+import tempfile
 
 import torch
 
@@ -14,7 +15,14 @@ def main():
     path = os.environ.get('SNOWLLM_QWEN38_FLASH_NEXT_Q4_FAST_GGUF')
     if not path:
         _harness.skip('set SNOWLLM_QWEN38_FLASH_NEXT_Q4_FAST_GGUF to run full-model generation')
-    root = Path(path).expanduser().parent
+    path = Path(path).expanduser().resolve()
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / path.name).symlink_to(path)
+        return generate(root)
+
+
+def generate(root):
     tokenizer, stops = loader.load_tokenizer(root)
     model = loader.load(root, mtp=False, vision=False)
     print(f'Loaded {len(model.model.layers)} layers; '
