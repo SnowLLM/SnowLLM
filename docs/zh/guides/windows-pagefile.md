@@ -1,5 +1,7 @@
 # Windows 额外设置 {#windows-page-file}
 
+<small>以下设置仅适用于 Windows，Linux 一般无需特别设置。</small>
+
 ## 分页文件 {#page-file}
 
 <span id="choose-the-size"></span>
@@ -19,9 +21,7 @@
 
 ## BIOS UMA 设置 {#bios-uma}
 
-::: warning 其他 APU 请特别注意 UMA 设置
-**Ryzen AI Max+ 395 和 Ryzen AI Max+ PRO 495 一般无需特别调整 UMA。** 使用**其他 APU** 时，请重点检查 BIOS 中的 UMA 分配；默认分配过低可能限制推理可用的显存。
-:::
+**395/495 一般默认已将 GPU 内存设为最大值，因此无需特别设置。** 使用**其他 APU** 时，请重点检查 BIOS 中的 UMA 分配；默认分配过低可能限制推理可用的显存。
 
 显存不足时，将 UMA 调到厂商允许的最大值。常见 BIOS 路径为：
 

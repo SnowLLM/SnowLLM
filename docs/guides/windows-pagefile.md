@@ -1,5 +1,7 @@
 # Windows additional settings {#windows-page-file}
 
+<small>These settings apply only to Windows. Linux generally needs no special configuration.</small>
+
 ## Page file {#page-file}
 
 <span id="choose-the-size"></span>
@@ -19,9 +21,7 @@ After restarting, check **Task Manager → Performance → Memory → Committed*
 
 ## BIOS UMA settings {#bios-uma}
 
-::: warning Other APUs: check UMA settings
-**Ryzen AI Max+ 395 and Ryzen AI Max+ PRO 495 generally need no special UMA adjustment.** On **other APUs**, pay particular attention to BIOS UMA allocation: a low default can limit the GPU memory available for inference.
-:::
+**395/495 systems generally default to the maximum GPU memory allocation, so no special configuration is needed.** On **other APUs**, pay particular attention to BIOS UMA allocation: a low default can limit the GPU memory available for inference.
 
 If GPU memory is insufficient, increase UMA to the manufacturer's supported maximum. A common BIOS path is:
 
