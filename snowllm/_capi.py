@@ -172,7 +172,7 @@ except OSError as exc:
     raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
 _lib_path = lib._name
 
-ABI_VERSION = 87
+ABI_VERSION = 89
 
 
 def _check_abi() -> None:
@@ -521,13 +521,13 @@ _SIGS = [
     ("snowllm_qwen4exp_hc_linear_ws_bytes", c_int64, [c_int64, c_int64]),
     ("snowllm_qwen4exp_hc_qkv_proj_kquant", c_int,
      [P,
-      P, P, P, P, P, c_int, c_int64, c_int64, c_float,
+      P, P, P, P, P, c_int, c_int, P, c_int, c_int64, c_int64, c_float,
       P,
       P,
       c_int, P, P, P, P, P, P, c_int64, c_int, S]),
     ("snowllm_qwen4exp_hc_linear_attn", c_int,
      [P,
-      P, P, P, P, P, c_int, c_int64, c_int64, c_float,
+      P, P, P, P, P, c_int, c_int, P, c_int, c_int64, c_int64, c_float,
       P,
       P,
       P, P, P, P, P, P,
@@ -687,7 +687,7 @@ _SIGS += [
  ("snowllm_inference_moe_workspace_bytes", c_int64, [c_int64,c_int64]),
  ("snowllm_inference_moe", c_int, [P]*7+[c_int64]*3+[S]),
  ("snowllm_inference_head", c_int, [P,P,P,P,c_int64,S]),
- ("snowllm_inference_hc", c_int, [P,P,P,P,P,c_int64,c_int64,c_int64,c_int64,c_int64,c_float,P,P,S]),
+ ("snowllm_inference_hc", c_int, [P,P,P,P,P,c_int64,c_int64,c_int64,c_int64,c_int64,c_float,P,P,P,c_int,S]),
 ]
 _SIGS += [
  ("snowllm_indexer_select_scratch_bytes", c_int64, [c_int64,c_int64]),

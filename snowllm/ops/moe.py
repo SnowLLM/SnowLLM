@@ -182,7 +182,7 @@ LOWBIT_FORMATS = {"IQ2_XXS": IQ2_XXS, "IQ3_XXS": IQ3_XXS, "MXFP4": MXFP4, "IQ2_S
                   "IQ3_S": IQ3_S}
 
 KQUANT_FORMATS = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8,
-                  "IQ4_NL": 20, "IQ4_XS": 23}
+                  "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51}
 
 
 class LowBitExpertWeight:

@@ -30,7 +30,7 @@ from .names import (
 )
 
 KQUANT_ID = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8,
-             "IQ4_NL": 20, "IQ4_XS": 23}
+             "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51}
 
 RESHAPE = {
     "mlp.shared_expert_gate.weight": (1, -1),
@@ -280,7 +280,7 @@ class GGUFWeightSource:
         return []
 
 
-    GEMM_FORMATS = (2, 3, 4, 5, 6, 8)
+    GEMM_FORMATS = (2, 3, 4, 5, 6, 8, 20, 21, 23, 50, 51)
 
     def kquant_format(self, key: str) -> int | None:
         names, _ = self._names(key)
@@ -295,7 +295,7 @@ class GGUFWeightSource:
         return [self._rd(n).raw(n) for n in names]
 
 
-    PROJ_FORMATS = (3, 4, 5, 6, 8, 20, 23)
+    PROJ_FORMATS = (3, 4, 5, 6, 8, 20, 21, 23, 50, 51)
 
     def _blocks_one(self, name: str, kind: str) -> torch.Tensor | None:
         raw = self._rd(name).raw(name)

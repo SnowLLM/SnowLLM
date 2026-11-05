@@ -190,12 +190,21 @@ class HcMixWeights:
     def __init__(self, gamma: torch.Tensor, down_a: torch.Tensor,
                  down_meta: torch.Tensor | None, up_a: torch.Tensor,
                  up_meta: torch.Tensor | None, fmt: int, down_n: int, lr: int,
-                 eps: float) -> None:
+                 eps: float, up_fmt: int | None = None,
+                 inject: torch.Tensor | None = None) -> None:
         _chk(gamma, "gamma", torch.bfloat16)
+        if inject is not None:
+            if inject.dtype not in (torch.bfloat16, torch.float32):
+                raise ValueError("HC injection must be BF16 or FP32")
+            _chk(inject, "HC injection", inject.dtype, 4, gamma.numel())
+            if down_n < lr + 4:
+                raise ValueError("HC down buffer must include four injection columns")
         self.down_n, self.lr = int(down_n), int(lr)
-        self.t = (gamma, down_a, down_meta, up_a, up_meta)
+        self.t = (gamma, down_a, down_meta, up_a, up_meta, inject)
         self.args = [_p(gamma), _p(down_a), _p(down_meta), _p(up_a), _p(up_meta),
-                     int(fmt), int(down_n), int(lr), float(eps)]
+                     int(fmt), int(fmt if up_fmt is None else up_fmt), _p(inject),
+                     int(inject is not None and inject.dtype is torch.bfloat16),
+                     int(down_n), int(lr), float(eps)]
 
 
 @operator

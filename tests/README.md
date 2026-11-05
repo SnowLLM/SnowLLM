@@ -21,6 +21,18 @@ reports belong in the private development workspace.
 `test_memory_plan.py` checks allocator interference and alignment, view aliases,
 retained outputs, unannotated uses, scratch scopes and graph replay.
 
+`test_mixed_gguf.py` checks packed IQ3_S/Q5_0/Q5_1 GEMMs, partial superblocks,
+independent HC formats and FP32 injection against dequantized references.
+`test_full_qkv_decode_lds.py` checks Full QKV IQ3_S/IQ4_XS mixed formats, the optional
+index projection, scratch bounds, graph replay and decode/prefill fallback against FP32 references.
+`test_qwen38_flash_next_q4_fast.py` covers Q5_0 decoding and shared-expert format selection.
+Set `SNOWLLM_QWEN38_FLASH_NEXT_Q4_FAST_GGUF` to the Qwen3.8-Flash-Next-Q4-Fast.GGUF file to also check all 48 layers'
+loading plan, representative mixed-format attention projections, and MoE decode/prefill
+with graph replay. These checks load individual layers and do not require the full model
+to fit in memory. Run through withgpu with a native library matching the working tree ABI.
+`test_qwen38_flash_next_q4_fast_e2e.py` uses the same environment variable to load the complete model and
+check English/Chinese answers with HIP graph decoding; it requires room for all weights.
+
 
 LFM coverage: `test_lfm2.py` checks short-convolution state, chunking, snapshots, speculative
 accept/reject restoration, graph replay and BF16 RoPE.

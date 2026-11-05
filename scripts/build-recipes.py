@@ -112,7 +112,7 @@ def load(path: pathlib.Path) -> dict | None:
         complain(path, f"has a serve_as that is not a plain model name: {r.get('serve_as')!r}")
     if "/" in r["dir"] or r["dir"] in (".", ".."):
         complain(path, f"has a dir that is not a plain directory name: {r['dir']!r}")
-    if "/" not in r["repo"]:
+    if r["repo"] != "TBD" and "/" not in r["repo"]:
         complain(path, f"has a repo that is not owner/name: {r['repo']!r}")
     for field in LISTS:
         if field in r and not (isinstance(r[field], list)
@@ -194,6 +194,8 @@ def spec_of(r: dict, path: pathlib.Path | None = None) -> str:
 
 
 def url_of(repo: str, revision: str = "main") -> str:
+    if repo == "TBD":
+        return "TBD"
     return f"{ENDPOINT}/{repo}" + (f"/tree/{revision}" if revision and revision != "main" else "")
 
 
@@ -228,6 +230,9 @@ def weigh_source(s: dict) -> int:
 
 def sizes(book: list[dict]) -> None:
     for r in book:
+        if any(s["repo"] == "TBD" for s in [r] + list(r.get("sources") or [])):
+            print(f"  {r['id']}: download location TBD; size unavailable")
+            continue
         path = SOURCE / f"{r['id']}.json"
         try:
             n = weigh(r)

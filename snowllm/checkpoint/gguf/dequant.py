@@ -32,6 +32,16 @@ def _q8_0(b: torch.Tensor) -> torch.Tensor:
     return _f16(b, 0) * b[:, 2:34].contiguous().view(torch.int8).float()
 
 
+def _q5(b: torch.Tensor, *, affine: bool) -> torch.Tensor:
+    off = 4 if affine else 2
+    high = b[:, off:off + 4].int()
+    j = torch.arange(32, device=b.device)
+    hi = (high[:, j // 8] >> (j % 8)) & 1
+    low = b[:, off + 4:off + 20].int()
+    q = torch.cat([low & 15, low >> 4], dim=1) | (hi << 4)
+    return _f16(b, 0) * (q.float() if affine else q.float() - 16) + (_f16(b, 2) if affine else 0)
+
+
 def _q2_k(b: torch.Tensor) -> torch.Tensor:
     nb = b.shape[0]
     sc = b[:, 0:16].int().view(nb, 2, 4, 2)
@@ -240,6 +250,8 @@ def _signs_from_index(qs: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
 
 
 _BLOCK = {
+    "Q5_0": (32, 22, partial(_q5, affine=False)),
+    "Q5_1": (32, 24, partial(_q5, affine=True)),
     "Q8_0": (32, 34, _q8_0),
     "Q2_K": (256, 84, _q2_k),
     "Q3_K": (256, 110, _q3_k),

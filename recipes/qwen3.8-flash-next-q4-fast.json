@@ -1,0 +1,25 @@
+{
+  "id": "qwen3.8-flash-next-q4-fast",
+  "model": "Qwen3.8-Flash-Next",
+  "family": "Qwen",
+  "modalities": ["text"],
+  "precision": "Q4-Fast",
+  "dir": "Qwen3.8-Flash-Next-Q4-Fast",
+  "repo": "TBD",
+  "revision": "main",
+  "include": [
+    "Qwen3.8-Flash-Next-Q4-Fast.GGUF"
+  ],
+  "spec": "none",
+  "summary": "Qwen3.8-Flash-Next in mixed-format Q4-Fast GGUF with speculative decoding disabled.",
+  "note": "Download location TBD. Uses local Q4-Fast weights without a separate MTP head or drafter.",
+  "defaults": {
+    "num_spec": 0,
+    "max_model_len": 409600,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 8192
+  },
+  "serve_as": "Qwen3.8-Flash-Next",
+  "priority": 89,
+  "requires": "0.3.22"
+}

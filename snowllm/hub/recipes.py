@@ -333,6 +333,9 @@ def resolve(recipe: Recipe, dest: pathlib.Path) -> list[Blob]:
     else:
         blobs = []
         for s in recipe.sources:
+            if s.repo == "TBD":
+                raise SnowLLMError(f"recipe {recipe.id!r}: download location is TBD; "
+                                   "use local weights until a download source is available")
             base = f"{endpoint()}/{s.repo}/resolve/{urllib.parse.quote(s.revision)}"
             for e in tree(s.repo, s.revision):
                 if e.get("type") != "file" or not _keep(e["path"], s.include, s.exclude):

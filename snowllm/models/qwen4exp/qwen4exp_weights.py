@@ -40,7 +40,8 @@ from .qwen4exp_mtp import Qwen4ExpMTP
 PREFIX = "model.language_model."
 
 
-HC_KQUANT = (8,)
+HC_KQUANT = (3, 4, 5, 6, 8, 20, 21, 23, 50, 51)
+HC_UP_KQUANT = (8, 20, 50, 51)
 
 
 def _q8_0(x: torch.Tensor) -> torch.Tensor:
@@ -54,13 +55,10 @@ def _q8_0(x: torch.Tensor) -> torch.Tensor:
     return out.reshape(-1)
 
 
-def _hc_format(w: object, p: str) -> int | None:
-    fmts = {w.kquant_format(p + n) for n in
-            ("input_mix_weight_down.weight", "input_mix_weight_up.weight")}
-    if len(fmts) != 1:
-        return None
-    fmt = fmts.pop()
-    return fmt if fmt in HC_KQUANT else None
+def _hc_formats(w: object, p: str) -> tuple[int, int] | None:
+    down, up = (w.kquant_format(p + n) for n in
+                ("input_mix_weight_down.weight", "input_mix_weight_up.weight"))
+    return (down, up) if down in HC_KQUANT and up in HC_UP_KQUANT else None
 
 
 def _hc_down(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool, fmt: int) -> KQuantDense:
@@ -71,7 +69,7 @@ def _hc_down(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool, fmt: int) -
     blocks = ops.zero_bytes(n * per)
     raw, = w.blocks(p + "input_mix_weight_down.weight")
     blocks[:lr * per] = raw
-    if inject:
+    if inject and fmt == 8:
         blocks[lr * per:rows * per] = _q8_0(w.read_f32(p + "block_inject_weight.weight"))
     return KQuantDense(fmt, blocks, n, K)
 
@@ -83,9 +81,15 @@ def _hc_up(w: object, p: str, geo: Qwen4ExpGeometry, fmt: int) -> HcUp:
 
 def _hyper(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool) -> HyperMix:
     g = gamma(w.read(p + "hc_norm.weight"))
-    fmt = _hc_format(w, p)
-    if fmt is not None:
-        return HyperMix(g, _hc_down(w, p, geo, inject, fmt), _hc_up(w, p, geo, fmt), inject, geo)
+    fmts = _hc_formats(w, p)
+    if fmts is not None:
+        down_fmt, up_fmt = fmts
+        injection = None
+        if inject and down_fmt != 8:
+            key = p + "block_inject_weight.weight"
+            injection = w.read(key) if w.quant_names(key) == ["BF16"] else w.read_f32(key)
+        return HyperMix(g, _hc_down(w, p, geo, inject, down_fmt),
+                        _hc_up(w, p, geo, up_fmt), inject, geo, injection)
     down = w.read(p + "input_mix_weight_down.weight")
     if inject:
         down = torch.cat([down, w.read(p + "block_inject_weight.weight")], dim=0)
@@ -136,14 +140,24 @@ def _experts(w: object, p: str, geo: Qwen4ExpGeometry) -> tuple:
 def _shared(w: object, p: str) -> tuple:
     fmt = {n: w.quant_names(p + f"shared_expert.{n}.weight")[0]
            for n in ("gate_proj", "up_proj", "down_proj")}
-    if set(fmt.values()) - set(ops.KQUANT_FORMATS) or fmt["gate_proj"] != fmt["up_proj"]:
-        raise SnowLLMError(f"{p}shared_expert is {fmt}; the kernels take one k-quant format for "
-                           f"gate|up and one for down")
-    gate, = w.blocks(p + "shared_expert.gate_proj.weight")
-    up, = w.blocks(p + "shared_expert.up_proj.weight")
-    down, = w.blocks(p + "shared_expert.down_proj.weight")
-    return (ops.moe_kquant_shuffle_gate_up(gate, up, ops.KQUANT_FORMATS[fmt["gate_proj"]], 1),
-            ops.moe_kquant_shuffle_down(down, ops.KQUANT_FORMATS[fmt["down_proj"]], 1))
+    # Shared kernels require metadata for both projections or neither.
+    quantized = (not (set(fmt.values()) - set(ops.KQUANT_FORMATS))
+                 and fmt["gate_proj"] == fmt["up_proj"])
+    if quantized:
+        gate, = w.blocks(p + "shared_expert.gate_proj.weight")
+        up, = w.blocks(p + "shared_expert.up_proj.weight")
+        gate_up = ops.moe_kquant_shuffle_gate_up(
+            gate, up, ops.KQUANT_FORMATS[fmt["gate_proj"]], 1)
+    else:
+        gate = w.read(p + "shared_expert.gate_proj.weight").unsqueeze(0)
+        up = w.read(p + "shared_expert.up_proj.weight").unsqueeze(0)
+        gate_up = ops.moe_shuffle_gate_up(gate, up)
+    if quantized:
+        down, = w.blocks(p + "shared_expert.down_proj.weight")
+        down = ops.moe_kquant_shuffle_down(down, ops.KQUANT_FORMATS[fmt["down_proj"]], 1)
+    else:
+        down = ops.moe_shuffle_down(w.read(p + "shared_expert.down_proj.weight").unsqueeze(0))
+    return gate_up, down
 
 
 def load_moe(w: object, lp: str, geo: Qwen4ExpGeometry,
@@ -179,10 +193,6 @@ def load_decoder_layer(w: object, i: int, stg: Staging, geo: Qwen4ExpGeometry,
     with placement.place(dmap, "dense", i):
         if is_full:
             base = load_full_attn(w, lp, stg, geo)
-            if base.qkv_proj.split or base.qkv_proj.kv is not None or not base.qkv_proj.kquant:
-                raise SnowLLMError(f"{lp}self_attn: the hyper-connection mixer fuses into the "
-                                   f"fused k-quant qkv entry, and this checkpoint stores q|k|v in "
-                                   f"a form that needs one of the cut entries instead")
             attn = Qwen4ExpFullAttention(base.qkv_proj, base.qk_norm_rope, base.o_proj, geo,
                                          _indexer(w, lp, geo, base.qkv_proj))
         else:

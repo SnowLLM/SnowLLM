@@ -51,15 +51,17 @@ class HcUp(nn.Module):
 
 class HyperMix(nn.Module):
     def __init__(self, gamma: torch.Tensor, down: Dense | KQuantDense, up: HcUp,
-                 has_inject: bool, geo: Qwen4ExpGeometry) -> None:
+                 has_inject: bool, geo: Qwen4ExpGeometry,
+                 inject_weight: torch.Tensor | None = None) -> None:
         super().__init__()
         self.gamma, self.down, self.up, self.has_inject = gamma, down, up, has_inject
+        self.inject_weight = inject_weight
         self.n_hc, self.hidden, self.lowrank = geo.hc_count, geo.hidden, geo.hc_lowrank
         kq = isinstance(down, KQuantDense)
         self.w = ops.HcMixWeights(gamma, down.quant if kq else down.w,
                                   down.meta if kq else None, up.quant if kq else up.w,
                                   up.meta if kq else None, down.fmt if kq else 0, down.n,
-                                  geo.hc_lowrank, geo.eps)
+                                  geo.hc_lowrank, geo.eps, up.fmt if kq else 0, inject_weight)
 
     def forward(self, ctx: ForwardContext, streams: torch.Tensor,
                 xn: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -67,7 +69,7 @@ class HyperMix(nn.Module):
         mixed, lo = a.new(M, E), a.new(M, self.down.n)
         with a.frame():
             ws = a.flat(ops.qwen4exp_hc_mix_ws_bytes(M, n_hc, E, lr), torch.uint8)
-            ops.inference_hc(streams,self.gamma,self.down,self.up,lo,mixed,lr,ctx.eps,ws,xn)
+            ops.inference_hc(streams,self.gamma,self.down,self.up,lo,mixed,lr,ctx.eps,ws,xn,self.inject_weight)
         return mixed, lo[:, lr:lr + n_hc] if self.has_inject else None
 
 
@@ -204,6 +206,15 @@ class Qwen4ExpFullAttention(FullAttention):
                  norm: tuple, index_out: torch.Tensor | None) -> None:
         a = ctx.arena
         with a.frame():
+            if self.qkv_proj.split or self.qkv_proj.kv is not None or not self.qkv_proj.kquant:
+                hc = self.hc
+                mixed = a.new(ctx.M, hc.hidden)
+                ws = a.flat(ops.qwen4exp_hc_mix_ws_bytes(
+                    ctx.M, hc.n_hc, hc.hidden, hc.lowrank), torch.uint8)
+                ops.inference_hc(x, hc.gamma, hc.down, hc.up, self._lo, mixed,
+                                 hc.lowrank, ctx.eps, ws, ctx.take_xn(), hc.inject_weight)
+                self.qkv_proj(ctx, mixed, proj_buf, norm, index_out)
+                return
             ws = a.flat(ops.qwen4exp_hc_qkv_ws_bytes(ctx.M, self.hc.lowrank), torch.uint8)
             ops.qwen4exp_hc_qkv_proj_kquant(x, self.hc.w, self._lo, self.qkv_proj.w, ws, proj_buf,
                                             ctx.path, self.qkv_proj.index, index_out,

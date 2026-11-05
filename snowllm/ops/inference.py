@@ -86,11 +86,18 @@ def inference_head(x,w,out,scratch):
 
 
 @operator
-def inference_hc(x,gamma,down,up,lo,out,lr,eps,scratch,xn=None):
+def inference_hc(x,gamma,down,up,lo,out,lr,eps,scratch,xn=None,inject=None):
+    if inject is not None:
+        if inject.dtype not in (torch.bfloat16,torch.float32):
+            raise SnowLLMError('HC injection must be BF16 or FP32')
+        _chk(inject,'HC injection',inject.dtype,x.shape[1],x.shape[1]*x.shape[2])
+        if lo.shape[1] < lr + x.shape[1]:
+            raise SnowLLMError('HC down buffer does not include injection columns')
     # HC's dense wrapper exposes .w; quant wrappers expose quant/meta/fmt.
     weights=_weights((getattr(down,'w',down),None),(getattr(up,'w',up),None))
     check(lib.snowllm_inference_hc(weights,_p(x),_p(gamma),_p(lo),_p(out),x.shape[0],
-        x.shape[1],x.shape[2],lo.shape[1],lr,eps,_p(scratch),_p(xn),_stream()),'inference_hc')
+        x.shape[1],x.shape[2],lo.shape[1],lr,eps,_p(scratch),_p(xn),_p(inject),
+        inject is not None and inject.dtype is torch.bfloat16,_stream()),'inference_hc')
 
 
 @operator

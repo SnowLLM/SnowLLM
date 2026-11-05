@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import threading
+from unittest.mock import patch
 from collections.abc import Callable, Sequence
 from types import ModuleType
 
@@ -373,6 +374,21 @@ def main() -> int:
         check("the builder and the client agree on what a recipe may set",
               tuple(mod.SETTABLE) == tuple(recipes.SETTABLE))
         shipped = {r["id"] for r in book}
+        q4_fast = next(r for r in book if r["id"] == "qwen3.8-flash-next-q4-fast")
+        local = recipes.Recipe(q4_fast)
+        check("Q4-Fast is supported with speculative decoding disabled",
+              local.servable and local.spec == "none" and local.defaults["num_spec"] == 0)
+        check("Q4-Fast keeps its download URL explicitly TBD",
+              local.repo == "TBD" and mod.url_of(local.repo) == "TBD")
+        with patch.object(recipes, 'tree') as remote_tree:
+            try:
+                recipes.resolve(local, local.path(root))
+            except recipes.SnowLLMError as exc:
+                refused = "download location is TBD" in str(exc)
+            else:
+                refused = False
+            check("a TBD download fails clearly without querying a repository",
+                  refused and not remote_tree.called)
         check("every recipe the listing recommends is one this repository ships",
               all(i in shipped for _, group in recipes.RECOMMENDED for i in group),
               ", ".join(i for _, group in recipes.RECOMMENDED for i in group
