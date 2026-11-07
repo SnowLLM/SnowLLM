@@ -241,7 +241,7 @@ def qsa_decode_rows(rows):
 
 
 @operator
-def qsa_attention(ctx, module, q, pools, out, proj):
+def qsa_attention(ctx, module, q, index_q, pools, out, proj):
     decode_ws = ctx.arena.workspace(0 if ctx.batch.is_prefill else ctx.decode_ws_bytes)
     b=ctx.batch
     gate=module.shuf(ctx,proj)
@@ -258,7 +258,7 @@ def qsa_attention(ctx, module, q, pools, out, proj):
     table=module.compact_table
     ix=module.indexer
     step=_QsaStep(att,(ctypes.c_void_p*6)(*[_p(t) for t in
-        (module._q_index,ix.pool,ctx.qsa.weights,ctx.qsa.comp,ctx.qsa.cells,ctx.qsa_seq_of_row)]),
+        (index_q,ix.pool,ctx.qsa.weights,ctx.qsa.comp,ctx.qsa.cells,ctx.qsa_seq_of_row)]),
         (ctypes.c_void_p*5)(*[_p(t) for t in (ck,cv,table,module.plan,module.plan_ws)]),
         ctypes.addressof(jobs) if ctx.qsa_lens is not None else 0,len(jobs),q.shape[0],
         ctx.qsa_max_blocks,ix.heads,ix.dim,ix.ratio,ix.topk,

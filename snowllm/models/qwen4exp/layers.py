@@ -227,7 +227,7 @@ class Qwen4ExpFullAttention(FullAttention):
     def _attend(self, ctx: ForwardContext, q: torch.Tensor, pools: tuple[torch.Tensor, ...],
                 attn_out: torch.Tensor, proj: torch.Tensor) -> None:
         with span("qsa_attn"):
-            ops.qsa_attention(ctx,self,q,pools,attn_out,proj)
+            ops.qsa_attention(ctx,self,q,self._q_index,pools,attn_out,proj)
 
 
 class Qwen4ExpLinearAttention(GatedDeltaNet):
