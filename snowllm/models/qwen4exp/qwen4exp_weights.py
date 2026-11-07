@@ -69,8 +69,13 @@ def _hc_down(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool, fmt: int) -
     blocks = ops.zero_bytes(n * per)
     raw, = w.blocks(p + "input_mix_weight_down.weight")
     blocks[:lr * per] = raw
-    if inject and fmt == 8:
-        blocks[lr * per:rows * per] = _q8_0(w.read_f32(p + "block_inject_weight.weight"))
+    if inject:
+        key = p + "block_inject_weight.weight"
+        if w.kquant_format(key) == fmt:
+            injection, = w.blocks(key)
+            blocks[lr * per:rows * per] = injection
+        elif fmt == 8:
+            blocks[lr * per:rows * per] = _q8_0(w.read_f32(key))
     return KQuantDense(fmt, blocks, n, K)
 
 
@@ -87,7 +92,8 @@ def _hyper(w: object, p: str, geo: Qwen4ExpGeometry, inject: bool) -> HyperMix:
         injection = None
         if inject and down_fmt != 8:
             key = p + "block_inject_weight.weight"
-            injection = w.read(key) if w.quant_names(key) == ["BF16"] else w.read_f32(key)
+            if w.kquant_format(key) != down_fmt:
+                injection = w.read(key) if w.quant_names(key) == ["BF16"] else w.read_f32(key)
         return HyperMix(g, _hc_down(w, p, geo, inject, down_fmt),
                         _hc_up(w, p, geo, up_fmt), inject, geo, injection)
     down = w.read(p + "input_mix_weight_down.weight")
@@ -124,14 +130,21 @@ def _experts(w: object, p: str, geo: Qwen4ExpGeometry) -> tuple:
         gate_up = ops.moe_lowbit_shuffle_gate_up_split(gate, up, ops.LOWBIT_FORMATS[gu], e)
     elif gu in ops.KQUANT_FORMATS:
         gate_up = ops.moe_kquant_shuffle_gate_up(gate, up, ops.KQUANT_FORMATS[gu], e)
+    elif gu == "BF16":
+        shape = (e, geo.moe_inter, geo.hidden)
+        gate_up = ops.moe_shuffle_gate_up(gate.view(torch.bfloat16).view(shape),
+                                         up.view(torch.bfloat16).view(shape))
     else:
         raise SnowLLMError(f"{p}experts.gate_up_proj is {gu}, which this build cannot serve")
     del gate, up
     down_raw, = w.blocks(p + "experts.down_proj")
-    if dn in ops.KQUANT_FORMATS:
-        down = ops.moe_kquant_shuffle_down(down_raw, ops.KQUANT_FORMATS[dn], e)
-    elif dn in ops.LOWBIT_FORMATS:
+    if dn in ops.LOWBIT_FORMATS:
         down = ops.moe_lowbit_shuffle_down(down_raw, ops.LOWBIT_FORMATS[dn], e)
+    elif dn in ops.KQUANT_FORMATS:
+        down = ops.moe_kquant_shuffle_down(down_raw, ops.KQUANT_FORMATS[dn], e)
+    elif dn == "BF16":
+        down = ops.moe_shuffle_down(down_raw.view(torch.bfloat16).view(
+            e, geo.hidden, geo.moe_inter))
     else:
         raise SnowLLMError(f"{p}experts.down_proj is {dn}, which this build cannot serve")
     return gate_up, down

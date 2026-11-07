@@ -759,6 +759,11 @@ if hasattr(lib, "snowllm_lfm2_short_conv_spec"):
                   ("snowllm_lfm2_conv_advance", c_int, [P]*4+[c_int64]*3+[S])))
 
 _missing = []
+if hasattr(lib, 'snowllm_flash_prepare_weight'):
+    _SIGS.extend((
+        ('snowllm_flash_layout_bytes', c_int64, [c_int]*3+[c_int64]*2),
+        ('snowllm_flash_prepare_weight', c_int, [c_int]*2+[P]*4+[c_int64]*2+[S]),
+    ))
 for _name, _res, _args in _SIGS:
     try:
         _fn = getattr(lib, _name)

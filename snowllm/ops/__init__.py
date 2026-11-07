@@ -22,6 +22,7 @@ from ._common import (
     synchronize,
 )
 from .fp4_kv import dsv41_fp4_pack, dsv41_fp4_unpack, dsv41_fp4_row_bytes
+from .flash import flash_prepare_weight
 from .metadata import copy_tensor, copy_from_host, fill_ranges_
 from .attention_full import (
     paged_attention,

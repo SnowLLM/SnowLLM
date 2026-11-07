@@ -519,6 +519,9 @@ def _proj_shuffle_kquant(blocks: torch.Tensor, fmt: int, n: int, k: int,
     quant = empty_bytes(lib.snowllm_kquant_quant_bytes(fmt, n, k))
     meta = empty_bytes(lib.snowllm_kquant_meta_bytes(fmt, n, k))
     check(getattr(lib, "snowllm_" + base)(fmt, _p(blocks), _p(quant), _p(meta), _stream()), base)
+    if base in ('linear_in_proj_qz_shuffle_w_kquant', 'qkv_proj_shuffle_w_kquant'):
+        from .flash import flash_prepare_weight
+        quant, meta, fmt = flash_prepare_weight(1, quant, meta, fmt, n, k)
     return KQuantProjWeight(quant, meta, fmt)
 
 

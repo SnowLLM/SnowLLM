@@ -5,7 +5,7 @@ from .operation import operator
 from .allocation import empty
 import torch
 
-from .._capi import build_geometry, check, lib
+from .._capi import build_geometry, check, lib, SnowLLMError
 from ._common import empty_bytes, empty_shaped, empty_shaped_like, _chk, _p, _passthru, _stream
 
 
@@ -148,6 +148,12 @@ def moe_kquant_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor, fmt: int,
 @operator
 def moe_kquant_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> KQuantExpertWeight:
+    if fmt in (21, 23):
+        g = build_geometry()
+        stored_k = -(-g.moe_inter // 256) * 256
+        want = kquant_gguf_bytes(fmt, g.hidden, stored_k) * num_experts
+        if down.numel() != want:
+            raise SnowLLMError(f'quantized MoE down needs {want} bytes at stored K={stored_k}')
     quant = empty_bytes(lib.snowllm_moe_kquant_down_quant_bytes(fmt, num_experts))
     meta = empty_bytes(lib.snowllm_moe_kquant_down_meta_bytes(fmt, num_experts))
     check(lib.snowllm_moe_kquant_shuffle_down(fmt, _p(down), _p(quant), _p(meta), num_experts,
@@ -220,6 +226,12 @@ def moe_lowbit_shuffle_gate_up_split(gate: torch.Tensor, up: torch.Tensor, fmt: 
 @operator
 def moe_lowbit_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> LowBitExpertWeight:
+    if fmt == IQ3_S:
+        g = build_geometry()
+        stored_k = -(-g.moe_inter // 256) * 256
+        want = kquant_gguf_bytes(21, g.hidden, stored_k) * num_experts
+        if down.numel() != want:
+            raise SnowLLMError(f'IQ3_S MoE down needs {want} bytes at stored K={stored_k}')
     p0 = empty_bytes(lib.snowllm_moe_lowbit_down_p0_bytes(fmt, num_experts))
     p1 = empty_bytes(lib.snowllm_moe_lowbit_down_p1_bytes(fmt, num_experts))
     n2 = lib.snowllm_moe_lowbit_down_p2_bytes(fmt, num_experts)

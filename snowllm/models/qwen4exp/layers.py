@@ -33,7 +33,8 @@ class KQuantDense(nn.Module):
         super().__init__()
         self.fmt, self.n, self.k = fmt, n, k
         weight = pack_kquant(gguf, fmt, n, k)
-        self.quant, self.meta = weight.quant, weight.meta
+        self.quant, self.meta, self.fmt = ops.flash_prepare_weight(
+            0, weight.quant, weight.meta, fmt, n, k)
 
 
 class HcUp(nn.Module):
@@ -46,7 +47,8 @@ class HcUp(nn.Module):
         if fmt is None:
             self.w = prepared
         else:
-            self.fmt, self.quant, self.meta = fmt, prepared, meta
+            self.quant, self.meta, self.fmt = ops.flash_prepare_weight(
+                2, prepared, meta, fmt, self.n, self.k)
 
 
 class HyperMix(nn.Module):
