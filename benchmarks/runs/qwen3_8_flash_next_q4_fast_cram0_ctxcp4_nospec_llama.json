@@ -1,0 +1,1038 @@
+[
+  {
+    "label": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama",
+    "isl_target": 1024,
+    "input_length_mode": "chat_template_exact",
+    "isl": 1024,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 2.306933015002869,
+    "ttft_s_reps": [
+      2.306933015002869,
+      2.0159614190342836,
+      2.2718079469632357,
+      2.0405845339992084
+    ],
+    "decode_tok_s": 30.22695551940712,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 443.8793815600782,
+    "edge_before_c": 58,
+    "edge_after_c": 71,
+    "accept_unit": null,
+    "accept_mean": null,
+    "accept_stdev": null,
+    "accept_reps": [],
+    "step_s": null,
+    "step_s_reps": [],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      " older due to his domestic habits). Sidney criticizes K. for losing his personality and intelligence by adopting overly domestic routines, such as following his",
+      "ried another woman (Christine) without informing her. She accuses him of neglecting her during her hospitalization. Palmer defends himself, citing social propri",
+      "ve in the house after he furnished it for business purposes. She has moved out to the barn to avoid the stigma. Schwitter asks K. to speak with Tillie, hoping K",
+      "on who has taken his daughter, Sidney, to a disreputable establishment called Schwitter\u2019s. The men imply that Wilson is profiting from his association with such"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "auto",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 2.156196240481222,
+    "ttft_s_p95": 2.306933015002869,
+    "decode_tok_s_reps": [
+      31.074065393536692,
+      31.309465307886825,
+      26.875029695147084,
+      29.379845645277552
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 2.306933015002869,
+        "decode_tok_s": 31.074065393536692,
+        "decode_seconds": 8.206200146989431,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 10.5131331619923,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 1024,
+          "prompt_ms": 2254.045,
+          "prompt_per_token_ms": 2.2012158203125,
+          "prompt_per_second": 454.29439075085014,
+          "predicted_n": 256,
+          "predicted_ms": 8201.723,
+          "predicted_per_token_ms": 32.16361960784314,
+          "predicted_per_second": 31.091028068126658
+        },
+        "loop_period": 0,
+        "text_tail": " older due to his domestic habits). Sidney criticizes K. for losing his personality and intelligence by adopting overly domestic routines, such as following his"
+      },
+      {
+        "ttft_s": 2.0159614190342836,
+        "decode_tok_s": 31.309465307886825,
+        "decode_seconds": 8.144501909962855,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 10.160463328997139,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 1024,
+          "prompt_ms": 1999.48,
+          "prompt_per_token_ms": 1.9526171875,
+          "prompt_per_second": 512.1331546202013,
+          "predicted_n": 256,
+          "predicted_ms": 8142.907,
+          "predicted_per_token_ms": 31.932968627450983,
+          "predicted_per_second": 31.315597734322644
+        },
+        "loop_period": 0,
+        "text_tail": "ried another woman (Christine) without informing her. She accuses him of neglecting her during her hospitalization. Palmer defends himself, citing social propri"
+      },
+      {
+        "ttft_s": 2.2718079469632357,
+        "decode_tok_s": 26.875029695147084,
+        "decode_seconds": 9.488361608993728,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 11.760169555956963,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 1024,
+          "prompt_ms": 2242.28,
+          "prompt_per_token_ms": 2.1897265625,
+          "prompt_per_second": 456.6780241539861,
+          "predicted_n": 256,
+          "predicted_ms": 9487.157,
+          "predicted_per_token_ms": 37.20453725490196,
+          "predicted_per_second": 26.87844208755057
+        },
+        "loop_period": 0,
+        "text_tail": "ve in the house after he furnished it for business purposes. She has moved out to the barn to avoid the stigma. Schwitter asks K. to speak with Tillie, hoping K"
+      },
+      {
+        "ttft_s": 2.0405845339992084,
+        "decode_tok_s": 29.379845645277552,
+        "decode_seconds": 8.679419322987087,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 10.720003856986295,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 1024,
+          "prompt_ms": 2023.28,
+          "prompt_per_token_ms": 1.975859375,
+          "prompt_per_second": 506.1088924914001,
+          "predicted_n": 256,
+          "predicted_ms": 8677.534,
+          "predicted_per_token_ms": 34.029545098039215,
+          "predicted_per_second": 29.386228852574938
+        },
+        "loop_period": 0,
+        "text_tail": "on who has taken his daughter, Sidney, to a disreputable establishment called Schwitter\u2019s. The men imply that Wilson is profiting from his association with such"
+      }
+    ],
+    "runtime_config": {},
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "benchmark_provenance": {
+      "configuration": {
+        "model": "Qwen3.8-Flash-Next q4-fast",
+        "model_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+        "llama_commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+        "llama_source_dirty": false,
+        "snowllm_benchmark_commit": "492de8cc47dba801674a15655f68bd93a60a1b13",
+        "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+        "backend": "ROCm HIP gfx1151",
+        "context_capacity": 262144,
+        "batch": 4096,
+        "ubatch": 2048,
+        "slots": 1,
+        "gpu_layers_requested": 99,
+        "flash_attention": "on",
+        "kv_k": "f16 (native default)",
+        "kv_v": "f16 (native default)",
+        "speculative_types": "none",
+        "thinking": "off",
+        "input_tokens": [
+          1024,
+          8192,
+          32768,
+          131072
+        ],
+        "output_cap": 256,
+        "concurrency": 1,
+        "warmup_requests_per_length": 1,
+        "retained_requests_per_length": 4,
+        "corpus": "standard SnowLLM PG-19 context benchmark corpus",
+        "client_timing": "HTTP stream; usage token counts; decode median; TTFT and prefill first retained request",
+        "prompt_cache_policy": "RAM prompt cache disabled; native per-slot prefix reuse with at most 4 context checkpoints",
+        "upstream_runtime_source_modified": false,
+        "artifact_sha256": {
+          "llama-server": "9c62a397b5ca0c8d49b31dea809684d3a88a5bffdae57248f7633276591b8514",
+          "libllama-server-impl.so": "872aaac8781ef6d2d81235f5e73bbe459c1357eae5b8c1b23e2d200e7c20f417",
+          "libggml-hip.so": "d09ce6512b200371871d94cbcb1b2e9ed4d267e5baf3b98b0a40329834dd7b03",
+          "bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+          "perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+          "launch_llama.cpp.sh": "8df78e6b725f70a9c10e712c047e5bbf148979d780481f5ffd10a5832f1726db"
+        },
+        "cache_ram_mib": 0,
+        "context_checkpoints": 4,
+        "configuration_reason": "Same bounded host-cache settings for all three GGUF variants; default settings previously caused host OOM on this machine.",
+        "server_build_info": "b12020-0ec4027a2",
+        "effective_context_capacity": 262144,
+        "effective_speculative_types": "none",
+        "host_visible_memory_bytes": 32727916544,
+        "gpu_memory_bytes": 103079215104,
+        "comparison_scope": "Published GGUF variants: q4-fast, Unsloth UD-IQ4_XS and Unsloth UD-Q3_K_XL",
+        "shared_chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "q4_fast_template_identical_to_embedded": true,
+        "ud_native_templates_overridden_for_matched_prompts": true,
+        "shared_tokenizer_tokens_sha256": "49d2b7a591524ed8445681d348f965ed46110e5717924418e866a378bd0b8ed0",
+        "shared_tokenizer_merges_sha256": "84dfecf21066c3a0c8b4ecdfea31e7d3592d1de26092955c437d211c44c0e867",
+        "q4_fast_reused_result": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama.json",
+        "models": [
+          "q4-fast",
+          "UD-IQ4_XS",
+          "UD-Q3_K_XL"
+        ],
+        "verified_server_properties": {
+          "q4-fast": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-q4-fast.gguf"
+          },
+          "UD-IQ4_XS": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
+          },
+          "UD-Q3_K_XL": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf"
+          }
+        }
+      },
+      "model_identity": {
+        "sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935"
+      },
+      "scope": "Published GGUF variants; throughput only",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama",
+    "isl_target": 8192,
+    "input_length_mode": "chat_template_exact",
+    "isl": 8192,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 14.259003687999211,
+    "ttft_s_reps": [
+      14.259003687999211,
+      3.5732075010309927,
+      3.5758371399715543,
+      3.5851674790028483
+    ],
+    "decode_tok_s": 29.76517029789855,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 574.514193224778,
+    "edge_before_c": 71,
+    "edge_after_c": 74,
+    "accept_unit": null,
+    "accept_mean": null,
+    "accept_stdev": null,
+    "accept_reps": [],
+    "step_s": null,
+    "step_s_reps": [],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      "immediately captivated by her beauty and innocent demeanor. The contrast between their poverty and the hotel\u2019s opulence awakens a desire in Jennie for a richer,",
+      "ennie feels a deep sense of shame at being seen working in such a public, luxurious space, yet she is also fascinated by the glamour and wealth surrounding her.",
+      "the eye of the Hon. George Sylvester Brander, a wealthy and influential junior U.S. Senator. Brander is struck by Jennie\u2019s beauty and innocence. Later, when Mrs",
+      "irst shift, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor who is struck by Jennie\u2019s beauty and innocence. He treats them"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "auto",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 3.5805023094872013,
+    "ttft_s_p95": 14.259003687999211,
+    "decode_tok_s_reps": [
+      29.817124001444594,
+      29.696154505621344,
+      29.828918047789493,
+      29.713216594352506
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 14.259003687999211,
+        "decode_tok_s": 29.817124001444594,
+        "decode_seconds": 8.552132659999188,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 22.8111363479984,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 8192,
+          "prompt_ms": 14125.661,
+          "prompt_per_token_ms": 1.7243238525390625,
+          "prompt_per_second": 579.9374627495308,
+          "predicted_n": 256,
+          "predicted_ms": 8539.965,
+          "predicted_per_token_ms": 33.49005882352941,
+          "predicted_per_second": 29.859607152956716
+        },
+        "loop_period": 0,
+        "text_tail": "immediately captivated by her beauty and innocent demeanor. The contrast between their poverty and the hotel\u2019s opulence awakens a desire in Jennie for a richer,"
+      },
+      {
+        "ttft_s": 3.5732075010309927,
+        "decode_tok_s": 29.696154505621344,
+        "decode_seconds": 8.586970408970956,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 12.160177910001948,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "cache_n": 6140,
+          "prompt_n": 2052,
+          "prompt_ms": 3559.951,
+          "prompt_per_token_ms": 1.7348689083820663,
+          "prompt_per_second": 576.4124281485897,
+          "predicted_n": 256,
+          "predicted_ms": 8586.797,
+          "predicted_per_token_ms": 33.673713725490195,
+          "predicted_per_second": 29.696754214639057
+        },
+        "loop_period": 0,
+        "text_tail": "ennie feels a deep sense of shame at being seen working in such a public, luxurious space, yet she is also fascinated by the glamour and wealth surrounding her."
+      },
+      {
+        "ttft_s": 3.5758371399715543,
+        "decode_tok_s": 29.828918047789493,
+        "decode_seconds": 8.54875123500824,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 12.124588374979794,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "cache_n": 6140,
+          "prompt_n": 2052,
+          "prompt_ms": 3558.63,
+          "prompt_per_token_ms": 1.7342251461988305,
+          "prompt_per_second": 576.626398361167,
+          "predicted_n": 256,
+          "predicted_ms": 8548.506,
+          "predicted_per_token_ms": 33.52355294117647,
+          "predicted_per_second": 29.829773763977006
+        },
+        "loop_period": 0,
+        "text_tail": "the eye of the Hon. George Sylvester Brander, a wealthy and influential junior U.S. Senator. Brander is struck by Jennie\u2019s beauty and innocence. Later, when Mrs"
+      },
+      {
+        "ttft_s": 3.5851674790028483,
+        "decode_tok_s": 29.713216594352506,
+        "decode_seconds": 8.582039550994523,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 12.167207029997371,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "cache_n": 6140,
+          "prompt_n": 2052,
+          "prompt_ms": 3562.037,
+          "prompt_per_token_ms": 1.7358854775828458,
+          "prompt_per_second": 576.0748695198843,
+          "predicted_n": 256,
+          "predicted_ms": 8581.907,
+          "predicted_per_token_ms": 33.65453725490196,
+          "predicted_per_second": 29.7136755268963
+        },
+        "loop_period": 0,
+        "text_tail": "irst shift, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor who is struck by Jennie\u2019s beauty and innocence. He treats them"
+      }
+    ],
+    "runtime_config": {},
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "benchmark_provenance": {
+      "configuration": {
+        "model": "Qwen3.8-Flash-Next q4-fast",
+        "model_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+        "llama_commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+        "llama_source_dirty": false,
+        "snowllm_benchmark_commit": "492de8cc47dba801674a15655f68bd93a60a1b13",
+        "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+        "backend": "ROCm HIP gfx1151",
+        "context_capacity": 262144,
+        "batch": 4096,
+        "ubatch": 2048,
+        "slots": 1,
+        "gpu_layers_requested": 99,
+        "flash_attention": "on",
+        "kv_k": "f16 (native default)",
+        "kv_v": "f16 (native default)",
+        "speculative_types": "none",
+        "thinking": "off",
+        "input_tokens": [
+          1024,
+          8192,
+          32768,
+          131072
+        ],
+        "output_cap": 256,
+        "concurrency": 1,
+        "warmup_requests_per_length": 1,
+        "retained_requests_per_length": 4,
+        "corpus": "standard SnowLLM PG-19 context benchmark corpus",
+        "client_timing": "HTTP stream; usage token counts; decode median; TTFT and prefill first retained request",
+        "prompt_cache_policy": "RAM prompt cache disabled; native per-slot prefix reuse with at most 4 context checkpoints",
+        "upstream_runtime_source_modified": false,
+        "artifact_sha256": {
+          "llama-server": "9c62a397b5ca0c8d49b31dea809684d3a88a5bffdae57248f7633276591b8514",
+          "libllama-server-impl.so": "872aaac8781ef6d2d81235f5e73bbe459c1357eae5b8c1b23e2d200e7c20f417",
+          "libggml-hip.so": "d09ce6512b200371871d94cbcb1b2e9ed4d267e5baf3b98b0a40329834dd7b03",
+          "bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+          "perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+          "launch_llama.cpp.sh": "8df78e6b725f70a9c10e712c047e5bbf148979d780481f5ffd10a5832f1726db"
+        },
+        "cache_ram_mib": 0,
+        "context_checkpoints": 4,
+        "configuration_reason": "Same bounded host-cache settings for all three GGUF variants; default settings previously caused host OOM on this machine.",
+        "server_build_info": "b12020-0ec4027a2",
+        "effective_context_capacity": 262144,
+        "effective_speculative_types": "none",
+        "host_visible_memory_bytes": 32727916544,
+        "gpu_memory_bytes": 103079215104,
+        "comparison_scope": "Published GGUF variants: q4-fast, Unsloth UD-IQ4_XS and Unsloth UD-Q3_K_XL",
+        "shared_chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "q4_fast_template_identical_to_embedded": true,
+        "ud_native_templates_overridden_for_matched_prompts": true,
+        "shared_tokenizer_tokens_sha256": "49d2b7a591524ed8445681d348f965ed46110e5717924418e866a378bd0b8ed0",
+        "shared_tokenizer_merges_sha256": "84dfecf21066c3a0c8b4ecdfea31e7d3592d1de26092955c437d211c44c0e867",
+        "q4_fast_reused_result": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama.json",
+        "models": [
+          "q4-fast",
+          "UD-IQ4_XS",
+          "UD-Q3_K_XL"
+        ],
+        "verified_server_properties": {
+          "q4-fast": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-q4-fast.gguf"
+          },
+          "UD-IQ4_XS": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
+          },
+          "UD-Q3_K_XL": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf"
+          }
+        }
+      },
+      "model_identity": {
+        "sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935"
+      },
+      "scope": "Published GGUF variants; throughput only",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama",
+    "isl_target": 32768,
+    "input_length_mode": "chat_template_exact",
+    "isl": 32768,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 63.56333093397552,
+    "ttft_s_reps": [
+      63.56333093397552,
+      5.0268560639815405,
+      5.034347535984125,
+      5.020427615963854
+    ],
+    "decode_tok_s": 25.777880452586345,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 515.5173512545584,
+    "edge_before_c": 72,
+    "edge_after_c": 74,
+    "accept_unit": null,
+    "accept_mean": null,
+    "accept_stdev": null,
+    "accept_reps": [],
+    "step_s": null,
+    "step_s_reps": [],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      "ntroduction of Senator Brander**\nAt the hotel, the Gerhardts encounter Senator George Sylvester Brander, a wealthy, middle-aged, bachelor politician. Brander is",
+      "innocence. He begins to pay them generously for their laundry services, far exceeding the market rate, and offers gifts, including a gold watch. His interest is",
+      "taying at the hotel. Brander is immediately struck by Jennie\u2019s beauty and the family\u2019s pathetic dignity.\n\n### **Part 2: The Senator\u2019s Interest and Generosity**\n",
+      "nator Brander**\nWhile working at the hotel, Jennie catches the eye of Senator George Sylvester Brander, a wealthy, middle-aged bachelor. Brander, feeling lonely"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "auto",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 5.030601799982833,
+    "ttft_s_p95": 63.56333093397552,
+    "decode_tok_s_reps": [
+      25.53490287219018,
+      25.855707174019837,
+      25.700053731152856,
+      26.49997891433932
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 63.56333093397552,
+        "decode_tok_s": 25.53490287219018,
+        "decode_seconds": 9.98633130802773,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 73.54966224200325,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 32768,
+          "prompt_ms": 63470.164,
+          "prompt_per_token_ms": 1.9369556884765624,
+          "prompt_per_second": 516.27407170399,
+          "predicted_n": 256,
+          "predicted_ms": 9978.882,
+          "predicted_per_token_ms": 39.13287058823529,
+          "predicted_per_second": 25.55396486299768
+        },
+        "loop_period": 0,
+        "text_tail": "ntroduction of Senator Brander**\nAt the hotel, the Gerhardts encounter Senator George Sylvester Brander, a wealthy, middle-aged, bachelor politician. Brander is"
+      },
+      {
+        "ttft_s": 5.0268560639815405,
+        "decode_tok_s": 25.855707174019837,
+        "decode_seconds": 9.862426050996874,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 14.889282114978414,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "cache_n": 30716,
+          "prompt_n": 2052,
+          "prompt_ms": 4977.28,
+          "prompt_per_token_ms": 2.4255750487329433,
+          "prompt_per_second": 412.2733701941623,
+          "predicted_n": 256,
+          "predicted_ms": 9861.588,
+          "predicted_per_token_ms": 38.67289411764706,
+          "predicted_per_second": 25.857904426751553
+        },
+        "loop_period": 0,
+        "text_tail": "innocence. He begins to pay them generously for their laundry services, far exceeding the market rate, and offers gifts, including a gold watch. His interest is"
+      },
+      {
+        "ttft_s": 5.034347535984125,
+        "decode_tok_s": 25.700053731152856,
+        "decode_seconds": 9.922158244007733,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 14.956505779991858,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "cache_n": 30716,
+          "prompt_n": 2052,
+          "prompt_ms": 4991.715,
+          "prompt_per_token_ms": 2.4326096491228073,
+          "prompt_per_second": 411.0811614845799,
+          "predicted_n": 256,
+          "predicted_ms": 9921.15,
+          "predicted_per_token_ms": 38.906470588235294,
+          "predicted_per_second": 25.702665517606327
+        },
+        "loop_period": 0,
+        "text_tail": "taying at the hotel. Brander is immediately struck by Jennie\u2019s beauty and the family\u2019s pathetic dignity.\n\n### **Part 2: The Senator\u2019s Interest and Generosity**\n"
+      },
+      {
+        "ttft_s": 5.020427615963854,
+        "decode_tok_s": 26.49997891433932,
+        "decode_seconds": 9.622649166034535,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 14.643076781998388,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "cache_n": 30716,
+          "prompt_n": 2052,
+          "prompt_ms": 4980.221,
+          "prompt_per_token_ms": 2.4270082846003898,
+          "prompt_per_second": 412.02990790970927,
+          "predicted_n": 256,
+          "predicted_ms": 9621.762,
+          "predicted_per_token_ms": 37.732400000000005,
+          "predicted_per_second": 26.50242232140017
+        },
+        "loop_period": 0,
+        "text_tail": "nator Brander**\nWhile working at the hotel, Jennie catches the eye of Senator George Sylvester Brander, a wealthy, middle-aged bachelor. Brander, feeling lonely"
+      }
+    ],
+    "runtime_config": {},
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "benchmark_provenance": {
+      "configuration": {
+        "model": "Qwen3.8-Flash-Next q4-fast",
+        "model_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+        "llama_commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+        "llama_source_dirty": false,
+        "snowllm_benchmark_commit": "492de8cc47dba801674a15655f68bd93a60a1b13",
+        "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+        "backend": "ROCm HIP gfx1151",
+        "context_capacity": 262144,
+        "batch": 4096,
+        "ubatch": 2048,
+        "slots": 1,
+        "gpu_layers_requested": 99,
+        "flash_attention": "on",
+        "kv_k": "f16 (native default)",
+        "kv_v": "f16 (native default)",
+        "speculative_types": "none",
+        "thinking": "off",
+        "input_tokens": [
+          1024,
+          8192,
+          32768,
+          131072
+        ],
+        "output_cap": 256,
+        "concurrency": 1,
+        "warmup_requests_per_length": 1,
+        "retained_requests_per_length": 4,
+        "corpus": "standard SnowLLM PG-19 context benchmark corpus",
+        "client_timing": "HTTP stream; usage token counts; decode median; TTFT and prefill first retained request",
+        "prompt_cache_policy": "RAM prompt cache disabled; native per-slot prefix reuse with at most 4 context checkpoints",
+        "upstream_runtime_source_modified": false,
+        "artifact_sha256": {
+          "llama-server": "9c62a397b5ca0c8d49b31dea809684d3a88a5bffdae57248f7633276591b8514",
+          "libllama-server-impl.so": "872aaac8781ef6d2d81235f5e73bbe459c1357eae5b8c1b23e2d200e7c20f417",
+          "libggml-hip.so": "d09ce6512b200371871d94cbcb1b2e9ed4d267e5baf3b98b0a40329834dd7b03",
+          "bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+          "perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+          "launch_llama.cpp.sh": "8df78e6b725f70a9c10e712c047e5bbf148979d780481f5ffd10a5832f1726db"
+        },
+        "cache_ram_mib": 0,
+        "context_checkpoints": 4,
+        "configuration_reason": "Same bounded host-cache settings for all three GGUF variants; default settings previously caused host OOM on this machine.",
+        "server_build_info": "b12020-0ec4027a2",
+        "effective_context_capacity": 262144,
+        "effective_speculative_types": "none",
+        "host_visible_memory_bytes": 32727916544,
+        "gpu_memory_bytes": 103079215104,
+        "comparison_scope": "Published GGUF variants: q4-fast, Unsloth UD-IQ4_XS and Unsloth UD-Q3_K_XL",
+        "shared_chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "q4_fast_template_identical_to_embedded": true,
+        "ud_native_templates_overridden_for_matched_prompts": true,
+        "shared_tokenizer_tokens_sha256": "49d2b7a591524ed8445681d348f965ed46110e5717924418e866a378bd0b8ed0",
+        "shared_tokenizer_merges_sha256": "84dfecf21066c3a0c8b4ecdfea31e7d3592d1de26092955c437d211c44c0e867",
+        "q4_fast_reused_result": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama.json",
+        "models": [
+          "q4-fast",
+          "UD-IQ4_XS",
+          "UD-Q3_K_XL"
+        ],
+        "verified_server_properties": {
+          "q4-fast": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-q4-fast.gguf"
+          },
+          "UD-IQ4_XS": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
+          },
+          "UD-Q3_K_XL": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf"
+          }
+        }
+      },
+      "model_identity": {
+        "sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935"
+      },
+      "scope": "Published GGUF variants; throughput only",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama",
+    "isl_target": 131072,
+    "input_length_mode": "chat_template_exact",
+    "isl": 131072,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 436.6748766999808,
+    "ttft_s_reps": [
+      436.6748766999808,
+      10.948364042968024,
+      10.942156384990085,
+      10.925986341026146
+    ],
+    "decode_tok_s": 18.309925405948555,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 300.1592420212751,
+    "edge_before_c": 74,
+    "edge_after_c": 75,
+    "accept_unit": null,
+    "accept_mean": null,
+    "accept_stdev": null,
+    "accept_reps": [],
+    "step_s": null,
+    "step_s_reps": [],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      " where she eventually meets Lester Kane, a wealthy and handsome carriage manufacturer\u2019s son. Lester is captivated by Jennie\u2019s beauty and gentle nature. Although",
+      "man from a poor family, becomes the mistress of Lester Kane, a wealthy and socially prominent man. Despite their unconventional living arrangement, they enjoy a",
+      "d and gifts. He eventually asks Jennie to live with him, promising marriage. However, before he can formalize the union, he dies suddenly of typhoid fever. Jenn",
+      "ity lead her to accept his advances. They plan to marry, but before he can do so, Brander dies suddenly of typhoid fever. Jennie is left pregnant with his child"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "auto",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 10.945260213979054,
+    "ttft_s_p95": 436.6748766999808,
+    "decode_tok_s_reps": [
+      18.285012138572945,
+      18.334838673324164,
+      18.38260461140199,
+      16.644170656954472
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 436.6748766999808,
+        "decode_tok_s": 18.285012138572945,
+        "decode_seconds": 13.945848002040293,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 450.6207247020211,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 131072,
+          "prompt_ms": 436522.203,
+          "prompt_per_token_ms": 3.330400108337402,
+          "prompt_per_second": 300.26422275707245,
+          "predicted_n": 256,
+          "predicted_ms": 13932.225,
+          "predicted_per_token_ms": 54.63617647058824,
+          "predicted_per_second": 18.302891318507992
+        },
+        "loop_period": 0,
+        "text_tail": " where she eventually meets Lester Kane, a wealthy and handsome carriage manufacturer\u2019s son. Lester is captivated by Jennie\u2019s beauty and gentle nature. Although"
+      },
+      {
+        "ttft_s": 10.948364042968024,
+        "decode_tok_s": 18.334838673324164,
+        "decode_seconds": 13.907948934996966,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 24.85631297796499,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "cache_n": 129020,
+          "prompt_n": 2052,
+          "prompt_ms": 10813.012,
+          "prompt_per_token_ms": 5.269499025341131,
+          "prompt_per_second": 189.77136065325737,
+          "predicted_n": 256,
+          "predicted_ms": 13904.702,
+          "predicted_per_token_ms": 54.5282431372549,
+          "predicted_per_second": 18.339120104839356
+        },
+        "loop_period": 0,
+        "text_tail": "man from a poor family, becomes the mistress of Lester Kane, a wealthy and socially prominent man. Despite their unconventional living arrangement, they enjoy a"
+      },
+      {
+        "ttft_s": 10.942156384990085,
+        "decode_tok_s": 18.38260461140199,
+        "decode_seconds": 13.871810082986485,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 24.81396646797657,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "cache_n": 129020,
+          "prompt_n": 2052,
+          "prompt_ms": 10791.332,
+          "prompt_per_token_ms": 5.258933723196881,
+          "prompt_per_second": 190.15261508032557,
+          "predicted_n": 256,
+          "predicted_ms": 13868.721,
+          "predicted_per_token_ms": 54.387141176470585,
+          "predicted_per_second": 18.38669910513017
+        },
+        "loop_period": 0,
+        "text_tail": "d and gifts. He eventually asks Jennie to live with him, promising marriage. However, before he can formalize the union, he dies suddenly of typhoid fever. Jenn"
+      },
+      {
+        "ttft_s": 10.925986341026146,
+        "decode_tok_s": 16.644170656954472,
+        "decode_seconds": 15.32067924895091,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 26.246665589977056,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "cache_n": 129020,
+          "prompt_n": 2052,
+          "prompt_ms": 10791.614,
+          "prompt_per_token_ms": 5.259071150097466,
+          "prompt_per_second": 190.14764612596412,
+          "predicted_n": 256,
+          "predicted_ms": 15317.761,
+          "predicted_per_token_ms": 60.06965098039216,
+          "predicted_per_second": 16.647341605604108
+        },
+        "loop_period": 0,
+        "text_tail": "ity lead her to accept his advances. They plan to marry, but before he can do so, Brander dies suddenly of typhoid fever. Jennie is left pregnant with his child"
+      }
+    ],
+    "runtime_config": {},
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+    "benchmark_provenance": {
+      "configuration": {
+        "model": "Qwen3.8-Flash-Next q4-fast",
+        "model_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+        "llama_commit": "0ec4027a2a0183de87c007069adddc06e665f7de",
+        "llama_source_dirty": false,
+        "snowllm_benchmark_commit": "492de8cc47dba801674a15655f68bd93a60a1b13",
+        "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+        "backend": "ROCm HIP gfx1151",
+        "context_capacity": 262144,
+        "batch": 4096,
+        "ubatch": 2048,
+        "slots": 1,
+        "gpu_layers_requested": 99,
+        "flash_attention": "on",
+        "kv_k": "f16 (native default)",
+        "kv_v": "f16 (native default)",
+        "speculative_types": "none",
+        "thinking": "off",
+        "input_tokens": [
+          1024,
+          8192,
+          32768,
+          131072
+        ],
+        "output_cap": 256,
+        "concurrency": 1,
+        "warmup_requests_per_length": 1,
+        "retained_requests_per_length": 4,
+        "corpus": "standard SnowLLM PG-19 context benchmark corpus",
+        "client_timing": "HTTP stream; usage token counts; decode median; TTFT and prefill first retained request",
+        "prompt_cache_policy": "RAM prompt cache disabled; native per-slot prefix reuse with at most 4 context checkpoints",
+        "upstream_runtime_source_modified": false,
+        "artifact_sha256": {
+          "llama-server": "9c62a397b5ca0c8d49b31dea809684d3a88a5bffdae57248f7633276591b8514",
+          "libllama-server-impl.so": "872aaac8781ef6d2d81235f5e73bbe459c1357eae5b8c1b23e2d200e7c20f417",
+          "libggml-hip.so": "d09ce6512b200371871d94cbcb1b2e9ed4d267e5baf3b98b0a40329834dd7b03",
+          "bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+          "perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+          "launch_llama.cpp.sh": "8df78e6b725f70a9c10e712c047e5bbf148979d780481f5ffd10a5832f1726db"
+        },
+        "cache_ram_mib": 0,
+        "context_checkpoints": 4,
+        "configuration_reason": "Same bounded host-cache settings for all three GGUF variants; default settings previously caused host OOM on this machine.",
+        "server_build_info": "b12020-0ec4027a2",
+        "effective_context_capacity": 262144,
+        "effective_speculative_types": "none",
+        "host_visible_memory_bytes": 32727916544,
+        "gpu_memory_bytes": 103079215104,
+        "comparison_scope": "Published GGUF variants: q4-fast, Unsloth UD-IQ4_XS and Unsloth UD-Q3_K_XL",
+        "shared_chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "q4_fast_template_identical_to_embedded": true,
+        "ud_native_templates_overridden_for_matched_prompts": true,
+        "shared_tokenizer_tokens_sha256": "49d2b7a591524ed8445681d348f965ed46110e5717924418e866a378bd0b8ed0",
+        "shared_tokenizer_merges_sha256": "84dfecf21066c3a0c8b4ecdfea31e7d3592d1de26092955c437d211c44c0e867",
+        "q4_fast_reused_result": "qwen3_8_flash_next_q4_fast_cram0_ctxcp4_nospec_llama.json",
+        "models": [
+          "q4-fast",
+          "UD-IQ4_XS",
+          "UD-Q3_K_XL"
+        ],
+        "verified_server_properties": {
+          "q4-fast": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-q4-fast.gguf"
+          },
+          "UD-IQ4_XS": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf"
+          },
+          "UD-Q3_K_XL": {
+            "context_capacity": 262144,
+            "slots": 1,
+            "speculative_types": "none",
+            "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+            "build_info": "b12020-0ec4027a2",
+            "model_file": "Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00003.gguf"
+          }
+        }
+      },
+      "model_identity": {
+        "sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935"
+      },
+      "scope": "Published GGUF variants; throughput only",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  }
+]

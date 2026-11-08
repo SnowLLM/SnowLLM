@@ -1,0 +1,19 @@
+{
+  "status": "outdated",
+  "marked_at": "2026-11-08T14:47:19.046967+00:00",
+  "reason": "Superseded historical Flash-Next measurements; retained for reference and excluded from current charts and regression baselines.",
+  "original_sha256": "b3b9251b6c16a6b3cbff62fe1589095ceea2ec1f810d337411a088a58b20cd38",
+  "raw_result_sha256": "9b2b876917090b3d69ccbef79ef98326c4303d57f2e4e3cea568c28894787862",
+  "replacement_status": "completed",
+  "replacement_results": [
+    "benchmarks/runs/qwen3_8_flash_next_q4_fast_dflash2_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_q4_fast_mtp2_rebenchmark_20261108T144521Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_q4_fast_none_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_iq4_dflash2_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_iq4_mtp2_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_iq4_none_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_q3_dflash2_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_q3_mtp2_standard_20261108T152240Z.json",
+    "benchmarks/runs/qwen3_8_flash_next_ud_q3_none_standard_20261108T152240Z.json"
+  ]
+}

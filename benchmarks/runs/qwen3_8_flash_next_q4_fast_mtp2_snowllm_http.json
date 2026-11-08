@@ -1,0 +1,1257 @@
+[
+  {
+    "label": "qwen3_8_flash_next_q4_fast_mtp2_snowllm_http",
+    "isl_target": 1024,
+    "input_length_mode": "chat_template_exact",
+    "isl": 1024,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 0.7354475280153565,
+    "ttft_s_reps": [
+      0.7354475280153565,
+      0.7247239229618572,
+      0.7307393369846977,
+      0.7345892100129277
+    ],
+    "decode_tok_s": 52.59565939799108,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 1392.3495028439586,
+    "edge_before_c": 66,
+    "edge_after_c": 79,
+    "accept_unit": "AL",
+    "accept_mean": 2.2734389267737485,
+    "accept_stdev": 0.07180658621361789,
+    "accept_reps": [
+      2.1794871794871793,
+      2.3394495412844036,
+      2.256637168141593,
+      2.3181818181818183
+    ],
+    "step_s": 0.04342649900236234,
+    "step_s_reps": [
+      0.043367157102180406,
+      0.043356247119169786,
+      0.043485840902544266,
+      0.04349496010902592
+    ],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      " associates with a lack of ambition or personality. K. calmly defends his actions, explaining that these small domestic acts give him a sense of stability and \u201c",
+      "man (Christine) without informing her. She accuses him of neglecting her during her hospitalization. Palmer defends himself, citing social propriety and his new",
+      "nds meet. He reveals that his daughter, Tillie, is unhappy with this new lifestyle and has moved out of the main house into the barn. Schwitter asks K. to speak",
+      "\u2019s. Enraged by the implication that Sidney is being compromised and by the men\u2019s malicious smiles, Joe attempts to drive to Schwitter\u2019s in a fit of anger. After"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "off",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 0.7326642734988127,
+    "ttft_s_p95": 0.7354475280153565,
+    "decode_tok_s_reps": [
+      50.256630250213,
+      53.95876480854418,
+      51.89360769632862,
+      53.29771109965353
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 0.7354475280153565,
+        "decode_tok_s": 50.256630250213,
+        "decode_seconds": 5.0739573809551075,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 5.809404908970464,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.7316244569956325,
+          "decode_tokens": 255,
+          "decode_seconds": 5.052723094355315,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1399.625163167711,
+          "decode_tok_s": 50.46783590513302
+        },
+        "loop_period": 0,
+        "text_tail": " associates with a lack of ambition or personality. K. calmly defends his actions, explaining that these small domestic acts give him a sense of stability and \u201c"
+      },
+      {
+        "ttft_s": 0.7247239229618572,
+        "decode_tok_s": 53.95876480854418,
+        "decode_seconds": 4.7258309359895065,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 5.450554858951364,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.7217598510324024,
+          "decode_tokens": 255,
+          "decode_seconds": 4.700834125222173,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1418.7544493300293,
+          "decode_tok_s": 54.24569197875028
+        },
+        "loop_period": 0,
+        "text_tail": "man (Christine) without informing her. She accuses him of neglecting her during her hospitalization. Palmer defends himself, citing social propriety and his new"
+      },
+      {
+        "ttft_s": 0.7307393369846977,
+        "decode_tok_s": 51.89360769632862,
+        "decode_seconds": 4.9139000219875015,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 5.644639358972199,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.7273108880035579,
+          "decode_tokens": 255,
+          "decode_seconds": 4.887646818358917,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1407.926124701423,
+          "decode_tok_s": 52.17234580906547
+        },
+        "loop_period": 0,
+        "text_tail": "nds meet. He reveals that his daughter, Tillie, is unhappy with this new lifestyle and has moved out of the main house into the barn. Schwitter asks K. to speak"
+      },
+      {
+        "ttft_s": 0.7345892100129277,
+        "decode_tok_s": 53.29771109965353,
+        "decode_seconds": 4.784445611992851,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 5.5190348220057786,
+        "isl": 1024,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.7308921659714542,
+          "decode_tokens": 255,
+          "decode_seconds": 4.756934822071344,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1401.0274670805452,
+          "decode_tok_s": 53.605947850461334
+        },
+        "loop_period": 0,
+        "text_tail": "\u2019s. Enraged by the implication that Sidney is being compromised and by the men\u2019s malicious smiles, Joe attempts to drive to Schwitter\u2019s in a fit of anger. After"
+      }
+    ],
+    "runtime_config": {
+      "moe_cache_experts": 0,
+      "moe_cache_mode": "all",
+      "gpu_arch": "gfx1151",
+      "gpu_name": "AMD Radeon 8060S Graphics",
+      "host_total_bytes": 32727916544,
+      "version": "0.3.22.dev3",
+      "max_disk_mem_gib": null,
+      "disk_offloaded_weight_bytes": 0,
+      "host_offload": null,
+      "host_alloc": false,
+      "max_model_len": 409600,
+      "kv_capacity_tokens": 409600,
+      "model_context_limit": 1000000,
+      "max_num_seqs": 4,
+      "kv_cache_dtype": "bf16",
+      "max_gpu_mem_util": 0.9,
+      "max_gpu_mem_gib": null,
+      "max_gpu_mem_bytes": 92771293593,
+      "max_host_mem_util": null,
+      "automatic_host_weight_offload": false,
+      "max_host_mem_gib": null,
+      "max_host_mem_bytes": null,
+      "offload_ratio": 0.0,
+      "num_spec": 2,
+      "dflash_block": null,
+      "dspark_adaptive": false,
+      "enforce_eager": false,
+      "prefill_chunk": 8192
+    },
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "platform": "gfx1151",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0.3.22.dev3",
+    "commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+    "benchmark_provenance": {
+      "snowllm_commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+      "source_dirty": false,
+      "native_library_sha256": "9a97497293e994176f59c48f047a931e90c05fb2deb4834484cc4d7bd15319bc",
+      "lengths": [
+        1024,
+        8192,
+        32768,
+        131072,
+        225280
+      ],
+      "recipe": "qwen3.8-flash-next-q4-fast",
+      "defaults": {
+        "num_spec": 0,
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192
+      },
+      "mtp_sidecar": "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "mtp_sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6",
+      "q4_fast_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+      "benchmark_source_sha256": {
+        "benchmarks/run.sh": "5108027b491db05b068fcc36c01ec18e61413f342bb59ffc5260a3c53360cccd",
+        "benchmarks/perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+        "benchmarks/bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+        "benchmarks/launch_snowllm.sh": "df335f5683af0a8d88005a93120fe2effab9f815fe7c0aa61155e72d943cac38"
+      },
+      "native_package_version": "0.3.15",
+      "run_source_note": "Server and client sources are unmodified at the recorded commit; benchmark display registrations are edited during the run.",
+      "prefix_memory_ratio": 0.08,
+      "temperature": 0,
+      "thinking": "off",
+      "warmup_requests_per_length": 1,
+      "retained_requests_per_length": 4,
+      "output_cap": 256,
+      "concurrency": 1,
+      "aggregation": "decode median; TTFT and prefill first retained request",
+      "dflash": {
+        "source_repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "block": 4,
+        "files": {
+          "config.json": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9",
+          "model.safetensors": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+        },
+        "configuration_note": "q4-fast recipe defaults retained; external DFlash2 and block 4 explicitly enabled, matching the existing Flash-Next DFlash2 recipe draft settings."
+      },
+      "snowllm_source_tree": "17b18cd85fec6d19fcc5a6e5001919c9bef51bd5",
+      "source_revision_note": "The commit identifies the unchanged source tree after commit metadata was updated following measurement.",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_mtp2_snowllm_http",
+    "isl_target": 8192,
+    "input_length_mode": "chat_template_exact",
+    "isl": 8192,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 4.495784856029786,
+    "ttft_s_reps": [
+      4.495784856029786,
+      4.482815763971303,
+      4.485035611025523,
+      4.437890898028854
+    ],
+    "decode_tok_s": 52.98498182271696,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 1822.1512510797347,
+    "edge_before_c": 79,
+    "edge_after_c": 81,
+    "accept_unit": "AL",
+    "accept_mean": 2.350480010167698,
+    "accept_stdev": 0.027970193550216862,
+    "accept_reps": [
+      2.361111111111111,
+      2.3394495412844036,
+      2.3181818181818183,
+      2.383177570093458
+    ],
+    "step_s": 0.0443131145127707,
+    "step_s_reps": [
+      0.04442402886127605,
+      0.04429051887143592,
+      0.044335710154105486,
+      0.04400203270058661
+    ],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      "st day of scrubbing the hotel\u2019s grand staircase, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor. He is struck by Jennie\u2019s",
+      "tinguished and wealthy bachelor. Brander is struck by Jennie\u2019s beauty and innocence. Later, through the hotel clerk\u2019s recommendation, Mrs. Gerhardt asks Brander",
+      "at the hotel. Brander is struck by Jennie\u2019s beauty and innocence. Later, when Mrs. Gerhardt asks the hotel clerk for laundry work, he directs them to Senator Br",
+      "t, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor. Brander is immediately struck by Jennie\u2019s beauty and innocent demeanor"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "off",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 4.483925687498413,
+    "ttft_s_p95": 4.495784856029786,
+    "decode_tok_s_reps": [
+      53.149414216441464,
+      52.82054942899245,
+      52.287012210340215,
+      54.16062449455174
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 4.495784856029786,
+        "decode_tok_s": 53.149414216441464,
+        "decode_seconds": 4.797795117017813,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 9.2935799730476,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 8192,
+          "prefill_seconds": 4.482567107013892,
+          "decode_tokens": 255,
+          "decode_seconds": 4.773299248307012,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1827.5242298507794,
+          "decode_tok_s": 53.42216918213185
+        },
+        "loop_period": 0,
+        "text_tail": "st day of scrubbing the hotel\u2019s grand staircase, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor. He is struck by Jennie\u2019s"
+      },
+      {
+        "ttft_s": 4.482815763971303,
+        "decode_tok_s": 52.82054942899245,
+        "decode_seconds": 4.8276665569865145,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 9.310482320957817,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 8192,
+          "prefill_seconds": 4.470453416986857,
+          "decode_tokens": 255,
+          "decode_seconds": 4.807016988634132,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1832.4763141188291,
+          "decode_tok_s": 53.047451382620515
+        },
+        "loop_period": 0,
+        "text_tail": "tinguished and wealthy bachelor. Brander is struck by Jennie\u2019s beauty and innocence. Later, through the hotel clerk\u2019s recommendation, Mrs. Gerhardt asks Brander"
+      },
+      {
+        "ttft_s": 4.485035611025523,
+        "decode_tok_s": 52.287012210340215,
+        "decode_seconds": 4.876928116951603,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 9.361963727977127,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 8192,
+          "prefill_seconds": 4.473764196969569,
+          "decode_tokens": 255,
+          "decode_seconds": 4.857527764281258,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1831.1202019876425,
+          "decode_tok_s": 52.4958399363325
+        },
+        "loop_period": 0,
+        "text_tail": "at the hotel. Brander is struck by Jennie\u2019s beauty and innocence. Later, when Mrs. Gerhardt asks the hotel clerk for laundry work, he directs them to Senator Br"
+      },
+      {
+        "ttft_s": 4.437890898028854,
+        "decode_tok_s": 54.16062449455174,
+        "decode_seconds": 4.708217498962767,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 9.146108396991622,
+        "isl": 8192,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 8192,
+          "prefill_seconds": 4.425601474009454,
+          "decode_tokens": 255,
+          "decode_seconds": 4.688822350464761,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1851.0478288905458,
+          "decode_tok_s": 54.3846580100703
+        },
+        "loop_period": 0,
+        "text_tail": "t, they encounter Senator George Sylvester Brander, a distinguished and wealthy bachelor. Brander is immediately struck by Jennie\u2019s beauty and innocent demeanor"
+      }
+    ],
+    "runtime_config": {
+      "moe_cache_experts": 0,
+      "moe_cache_mode": "all",
+      "gpu_arch": "gfx1151",
+      "gpu_name": "AMD Radeon 8060S Graphics",
+      "host_total_bytes": 32727916544,
+      "version": "0.3.22.dev3",
+      "max_disk_mem_gib": null,
+      "disk_offloaded_weight_bytes": 0,
+      "host_offload": null,
+      "host_alloc": false,
+      "max_model_len": 409600,
+      "kv_capacity_tokens": 409600,
+      "model_context_limit": 1000000,
+      "max_num_seqs": 4,
+      "kv_cache_dtype": "bf16",
+      "max_gpu_mem_util": 0.9,
+      "max_gpu_mem_gib": null,
+      "max_gpu_mem_bytes": 92771293593,
+      "max_host_mem_util": null,
+      "automatic_host_weight_offload": false,
+      "max_host_mem_gib": null,
+      "max_host_mem_bytes": null,
+      "offload_ratio": 0.0,
+      "num_spec": 2,
+      "dflash_block": null,
+      "dspark_adaptive": false,
+      "enforce_eager": false,
+      "prefill_chunk": 8192
+    },
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "platform": "gfx1151",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0.3.22.dev3",
+    "commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+    "benchmark_provenance": {
+      "snowllm_commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+      "source_dirty": false,
+      "native_library_sha256": "9a97497293e994176f59c48f047a931e90c05fb2deb4834484cc4d7bd15319bc",
+      "lengths": [
+        1024,
+        8192,
+        32768,
+        131072,
+        225280
+      ],
+      "recipe": "qwen3.8-flash-next-q4-fast",
+      "defaults": {
+        "num_spec": 0,
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192
+      },
+      "mtp_sidecar": "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "mtp_sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6",
+      "q4_fast_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+      "benchmark_source_sha256": {
+        "benchmarks/run.sh": "5108027b491db05b068fcc36c01ec18e61413f342bb59ffc5260a3c53360cccd",
+        "benchmarks/perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+        "benchmarks/bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+        "benchmarks/launch_snowllm.sh": "df335f5683af0a8d88005a93120fe2effab9f815fe7c0aa61155e72d943cac38"
+      },
+      "native_package_version": "0.3.15",
+      "run_source_note": "Server and client sources are unmodified at the recorded commit; benchmark display registrations are edited during the run.",
+      "prefix_memory_ratio": 0.08,
+      "temperature": 0,
+      "thinking": "off",
+      "warmup_requests_per_length": 1,
+      "retained_requests_per_length": 4,
+      "output_cap": 256,
+      "concurrency": 1,
+      "aggregation": "decode median; TTFT and prefill first retained request",
+      "dflash": {
+        "source_repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "block": 4,
+        "files": {
+          "config.json": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9",
+          "model.safetensors": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+        },
+        "configuration_note": "q4-fast recipe defaults retained; external DFlash2 and block 4 explicitly enabled, matching the existing Flash-Next DFlash2 recipe draft settings."
+      },
+      "snowllm_source_tree": "17b18cd85fec6d19fcc5a6e5001919c9bef51bd5",
+      "source_revision_note": "The commit identifies the unchanged source tree after commit metadata was updated following measurement.",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_mtp2_snowllm_http",
+    "isl_target": 32768,
+    "input_length_mode": "chat_template_exact",
+    "isl": 32768,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 18.25665516400477,
+    "ttft_s_reps": [
+      18.25665516400477,
+      18.299201001005713,
+      18.3139561029966,
+      18.40612127800705
+    ],
+    "decode_tok_s": 52.064137005214874,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 1794.852326761702,
+    "edge_before_c": 81,
+    "edge_after_c": 83,
+    "accept_unit": "AL",
+    "accept_mean": 2.3401472585305023,
+    "accept_stdev": 0.046943424443061765,
+    "accept_reps": [
+      2.3181818181818183,
+      2.3394495412844036,
+      2.4056603773584904,
+      2.2972972972972974
+    ],
+    "step_s": 0.044729826799510854,
+    "step_s_reps": [
+      0.04474600570921956,
+      0.044713647889802144,
+      0.04444169966978425,
+      0.04477980174753513
+    ],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      "nator Brander**\nAt the hotel, the Gerhardts encounter Senator George Sylvester Brander, a wealthy, middle-aged, and lonely bachelor. Brander is immediately capt",
+      "ged, unmarried U.S. Senator. Brander is charmed by Jennie\u2019s beauty and innocence. He begins to pay her generously for laundry services, far exceeding the market",
+      "atch), and offering financial aid to the family. Jennie, naive and overwhelmed by the luxury and attention, views Brander as a benevolent, almost magical figure",
+      "r is charmed by Jennie\u2019s beauty and innocence. He begins giving the family money under the guise of paying for laundry, though the amounts far exceed the work\u2019s"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "off",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 18.306578552001156,
+    "ttft_s_p95": 18.40612127800705,
+    "decode_tok_s_reps": [
+      51.807569892303825,
+      52.320704118125924,
+      54.13070146356464,
+      51.302087272500046
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 18.25665516400477,
+        "decode_tok_s": 51.807569892303825,
+        "decode_seconds": 4.922060628014151,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 23.17871579201892,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 32768,
+          "prefill_seconds": 17.840662035974674,
+          "decode_tokens": 255,
+          "decode_seconds": 4.898473816050682,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1836.7031410563802,
+          "decode_tok_s": 52.05703032737445
+        },
+        "loop_period": 0,
+        "text_tail": "nator Brander**\nAt the hotel, the Gerhardts encounter Senator George Sylvester Brander, a wealthy, middle-aged, and lonely bachelor. Brander is immediately capt"
+      },
+      {
+        "ttft_s": 18.299201001005713,
+        "decode_tok_s": 52.320704118125924,
+        "decode_seconds": 4.873787619988434,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 23.172988620994147,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 32768,
+          "prefill_seconds": 17.8833214440383,
+          "decode_tokens": 255,
+          "decode_seconds": 4.846005790983327,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1832.3218146326924,
+          "decode_tok_s": 52.620655236207774
+        },
+        "loop_period": 0,
+        "text_tail": "ged, unmarried U.S. Senator. Brander is charmed by Jennie\u2019s beauty and innocence. He begins to pay her generously for laundry services, far exceeding the market"
+      },
+      {
+        "ttft_s": 18.3139561029966,
+        "decode_tok_s": 54.13070146356464,
+        "decode_seconds": 4.710820164997131,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 23.02477626799373,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 32768,
+          "prefill_seconds": 17.898907991067972,
+          "decode_tokens": 255,
+          "decode_seconds": 4.689317614771426,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1830.726210579556,
+          "decode_tok_s": 54.37891415090885
+        },
+        "loop_period": 0,
+        "text_tail": "atch), and offering financial aid to the family. Jennie, naive and overwhelmed by the luxury and attention, views Brander as a benevolent, almost magical figure"
+      },
+      {
+        "ttft_s": 18.40612127800705,
+        "decode_tok_s": 51.302087272500046,
+        "decode_seconds": 4.970557993976399,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 23.37667927198345,
+        "isl": 32768,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 32768,
+          "prefill_seconds": 17.989872128004208,
+          "decode_tokens": 255,
+          "decode_seconds": 4.944864339369815,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1821.4693115573175,
+          "decode_tok_s": 51.56865436524752
+        },
+        "loop_period": 0,
+        "text_tail": "r is charmed by Jennie\u2019s beauty and innocence. He begins giving the family money under the guise of paying for laundry, though the amounts far exceed the work\u2019s"
+      }
+    ],
+    "runtime_config": {
+      "moe_cache_experts": 0,
+      "moe_cache_mode": "all",
+      "gpu_arch": "gfx1151",
+      "gpu_name": "AMD Radeon 8060S Graphics",
+      "host_total_bytes": 32727916544,
+      "version": "0.3.22.dev3",
+      "max_disk_mem_gib": null,
+      "disk_offloaded_weight_bytes": 0,
+      "host_offload": null,
+      "host_alloc": false,
+      "max_model_len": 409600,
+      "kv_capacity_tokens": 409600,
+      "model_context_limit": 1000000,
+      "max_num_seqs": 4,
+      "kv_cache_dtype": "bf16",
+      "max_gpu_mem_util": 0.9,
+      "max_gpu_mem_gib": null,
+      "max_gpu_mem_bytes": 92771293593,
+      "max_host_mem_util": null,
+      "automatic_host_weight_offload": false,
+      "max_host_mem_gib": null,
+      "max_host_mem_bytes": null,
+      "offload_ratio": 0.0,
+      "num_spec": 2,
+      "dflash_block": null,
+      "dspark_adaptive": false,
+      "enforce_eager": false,
+      "prefill_chunk": 8192
+    },
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "platform": "gfx1151",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0.3.22.dev3",
+    "commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+    "benchmark_provenance": {
+      "snowllm_commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+      "source_dirty": false,
+      "native_library_sha256": "9a97497293e994176f59c48f047a931e90c05fb2deb4834484cc4d7bd15319bc",
+      "lengths": [
+        1024,
+        8192,
+        32768,
+        131072,
+        225280
+      ],
+      "recipe": "qwen3.8-flash-next-q4-fast",
+      "defaults": {
+        "num_spec": 0,
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192
+      },
+      "mtp_sidecar": "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "mtp_sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6",
+      "q4_fast_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+      "benchmark_source_sha256": {
+        "benchmarks/run.sh": "5108027b491db05b068fcc36c01ec18e61413f342bb59ffc5260a3c53360cccd",
+        "benchmarks/perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+        "benchmarks/bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+        "benchmarks/launch_snowllm.sh": "df335f5683af0a8d88005a93120fe2effab9f815fe7c0aa61155e72d943cac38"
+      },
+      "native_package_version": "0.3.15",
+      "run_source_note": "Server and client sources are unmodified at the recorded commit; benchmark display registrations are edited during the run.",
+      "prefix_memory_ratio": 0.08,
+      "temperature": 0,
+      "thinking": "off",
+      "warmup_requests_per_length": 1,
+      "retained_requests_per_length": 4,
+      "output_cap": 256,
+      "concurrency": 1,
+      "aggregation": "decode median; TTFT and prefill first retained request",
+      "dflash": {
+        "source_repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "block": 4,
+        "files": {
+          "config.json": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9",
+          "model.safetensors": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+        },
+        "configuration_note": "q4-fast recipe defaults retained; external DFlash2 and block 4 explicitly enabled, matching the existing Flash-Next DFlash2 recipe draft settings."
+      },
+      "snowllm_source_tree": "17b18cd85fec6d19fcc5a6e5001919c9bef51bd5",
+      "source_revision_note": "The commit identifies the unchanged source tree after commit metadata was updated following measurement.",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_mtp2_snowllm_http",
+    "isl_target": 131072,
+    "input_length_mode": "chat_template_exact",
+    "isl": 131072,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 77.82076542201685,
+    "ttft_s_reps": [
+      77.82076542201685,
+      5.315667502989527,
+      77.28843287104974,
+      2.9374996119877324
+    ],
+    "decode_tok_s": 41.65794746540901,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 1684.2805296144961,
+    "edge_before_c": 83,
+    "edge_after_c": 82,
+    "accept_unit": "AL",
+    "accept_mean": 2.267162935748462,
+    "accept_stdev": 0.038876855814922104,
+    "accept_reps": [
+      2.236842105263158,
+      2.236842105263158,
+      2.2767857142857144,
+      2.3181818181818183
+    ],
+    "step_s": 0.05500540972445976,
+    "step_s_reps": [
+      0.05197072506110233,
+      0.05533081635969626,
+      0.05468000308922326,
+      0.05562185680927625
+    ],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      " cynical carriage manufacturer from Cincinnati. Lester is immediately attracted to Jennie\u2019s beauty and gentle nature. Despite Jennie\u2019s attempts to resist due to",
+      "ane. The text below summarizes the narrative arc as presented in the provided excerpt, which appears to be a hybrid or a specific retelling.\n\n### Summary of the",
+      "s release but, in the process, seduces Jennie. He promises to marry her and send her to school, but before he can act, he dies suddenly of typhoid fever. Jennie",
+      "hen her brother Sebastian is jailed for stealing coal, Jennie seeks Brander\u2019s help, leading to a deeper physical relationship. Brander promises to marry her but"
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "off",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 41.30205018701963,
+    "ttft_s_p95": 77.82076542201685,
+    "decode_tok_s_reps": [
+      43.04042521310387,
+      40.42669623238209,
+      41.6383611129393,
+      41.67753381787872
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 77.82076542201685,
+        "decode_tok_s": 43.04042521310387,
+        "decode_seconds": 5.9246626569656655,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 83.74542807898251,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 131072,
+          "prefill_seconds": 75.50301778217545,
+          "decode_tokens": 255,
+          "decode_seconds": 5.903118510905188,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1735.9835917835742,
+          "decode_tok_s": 43.197506458480056
+        },
+        "loop_period": 0,
+        "text_tail": " cynical carriage manufacturer from Cincinnati. Lester is immediately attracted to Jennie\u2019s beauty and gentle nature. Despite Jennie\u2019s attempts to resist due to"
+      },
+      {
+        "ttft_s": 5.315667502989527,
+        "decode_tok_s": 40.42669623238209,
+        "decode_seconds": 6.307713065005373,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 11.6233805679949,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 8192,
+          "prefill_seconds": 5.140201124013402,
+          "decode_tokens": 255,
+          "decode_seconds": 6.281686797214206,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1593.7119584153147,
+          "decode_tok_s": 40.594192011146916
+        },
+        "loop_period": 0,
+        "text_tail": "ane. The text below summarizes the narrative arc as presented in the provided excerpt, which appears to be a hybrid or a specific retelling.\n\n### Summary of the"
+      },
+      {
+        "ttft_s": 77.28843287104974,
+        "decode_tok_s": 41.6383611129393,
+        "decode_seconds": 6.124160345993005,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 83.41259321704274,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 131072,
+          "prefill_seconds": 75.00071551802102,
+          "decode_tokens": 255,
+          "decode_seconds": 6.092618383758236,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1747.609994047407,
+          "decode_tok_s": 41.853926167406385
+        },
+        "loop_period": 0,
+        "text_tail": "s release but, in the process, seduces Jennie. He promises to marry her and send her to school, but before he can act, he dies suddenly of typhoid fever. Jennie"
+      },
+      {
+        "ttft_s": 2.9374996119877324,
+        "decode_tok_s": 41.67753381787872,
+        "decode_seconds": 6.1184042490203865,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 9.055903861008119,
+        "isl": 131072,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 4096,
+          "prefill_seconds": 2.7554435299825855,
+          "decode_tokens": 255,
+          "decode_seconds": 6.087931829912122,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1486.5120462206994,
+          "decode_tok_s": 41.886145759237394
+        },
+        "loop_period": 0,
+        "text_tail": "hen her brother Sebastian is jailed for stealing coal, Jennie seeks Brander\u2019s help, leading to a deeper physical relationship. Brander promises to marry her but"
+      }
+    ],
+    "runtime_config": {
+      "moe_cache_experts": 0,
+      "moe_cache_mode": "all",
+      "gpu_arch": "gfx1151",
+      "gpu_name": "AMD Radeon 8060S Graphics",
+      "host_total_bytes": 32727916544,
+      "version": "0.3.22.dev3",
+      "max_disk_mem_gib": null,
+      "disk_offloaded_weight_bytes": 0,
+      "host_offload": null,
+      "host_alloc": false,
+      "max_model_len": 409600,
+      "kv_capacity_tokens": 409600,
+      "model_context_limit": 1000000,
+      "max_num_seqs": 4,
+      "kv_cache_dtype": "bf16",
+      "max_gpu_mem_util": 0.9,
+      "max_gpu_mem_gib": null,
+      "max_gpu_mem_bytes": 92771293593,
+      "max_host_mem_util": null,
+      "automatic_host_weight_offload": false,
+      "max_host_mem_gib": null,
+      "max_host_mem_bytes": null,
+      "offload_ratio": 0.0,
+      "num_spec": 2,
+      "dflash_block": null,
+      "dspark_adaptive": false,
+      "enforce_eager": false,
+      "prefill_chunk": 8192
+    },
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "platform": "gfx1151",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0.3.22.dev3",
+    "commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+    "benchmark_provenance": {
+      "snowllm_commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+      "source_dirty": false,
+      "native_library_sha256": "9a97497293e994176f59c48f047a931e90c05fb2deb4834484cc4d7bd15319bc",
+      "lengths": [
+        1024,
+        8192,
+        32768,
+        131072,
+        225280
+      ],
+      "recipe": "qwen3.8-flash-next-q4-fast",
+      "defaults": {
+        "num_spec": 0,
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192
+      },
+      "mtp_sidecar": "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "mtp_sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6",
+      "q4_fast_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+      "benchmark_source_sha256": {
+        "benchmarks/run.sh": "5108027b491db05b068fcc36c01ec18e61413f342bb59ffc5260a3c53360cccd",
+        "benchmarks/perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+        "benchmarks/bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+        "benchmarks/launch_snowllm.sh": "df335f5683af0a8d88005a93120fe2effab9f815fe7c0aa61155e72d943cac38"
+      },
+      "native_package_version": "0.3.15",
+      "run_source_note": "Server and client sources are unmodified at the recorded commit; benchmark display registrations are edited during the run.",
+      "prefix_memory_ratio": 0.08,
+      "temperature": 0,
+      "thinking": "off",
+      "warmup_requests_per_length": 1,
+      "retained_requests_per_length": 4,
+      "output_cap": 256,
+      "concurrency": 1,
+      "aggregation": "decode median; TTFT and prefill first retained request",
+      "dflash": {
+        "source_repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "block": 4,
+        "files": {
+          "config.json": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9",
+          "model.safetensors": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+        },
+        "configuration_note": "q4-fast recipe defaults retained; external DFlash2 and block 4 explicitly enabled, matching the existing Flash-Next DFlash2 recipe draft settings."
+      },
+      "snowllm_source_tree": "17b18cd85fec6d19fcc5a6e5001919c9bef51bd5",
+      "source_revision_note": "The commit identifies the unchanged source tree after commit metadata was updated following measurement.",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  },
+  {
+    "label": "qwen3_8_flash_next_q4_fast_mtp2_snowllm_http",
+    "isl_target": 225280,
+    "input_length_mode": "chat_template_exact",
+    "isl": 225280,
+    "osl": 256,
+    "conc": 1,
+    "reps": 4,
+    "warm": 1,
+    "ttft_s": 138.17066432203865,
+    "ttft_s_reps": [
+      138.17066432203865,
+      1.2562650219770148,
+      1.5770146370050497,
+      1.2497658029897138
+    ],
+    "decode_tok_s": 40.25777296863016,
+    "decode_tok_s_user": null,
+    "prefill_tok_s": 1630.4473971040113,
+    "edge_before_c": 67,
+    "edge_after_c": 83,
+    "accept_unit": "AL",
+    "accept_mean": 2.2872254994766057,
+    "accept_stdev": 0.026485026636523353,
+    "accept_reps": [
+      2.2972972972972974,
+      2.256637168141593,
+      2.2767857142857144,
+      2.3181818181818183
+    ],
+    "step_s": 0.05681879800810036,
+    "step_s_reps": [
+      0.057667113873616775,
+      0.05873136374372083,
+      0.05597048214258393,
+      0.05414736105436036
+    ],
+    "loop_period_reps": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "text_tails": [
+      ", **Vesta**.\n*   **Relationship with Lester Kane:** Carrie moves to Cleveland and later Chicago, where she works as a maid for the Bracebridges. There she meets",
+      "cal businessman. Lester is captivated by Jennie\u2019s beauty and gentle nature. Despite knowing she has a child and is not his social equal, he pursues her. Jennie,",
+      "es to marry her and take her to Washington. However, Brander dies suddenly of typhoid fever before he can fulfill his promises, leaving Carrie pregnant with his",
+      "hile doing laundry at a hotel. He becomes infatuated with her, providing financial aid to her family. They develop a relationship, and he promises to marry her."
+    ],
+    "measurement": "http_stream_usage_tokens",
+    "decode_token_count": "usage.completion_tokens_minus_first",
+    "aggregation": "decode median; TTFT and prefill first retained request",
+    "thinking": "off",
+    "thinking_requested": "off",
+    "thinking_capabilities": {
+      "switch": true,
+      "levels": [],
+      "source": "chat_template"
+    },
+    "output_cap": 256,
+    "ttft_s_median": 1.4166398294910323,
+    "ttft_s_p95": 138.17066432203865,
+    "decode_tok_s_reps": [
+      39.837216447697614,
+      38.423033696077894,
+      40.6783294895627,
+      42.81246164248923
+    ],
+    "osl_reps": [
+      256,
+      256,
+      256,
+      256
+    ],
+    "samples": [
+      {
+        "ttft_s": 138.17066432203865,
+        "decode_tok_s": 39.837216447697614,
+        "decode_seconds": 6.401049639971461,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 144.5717139620101,
+        "isl": 225280,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 225280,
+          "prefill_seconds": 133.88065602700226,
+          "decode_tokens": 255,
+          "decode_seconds": 6.374284392339177,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1682.692680819875,
+          "decode_tok_s": 40.00449059136227
+        },
+        "loop_period": 0,
+        "text_tail": ", **Vesta**.\n*   **Relationship with Lester Kane:** Carrie moves to Cleveland and later Chicago, where she works as a maid for the Bracebridges. There she meets"
+      },
+      {
+        "ttft_s": 1.2562650219770148,
+        "decode_tok_s": 38.423033696077894,
+        "decode_seconds": 6.636644103040453,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 7.892909125017468,
+        "isl": 225280,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.9324920100043528,
+          "decode_tokens": 255,
+          "decode_seconds": 6.603385666850954,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1098.13273359331,
+          "decode_tok_s": 38.6165541231526
+        },
+        "loop_period": 0,
+        "text_tail": "cal businessman. Lester is captivated by Jennie\u2019s beauty and gentle nature. Despite knowing she has a child and is not his social equal, he pursues her. Jennie,"
+      },
+      {
+        "ttft_s": 1.5770146370050497,
+        "decode_tok_s": 40.6783294895627,
+        "decode_seconds": 6.2686939999694005,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 7.84570863697445,
+        "isl": 225280,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1536,
+          "prefill_seconds": 1.2659247170086019,
+          "decode_tokens": 255,
+          "decode_seconds": 6.240162371774204,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1213.3422938684614,
+          "decode_tok_s": 40.86432128007245
+        },
+        "loop_period": 0,
+        "text_tail": "es to marry her and take her to Washington. However, Brander dies suddenly of typhoid fever before he can fulfill his promises, leaving Carrie pregnant with his"
+      },
+      {
+        "ttft_s": 1.2497658029897138,
+        "decode_tok_s": 42.81246164248923,
+        "decode_seconds": 5.956209715979639,
+        "stream_chunks": 256,
+        "finish_reason": "length",
+        "total_s": 7.205975518969353,
+        "isl": 225280,
+        "osl": 256,
+        "timings": {
+          "prefill_tokens": 1024,
+          "prefill_seconds": 0.9364178500254638,
+          "decode_tokens": 255,
+          "decode_seconds": 5.931032200984191,
+          "queue_seconds": 0.0,
+          "scheduler_wait_seconds": 0.0,
+          "prefill_tok_s": 1093.5289197788727,
+          "decode_tok_s": 42.99420258714587
+        },
+        "loop_period": 0,
+        "text_tail": "hile doing laundry at a hotel. He becomes infatuated with her, providing financial aid to her family. They develop a relationship, and he promises to marry her."
+      }
+    ],
+    "runtime_config": {
+      "moe_cache_experts": 0,
+      "moe_cache_mode": "all",
+      "gpu_arch": "gfx1151",
+      "gpu_name": "AMD Radeon 8060S Graphics",
+      "host_total_bytes": 32727916544,
+      "version": "0.3.22.dev3",
+      "max_disk_mem_gib": null,
+      "disk_offloaded_weight_bytes": 0,
+      "host_offload": null,
+      "host_alloc": false,
+      "max_model_len": 409600,
+      "kv_capacity_tokens": 409600,
+      "model_context_limit": 1000000,
+      "max_num_seqs": 4,
+      "kv_cache_dtype": "bf16",
+      "max_gpu_mem_util": 0.9,
+      "max_gpu_mem_gib": null,
+      "max_gpu_mem_bytes": 92771293593,
+      "max_host_mem_util": null,
+      "automatic_host_weight_offload": false,
+      "max_host_mem_gib": null,
+      "max_host_mem_bytes": null,
+      "offload_ratio": 0.0,
+      "num_spec": 2,
+      "dflash_block": null,
+      "dspark_adaptive": false,
+      "enforce_eager": false,
+      "prefill_chunk": 8192
+    },
+    "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+    "platform": "gfx1151",
+    "hardware": "AMD Ryzen AI Max+ 395 / Radeon 8060S",
+    "version": "0.3.22.dev3",
+    "commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+    "benchmark_provenance": {
+      "snowllm_commit": "6ef87b6ea95b3e40de98a3b61b1151b837e55a85",
+      "source_dirty": false,
+      "native_library_sha256": "9a97497293e994176f59c48f047a931e90c05fb2deb4834484cc4d7bd15319bc",
+      "lengths": [
+        1024,
+        8192,
+        32768,
+        131072,
+        225280
+      ],
+      "recipe": "qwen3.8-flash-next-q4-fast",
+      "defaults": {
+        "num_spec": 0,
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192
+      },
+      "mtp_sidecar": "mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "mtp_sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6",
+      "q4_fast_sha256": "9d2ce4f80d8ed5bdc0292fe26ac0f89f0e61b5a16259f44e6f2d3e9800b78935",
+      "benchmark_source_sha256": {
+        "benchmarks/run.sh": "5108027b491db05b068fcc36c01ec18e61413f342bb59ffc5260a3c53360cccd",
+        "benchmarks/perf_sweep.sh": "bdc74f2743c59c739814a3492185619988e464517141ab3ec46dedb7b8fdd830",
+        "benchmarks/bench_context.py": "2e00e9c1bd863052237575102db434ef485e6dc40c080a6de42d34f6fbcb19ac",
+        "benchmarks/launch_snowllm.sh": "df335f5683af0a8d88005a93120fe2effab9f815fe7c0aa61155e72d943cac38"
+      },
+      "native_package_version": "0.3.15",
+      "run_source_note": "Server and client sources are unmodified at the recorded commit; benchmark display registrations are edited during the run.",
+      "prefix_memory_ratio": 0.08,
+      "temperature": 0,
+      "thinking": "off",
+      "warmup_requests_per_length": 1,
+      "retained_requests_per_length": 4,
+      "output_cap": 256,
+      "concurrency": 1,
+      "aggregation": "decode median; TTFT and prefill first retained request",
+      "dflash": {
+        "source_repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
+        "block": 4,
+        "files": {
+          "config.json": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9",
+          "model.safetensors": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+        },
+        "configuration_note": "q4-fast recipe defaults retained; external DFlash2 and block 4 explicitly enabled, matching the existing Flash-Next DFlash2 recipe draft settings."
+      },
+      "snowllm_source_tree": "17b18cd85fec6d19fcc5a6e5001919c9bef51bd5",
+      "source_revision_note": "The commit identifies the unchanged source tree after commit metadata was updated following measurement.",
+      "status": "outdated"
+    },
+    "benchmark_status": "outdated"
+  }
+]

@@ -2,7 +2,9 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import runpy
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +62,17 @@ class ResultsParser(HTMLParser):
 
 
 class BenchmarkPageTests(unittest.TestCase):
+    def test_retired_files_cannot_replace_current_measurements(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = Path(directory)
+            current = {"label": "same-arm", "isl_target": 8192, "decode_tok_s": 53.11}
+            (runs / "a-current.json").write_text(json.dumps([current]))
+            (runs / "z-retired.json").write_text(json.dumps([dict(current, decode_tok_s=40.26)]))
+            (runs / "z-retired.json.outdated").write_text('{"status": "outdated"}')
+            merge = BUILDER["merged_rows"]
+            with patch.dict(merge.__globals__, RUNS=runs):
+                self.assertEqual(merge(), [current])
+
     def test_hardware_groups_keep_their_own_measurements(self):
         series, skipped = BUILDER["build_series"](BUILDER["merged_rows"]())
         self.assertFalse(set(skipped) & BUILDER["GFX1103_LABELS"])

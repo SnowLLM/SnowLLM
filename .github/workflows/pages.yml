@@ -10,6 +10,7 @@ on:
       - package-lock.json
       - recipes/**
       - benchmarks/runs/*.json
+      - benchmarks/runs/*.json.outdated
       - install.sh
       - README.md
       - pyproject.toml

@@ -25,6 +25,8 @@ def platform_of(label: str) -> str:
 def merged_rows() -> list[dict]:
     rows: dict[tuple, dict] = {}
     for f in sorted(RUNS.glob("*.json")):
+        if f.with_suffix(f.suffix + ".outdated").exists():
+            continue
         for r in json.loads(f.read_text()):
             rows[(r["label"], r["isl_target"])] = r
     return list(rows.values())
