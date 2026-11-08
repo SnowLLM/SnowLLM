@@ -81,6 +81,50 @@ LFM2.5-8B-A1B Q4_K_M 在 Windows 的 Ryzen 9 7940HS / Radeon 780M（`gfx1103`）
 
 正式数据为 `benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_gfx1103_{snowllm,llama}.json`，包含原始测量字段和运行配置。
 
+## 当前 Flash-Next 统一重测（2026-11-08）
+
+Ryzen AI Max+ 395 / Radeon 8060S，SnowLLM 0.3.22.dev3；标准 `run.sh` → `perf_sweep.sh` → `bench_context.py`；PG-19 摘要生成，精确聊天输入1K/8K/32K/128K/220K；prefill chunk=8192、上下文/KV容量409600、SEQS=4、CONC=1、BF16 KV、HIP graph、prefix cache比例0.08。关闭思考，temperature=0，输出上限256且遵循EOS；每档预热1次、保留4次。Decode 取中位数，TTFT/prefill 取首次正式请求。下表速度单位为 tokens/s。None关闭推测；MTP为k=2，使用相同shared Q8_0 head；DFlash2使用相同BF16草稿、block=4。
+
+本轮新测8组；q4-fast MTP2复用刚完成的统一重测，权重、native和运行源码哈希均一致。不复用任何OUTDATED样本。总计9组、45个长度汇总、180个正式请求（160个新测，20个复用当前样本）。
+
+### q4-fast
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1455.33 | 1387.45 | 1405.90 | 39.28 | 52.52 | 50.52 |
+| 8K | 1887.81 | 1853.92 | 1808.84 | 38.45 | 53.11 | 46.16 |
+| 32K | 1831.57 | 1796.08 | 1798.29 | 38.05 | 51.84 | 46.87 |
+| 128K | 1749.61 | 1691.27 | 1709.40 | 36.55 | 48.99 | 46.22 |
+| 220K | 1693.82 | 1634.51 | 1646.94 | 35.53 | 48.03 | 43.18 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_mtp2_rebenchmark_20261108T144521Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_dflash2_standard_20261108T152240Z.json)
+
+### Unsloth UD-Q3_K_XL
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1476.29 | 1430.45 | 1435.11 | 31.99 | 48.13 | 47.19 |
+| 8K | 1904.13 | 1844.65 | 1837.07 | 31.52 | 48.51 | 44.72 |
+| 32K | 1830.08 | 1799.38 | 1801.68 | 31.45 | 46.95 | 44.52 |
+| 128K | 1720.43 | 1687.40 | 1702.99 | 30.25 | 45.97 | 39.46 |
+| 220K | 1667.24 | 1623.79 | 1637.09 | 29.63 | 44.59 | 41.17 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_mtp2_standard_20261108T152240Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_dflash2_standard_20261108T152240Z.json)
+
+### Unsloth UD-IQ4_XS
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1365.81 | 1389.61 | 1388.84 | 31.40 | 45.81 | 44.56 |
+| 8K | 1770.98 | 1750.99 | 1750.83 | 30.99 | 46.21 | 42.59 |
+| 32K | 1744.48 | 1706.79 | 1708.83 | 30.75 | 45.93 | 43.75 |
+| 128K | 1654.49 | 1627.42 | 1631.86 | 29.91 | 44.97 | 39.13 |
+| 220K | 1605.79 | 1567.52 | 1578.70 | 29.21 | 42.75 | 38.92 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_mtp2_standard_20261108T152240Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_dflash2_standard_20261108T152240Z.json)
+
+历史 Flash-Next 记录保留在 `benchmarks/runs/`，并附有同名 `.json.outdated` 状态文件。网站排除这些文件，不将其作为当前性能或回退基线。公开记录保留测量样本、运行配置和文件哈希，省略本地路径及环境快照。
+
 ## Qwen3.8-Flash-Next MTP 对比（2026-10-20）
 
 Flash-Next UD-Q3_K_XL 中标记为 **Engine** 的数据直接测量 Engine 墙钟时间，精确聊天输入长度为 1K、8K、32K、128K 和 220K。解码耗时不含预填充和首 token；预填充速度、TTFT 和解码速度取三次样本的中位数。AL 和每步耗时根据三次样本汇总的 token 数、步数及解码耗时计算。原有 **HTTP** 数据保留原始测量值，使用上文的客户端测试方法；其计时和输入长度口径与 Engine 数据不同。

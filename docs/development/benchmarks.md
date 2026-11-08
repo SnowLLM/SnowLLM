@@ -103,6 +103,50 @@ Both arms completed all 20 requests without truncation, using identical client a
 
 Published arms are `benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_gfx1103_{snowllm,llama}.json`. These files include the original measured fields and the runtime configurations.
 
+## Current Flash-Next standard comparison (2026-11-08)
+
+Ryzen AI Max+ 395 / Radeon 8060S, SnowLLM 0.3.22.dev3; standard `run.sh` → `perf_sweep.sh` → `bench_context.py`; PG-19 summarisation; exact chat inputs 1K/8K/32K/128K/220K; prefill chunk 8192; context/KV capacity 409600; SEQS=4, CONC=1; BF16 KV; HIP graph; prefix cache ratio 0.08; thinking off; temperature 0; output cap 256, EOS respected; one warmup and four retained requests per length. Decode uses the median; TTFT and prefill use the first retained request. All rates below are tokens/s. None disables speculation; MTP uses k=2 and identical shared Q8_0 head; DFlash2 uses identical BF16 draft and block=4.
+
+Eight arms freshly measured here. The current q4-fast MTP2 arm comes from the immediately preceding standard run, with matching target weights, native library and runtime source hashes. Historical OUTDATED measurements are not reused. Nine arms, 45 length summaries, 180 retained requests in the comparison (160 new + 20 reused current samples).
+
+### q4-fast
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1455.33 | 1387.45 | 1405.90 | 39.28 | 52.52 | 50.52 |
+| 8K | 1887.81 | 1853.92 | 1808.84 | 38.45 | 53.11 | 46.16 |
+| 32K | 1831.57 | 1796.08 | 1798.29 | 38.05 | 51.84 | 46.87 |
+| 128K | 1749.61 | 1691.27 | 1709.40 | 36.55 | 48.99 | 46.22 |
+| 220K | 1693.82 | 1634.51 | 1646.94 | 35.53 | 48.03 | 43.18 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_mtp2_rebenchmark_20261108T144521Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_q4_fast_dflash2_standard_20261108T152240Z.json)
+
+### Unsloth UD-Q3_K_XL
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1476.29 | 1430.45 | 1435.11 | 31.99 | 48.13 | 47.19 |
+| 8K | 1904.13 | 1844.65 | 1837.07 | 31.52 | 48.51 | 44.72 |
+| 32K | 1830.08 | 1799.38 | 1801.68 | 31.45 | 46.95 | 44.52 |
+| 128K | 1720.43 | 1687.40 | 1702.99 | 30.25 | 45.97 | 39.46 |
+| 220K | 1667.24 | 1623.79 | 1637.09 | 29.63 | 44.59 | 41.17 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_mtp2_standard_20261108T152240Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_q3_dflash2_standard_20261108T152240Z.json)
+
+### Unsloth UD-IQ4_XS
+
+| Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1K | 1365.81 | 1389.61 | 1388.84 | 31.40 | 45.81 | 44.56 |
+| 8K | 1770.98 | 1750.99 | 1750.83 | 30.99 | 46.21 | 42.59 |
+| 32K | 1744.48 | 1706.79 | 1708.83 | 30.75 | 45.93 | 43.75 |
+| 128K | 1654.49 | 1627.42 | 1631.86 | 29.91 | 44.97 | 39.13 |
+| 220K | 1605.79 | 1567.52 | 1578.70 | 29.21 | 42.75 | 38.92 |
+
+Samples: [none](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_none_standard_20261108T152240Z.json) · [mtp2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_mtp2_standard_20261108T152240Z.json) · [dflash2](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/qwen3_8_flash_next_ud_iq4_dflash2_standard_20261108T152240Z.json)
+
+Historical Flash-Next measurements are retained in `benchmarks/runs/` with adjacent `.json.outdated` markers. The site excludes these files; they are not current performance or regression baselines. Public records preserve measured samples, runtime settings and artifact hashes, while local paths and environment snapshots are omitted.
+
 ## Qwen3.8-Flash-Next MTP comparison (2026-10-20)
 
 The Flash-Next UD-Q3_K_XL series marked **Engine** use direct Engine wall time, with exact chat input lengths of 1K, 8K, 32K, 128K and 220K. Decode excludes prefill and the first token; prefill rate, TTFT and decode rate are medians of three samples. AL and step time pool tokens, steps and elapsed decode time across those samples. The older **HTTP** series retains its original measurements and the client methodology above; its timing and input-length protocol differ from these Engine runs.
