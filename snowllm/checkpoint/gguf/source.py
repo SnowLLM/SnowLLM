@@ -116,6 +116,7 @@ class GGUFReader(FileReader):
     def __init__(self, path: pathlib.Path, queue_depth: int = 8, chunk_bytes: int = 4 << 20,
                  num_buffers: int = 12) -> None:
         self.gguf = GGUF(path)
+        qwen4exp_names.projection_views(self.gguf)
         self.path = str(path).encode()
         self._paths = [str(p).encode() for p in self.gguf.parts]
         self._slab: torch.Tensor | None = None

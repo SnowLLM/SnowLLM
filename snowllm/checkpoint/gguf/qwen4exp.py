@@ -5,7 +5,7 @@ import math
 import re
 
 from ..._capi import SnowLLMError
-from . import GGUF, optional_int
+from . import GGUF, Tensor, optional_int
 
 ARCH = "qwen4exp"
 ARCHITECTURES = ["Qwen4ExpForConditionalGeneration"]
@@ -14,6 +14,48 @@ FULL = "full_attention"
 LINEAR = "linear_attention"
 
 OUTPUT_GATE = "sigmoid"
+
+
+def projection_views(g: GGUF) -> None:
+    if g.arch != ARCH:
+        return
+    replacements = []
+    for name, t in g.tensors.items():
+        if re.fullmatch(r"blk\.\d+\.hc_(attn|ffn)_down_inject\.weight", name):
+            lowrank = int(g.need("{arch}.hyper_connection.low_rank"))
+            count = int(g.need("{arch}.hyper_connection.count"))
+            k = count * int(g.need("{arch}.embedding_length"))
+            parts = ((name.replace("_down_inject.", "_down."), lowrank),
+                     (name.replace("_down_inject.", "_inject."), count))
+        elif re.fullmatch(r"blk\.\d+\.attn_qkv_gate\.weight", name):
+            key = (int(g.need("{arch}.ssm.group_count"))
+                   * int(g.need("{arch}.ssm.state_size")))
+            value = int(g.need("{arch}.ssm.inner_size"))
+            k = int(g.need("{arch}.embedding_length"))
+            parts = ((name.replace("_qkv_gate.", "_qkv."), 2 * key + value),
+                     (name.replace("_qkv_gate.", "_gate."), value))
+        else:
+            continue
+        want = (sum(rows for _, rows in parts), k)
+        if t.shape != want or k <= 0 or any(rows <= 0 for _, rows in parts):
+            raise SnowLLMError(f"{name}: fused projection has shape {t.shape}, want {want}")
+        if t.quant.name == "FP8_32X32" or k % t.quant.block:
+            raise SnowLLMError(f"{name}: {t.quant.name} rows cannot be split at K={k}")
+        offset, views = t.offset, []
+        for member, rows in parts:
+            if member in g:
+                raise SnowLLMError(f"{name}: checkpoint also carries unfused tensor {member!r}")
+            view = Tensor(member, (k, rows), t.quant, offset)
+            views.append(view)
+            offset += view.nbytes
+        replacements.append((name, views))
+    # Only the reader's descriptors change; raw reads retain the original quantized bytes.
+    for name, views in replacements:
+        part = g._part.pop(name)
+        del g.tensors[name]
+        for view in views:
+            g.tensors[view.name] = view
+            g._part[view.name] = part
 
 
 def layer_types(ratios: list[int]) -> list[str]:
