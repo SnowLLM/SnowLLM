@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.22.dev4 — 2026-11-08
+
+Improve Flash-Next q4-fast compatibility and update the standard benchmark comparisons.
+
+- Improve Flash-Next q4-fast checkpoint loading and mixed-weight compatibility.
+  改进 Flash-Next q4-fast 模型加载和混合权重兼容性。
+- Fix attention correctness and recognize GGUF models with uppercase filenames.
+  修复注意力计算正确性问题，支持识别大写文件名的 GGUF 模型。
+- Add standard Flash-Next comparisons across q4-fast and Unsloth variants, and exclude retired measurements from current charts.
+  新增 q4-fast 与 Unsloth 各版本的 Flash-Next 标准对比测试，当前图表排除已停用的历史记录。
+
 ## 0.3.22.dev3 — 2026-11-05
 
 Add Flash-Next Q4-Fast and improve document parsing and model compatibility.
