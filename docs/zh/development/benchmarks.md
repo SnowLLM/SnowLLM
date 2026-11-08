@@ -87,6 +87,8 @@ Ryzen AI Max+ 395 / Radeon 8060S，SnowLLM 0.3.22.dev3；标准 `run.sh` → `pe
 
 本轮新测8组；q4-fast MTP2复用刚完成的统一重测，权重、native和运行源码哈希均一致。不复用任何OUTDATED样本。总计9组、45个长度汇总、180个正式请求（160个新测，20个复用当前样本）。
 
+这批测量使用本地构建的原生库，各结果通过 SHA-256 标识具体二进制。它与已发布的 SnowLLM-Kernels 0.3.15 wheel 中的二进制不同；复现这些成绩需要记录中的原生库构建。
+
 ### q4-fast
 
 | Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |

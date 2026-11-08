@@ -109,6 +109,8 @@ Ryzen AI Max+ 395 / Radeon 8060S, SnowLLM 0.3.22.dev3; standard `run.sh` → `pe
 
 Eight arms freshly measured here. The current q4-fast MTP2 arm comes from the immediately preceding standard run, with matching target weights, native library and runtime source hashes. Historical OUTDATED measurements are not reused. Nine arms, 45 length summaries, 180 retained requests in the comparison (160 new + 20 reused current samples).
 
+These measurements use a locally built native library, identified by SHA-256 in each result. Its binary differs from the published SnowLLM-Kernels 0.3.15 wheel; reproduction requires the recorded native build.
+
 ### q4-fast
 
 | Input | Prefill None | Prefill MTP2 | Prefill DFlash2 | Decode None | Decode MTP2 | Decode DFlash2 |
