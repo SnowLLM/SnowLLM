@@ -67,6 +67,22 @@ COMPARISONS = [
 
 
 ARMS = {
+    "qwen3_8_flash_next_q4_fast_none_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next q4-fast", "None, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q4_fast_dflash2_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next q4-fast", "DFlash2 block 4, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_q3_none_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "None, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_q3_mtp2_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_q3_dflash2_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "DFlash2 block 4, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_iq4_none_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "None, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_iq4_mtp2_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_ud_iq4_dflash2_standard_20261108T152240Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "DFlash2 block 4, SEQS=4, HTTP"),
     "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http":
         ("SnowLLM", "LFM2.5-8B-A1B Q4_K_M", "DSpark block 9, HTTP, usage tokens"),
     "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http":
@@ -97,6 +113,8 @@ ARMS = {
         ("SnowLLM", "Qwen3.8-27B UD-Q4_K_XL", "DFlash2"),
     "qwen3_8_flash_next_q3_k_xl_snowllm":
         ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "MTP k=2, HTTP"),
+    "qwen3_8_flash_next_q4_fast_mtp2_rebenchmark_20261108T144521Z":
+        ("SnowLLM", "Qwen3.8-Flash-Next q4-fast", "MTP k=2, DFlash=None, SEQS=4, HTTP"),
     "qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm":
         ("SnowLLM", "Qwen3.8-Flash-Next UD-Q3_K_XL", "MTP k=2, Engine"),
     "qwen3_8_flash_next_q3_k_xl_nospec_engine_snowllm":
