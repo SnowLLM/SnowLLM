@@ -107,7 +107,10 @@ class FullAttention(nn.Module):
             with span("paged_attn"):
                 self._attend(ctx, q, pools, attn_out, proj)
             with span("out_scale_oproj"):
-                self.o_proj(ctx, attn_out, proj, out)
+                self._output(ctx, attn_out, proj, out)
+
+    def _output(self, ctx, attn_out, proj, out):
+        self.o_proj(ctx, attn_out, proj, out)
 
     def _project(self, ctx: ForwardContext, x: torch.Tensor, proj_buf: torch.Tensor,
                  norm: tuple, index_out: torch.Tensor | None) -> None:

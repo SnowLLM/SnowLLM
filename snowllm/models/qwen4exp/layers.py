@@ -68,7 +68,7 @@ class HyperMix(nn.Module):
     def forward(self, ctx: ForwardContext, streams: torch.Tensor,
                 xn: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor | None]:
         a, M, E, n_hc, lr = ctx.arena, streams.shape[0], self.hidden, self.n_hc, self.lowrank
-        mixed, lo = a.new(M, E), a.new(M, self.down.n)
+        mixed,lo = a.new(M,E),a.new(M,self.down.n)
         with a.frame():
             ws = a.flat(ops.qwen4exp_hc_mix_ws_bytes(M, n_hc, E, lr), torch.uint8)
             ops.inference_hc(streams,self.gamma,self.down,self.up,lo,mixed,lr,ctx.eps,ws,xn,self.inject_weight)
@@ -79,9 +79,9 @@ class HcCombine(nn.Module):
     def forward(self, ctx: Qwen4ExpContext, streams: torch.Tensor, block: torch.Tensor,
                 inject: torch.Tensor, gamma: torch.Tensor | None = None) -> None:
         if gamma is None or ctx.hc_xn is None:
-            ops.qwen4exp_hc_combine(streams, block, inject, streams)
+            ops.qwen4exp_hc_combine(streams,block,inject,streams)
             return
-        ops.qwen4exp_hc_combine_norm(streams, block, inject, streams, gamma, ctx.hc_xn, ctx.eps)
+        ops.qwen4exp_hc_combine_norm(streams,block,inject,streams,gamma,ctx.hc_xn,ctx.eps)
         ctx.xn_live = True
 
 
@@ -190,6 +190,9 @@ class Qwen4ExpFullAttention(FullAttention):
         super().__init__(qkv, qk_norm_rope, o_proj, geo)
         self.hc: HyperMix | None = None
         self._lo: torch.Tensor | None = None
+        self._input_mixed: torch.Tensor | None = None
+        self._post = None
+        self.post_hc: ops.HcMixWeights | None = None
         self.indexer = indexer
         self.compact: tuple[torch.Tensor, torch.Tensor] | None = None
         self.compact_table: torch.Tensor | None = None
@@ -198,16 +201,34 @@ class Qwen4ExpFullAttention(FullAttention):
         self.plan_slots = 0
 
     def forward(self, ctx: ForwardContext, streams: torch.Tensor, out: torch.Tensor,
-                lo: torch.Tensor) -> None:
-        self._lo = lo
-        super().forward(ctx, streams, out)
-        self._q_index = None
-        self._lo = None
+                lo: torch.Tensor, mixed=None, next_mixed=None, next_lo=None) -> None:
+        self._lo, self._input_mixed = lo,mixed
+        self._post = (streams,next_mixed,next_lo) if next_mixed is not None else None
+        try:
+            super().forward(ctx,streams,out)
+        finally:
+            self._q_index = None
+            self._lo = self._input_mixed = self._post = None
+
+    def _output(self, ctx, attn_out, proj, out):
+        if self._post is None:
+            super()._output(ctx,attn_out,proj,out)
+            return
+        streams,mixed,lo = self._post
+        with ctx.arena.frame():
+            ws = ctx.arena.flat(ops.hc_output_project_workspace_bytes(ctx.M,self.post_hc,
+                streams.shape[1],streams.shape[2],ctx.batch.is_prefill,ctx.kv_int8),torch.uint8)
+            ops.hc_output_project(attn_out,proj,self.o_proj.w,self.o_proj.scale,streams,
+                self._lo[:,self.hc.lowrank:self.hc.lowrank+self.hc.n_hc],self.post_hc,lo,mixed,
+                out,ws,ctx.batch.is_prefill,ctx.kv_int8,ctx.hc_xn)
 
     def _project(self, ctx: ForwardContext, x: torch.Tensor, proj_buf: torch.Tensor,
                  norm: tuple, index_out: torch.Tensor | None) -> None:
         a = ctx.arena
         with a.frame():
+            if self._input_mixed is not None:
+                self.qkv_proj(ctx,self._input_mixed,proj_buf,norm,index_out)
+                return
             if self.qkv_proj.split or self.qkv_proj.kv is not None or not self.qkv_proj.kquant:
                 hc = self.hc
                 mixed = a.new(ctx.M, hc.hidden)
@@ -236,20 +257,27 @@ class Qwen4ExpLinearAttention(GatedDeltaNet):
     def __init__(self, w: ops.LinearAttnWeights) -> None:
         super().__init__(w)
         self.hc: HyperMix | None = None
+        self.post_hc: ops.HcMixWeights | None = None
 
     def forward(self, ctx: ForwardContext, streams: torch.Tensor, out: torch.Tensor,
-                lo: torch.Tensor) -> None:
+                lo: torch.Tensor, mixed=None, next_mixed=None, next_lo=None) -> None:
         b, (conv, rec) = ctx.batch, self.state
         ckpt = ((b.ckpt_at, b.ckpt_slots, b.ckpt_n, *self.ckpt)
                 if b.ckpt_n and self.ckpt is not None else None)
         with span("fused_linear_attn"), ctx.arena.frame():
-            ws = ctx.arena.flat(ops.qwen4exp_hc_linear_ws_bytes(ctx.M, self.hc.lowrank),
-                                torch.uint8)
-            ops.qwen4exp_hc_linear_attn(streams, self.hc.w, lo, self.w, b.cu_seqlens, b.has_state,
-                                        b.state_indices, conv, rec, ws, out, b.batch_size,
-                                        ctx.path, b.num_accepted, ckpt,
-                                        self.retain if b.roll_forward else None,
-                                        ctx.take_xn())
+            if next_mixed is not None:
+                ws = ctx.arena.flat(ops.hc_linear_step_workspace_bytes(ctx.M,self.hc.w,self.post_hc,
+                    streams.shape[1],streams.shape[2],mixed is not None,ctx.path),torch.uint8)
+                ops.hc_linear_step(streams,self.hc.w,lo,mixed,self.post_hc,next_lo,next_mixed,
+                    ctx.hc_xn,self.w,b.cu_seqlens,b.has_state,b.state_indices,conv,rec,ws,out,
+                    b.batch_size,ctx.path,b.num_accepted,ckpt,
+                    self.retain if b.roll_forward else None,ctx.take_xn())
+                return
+            ws = ctx.arena.flat(ops.qwen4exp_hc_linear_ws_bytes(ctx.M,self.hc.lowrank),torch.uint8)
+            ops.qwen4exp_hc_linear_attn(streams,self.hc.w,lo,self.w,b.cu_seqlens,b.has_state,
+                b.state_indices,conv,rec,ws,out,b.batch_size,ctx.path,b.num_accepted,ckpt,
+                self.retain if b.roll_forward else None,ctx.take_xn())
+
 
 
 class Qwen4ExpDecoderLayer(DecoderLayerBase):
@@ -259,21 +287,33 @@ class Qwen4ExpDecoderLayer(DecoderLayerBase):
         self.attn_hc, self.mlp_hc, self.ple = attn_hc, mlp_hc, ple
         self.combine = HcCombine()
         self.next_norm: torch.Tensor | None = None
-        attn.hc = attn_hc
+        self.next_mix: ops.HcMixWeights | None = None
+        attn.hc,attn.post_hc = attn_hc,mlp_hc.w
 
-    def forward(self, ctx: ForwardContext, streams: torch.Tensor) -> None:
+    def forward(self, ctx: ForwardContext, streams: torch.Tensor, mixed=None,
+                lowrank=None, prepared=False) -> bool:
         a = ctx.arena
         if self.ple is not None:
             with span(f"L{self.layer_idx} ple"), a.frame():
                 self.ple(ctx, streams)
-        M, hc = streams.shape[0], self.attn_hc
+        M,hc = streams.shape[0],self.attn_hc
+        if mixed is None:
+            mixed = a.new(M,hc.hidden)
+        if lowrank is None:
+            lowrank = a.new(M*max(hc.down.n,self.mlp_hc.down.n))
+        lo = lowrank[:M*hc.down.n].view(M,hc.down.n)
+        post_lo = lowrank[:M*self.mlp_hc.down.n].view(M,self.mlp_hc.down.n)
         blk = ctx.blk[:M]
         with span(self._attn_span), a.frame():
-            lo = a.new(M, hc.down.n)
-            self.attn(ctx, streams, blk, lo)
-            self.combine(ctx, streams, blk, lo[:, hc.lowrank:hc.lowrank + hc.n_hc],
-                         self.mlp_hc.gamma)
+            self.attn(ctx,streams,blk,lo,mixed if prepared else None,mixed,post_lo)
         with span(self._mlp_span), a.frame():
-            mixed, inject = self.mlp_hc(ctx, streams, ctx.take_xn())
-            self.mlp(ctx, mixed, blk)
-            self.combine(ctx, streams, blk, inject, self.next_norm)
+            self.mlp(ctx,mixed,blk)
+            inject = post_lo[:,self.mlp_hc.lowrank:self.mlp_hc.lowrank+self.mlp_hc.n_hc]
+            if self.next_mix is not None:
+                next_lo = lowrank[:M*self.next_mix.down_n].view(M,self.next_mix.down_n)
+                ws = a.flat(ops.hc_combine_mix_workspace_bytes(M,self.next_mix,hc.n_hc,hc.hidden),torch.uint8)
+                ops.hc_combine_mix(streams,blk,inject,self.next_mix,next_lo,mixed,ws,ctx.hc_xn)
+                ctx.xn_live = False
+                return True
+            self.combine(ctx,streams,blk,inject,self.next_norm)
+        return False

@@ -28,25 +28,27 @@ class Qwen4ExpMTP(nn.Module):
         a, M, geo = ctx.arena, ctx.M, parent.geo
         E, n_hc = geo.hidden, geo.hc_count
         ctx.open()
-        b, streams = ctx.batch, ctx.residual
-        with a.frame():
-            e, en = a.new(M, E), a.new(M, E)
-            parent.model.embed_tokens(next_ids, e)
-            ops.rmsnorm(e, self.enorm, en, ctx.eps)
-            h = a.new(M, n_hc, E)
-            ops.qwen4exp_hc_norm(hidden, self.hnorm, h, ctx.eps)
-            self.eh_hidden(ctx, h.view(M * n_hc, E), M * n_hc, out=streams.view(M * n_hc, E))
-            self.eh_embed(ctx, en, M, out=e)
-            streams += e.unsqueeze(1)
-        ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True,
-                         mscale=ctx.mscale)
-        self.layer(ctx, streams)
+        try:
+            b, streams = ctx.batch, ctx.residual
+            with a.frame():
+                e, en = a.new(M, E), a.new(M, E)
+                parent.model.embed_tokens(next_ids, e)
+                ops.rmsnorm(e, self.enorm, en, ctx.eps)
+                h = a.new(M, n_hc, E)
+                ops.qwen4exp_hc_norm(hidden, self.hnorm, h, ctx.eps)
+                self.eh_hidden(ctx, h.view(M * n_hc, E), M * n_hc, out=streams.view(M * n_hc, E))
+                self.eh_embed(ctx, en, M, out=e)
+                streams += e.unsqueeze(1)
+            ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True,
+                             mscale=ctx.mscale)
+            self.layer(ctx, streams)
 
-        folded = streams
-        if b.last_row is not None:
-            ctx.take_xn()
-            folded = a.new(b.last_row.numel(), n_hc, E)
-            ops.gather_rows(streams,b.last_row,out=folded)
-        out = self.head_fold(ctx, folded, ctx.take_xn())
-        ctx.close()
-        return streams, out
+            folded = streams
+            if b.last_row is not None:
+                ctx.take_xn()
+                folded = a.new(b.last_row.numel(), n_hc, E)
+                ops.gather_rows(streams,b.last_row,out=folded)
+            out = self.head_fold(ctx, folded, ctx.take_xn())
+            return streams, out
+        finally:
+            ctx.close()
