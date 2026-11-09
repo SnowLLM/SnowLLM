@@ -759,6 +759,16 @@ if hasattr(lib, "snowllm_lfm2_short_conv_spec"):
                   ("snowllm_lfm2_conv_advance", c_int, [P]*4+[c_int64]*3+[S])))
 
 _missing = []
+if hasattr(lib, 'snowllm_hc_combine_mix'):
+    _linear_args=next(args for name,_,args in _SIGS if name=='snowllm_qwen4exp_hc_linear_attn')
+    _SIGS.extend((
+        ('snowllm_hc_combine_mix_workspace_bytes', c_int64, [P]),
+        ('snowllm_hc_combine_mix', c_int, [P,P,P,c_int64,S]),
+        ('snowllm_hc_output_project_workspace_bytes', c_int64, [P,c_int,c_int]),
+        ('snowllm_hc_output_project', c_int, [P,P,P,c_int64]+[P]*4+[c_int,P,P,c_int64,c_int,c_int,S]),
+        ('snowllm_hc_linear_step_workspace_bytes', c_int64, [P,c_int64,c_int,c_int]),
+        ('snowllm_hc_linear_step', c_int, [P,P,c_int64]+_linear_args),
+    ))
 if hasattr(lib, 'snowllm_flash_prepare_weight'):
     _SIGS.extend((
         ('snowllm_flash_layout_bytes', c_int64, [c_int]*3+[c_int64]*2),

@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 from .operation import operator
+import ctypes
 import torch
 
 from .._capi import check, lib
@@ -205,6 +206,110 @@ class HcMixWeights:
                      int(fmt), int(fmt if up_fmt is None else up_fmt), _p(inject),
                      int(inject is not None and inject.dtype is torch.bfloat16),
                      int(down_n), int(lr), float(eps)]
+
+
+class _HcStep(ctypes.Structure):
+    _fields_ = [('weights',ctypes.c_void_p*6)]+[(n,ctypes.c_void_p) for n in (
+        'residual','inject','xn','lo','mixed')]+[(n,ctypes.c_int64) for n in (
+        'rows','count','hidden','stride','down_n','lr')]+[('eps',ctypes.c_float)]+[
+        (n,ctypes.c_int) for n in ('fmt','up_fmt','inject_bf16','weight_inject_bf16')]
+
+
+def _hc_step(hc, rows, count, hidden, residual=None, inject=None, xn=None, lo=None, mixed=None):
+    v=hc.args
+    return _HcStep((ctypes.c_void_p*6)(*v[:5],v[7]),_p(residual),_p(inject),_p(xn),_p(lo),
+        _p(mixed),rows,count,hidden,inject.stride(0) if inject is not None else count,
+        hc.down_n,hc.lr,v[11],v[5],v[6],inject is None or inject.dtype is torch.bfloat16,v[8])
+
+
+@operator
+def hc_combine_mix_workspace_bytes(rows, hc, count, hidden):
+    if not hasattr(lib,'snowllm_hc_combine_mix'):
+        return qwen4exp_hc_mix_ws_bytes(rows,count,hidden,hc.lr)
+    post=_hc_step(hc,rows,count,hidden)
+    return lib.snowllm_hc_combine_mix_workspace_bytes(ctypes.byref(post))
+
+
+@operator
+def hc_combine_mix(streams, block, inject, hc, lo, mixed, workspace, xn=None):
+    rows,count,hidden=streams.shape
+    post=_hc_step(hc,rows,count,hidden,streams,inject,xn,lo,mixed)
+    if hasattr(lib,'snowllm_hc_combine_mix'):
+        check(lib.snowllm_hc_combine_mix(ctypes.byref(post),_p(block),_p(workspace),
+            workspace.nbytes,_stream()),'hc_combine_mix')
+        return
+    if xn is not None:
+        qwen4exp_hc_combine_norm(streams,block,inject,streams,hc.t[0],xn,hc.args[11])
+    else:
+        qwen4exp_hc_combine(streams,block,inject,streams)
+    from types import SimpleNamespace
+    from .inference import inference_hc
+    down=(SimpleNamespace(quant=hc.t[1],meta=hc.t[2],fmt=hc.args[5])
+          if hc.t[2] is not None else hc.t[1])
+    up=(SimpleNamespace(quant=hc.t[3],meta=hc.t[4],fmt=hc.args[6])
+        if hc.t[4] is not None else hc.t[3])
+    inference_hc(streams,hc.t[0],down,up,lo,mixed,hc.lr,hc.args[11],workspace,xn,hc.t[5])
+
+
+@operator
+def hc_output_project_workspace_bytes(rows, hc, count, hidden, prefill, kv_int8):
+    if not hasattr(lib,'snowllm_hc_output_project'):
+        from .attention_full import attn_output_plan
+        return max(attn_output_plan(rows,prefill,kv_int8)[1],
+                   hc_combine_mix_workspace_bytes(rows,hc,count,hidden))
+    post=_hc_step(hc,rows,count,hidden)
+    return lib.snowllm_hc_output_project_workspace_bytes(ctypes.byref(post),prefill,kv_int8)
+
+
+@operator
+def hc_output_project(a, proj, w, scale, streams, inject, hc, lo, mixed, block, workspace,
+                      prefill, kv_int8, xn=None):
+    if not hasattr(lib,'snowllm_hc_output_project'):
+        from .attention_full import attn_output_project
+        attn_output_project(a,proj,w,scale,workspace,block,prefill,kv_int8)
+        hc_combine_mix(streams,block,inject,hc,lo,mixed,workspace,xn)
+        return
+    post=_hc_step(hc,*streams.shape,streams,inject,xn,lo,mixed)
+    dense,q,meta,fmt=(None,w.quant,w.meta,w.fmt) if hasattr(w,'quant') else (w,None,None,0)
+    check(lib.snowllm_hc_output_project(ctypes.byref(post),_p(a),_p(proj),proj.stride(0),
+        _p(dense),_p(q),_p(meta),_p(scale),fmt,_p(block),_p(workspace),workspace.nbytes,
+        prefill,kv_int8,_stream()),'hc_output_project')
+
+
+@operator
+def hc_linear_step_workspace_bytes(rows, hc, post_hc, count, hidden, mixed, path):
+    if not hasattr(lib,'snowllm_hc_linear_step'):
+        return max(qwen4exp_hc_linear_ws_bytes(rows,hc.lr),
+                   hc_combine_mix_workspace_bytes(rows,post_hc,count,hidden))
+    post=_hc_step(post_hc,rows,count,hidden)
+    return lib.snowllm_hc_linear_step_workspace_bytes(ctypes.byref(post),hc.lr,mixed,int(path))
+
+
+@operator
+def hc_linear_step(streams, hc, lo, mixed, post_hc, post_lo, post_mixed, xn, w,
+                   cu_seqlens, has_state, state_indices, conv_state, recurrent_state,
+                   workspace, block, B, path, num_accepted=None, ckpt=None, retain=None,
+                   input_xn=None):
+    if not hasattr(lib,'snowllm_hc_linear_step'):
+        if mixed is None:
+            qwen4exp_hc_linear_attn(streams,hc,lo,w,cu_seqlens,has_state,state_indices,
+                conv_state,recurrent_state,workspace,block,B,path,num_accepted,ckpt,retain,input_xn)
+        else:
+            from .attention_linear import fused_linear_attn
+            fused_linear_attn(mixed,w,cu_seqlens,has_state,state_indices,conv_state,
+                recurrent_state,workspace,block,B,path,num_accepted,ckpt,retain)
+        hc_combine_mix(streams,block,lo[:,hc.lr:hc.lr+streams.shape[1]],post_hc,
+                       post_lo,post_mixed,workspace,xn)
+        return
+    post=_hc_step(post_hc,*streams.shape,streams,lo[:,hc.lr:hc.lr+streams.shape[1]],xn,
+                  post_lo,post_mixed)
+    at,slots,n,ck_conv,ck_rec=ckpt or (None,None,0,None,None)
+    rq,rc,rb=retain or (None,None,None)
+    check(lib.snowllm_hc_linear_step(ctypes.byref(post),_p(mixed),workspace.nbytes,
+        _p(streams),*hc.args,_p(lo),_p(input_xn),*w.args,_p(cu_seqlens),_p(has_state),
+        _p(state_indices),_p(num_accepted),_p(conv_state),_p(recurrent_state),_p(at),_p(slots),
+        n,_p(ck_conv),_p(ck_rec),_p(workspace),_p(block),B,streams.shape[0],int(path),_stream(),
+        _p(rq),_p(rc),_p(rb)),'hc_linear_step')
 
 
 @operator
