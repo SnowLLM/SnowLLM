@@ -25,13 +25,13 @@ def main():
     seen = []
 
     def layer(source):
-        def run(ctx, streams):
+        def run(ctx, streams, mixed, lo, prepared):
             seen.append(streams.device.type)
             ops.copy_rows(streams.view(ctx.M, hc * hidden),
                           source[:ctx.M].view(ctx.M, hc * hidden))
         return run
 
-    model = SimpleNamespace(geo=geo, layers=[layer(v) for v in values],
+    model = SimpleNamespace(geo=geo, layers=[layer(v) for v in values],hc_columns=4,
         embed_tokens=lambda ids, out: out.zero_(),
         head_fold=lambda ctx, streams, xn: streams[:, 0, :],
         inv_freq=torch.ones(32, dtype=torch.float32, device='cuda'))
