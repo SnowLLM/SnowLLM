@@ -7,7 +7,7 @@
   "dir": "Qwen3.8-27B-UD-Q4_K_XL",
   "bytes": 20546740167,
   "repo": "unsloth/Qwen3.8-27B-GGUF",
-  "revision": "main",
+  "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
   "include": [
     "Qwen3.8-27B-UD-Q4_K_XL.gguf",
     "mmproj-BF16.gguf"
@@ -18,11 +18,12 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "37561816e66b5b9153b1b64c10968c18c1e6f4a0"
     },
     {
       "repo": "z-lab/Qwen3.8-27B-DFlash2-GGUF",
-      "revision": "main",
+      "revision": "2d9571f8ce46e151f61c6499c99dee6079e1d610",
       "subdir": "dflash2",
       "include": [
         "Qwen3.8-27B-DFlash2-Q8_0.gguf"

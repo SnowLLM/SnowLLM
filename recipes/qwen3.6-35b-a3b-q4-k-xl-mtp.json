@@ -7,7 +7,7 @@
   "dir": "Qwen3.6-35B-A3B-UD-Q4_K_XL-MTP",
   "bytes": 23756486311,
   "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
-  "revision": "main",
+  "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
   "include": [
     "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
     "mmproj-BF16.gguf"
@@ -18,7 +18,8 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "345d467b117d1fd5eda9b879a5988de9ae5f47a7"
     }
   ],
   "spec": "MTP k=2",

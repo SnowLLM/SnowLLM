@@ -9,7 +9,7 @@
   "dir": "LFM2.5-8B-A1B-Q4_K_M",
   "bytes": 5512055872,
   "repo": "LiquidAI/LFM2.5-8B-A1B-GGUF",
-  "revision": "main",
+  "revision": "49c14831707011e64d70b2ebd8462ba08d608434",
   "include": [
     "LFM2.5-8B-A1B-Q4_K_M.gguf"
   ],
@@ -33,7 +33,8 @@
       "subdir": "dspark",
       "include": [
         "LFM2.5-8B-A1B-DSpark-Q8_0.gguf"
-      ]
+      ],
+      "revision": "7ba04ee5ff05a4baf2681fe5ddda6d736581ccdf"
     }
   ]
 }

@@ -7,7 +7,7 @@
   "dir": "Qwen3.6-35B-A3B-FP8",
   "bytes": 37493014098,
   "repo": "Qwen/Qwen3.6-35B-A3B-FP8",
-  "revision": "main",
+  "revision": "c653bba46dfa06e9658dcc0b0dc87fe4685f14a2",
   "include": [
     "*"
   ],
