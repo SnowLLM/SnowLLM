@@ -4,6 +4,8 @@ A local LLM inference framework, hand-tuned for **AMD Ryzen AI Max** and compati
 
 For more information, visit [snowllm.dev](https://snowllm.dev/) ([中文](https://snowllm.dev/?lang=zh_cn)).
 
+We're optimizing `qwen38_flash_next` / `qwen35_moe` performance and improving the Web UI experience. Have a request? Share it in [Discussions](https://github.com/SnowLLM/SnowLLM/discussions).
+
 SnowLLM is fast with:
 
 - Kernels hand-tuned for the Ryzen AI Max series
@@ -13,6 +15,7 @@ SnowLLM is fast with:
 
 ## Recent News
 
+- **2026-11-10** — **SnowLLM 0.3.22 stable**: multi-model serving, MinerU document parsing, improved Flash-Next compatibility, and a refreshed Web UI with thinking controls, response throughput, fullscreen logs and copyable loading commands. [Release notes](https://github.com/SnowLLM/SnowLLM/releases/tag/v0.3.22).
 - **2026-10-29** — **MiniCPM-V 4.7 on Ryzen 9 7940HS (RDNA 3)**: 132K context capacity on a 32 GiB Windows machine. [Benchmarks](https://snowllm.dev/docs/development/benchmarks#radeon-780m).
 - **2026-10-26** — **DeepSeek V4.1 Flash support**, including embedded DSpark decoding.
 - **2026-10-21** — **MiniCPM-V 4.7 support** with adaptive DSpark: **63.7 tok/s at 8K input** on Ryzen AI Max+ 395.

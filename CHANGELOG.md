@@ -1,6 +1,27 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.22 — 2026-11-10
+
+Bring multi-model serving, MinerU document parsing and the updated Web UI to the stable channel.
+
+- Keep multiple models loaded at one inference address, share planned workspaces and memory budgets, and manage individual models or the whole service from the CLI.
+  多模型共用一个推理地址，复用静态规划的工作区和内存预算，CLI 支持按模型 ID 管理或全部卸载。
+- Configure independent model cards in the Web UI, show per-model runtime settings, and copy shell-safe loading commands for automation.
+  WebUI 支持独立模型加载卡片、分模型运行参数及安全转义的 CLI 加载命令复制，方便自动化。
+- Search ordered model directories, download into the first directory, and check required checkpoint and draft files before offering a recipe for loading.
+  支持按顺序搜索多个模型目录、下载到首个目录，并在配方可加载检查中核对必要的模型及草稿文件。
+- Add fullscreen highlighted logs, retain errors while suppressing routine polling access logs, and identify skipped models after a batch load failure.
+  新增全屏高亮日志，过滤常规轮询访问记录并保留错误，批量加载失败后明确标记尚未尝试的模型。
+- Add an explicit thinking toggle and show first-token latency, output token counts, and prefill/decode throughput with saved conversation statistics.
+  新增显式 thinking 开关，显示首 token 延迟、输出 token 数及 prefill/decode 吞吐，并随会话保存统计。
+- Add dedicated MinerU document parsing and a vision-language recipe, with improved visual inference and graph replay.
+  新增独立的 MinerU 文档解析及视觉语言模型配方，改进视觉推理与图回放。
+- Improve Flash-Next GGUF and mixed-quantization compatibility, version-pinned UD3.1 recipes, native projection and MoE paths, and ragged-batch memory planning.
+  改进 Flash-Next GGUF 与混合量化兼容性、固定版本的 UD3.1 配方、原生投影与 MoE 路径以及非整齐批次的内存规划。
+- Require SnowLLM-Kernels 0.3.16 and validate public wheel contents before publishing.
+  依赖升级至 SnowLLM-Kernels 0.3.16，发布前校验公开 wheel 的文件范围及信息泄露。
+
 ## 0.3.22.dev4 — 2026-11-08
 
 Improve Flash-Next q4-fast compatibility and update the standard benchmark comparisons.
