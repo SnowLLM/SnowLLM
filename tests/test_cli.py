@@ -13,6 +13,63 @@ from unittest.mock import Mock, patch
 
 
 class CLITests(unittest.TestCase):
+    def test_model_management_cli_routes_selection_force_and_service_address(self):
+        from snowllm.daemon import cli
+        import httpx
+        cases = (
+            (['unload', 'main'], 'models/unload', {'id': 'main', 'force': False}, None),
+            (['unload', 'main', '--force'], 'models/unload', {'id': 'main', 'force': True}, None),
+            (['unload'], 'unload', None, {'force': 'false'}),
+            (['unload', '--all'], 'unload', None, {'force': 'false', 'all_models': 'true'}),
+            (['unload', '--all', '--force'], 'unload', None, {'force': 'true', 'all_models': 'true'}),
+            (['default', 'main'], 'models/default', {'id': 'main'}, None),
+        )
+        for prefix in ([], ['webui']):
+            for args, endpoint, payload, params in cases:
+                with self.subTest(prefix=prefix, args=args):
+                    def request(method, url, **kwargs):
+                        self.assertEqual(method, 'POST')
+                        self.assertEqual(url, 'http://[::1]:9001/daemon/' + endpoint)
+                        self.assertEqual(kwargs['json'], payload)
+                        self.assertEqual(kwargs['params'], params)
+                        return httpx.Response(200, json={}, request=httpx.Request(method, url))
+                    with patch.object(cli.httpx.Client, 'request', side_effect=request) as send, \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(cli.main([*prefix, *args, '--admin-host', '::1', '--admin-port', '9001']), 0)
+                    send.assert_called_once()
+
+    def test_load_cli_accepts_management_options_after_models_and_preserves_inference_options(self):
+        from snowllm.daemon import cli
+        import httpx
+        for prefix in ([], ['webui']):
+            for separator in ([], ['--']):
+                with self.subTest(prefix=prefix, separator=separator):
+                    def request(method, url, **kwargs):
+                        self.assertEqual(url, 'http://127.0.0.1:9001/daemon/models/load')
+                        self.assertEqual(kwargs['json']['models'], [dict(model='/models/Large', id='main',
+                            target='gpu', options=['--max-model-len', '32k', '--served-model-name', 'alias'])])
+                        return httpx.Response(200, json={}, request=httpx.Request(method, url))
+                    with patch.object(cli.httpx.Client, 'request', side_effect=request), \
+                         contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(cli.main([*prefix, 'load', '/models/Large', '--id', 'main',
+                            '--admin-port', '9001', *separator, '--max-model-len', '32k',
+                            '--served-model-name', 'alias']), 0)
+
+    def test_model_management_cli_rejects_ambiguous_or_invalid_selection_before_http(self):
+        from snowllm.daemon import cli
+        cases = (
+            ['unload', 'main', '--all'], ['unload', 'main', 'other'],
+            ['unload', '--unknown'], ['default'], ['default', 'main', '--force'],
+            ['load', 'a', 'b', '--id', 'main'], ['load', 'a', '--id', 'main', '--force'],
+            ['load', 'a', '--id', '  '], ['load', 'a', '--id', 'bad=id'],
+        )
+        for args in cases:
+            with self.subTest(args=args), patch.object(cli.httpx.Client, 'request') as send, \
+                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                cli.main(args)
+            self.assertEqual(error.exception.code, 2)
+            send.assert_not_called()
+
     def test_batch_load_cli_preserves_options_and_target_prefixes(self):
         from snowllm.daemon import cli
         import httpx
@@ -498,6 +555,14 @@ main()
                     self.assertIn('--max-gpu-mem ', result.stdout)
                     self.assertNotIn('--gpu-memory-utilization', result.stdout)
                     self.assertIn('--dflash', result.stdout)
+
+    def test_management_help_without_gpu(self):
+        for command in ('load', 'unload', 'default'):
+            with self.subTest(command=command):
+                result = self.run_cli(command, '--help')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, '')
+                self.assertIn('MODEL_ID', result.stdout)
 
     def test_bundle_flag_and_prefix_resolve_without_gpu_or_server_catalogue(self):
         from snowllm.hub import recipes

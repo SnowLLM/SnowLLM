@@ -199,9 +199,9 @@ def create_app(manager: DaemonManager):
             raise HTTPException(409, str(exc))
 
     @app.post("/daemon/unload")
-    async def unload(force: bool = False):
+    async def unload(force: bool = False, all_models: bool = False):
         try:
-            return await manager.switch(None, [], force)
+            return await manager.switch(None, [], force, all_models=all_models)
         except ValueError as exc:
             raise HTTPException(409, str(exc))
 

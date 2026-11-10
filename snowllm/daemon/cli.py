@@ -27,13 +27,13 @@ def parser():
     daemon.add_argument("--no-browser", action="store_true",
                         help="do not open the Web UI in a browser")
     sub = daemon.add_subparsers(dest="action")
-    for name in ("status", "unload", "logs", "config", "pull", "load"):
+    for name in ("status", "unload", "default", "logs", "config", "pull", "load"):
         action = sub.add_parser(name)
         action.add_argument("--admin-port", "--port", dest="admin_port", type=int, default=argparse.SUPPRESS,
                             help="management port (--port is a compatibility alias)")
         action.add_argument("--admin-host", choices=("127.0.0.1", "localhost", "::1"), default=argparse.SUPPRESS)
         arguments(action, name)
-    for name in ("status", "load", "unload"):
+    for name in ("status", "load", "unload", "default"):
         action = commands.add_parser(name)
         action.add_argument("--admin-port", "--port", dest="admin_port", type=int, default=8001,
                             help="management port (--port is a compatibility alias)")
@@ -44,12 +44,19 @@ def parser():
 
 def arguments(p, name):
     if name == "load":
-        p.add_argument("--force", action="store_true", help="interrupt active requests")
+        p.add_argument("--force", action="store_true",
+                       help="replace the sole loaded model and interrupt its requests")
+        p.add_argument("--id", metavar='MODEL_ID', help="assign a management ID when loading one model")
         p.add_argument("model", nargs='+', metavar='MODEL')
-        p.add_argument("options", nargs=argparse.REMAINDER,
-                       help="shared inference options after the model list, optionally separated by --")
+        p.epilog = "Inference options after the model list apply to every model; use -- to separate them explicitly."
     elif name == "unload":
-        p.add_argument("--force", action="store_true")
+        selection = p.add_mutually_exclusive_group()
+        selection.add_argument("id", nargs='?', metavar='MODEL_ID',
+                               help="model ID from snowllm status; may be omitted when only one model is loaded")
+        selection.add_argument("--all", action="store_true", help="unload all models in the service")
+        p.add_argument("--force", action="store_true", help="interrupt requests for the selected model(s)")
+    elif name == "default":
+        p.add_argument("id", metavar='MODEL_ID', help="use this loaded model for requests without a model")
     elif name == "logs":
         p.add_argument("--download", action="store_true")
     elif name == "config":
@@ -66,8 +73,10 @@ def main(argv):
     if '--' in argv and (argv[:1] == ['load'] or argv[:1] == ['webui'] and 'load' in argv):
         index = argv.index('--')
         argv, trailing = argv[:index], argv[index + 1:]
-    a = p.parse_args(argv)
+    a, options = p.parse_known_args(argv)
     action = a.action if a.command == "webui" else a.command
+    if options and action != "load":
+        p.error("unrecognized arguments: " + " ".join(options))
     if not 1 <= a.admin_port <= 65535:
         p.error("admin port must be between 1 and 65535")
     from .server import local_url
@@ -100,7 +109,7 @@ def main(argv):
             return 1
         print(f"SnowLLM Web UI / management: {admin_url}", flush=True)
         print(f"SnowLLM inference API: {local_url(a.host, a.port)}/v1", flush=True)
-        print("Use snowllm load MODEL, snowllm status, snowllm unload; Ctrl+C stops all owned tasks.", flush=True)
+        print("Use snowllm load MODEL, snowllm status, snowllm unload MODEL_ID or --all; Ctrl+C stops all owned tasks.", flush=True)
         try:
             asyncio.run(serve(manager, host=a.host, port=a.port,
                               admin_host=a.admin_host, admin_port=a.admin_port,
@@ -112,7 +121,15 @@ def main(argv):
     method, endpoint, payload, params = "GET", action, None, None
     if action == "load":
         method = "POST"
-        options = [*(a.options[1:] if a.options[:1] == ["--"] else a.options), *trailing]
+        options = [*options, *trailing]
+        if a.id is not None:
+            from ..serve.state import validate_model_id
+            try:
+                validate_model_id(a.id)
+            except ValueError as exc:
+                p.error(str(exc))
+            if len(a.model) != 1 or a.force:
+                p.error('--id requires one model and cannot be combined with --force')
         from ..targets import resolve_target
         entries = []
         for source in a.model:
@@ -123,6 +140,8 @@ def main(argv):
             except ValueError as exc:
                 p.error(str(exc))
             entries.append(dict(model=path if target else source, options=list(options), target=selected))
+        if a.id is not None:
+            entries[0]['id'] = a.id
         if a.force:
             if len(entries) != 1:
                 p.error('--force supports switching to one model; omit it for a batch load')
@@ -131,7 +150,15 @@ def main(argv):
         else:
             endpoint, payload = 'models/load', dict(models=entries)
     elif action == "unload":
-        method, params = "POST", {"force": str(a.force).lower()}
+        method = "POST"
+        if a.id is not None:
+            endpoint, payload = 'models/unload', dict(id=a.id, force=a.force)
+        else:
+            params = {"force": str(a.force).lower()}
+            if a.all:
+                params['all_models'] = 'true'
+    elif action == "default":
+        method, endpoint, payload = "POST", 'models/default', dict(id=a.id)
     elif action == "config":
         method, payload = "PUT", {key: getattr(a, key) for key in ("models_dir", "recipes_url", "library_path")
                                   if getattr(a, key) is not None}

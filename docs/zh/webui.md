@@ -47,6 +47,20 @@ snowllm unload
 
 在「模型」页面可加载多个模型，并设置默认模型。每个聊天会话可单独选择模型；卸载默认模型后，请重新选择。
 
+终端也支持按模型 ID 管理：
+
+```sh
+snowllm load /models/Large --id main -- --max-model-len 32k
+snowllm load /models/Small --id helper -- --max-model-len 8k
+snowllm status                 # 查看模型 ID 和加载进度
+snowllm default helper        # 设置默认模型
+snowllm unload main           # 只卸载 main，等待它的请求完成
+snowllm unload helper --force # 中断 helper 的请求并卸载
+snowllm unload --all          # 等待全部请求完成，卸载全部模型
+```
+
+加载和卸载在后台执行，可用 `snowllm status` 查看完成状态。`--id` 仅用于单模型加载；省略时使用模型名称作为 ID，以状态中的 `models[].id` 为准。不带 ID 的 `snowllm unload` 保留单模型用法，多个模型驻留时需指定 ID 或 `--all`。全部卸载也支持 `--force`。上述命令同样支持 `snowllm webui load|unload|default` 形式。
+
 卸载时可等待当前请求完成，也可中断该模型的请求。某个模型加载失败时，其他已加载模型仍可使用。
 
 多个 GPU 模型共用首次加载时设置的内存上限，新模型只能使用剩余空间。上下文长度等参数可分别设置。目前请选择 GPU，NPU 暂不可用。

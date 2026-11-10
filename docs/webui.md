@@ -48,6 +48,25 @@ For external monitoring, use `/metrics` (Prometheus) or `/metrics?format=json` o
 
 Load multiple models on the **Models** page and choose a default. Each chat session can select its own model. Choose a new default after unloading it.
 
+Manage individual models by ID from the terminal:
+
+```sh
+snowllm load /models/Large --id main -- --max-model-len 32k
+snowllm load /models/Small --id helper -- --max-model-len 8k
+snowllm status                 # inspect model IDs and loading progress
+snowllm default helper        # choose the default model
+snowllm unload main           # unload only main after its requests finish
+snowllm unload helper --force # interrupt helper's requests and unload it
+snowllm unload --all          # finish all requests, then unload all models
+```
+
+Loading and unloading run in the background; check completion with `snowllm status`.
+Use `--id` when loading one model to assign its ID. Otherwise the model name is
+used; check `models[].id` in the status output. Bare `snowllm unload` retains the
+single-model behavior; with multiple models, specify an ID or `--all`. Add
+`--force` to `--all` to interrupt all requests. The same commands are available
+as `snowllm webui load|unload|default`.
+
 When unloading, wait for the model's requests to finish or interrupt them. If one model fails to load, other loaded models remain available.
 
 GPU models share the memory limit set during the first load. New models use the remaining space; context length and other settings can be set separately. Select GPU for now; NPU is not yet available.

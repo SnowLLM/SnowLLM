@@ -368,8 +368,9 @@ def parser() -> argparse.ArgumentParser:
                     "  pull [RECIPE]     Download a model\n"
                     "  recipes           List available models\n"
                     "  pi                Start the coding agent\n"
-                    "  load MODEL        Load a model in the running service\n"
-                    "  unload            Unload the current model\n"
+                    "  load MODEL [...]  Add models to the running service\n"
+                    "  unload [ID|--all] Unload one model or all models\n"
+                    "  default ID        Choose the default loaded model\n"
                     "  status            Show service status",
         epilog="Use snowllm COMMAND --help for that command's options.",
         formatter_class=_HelpFormatter)
@@ -665,7 +666,7 @@ def main() -> None:
         from .daemon.worker import main as worker_main
         worker_main([arg for arg in argv if arg != "--managed-worker"])
         return
-    if argv and argv[0] in ("webui", "load", "unload", "status"):
+    if argv and argv[0] in ("webui", "load", "unload", "default", "status"):
         from .daemon.cli import main as daemon_main
         raise SystemExit(daemon_main(argv))
     if argv and argv[0] in SUBCOMMANDS:

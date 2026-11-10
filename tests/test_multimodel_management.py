@@ -81,6 +81,59 @@ class ManagementTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status_code, 409)
 
+    async def test_unload_all_requires_explicit_selection_and_drains_requests(self):
+        self.rows.append(dict(id='b', source='source-b', state='ready',
+                              runtime_config={'model_path': '/models/b'}))
+        self.manager.accept_snapshot(self.snapshot())
+        response = await self.client.post('/daemon/unload')
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('snowllm unload MODEL_ID', response.json()['detail'])
+        self.manager.stop_process.assert_not_awaited()
+        self.manager.active = 1
+        response = await self.client.post('/daemon/unload', params={'all_models': 'true'})
+        self.assertEqual(response.status_code, 200)
+        await asyncio.sleep(0)
+        self.assertFalse(self.manager.task.done())
+        self.manager.stop_process.assert_not_awaited()
+        status = await self.client.get('/daemon/status')
+        self.assertEqual(status.json()['state'], 'draining')
+        inference = await self.client.get('/daemon/inference/models')
+        self.assertEqual(inference.status_code, 503)
+        self.manager.active = 0
+        await asyncio.wait_for(self.manager.task, 2)
+        self.manager.stop_process.assert_awaited_once()
+        self.assertEqual(self.manager.state, 'idle')
+        self.assertEqual(self.manager.models, [])
+        self.assertIsNone(self.manager.backend)
+        self.assertIsNone(self.manager.default_model)
+        self.assertIsNone(self.manager.transition_stage)
+
+    async def test_force_unload_all_stops_worker_with_active_requests(self):
+        self.rows.append(dict(id='b', source='source-b', state='ready',
+                              runtime_config={'model_path': '/models/b'}))
+        self.manager.accept_snapshot(self.snapshot())
+        self.manager.active = 1
+        response = await self.client.post('/daemon/unload', params={'all_models': 'true', 'force': 'true'})
+        self.assertEqual(response.status_code, 200)
+        await asyncio.wait_for(self.manager.task, 2)
+        self.manager.stop_process.assert_awaited_once()
+        self.assertEqual(self.manager.state, 'idle')
+        self.assertEqual(self.manager.models, [])
+
+    async def test_cancel_while_unload_all_is_draining_preserves_worker(self):
+        self.rows.append(dict(id='b', source='source-b', state='ready',
+                              runtime_config={'model_path': '/models/b'}))
+        self.manager.accept_snapshot(self.snapshot())
+        self.manager.active = 1
+        await self.client.post('/daemon/unload', params={'all_models': 'true'})
+        await asyncio.sleep(0)
+        response = await self.client.post('/daemon/load/cancel')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['state'], 'ready')
+        self.assertEqual(len(self.manager.models), 2)
+        self.manager.stop_process.assert_not_awaited()
+        self.assertIsNone(self.manager.transition_stage)
+
     async def test_kernel_library_cannot_change_under_resident_models(self):
         with self.assertRaisesRegex(ValueError, 'unload all models'):
             self.manager.configure(library_path='/tmp/another-library.so')

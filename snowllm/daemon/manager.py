@@ -221,11 +221,14 @@ class DaemonManager:
         if os.name != "nt":
             terminate(signal.SIGKILL)
 
-    async def switch(self, model, options, force=False):
+    async def switch(self, model, options, force=False, *, all_models=False):
         from ..targets import NPU_UNAVAILABLE, resolve_target
         async with self.lock:
-            if self.process and self.process.poll() is None and len([row for row in self.models if row.get("runtime_config")]) > 1:
-                raise ValueError("multiple models are loaded; select a model in the Web UI or model management API")
+            if (self.process and self.process.poll() is None
+                    and len([row for row in self.models if row.get("runtime_config")]) > 1
+                    and not (model is None and all_models)):
+                raise ValueError("multiple models are loaded; use `snowllm unload MODEL_ID` or "
+                                 "`snowllm unload --all`; use `snowllm load MODEL` to add a model")
             if self.closing or (self.task and not self.task.done()):
                 raise ValueError("a model transition is already in progress")
             # The supervisor owns the backend address; callers cannot override it.
@@ -301,6 +304,8 @@ class DaemonManager:
             await self.stop_process(self.process)
             self.process = None
             self.backend = None
+        finally:
+            self.transition_stage = None
 
     def accept_snapshot(self, snapshot):
         self.models = snapshot.get('models', [])
@@ -332,10 +337,15 @@ class DaemonManager:
             self.state = 'failed'
 
     async def refresh(self):
+        if self.transition_stage is not None:
+            return self.status()
         if self.shared_worker and self.backend and self.process and self.process.poll() is None:
+            backend = self.backend
             try:
-                response = await self.client.get(self.backend + '/worker/status', timeout=2)
+                response = await self.client.get(backend + '/worker/status', timeout=2)
                 response.raise_for_status()
+                if self.transition_stage is not None or backend != self.backend:
+                    return self.status()
                 snapshot = response.json()
                 self.accept_snapshot(snapshot)
                 if snapshot.get('worker_error'):
@@ -542,13 +552,14 @@ class DaemonManager:
                 return self.status()
             if self.shared_worker and self.operation:
                 raise ValueError('only loading can be cancelled; an unload is already in progress')
+            waiting = self.transition_stage == "waiting"
             self.task.cancel()
             try:
                 await self.task
             except asyncio.CancelledError:
                 pass
             # Cancellation during draining preserves the old ready worker.
-            if self.process and self.process.poll() is None and self.state == "draining" and self.transition_stage == "waiting":
+            if self.process and self.process.poll() is None and self.state == "draining" and waiting:
                 self.state = "ready"
             else:
                 await self.stop_process(self.process)
