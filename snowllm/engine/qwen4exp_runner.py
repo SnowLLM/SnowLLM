@@ -19,6 +19,7 @@ from .forward_context import (
     Qwen4ExpContext,
     i32,
 )
+from .inputs import synthetic_batch
 from .qwen_runner import QwenRunner
 
 GATHER_CHUNK = 4096
@@ -169,11 +170,15 @@ class Qwen4ExpRunner(QwenRunner):
                           self.ple_table.gather(rows[at:at + n]))
 
     def _probe_batch(self, rows: int, prefill: bool) -> Batch:
-        b = super()._probe_batch(rows, prefill)
-        if prefill:
-            b.last_row = torch.zeros(min(self.max_num_seqs, rows), dtype=torch.int64,
-                                     device="cuda")
-        return b
+        if not prefill:
+            return super()._probe_batch(rows, prefill)
+        count = min(self.max_num_seqs, rows)
+        # Maximum sequence count and ragged Q blocks must fit the same prefill plan.
+        lengths = [1] * (count - 1) + [rows - count + 1]
+        total, mapping = ops.prefill_q_plan(lengths)
+        return synthetic_batch(lengths, self.max_blocks_per_seq,
+            state_indices=[0] * count, has_state=[0] * count, last_row=[0] * count,
+            total_q_blocks=total, q_block_map=mapping, is_prefill=True, need_logits=False)
 
     def _model_hidden(self, ctx):
         head = self.model(ctx)
