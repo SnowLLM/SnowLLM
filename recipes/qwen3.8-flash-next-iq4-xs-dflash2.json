@@ -16,7 +16,7 @@
   ],
   "spec": "DFlash2",
   "summary": "Qwen3.8-Flash-Next in UD-IQ4_XS with an external DFlash 2 drafter.",
-  "note": "Shares target weights with the MTP recipe. The BF16 DFlash 2 drafter is an additional download. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases; the -ud3.1 recipe uses the newer quantization.",
+  "note": "Shares target weights with the MTP recipe. The BF16 DFlash 2 drafter is an additional download. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases.",
   "defaults": {
     "dflash": "@model/dflash2",
     "dflash_block": 4,

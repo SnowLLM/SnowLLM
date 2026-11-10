@@ -22,8 +22,8 @@ snowllm pull qwen3.6-35b-a3b-fp8     # or just `snowllm pull`, and pick from the
 目录地址、镜像与下载凭据见[配置](../reference/configuration#environment-variables)。
 
 发布的配方会将主模型及所有辅助来源固定到具体提交。权重更新时，使用新的配方 ID、
-独立的模型目录和对应的最低 SnowLLM 版本。例如，`qwen3.8-flash-next-iq4-xs`
-保留旧版权重；`qwen3.8-flash-next-iq4-xs-ud3.1` 使用 Dynamic v3.1，要求
+独立的模型目录和对应的最低 SnowLLM 版本。例如，`qwen3.8-flash-next-q3-k-xl`
+保留旧版权重；`qwen3.8-flash-next-q3-k-xl-ud3.1` 使用 Dynamic v3.1，要求
 SnowLLM 0.3.22。两个版本可以同时安装；使用 `--dir` 时也应分别指定目录。
 
 也可以自行下载，使用受支持架构和权重格式的本地模型目录：

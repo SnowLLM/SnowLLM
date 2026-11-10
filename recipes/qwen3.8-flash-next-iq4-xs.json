@@ -37,5 +37,5 @@
   ],
   "priority": 90,
   "requires": "0.3.13",
-  "note": "Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases; the -ud3.1 recipe uses the newer quantization."
+  "note": "Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases."
 }

@@ -38,8 +38,11 @@ class RecipeCompatibilityTests(unittest.TestCase):
         for old in list(book.values()):
             if old['repo'] != 'unsloth/Qwen3.8-Flash-Next-GGUF' or old['id'].endswith('-ud3.1'):
                 continue
-            new = book[old['id'] + '-ud3.1']
             self.assertEqual(old['revision'], '766911a6b7369840a91dbcd95f9f997acaab6cd6')
+            if old['precision'] == 'UD-IQ4_XS':
+                self.assertNotIn(old['id'] + '-ud3.1', book)
+                continue
+            new = book[old['id'] + '-ud3.1']
             self.assertEqual(new['revision'], '084c631ac221016019d6e0a863afe92d90edd3b0')
             self.assertNotEqual(old['dir'], new['dir'])
             self.assertEqual(old['defaults'], new['defaults'])
@@ -74,7 +77,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
 
     def test_revision_recipes_resolve_separate_installations(self):
         book = {r['id']: r for r in builder.recipes()}
-        names = ['qwen3.8-flash-next-iq4-xs', 'qwen3.8-flash-next-iq4-xs-ud3.1']
+        names = ['qwen3.8-flash-next-q3-k-xl', 'qwen3.8-flash-next-q3-k-xl-ud3.1']
         selected = [recipes.Recipe(book[name]) for name in names]
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -214,7 +217,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         book = builder.recipes()
         for view in (book, builder.for_client(book, '0.3.13')):
             selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
-            self.assertEqual(len(selected), 11 if view is book else 5)
+            self.assertEqual(len(selected), 9 if view is book else 5)
             for raw in selected:
                 with self.subTest(recipe=raw['id'], legacy=view is not book):
                     defaults = raw['defaults']
