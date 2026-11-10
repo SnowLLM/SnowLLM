@@ -2,6 +2,7 @@
 import { t, translatePage, language, setLanguage } from './i18n.js';
 import { parseOptions, readEvents } from './stream.js';
 import { thinkingProfile, thinkingParameters } from './thinking.js';
+import { renderLogs } from './logs.js';
 
 const $ = (id) => document.getElementById(id);
 const stateLabels = () => ({ queued: t("Queued"), skipped: t("Not attempted"), unloading: t("Unloading"), idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
@@ -11,6 +12,7 @@ let bundleCatalog = false;
 let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
 let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit = null;
 let catalogRequest = 0;
+let logRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
 const activeChats = new Map();
@@ -441,11 +443,30 @@ async function refreshMetrics() {
   if (!gpus.length) $('gpu-metrics').append(element('p', 'muted', ready ? t("GPU sensors unavailable") : '—'));
 }
 async function refreshLogs() {
-  const result = await api(`/daemon/logs?download=${$('log-kind').value === 'download'}`);
-  const text = result.text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/\r(?!\n)/g, '\n');
-  const atBottom = $('logs').scrollTop + $('logs').clientHeight >= $('logs').scrollHeight - 30;
-  $('logs').textContent = text || t("No activity.");
-  if (atBottom) $('logs').scrollTop = $('logs').scrollHeight;
+  const request = ++logRequest, kind = $('log-kind').value;
+  const result = await api(`/daemon/logs?download=${kind === 'download'}`);
+  if (request !== logRequest || kind !== $('log-kind').value) return;
+  const logs = $('logs'), changed = logs.dataset.kind !== kind;
+  renderLogs(logs, result.text, t("No activity."));
+  if (changed) logs.scrollTop = logs.scrollHeight;
+  logs.dataset.kind = kind;
+}
+const logsPanel = $('logs-panel'), logsParent = logsPanel.parentNode, logsNext = logsPanel.nextSibling;
+function resizeLogs(expanded) {
+  const logs = $('logs'), top = logs.scrollTop;
+  const atBottom = top + logs.clientHeight >= logs.scrollHeight - 30;
+  $('expand-logs').hidden = expanded;
+  $('close-logs').hidden = !expanded;
+  if (expanded) {
+    $('logs-dialog').append(logsPanel);
+    $('logs-dialog').showModal();
+    $('close-logs').focus();
+  } else {
+    $('logs-dialog').close();
+    logsParent.insertBefore(logsPanel, logsNext);
+    $('expand-logs').focus({ preventScroll: true });
+  }
+  logs.scrollTop = atBottom ? logs.scrollHeight : top;
 }
 async function showLogs(kind) {
   $('log-kind').value = kind;
@@ -741,6 +762,9 @@ document.querySelectorAll('[data-catalog-source]').forEach(select => select.addE
   refreshCatalog(false, true);
 }));
 $('refresh-logs').addEventListener('click', () => action($('refresh-logs'), refreshLogs)); $('log-kind').addEventListener('change', () => refreshLogs().catch(error => toast(error.message)));
+$('expand-logs').addEventListener('click', () => resizeLogs(true));
+$('close-logs').addEventListener('click', () => resizeLogs(false));
+$('logs-dialog').addEventListener('cancel', event => { event.preventDefault(); resizeLogs(false); });
 $('adjust-load-settings').addEventListener('click', () => {
   location.hash = 'workspace';
   navigate();
