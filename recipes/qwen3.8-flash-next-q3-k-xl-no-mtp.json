@@ -2,7 +2,10 @@
   "id": "qwen3.8-flash-next-q3-k-xl-no-mtp",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
-  "modalities": ["text", "image"],
+  "modalities": [
+    "text",
+    "image"
+  ],
   "precision": "UD-Q3_K_XL",
   "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
   "bytes": 90893897543,
@@ -14,7 +17,7 @@
   ],
   "spec": "none",
   "summary": "Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
-  "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases.",
+  "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases; the -ud3.1 recipe uses the newer quantization.",
   "defaults": {
     "num_spec": 0,
     "max_num_seqs": 4,

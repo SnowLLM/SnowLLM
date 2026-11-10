@@ -23,6 +23,12 @@ or override it with `SNOWLLM_MODELS`. `snowllm <recipe>` looks there;
 
 See [Configuration](../reference/configuration#environment-variables) for catalogue URLs, mirrors and download credentials.
 
+Published recipes pin every model and auxiliary source to a commit. A new weight revision gets
+a separate recipe and checkpoint directory, with its own minimum SnowLLM version. For example,
+`qwen3.8-flash-next-iq4-xs` retains the earlier weights;
+`qwen3.8-flash-next-iq4-xs-ud3.1` selects Dynamic v3.1 and requires SnowLLM 0.3.22.
+The two can be installed together. Keep their directories separate when using `--dir`.
+
 Or fetch it yourself. Use a local checkpoint directory with a supported architecture and weight format:
 
 ```sh

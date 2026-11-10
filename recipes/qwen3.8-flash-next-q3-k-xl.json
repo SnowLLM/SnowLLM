@@ -2,7 +2,10 @@
   "id": "qwen3.8-flash-next-q3-k-xl",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
-  "modalities": ["text", "image"],
+  "modalities": [
+    "text",
+    "image"
+  ],
   "precision": "UD-Q3_K_XL",
   "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
   "bytes": 93680465799,
@@ -34,5 +37,5 @@
   ],
   "priority": 90,
   "requires": "0.3.13",
-  "note": "Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases."
+  "note": "Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases; the -ud3.1 recipe uses the newer quantization."
 }

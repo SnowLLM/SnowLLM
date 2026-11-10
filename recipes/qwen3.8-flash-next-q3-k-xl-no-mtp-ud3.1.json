@@ -1,0 +1,39 @@
+{
+  "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+  "model": "Qwen3.8-Flash-Next",
+  "family": "Qwen",
+  "modalities": [
+    "text",
+    "image"
+  ],
+  "precision": "UD-Q3_K_XL",
+  "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+  "bytes": 90372492225,
+  "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+  "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+  "include": [
+    "UD-Q3_K_XL/*.gguf",
+    "mmproj-BF16.gguf"
+  ],
+  "spec": "none",
+  "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+  "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+  "defaults": {
+    "num_spec": 0,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 8192
+  },
+  "serve_as": "Qwen3.8-Flash-Next",
+  "sources": [
+    {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+    }
+  ],
+  "priority": 89,
+  "requires": "0.3.22"
+}

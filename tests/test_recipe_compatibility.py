@@ -17,10 +17,84 @@ SPEC.loader.exec_module(builder)
 
 
 def recipe(**updates):
-    return {'id': 'example', 'repo': 'example/model', **updates}
+    return {'id': 'example', 'repo': 'example/model', 'revision': 'a' * 40, **updates}
 
 
 class RecipeCompatibilityTests(unittest.TestCase):
+    def test_published_sources_reject_mutable_or_missing_revisions(self):
+        for update in ({'revision': 'main'}, {'revision': ''},
+                       {'sources': [{'repo': 'example/draft', 'revision': 'main'}]}):
+            raw = recipe(model='Example', precision='Q4', dir='Example',
+                         defaults={'num_spec': 0}, **update)
+            with self.subTest(update=update), tempfile.TemporaryDirectory(dir=ROOT) as folder:
+                path = Path(folder) / 'example.json'
+                path.write_text(json.dumps(raw))
+                with patch.object(builder, 'problems', []):
+                    self.assertIsNone(builder.load(path))
+                    self.assertTrue(any('full commit SHA' in p for p in builder.problems))
+
+    def test_flash_next_revisions_are_pinned_isolated_and_version_gated(self):
+        book = {r['id']: r for r in builder.recipes()}
+        for old in list(book.values()):
+            if old['repo'] != 'unsloth/Qwen3.8-Flash-Next-GGUF' or old['id'].endswith('-ud3.1'):
+                continue
+            new = book[old['id'] + '-ud3.1']
+            self.assertEqual(old['revision'], '766911a6b7369840a91dbcd95f9f997acaab6cd6')
+            self.assertEqual(new['revision'], '084c631ac221016019d6e0a863afe92d90edd3b0')
+            self.assertNotEqual(old['dir'], new['dir'])
+            self.assertEqual(old['defaults'], new['defaults'])
+            self.assertEqual(new['requires'], '0.3.22')
+            self.assertEqual(builder.for_client([new], '0.3.13'), [])
+            for source in [old, new, *old['sources'], *new['sources']]:
+                self.assertRegex(source['revision'], r'^[0-9a-f]{40}$')
+
+    def test_shared_directories_require_the_same_model_revision(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            directory = Path(folder)
+            for name, revision in [('one', 'a' * 40), ('two', 'b' * 40)]:
+                (directory / f'{name}.json').write_text(json.dumps(recipe(
+                    id=name, model='Example', precision='Q4', dir='Shared',
+                    revision=revision, defaults={'num_spec': 0})))
+            with patch.object(builder, 'SOURCE', directory), patch.object(builder, 'problems', []):
+                builder.recipes()
+                self.assertTrue(any('each model revision needs its own directory' in p
+                                    for p in builder.problems))
+
+    def test_shared_directories_cannot_mix_auxiliary_revisions(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
+            directory = Path(folder)
+            for name, revision in [('one', 'a' * 40), ('two', 'b' * 40)]:
+                (directory / f'{name}.json').write_text(json.dumps(recipe(
+                    id=name, model='Example', precision='Q4', dir='Shared',
+                    sources=[{'repo': 'example/draft', 'revision': revision, 'subdir': 'draft'}],
+                    defaults={'num_spec': 0})))
+            with patch.object(builder, 'SOURCE', directory), patch.object(builder, 'problems', []):
+                builder.recipes()
+                self.assertTrue(any('shares source' in p for p in builder.problems))
+
+    def test_revision_recipes_resolve_separate_installations(self):
+        book = {r['id']: r for r in builder.recipes()}
+        names = ['qwen3.8-flash-next-iq4-xs', 'qwen3.8-flash-next-iq4-xs-ud3.1']
+        selected = [recipes.Recipe(book[name]) for name in names]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for entry in selected:
+                dest = entry.path(root)
+                dest.mkdir()
+                (dest / 'model.gguf').touch()
+            with patch.object(recipes, 'models_root', return_value=root), \
+                 patch.object(recipes, 'catalogue', return_value=selected), \
+                 patch.object(recipes, '__version__', '0.3.22'):
+                for entry in selected:
+                    dest, resolved = recipes.locate(entry.id)
+                    self.assertEqual(dest, entry.path(root))
+                    self.assertEqual(resolved.revision, entry.revision)
+            with patch.object(recipes, 'models_root', return_value=root), \
+                 patch.object(recipes, 'catalogue', return_value=selected), \
+                 patch.object(recipes, '__version__', '0.3.21'), \
+                 self.assertRaisesRegex(SnowLLMError, '0.3.22'):
+                recipes.locate(names[1])
+
     def test_old_memory_limit_is_normalized_without_mutating_input(self):
         raw = recipe(defaults={'gpu_memory_utilization': .95})
         result = recipes.Recipe(raw)
@@ -140,7 +214,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         book = builder.recipes()
         for view in (book, builder.for_client(book, '0.3.13')):
             selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
-            self.assertEqual(len(selected), 6 if view is book else 5)
+            self.assertEqual(len(selected), 11 if view is book else 5)
             for raw in selected:
                 with self.subTest(recipe=raw['id'], legacy=view is not book):
                     defaults = raw['defaults']

@@ -114,6 +114,8 @@ def load(path: pathlib.Path) -> dict | None:
         complain(path, f"has a dir that is not a plain directory name: {r['dir']!r}")
     if r["repo"] != "TBD" and "/" not in r["repo"]:
         complain(path, f"has a repo that is not owner/name: {r['repo']!r}")
+    if r["repo"] != "TBD" and not re.fullmatch(r"[0-9a-f]{40}", str(r.get("revision", ""))):
+        complain(path, "revision must pin a full commit SHA; publish a new recipe for new weights")
     for field in LISTS:
         if field in r and not (isinstance(r[field], list)
                                and all(isinstance(p, str) for p in r[field])):
@@ -132,6 +134,8 @@ def load(path: pathlib.Path) -> dict | None:
                 if "/" not in str(s.get("repo", "")):
                     complain(path, f"has a source whose repo is not owner/name: "
                                    f"{s.get('repo')!r}")
+                if not re.fullmatch(r"[0-9a-f]{40}", str(s.get("revision", ""))):
+                    complain(path, "source revision must pin a full commit SHA")
                 for field in LISTS:
                     if field in s and not (isinstance(s[field], list)
                                            and all(isinstance(p, str) for p in s[field])):
@@ -150,6 +154,8 @@ def load(path: pathlib.Path) -> dict | None:
 
 def recipes() -> list[dict]:
     found = {}
+    directories = {}
+    source_revisions = {}
     for path in sorted(SOURCE.glob("*.json")):
         r = load(path)
         if r is None:
@@ -157,6 +163,17 @@ def recipes() -> list[dict]:
         if r["id"] in found:
             complain(path, f"is a second recipe called {r['id']!r}")
         spec_of(r, path)
+        identity = (r["repo"], r.get("revision", "main"))
+        previous = directories.setdefault(r["dir"], identity)
+        if previous != identity:
+            complain(path, f"shares dir {r['dir']!r} across different repositories or revisions; "
+                           "each model revision needs its own directory")
+        for source in [r] + list(r.get('sources') or []):
+            key = (r['dir'], source.get('subdir', ''), source['repo'])
+            revision = source.get('revision', 'main')
+            if source_revisions.setdefault(key, revision) != revision:
+                complain(path, f"shares source {source['repo']!r} across revisions in {r['dir']!r}; "
+                               "use a separate directory")
         found[r["id"]] = r
     if not found:
         problems.append(f"{SOURCE.relative_to(ROOT)}/ holds no recipe")
