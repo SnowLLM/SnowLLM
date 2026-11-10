@@ -50,6 +50,8 @@ if (root / '.git').exists():
         if not entry:
             continue
         path = Path(entry[3:].rstrip('/'))
+        if not any(path == Path(name) or Path(name) in path.parents for name in inputs):
+            continue
         if entry.startswith('!! ') and ('__pycache__' in path.parts or path.suffix == '.pyc'):
             continue
         pending.append(entry)
@@ -68,22 +70,7 @@ EOF
 "$PY" -m pip wheel "$STAGE/source" --no-deps --no-build-isolation -w "$STAGE" -q
 
 WHEEL=$(ls "$STAGE"/snowllm-*.whl)
-
-"$PY" - "$WHEEL" "$ROOT" <<'EOF'
-import pathlib, sys, zipfile
-
-whl, root = sys.argv[1], pathlib.Path(sys.argv[2])
-names = zipfile.ZipFile(whl).namelist()
-
-if blobs := [n for n in names if n.endswith((".so", ".pyd", ".dylib"))]:
-    sys.exit(f"the wheel carries binaries it should not: {blobs}")
-if not whl.endswith("-py3-none-any.whl"):
-    sys.exit(f"expected a py3-none-any wheel, got {whl}")
-if ghosts := [n for n in names if n.endswith(".py") and not (root / n).exists()]:
-    sys.exit(f"the wheel carries modules the tree does not: {ghosts}")
-
-print(f"{whl}\n{len(names)} files, pure Python")
-EOF
+"$PY" "$ROOT/scripts/check-public-wheel.py" "$WHEEL" --root "$ROOT"
 
 if [[ "$PYTHON_ONLY" = 0 ]]; then
     KDIST="${SNOWLLM_KERNELS_DIST:-$ROOT/../SnowLLM-Kernels/dist}"

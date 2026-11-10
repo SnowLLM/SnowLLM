@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('prepare_kernel_wheel', ROOT / 'scripts/prepare-kernel-wheel.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+spec = importlib.util.spec_from_file_location('check_public_wheel', ROOT / 'scripts/check-public-wheel.py')
+checker = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(checker)
 
 
 class KernelWheelSelectionTests(unittest.TestCase):
@@ -105,6 +108,7 @@ class PublicWheelInputTests(unittest.TestCase):
         (self.root / 'MANIFEST.in').write_text('recursive-include recipes *.json\n')
         (self.root / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/build-wheel.sh', self.root / 'scripts/build-wheel.sh')
+        shutil.copy2(ROOT / 'scripts/check-public-wheel.py', self.root / 'scripts/check-public-wheel.py')
         (self.root / 'README.md').write_text('# Test package\n')
         shutil.copy2(ROOT / 'CHANGELOG.md', self.root / 'CHANGELOG.md')
         (self.root / 'LICENSE').write_text('Test license\n')
@@ -167,11 +171,60 @@ class PublicWheelInputTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('uncommitted changes or untracked files', result.stderr)
 
+    def test_generated_root_metadata_is_not_a_wheel_input(self):
+        (self.root / '.git/info/exclude').write_text('*.egg-info/\n')
+        generated = self.root / 'snowllm.egg-info'
+        generated.mkdir()
+        (generated / 'PKG-INFO').write_text('not a release input\n')
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((generated / 'PKG-INFO').exists())
+
     def test_modified_recipe_blocks_build(self):
         (self.root / 'recipes/example.json').write_text('{"id": "changed", "repo": "a/b"}\n')
         result = self.build()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('uncommitted changes or untracked files', result.stderr)
+
+
+class PublicWheelContentTests(unittest.TestCase):
+    def check(self, entries):
+        with tempfile.TemporaryDirectory() as folder:
+            wheel = Path(folder) / 'snowllm-1.0.0-py3-none-any.whl'
+            with zipfile.ZipFile(wheel, 'w') as archive:
+                archive.writestr('snowllm-1.0.0.dist-info/METADATA',
+                                 'Name: snowllm\nVersion: 1.0.0\n')
+                archive.writestr('snowllm-1.0.0.dist-info/WHEEL',
+                                 'Root-Is-Purelib: true\nTag: py3-none-any\n')
+                for name, value in entries:
+                    archive.writestr(name, value)
+            return checker.check(wheel)
+
+    def test_accepts_public_python_and_bundled_recipe(self):
+        self.assertEqual(self.check([('snowllm/__init__.py', 'VALUE=1'),
+                                    ('snowllm/hub/bundle/model.json', '{}')]), 4)
+
+    def test_blocks_native_payloads_and_private_sources(self):
+        for name in ['snowllm/private.dll', 'snowllm/private.hsaco', 'snowllm/kernel.s',
+                     'snowllm/internal/experiment.py', 'source.tar.gz']:
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'unexpected'):
+                self.check([(name, b'payload')])
+
+    def test_credentials_are_reported_without_the_value(self):
+        secret = 'ghp_' + 'x' * 36
+        with self.assertRaisesRegex(ValueError, 'credential') as error:
+            self.check([('snowllm/__init__.py', secret)])
+        self.assertNotIn(secret, str(error.exception))
+
+    def test_rejects_personal_paths(self):
+        with self.assertRaisesRegex(ValueError, 'personal path'):
+            self.check([('snowllm/__init__.py', '/home/developer/project/file.py')])
+
+    def test_rejects_unsafe_and_duplicate_entries(self):
+        with self.assertRaisesRegex(ValueError, 'unsafe'):
+            self.check([('snowllm/../private.py', '')])
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            self.check([('snowllm/a.py', ''), ('snowllm/a.py', '')])
 
 
 class BundledRecipeWheelTests(unittest.TestCase):
