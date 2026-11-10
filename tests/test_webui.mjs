@@ -6,7 +6,6 @@ import test from 'node:test';
 import vm from 'node:vm';
 const source = await readFile(new URL('../snowllm/daemon/static/stream.js', import.meta.url), 'utf8');
 const { parseOptions, readEvents } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-
 test('required thinking cannot be switched off, including stale saved levels', async () => {
   const source = await readFile(new URL('../snowllm/daemon/static/thinking.js', import.meta.url), 'utf8');
   const { thinkingProfile, thinkingParameters } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
@@ -113,6 +112,7 @@ test('switching to bundled recipes completes while the server is pending and ign
     renderRecipeOptions() {}, renderRecipes() {}, recipeDescription() {}, renderLocal() {},
   });
   vm.runInContext(`let catalogLoading = false, catalogRequest = 0, bundleCatalog = false;
+    const loadCards = [];
     let status = {models_dir: '/models'}, recipes = [], localModels = [];
     ${refresh}`, context);
   const pending = vm.runInContext('refreshCatalog(false)', context);

@@ -82,7 +82,7 @@ If loading fails, check the logs, adjust the settings and try again.
 
 ## Loading multiple models {#loading-multiple-models}
 
-Load the models you plan to use together to reduce repeated initialization. Configure each model, choose **Add to load list**, then **Load all listed models**.
+Load the models you plan to use together to reduce repeated initialization. The form starts with one model card. Choose **+ Add model** for each additional model, configure each card independently, then choose **Load all models**. Any card can be removed while at least one remains. **Runtime** shows each loaded model's state, device, requests, memory and effective settings, with separate default-model and unload controls.
 
 Or specify multiple models in the terminal:
 

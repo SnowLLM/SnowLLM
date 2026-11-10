@@ -31,6 +31,7 @@ async def main():
             engine=dict(running=0, waiting=0),
             memory=dict(total=1024),
             scheduling=dict(wait_seconds=0),
+            runtime_config=dict(max_model_len=4096 if name == 'a' else 8192, kv_cache_dtype='bf16'),
         )
         for name in ('a', 'b')
     ]
@@ -53,9 +54,9 @@ async def main():
         if path == 'status':
             return manager.status()
         if path == 'recipes':
-            return {'recipes': []}
+            return {'recipes': [dict(id='example', model='Example', servable=True, loadable=True)]}
         if path == 'local-models':
-            return {'models': []}
+            return {'models': [dict(name='Local example', path='/models/local', bytes=1024, loadable=True, deletable=False)]}
         if path == 'directories':
             return {'path': temp.name, 'parent': '/tmp', 'directories': [], 'free_bytes': 100000}
         if path == 'logs':
@@ -82,6 +83,10 @@ async def main():
                         aliases=[item['id']],
                     )
                 )
+            return manager.status()
+        if path == 'models/unload':
+            sent.append(await request.json())
+            manager.models = [row for row in manager.models if row['id'] != sent[-1]['id']]
             return manager.status()
         if path == 'inference/chat/completions':
             body = await request.json()
@@ -146,35 +151,103 @@ async def main():
             assert 'NPU' in await page.locator('#execution-queues').inner_text()
             await page.locator('nav [data-page="settings"]').click()
             await page.select_option('#language', 'zh_CN')
-            assert '已加载模型' in await page.locator('.resident-panel').inner_text()
+            assert '模型状态' in await page.locator('.resident-panel').inner_text()
             await page.select_option('#language', 'en')
             await page.locator('nav [data-page="workspace"]').click()
-            await page.locator('[data-source="path"]').click()
-            await page.locator('#load-path').fill('/models/third')
-            await page.locator('#load-id').fill('third')
-            assert await page.locator('#load-target').input_value() == 'gpu'
-            await page.select_option('#load-target', 'npu')
-            assert await page.locator('#npu-load-hint').is_visible()
-            assert await page.locator('#gpu-budget').is_disabled()
+            cards = page.locator('.load-model-card')
+            assert await cards.count() == 1
+            assert not await cards.nth(0).locator('[data-field="remove-model"]').is_visible()
+            assert await page.locator('#load-button').inner_text() == 'Load model'
+            runtime = page.locator('.runtime-panel .resident-model')
+            assert await runtime.count() == 2
+            for index, context in enumerate(('4096', '8192')):
+                await runtime.nth(index).locator('summary').click()
+                assert context in await runtime.nth(index).locator('.effective-settings').inner_text()
+            await page.wait_for_timeout(2200)
+            assert await runtime.nth(0).locator('details').get_attribute('open') is not None
+            assert await runtime.nth(1).locator('details').get_attribute('open') is not None
+            first = cards.nth(0)
+            await first.locator('[data-source="path"]').click()
+            await first.locator('[data-field="load-path"]').fill('/models/third')
+            await first.locator('.advanced summary').click()
+            await first.locator('[data-field="load-id"]').fill('third')
+            assert await first.locator('[data-field="load-target"]').input_value() == 'gpu'
+            await first.locator('[data-field="load-target"]').select_option('npu')
+            assert await first.locator('[data-field="npu-load-hint"]').is_visible()
+            assert await first.locator('[data-field="gpu-budget"]').is_disabled()
             await page.locator('#load-button').click()
-            await page.wait_for_function(
-                "document.querySelectorAll('.resident-model').length === 3"
-            )
-            assert sent[0]['id'] == 'third' and sent[0]['model'] == '/models/third'
-            assert sent[0]['target'] == 'npu'
-            await page.select_option('#load-target', 'gpu')
-            await page.locator('#load-path').dispatch_event('change')
-            assert await page.locator('#load-target').input_value() == 'npu'
-            for model_id, target in (('fourth', 'gpu'), ('fifth', 'npu')):
-                await page.locator('#load-path').fill('/models/' + model_id)
-                await page.locator('#load-id').fill(model_id)
-                await page.select_option('#load-target', target)
-                await page.locator('#queue-load-model').click()
-            assert await page.locator('#pending-loads > div').count() == 2
-            await page.locator('#load-batch-button').click()
+            await page.wait_for_function("document.querySelectorAll('.resident-model').length === 3")
+            assert sent[0]['models'][0] == dict(id='third', model='/models/third', target='npu', options=[])
+            await first.locator('[data-field="load-target"]').select_option('gpu')
+            await first.locator('[data-field="load-path"]').dispatch_event('change')
+            assert await first.locator('[data-field="load-target"]').input_value() == 'npu'
+            await first.locator('[data-field="load-path"]').fill('/models/fourth')
+            await first.locator('[data-field="load-id"]').fill('fourth')
+            await first.locator('[data-field="load-target"]').select_option('gpu')
+            await first.locator('[data-field="context-length"]').fill('4096')
+            await first.locator('[data-field="extra-options"]').fill('--num-spec 2')
+            await page.locator('#add-load-model').click()
+            await page.locator('#add-load-model').click()
+            await page.locator('#add-load-model').click()
+            assert await cards.count() == 4
+            await cards.nth(1).locator('[data-field="remove-model"]').click()
+            assert await cards.count() == 3
+            assert await cards.nth(1).locator('[data-role="load-title"]').inner_text() == 'Model 2'
+            assert await first.locator('[data-field="context-length"]').input_value() == '4096'
+            second = cards.nth(1)
+            await page.locator('#load-button').click()
+            assert len(sent) == 1
+            assert 'Model 2:' in await page.locator('#toast').inner_text()
+            await second.locator('[data-source="path"]').click()
+            await second.locator('[data-field="browse-model"]').click()
+            await page.locator('#select-directory').click()
+            assert await second.locator('[data-field="load-path"]').input_value() == temp.name
+            assert await first.locator('[data-field="load-path"]').input_value() == '/models/fourth'
+            await second.locator('[data-field="load-path"]').fill('/models/fifth')
+            await second.locator('.advanced summary').click()
+            await second.locator('[data-field="load-id"]').fill('fifth')
+            await second.locator('[data-field="load-target"]').select_option('npu')
+            third = cards.nth(2)
+            await third.locator('[data-field="load-recipe"]').select_option('example')
+            await third.locator('.advanced summary').click()
+            await third.locator('[data-field="load-id"]').fill('sixth')
+            await second.locator('[data-field="load-id"]').fill('fourth')
+            await page.locator('#load-button').click()
+            assert len(sent) == 1
+            assert 'unique model ID' in await page.locator('#toast').inner_text()
+            await second.locator('[data-field="load-id"]').fill('fifth')
+            await page.locator('nav [data-page="settings"]').click()
+            await page.select_option('#language', 'zh_CN')
+            await page.locator('nav [data-page="workspace"]').click()
+            assert await page.locator('#add-load-model').inner_text() == '+ 添加模型'
+            assert await page.locator('#load-button').inner_text() == '加载全部模型'
+            assert await cards.nth(2).locator('[data-role="load-title"]').inner_text() == '模型 3'
+            assert await first.locator('[data-field="context-length"]').input_value() == '4096'
+            assert await second.locator('[data-field="load-target"]').input_value() == 'npu'
+            assert await third.locator('[data-field="load-recipe"]').input_value() == 'example'
+            await page.locator('#load-button').click()
+            await page.wait_for_function("document.querySelectorAll('.resident-model').length === 6")
+            assert [item['target'] for item in sent[1]['models']] == ['gpu', 'npu', 'gpu']
+            assert [item['id'] for item in sent[1]['models']] == ['fourth', 'fifth', 'sixth']
+            assert sent[1]['models'][0]['options'] == ['--max-model-len', '4096', '--num-spec', '2']
+            assert sent[1]['models'][1]['options'] == []
+            assert sent[1]['models'][2]['model'] == 'example'
+            sixth = page.locator('.resident-model[data-model-id="sixth"]')
+            await sixth.locator('button').filter(has_text='卸载模型').click()
             await page.wait_for_function("document.querySelectorAll('.resident-model').length === 5")
-            assert [item['target'] for item in sent[1]['models']] == ['gpu', 'npu']
-            assert await page.locator('#load-batch-button').is_disabled()
+            assert sent[2] == dict(id='sixth', force=False)
+            assert await page.locator('.resident-model[data-model-id="a"]').count() == 1
+            await page.locator('nav [data-page="settings"]').click()
+            await page.select_option('#language', 'en')
+            await page.locator('nav [data-page="workspace"]').click()
+            await cards.nth(0).locator('[data-field="remove-model"]').click()
+            assert await cards.count() == 2
+            assert await cards.nth(0).locator('[data-field="load-id"]').input_value() == 'fifth'
+            await cards.nth(0).locator('[data-field="remove-model"]').click()
+            assert await cards.count() == 1
+            assert await cards.nth(0).locator('[data-field="load-id"]').input_value() == 'sixth'
+            assert not await cards.nth(0).locator('[data-field="remove-model"]').is_visible()
+            assert await page.locator('#load-button').inner_text() == 'Load model'
             await page.locator('nav [data-page="chat"]').click()
             await page.select_option('#chat-model', 'a')
             await page.locator('#chat-input').fill('first')
@@ -198,10 +271,31 @@ async def main():
             )
             await page.locator('nav [data-page="workspace"]').click()
             await page.screenshot(path='/tmp/snowllm-multimodel-ui.png', full_page=True)
+            await page.set_viewport_size({'width': 390, 'height': 844})
+            await page.screenshot(path='/tmp/snowllm-multimodel-ui-mobile.png', full_page=True)
+            assert await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert await page.locator('.runtime-panel .resident-model').count() == 5
+            manager.models.extend([
+                dict(id='missing-draft', source='/models/missing-draft', target='gpu',
+                     state='failed', error='draft weights are missing'),
+                dict(id='not-started', source='/models/later', target='gpu', state='skipped',
+                     blocked_by='missing-draft', error='batch stopped'),
+            ])
+            await page.locator('nav [data-page="settings"]').click()
+            await page.select_option('#language', 'zh_CN')
+            await page.locator('nav [data-page="workspace"]').click()
+            await page.locator('#refresh-state').click()
+            await page.wait_for_function("document.querySelectorAll('.resident-model').length === 7")
+            assert '已就绪 5 / 共 7' == await page.locator('#runtime-model-count').inner_text()
+            skipped = page.locator('.resident-model[data-model-id="not-started"]')
+            assert await skipped.locator('.pill').inner_text() == '未尝试'
+            assert 'missing-draft' in await skipped.locator('.message-error').inner_text()
+            assert '加载已停止' in await skipped.locator('.message-error').inner_text()
+            assert '移除' in await skipped.inner_text()
             assert not errors, errors
             assert [row['model'] for row in sent if 'messages' in row] == ['a', 'b']
             print(
-                'PASS: browser load, Chinese labels, model selection, two background sessions, targeted stop and persistence; no JavaScript errors'
+                'PASS: dynamic model cards, independent settings, batch load, per-model runtime, targeted unload, Chinese labels and background chats; no JavaScript errors'
             )
             await browser.close()
     finally:
