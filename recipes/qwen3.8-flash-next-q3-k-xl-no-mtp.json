@@ -7,14 +7,14 @@
   "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
   "bytes": 90893897543,
   "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
-  "revision": "main",
+  "revision": "766911a6b7369840a91dbcd95f9f997acaab6cd6",
   "include": [
     "UD-Q3_K_XL/*.gguf",
     "mmproj-BF16.gguf"
   ],
   "spec": "none",
   "summary": "Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
-  "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter.",
+  "note": "Shares target weights with the MTP recipe. Does not download the separate MTP head or an external drafter. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases.",
   "defaults": {
     "num_spec": 0,
     "max_num_seqs": 4,
@@ -27,7 +27,8 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
     }
   ],
   "priority": 89,

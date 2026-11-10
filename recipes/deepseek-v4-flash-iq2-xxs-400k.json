@@ -9,14 +9,14 @@
   "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
   "bytes": 101756794368,
   "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
-  "revision": "main",
+  "revision": "fbbb5b93fb787c21338159b0af3318bb3f4d9768",
   "include": [
     "UD-IQ2_XXS/*.gguf"
   ],
   "sources": [
     {
       "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
-      "revision": "main",
+      "revision": "fbbb5b93fb787c21338159b0af3318bb3f4d9768",
       "include": [
         "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf"
       ]

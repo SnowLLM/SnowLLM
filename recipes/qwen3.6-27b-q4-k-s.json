@@ -6,7 +6,7 @@
   "precision": "Q4_K_S",
   "dir": "Qwen3.6-27B-Q4_K_S",
   "repo": "unsloth/Qwen3.6-27B-MTP-GGUF",
-  "revision": "main",
+  "revision": "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace",
   "include": [
     "Qwen3.6-27B-Q4_K_S.gguf",
     "mmproj-BF16.gguf"
@@ -17,7 +17,8 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "8f33b98937c6031bb49e713dee3e8e185aafd26f"
     }
   ],
   "spec": "MTP k=2",

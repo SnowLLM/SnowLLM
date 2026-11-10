@@ -7,7 +7,7 @@
   "dir": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
   "bytes": 23263279559,
   "repo": "unsloth/Qwen3.6-35B-A3B-GGUF",
-  "revision": "main",
+  "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
   "include": [
     "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
     "mmproj-BF16.gguf"
@@ -18,7 +18,8 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "345d467b117d1fd5eda9b879a5988de9ae5f47a7"
     }
   ],
   "spec": "none",

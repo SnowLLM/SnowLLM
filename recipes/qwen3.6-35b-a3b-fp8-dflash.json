@@ -7,7 +7,7 @@
   "dir": "Qwen3.6-35B-A3B-FP8-DFlash",
   "bytes": 38264834994,
   "repo": "Qwen/Qwen3.6-35B-A3B-FP8",
-  "revision": "main",
+  "revision": "c653bba46dfa06e9658dcc0b0dc87fe4685f14a2",
   "include": [
     "*"
   ],
@@ -17,7 +17,7 @@
   "sources": [
     {
       "repo": "z-lab/Qwen3.6-35B-A3B-DFlash",
-      "revision": "main",
+      "revision": "f181eece646affea2c38b2765f1aaa01a9734ccd",
       "subdir": "dflash",
       "include": [
         "config.json",

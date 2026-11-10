@@ -6,14 +6,14 @@
   "precision": "UD-Q3_K_XL",
   "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL",
   "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
-  "revision": "main",
+  "revision": "766911a6b7369840a91dbcd95f9f997acaab6cd6",
   "include": [
     "UD-Q3_K_XL/*.gguf",
     "mmproj-BF16.gguf"
   ],
   "spec": "DFlash2",
   "summary": "Qwen3.8-Flash-Next in UD-Q3_K_XL with an external DFlash 2 drafter.",
-  "note": "Shares target weights with the MTP recipe. The BF16 DFlash 2 drafter is an additional download.",
+  "note": "Shares target weights with the MTP recipe. The BF16 DFlash 2 drafter is an additional download. Pinned to the pre-Dynamic-v3.1 weights for compatibility with existing SnowLLM releases.",
   "defaults": {
     "dflash": "@model/dflash2",
     "dflash_block": 4,
@@ -27,7 +27,8 @@
       "include": [
         "preprocessor_config.json",
         "video_preprocessor_config.json"
-      ]
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
     },
     {
       "repo": "incoai/Qwen3.8-Flash-Next-DFlash2",
@@ -35,7 +36,8 @@
         "config.json",
         "model.safetensors"
       ],
-      "subdir": "dflash2"
+      "subdir": "dflash2",
+      "revision": "a22a1744e85c17364dcc54a6a420af7135d4c7f6"
     }
   ],
   "priority": 80,
