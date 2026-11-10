@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
+import json
+import os
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from ..targets import Target
@@ -11,6 +13,7 @@ class LoadModel(BaseModel):
     options: list[str] = Field(default_factory=list)
     id: str | None = Field(default=None, min_length=1, max_length=256)
     models_dir: str | None = None
+    models_dirs: list[str] | None = Field(None, min_length=1)
     recipes_url: str | None = None
     target: Target | None = None
 
@@ -23,7 +26,17 @@ class SelectModel(BaseModel):
 
 class BatchLoad(LoadBatch):
     models_dir: str | None = None
+    models_dirs: list[str] | None = Field(None, min_length=1)
     recipes_url: str | None = None
+
+
+def model_sources(body):
+    sources = {'SNOWLLM_MODELS': body.models_dir, 'SNOWLLM_RECIPES_URL': body.recipes_url}
+    if body.models_dirs is not None:
+        sources['SNOWLLM_MODEL_DIRS'] = json.dumps(body.models_dirs)
+    elif body.models_dir is not None and os.environ.get('SNOWLLM_MODEL_DIRS'):
+        sources['SNOWLLM_MODEL_DIRS'] = None
+    return sources
 
 
 def configure(app, registry):
@@ -41,10 +54,7 @@ def configure(app, registry):
                 body.options,
                 body.id,
                 target=body.target,
-                sources={
-                    'SNOWLLM_MODELS': body.models_dir,
-                    'SNOWLLM_RECIPES_URL': body.recipes_url,
-                },
+                sources=model_sources(body),
             )
         except (ValueError, RuntimeError, MemoryError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -59,8 +69,8 @@ def configure(app, registry):
     @app.post('/worker/load-many')
     async def load_many(body: BatchLoad):
         try:
-            return await registry.load_many([item.model_dump() for item in body.models], sources={
-                'SNOWLLM_MODELS': body.models_dir, 'SNOWLLM_RECIPES_URL': body.recipes_url})
+            return await registry.load_many([item.model_dump() for item in body.models],
+                                            sources=model_sources(body))
         except (ValueError, RuntimeError, MemoryError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc
 

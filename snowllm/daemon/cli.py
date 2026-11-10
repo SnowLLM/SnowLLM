@@ -22,7 +22,10 @@ def parser():
     daemon.add_argument("--admin-port", type=int, default=8001, help="Web UI and management port")
     daemon.add_argument("--config", type=Path,
                         default=default_config_path(), help="JSON configuration file")
-    daemon.add_argument("--models-dir")
+    storage = daemon.add_mutually_exclusive_group()
+    storage.add_argument("--models-dir")
+    storage.add_argument('--models-dirs', nargs='+', metavar='DIR',
+                         help='ordered model roots; downloads use the first')
     daemon.add_argument("--load-timeout", type=float, default=600)
     daemon.add_argument("--no-browser", action="store_true",
                         help="do not open the Web UI in a browser")
@@ -60,7 +63,9 @@ def arguments(p, name):
     elif name == "logs":
         p.add_argument("--download", action="store_true")
     elif name == "config":
-        p.add_argument("--models-dir")
+        storage = p.add_mutually_exclusive_group()
+        storage.add_argument("--models-dir")
+        storage.add_argument('--models-dirs', nargs='+', metavar='DIR')
         p.add_argument("--recipes-url", help="catalogue URL or local JSON file; empty resets the default")
         p.add_argument("--library-path", help="development kernel library file; empty uses bundled kernels")
     elif name == "pull":
@@ -103,7 +108,7 @@ def main(argv):
         from .server import serve
         from .manager import DaemonManager
         try:
-            manager = DaemonManager(a.config, a.load_timeout, a.models_dir)
+            manager = DaemonManager(a.config, a.load_timeout, a.models_dirs or a.models_dir)
         except (OSError, ValueError) as exc:
             print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
@@ -160,10 +165,10 @@ def main(argv):
     elif action == "default":
         method, endpoint, payload = "POST", 'models/default', dict(id=a.id)
     elif action == "config":
-        method, payload = "PUT", {key: getattr(a, key) for key in ("models_dir", "recipes_url", "library_path")
+        method, payload = "PUT", {key: getattr(a, key) for key in ("models_dir", "models_dirs", "recipes_url", "library_path")
                                   if getattr(a, key) is not None}
         if not payload:
-            p.error("config requires --models-dir, --recipes-url, or --library-path")
+            p.error("config requires --models-dir, --models-dirs, --recipes-url, or --library-path")
     elif action == "pull":
         method, payload = "POST", dict(recipe=a.recipe)
     elif action == "logs":

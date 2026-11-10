@@ -3,6 +3,7 @@
 
 import argparse
 import fnmatch
+import glob
 import hashlib
 import http.client
 import json
@@ -18,7 +19,7 @@ from collections.abc import Callable
 from typing import TextIO
 
 from .. import term
-from ..config import models_directory, recipes_source
+from ..config import models_directory, models_directories, recipes_source
 from ..errors import SnowLLMError
 from .._version import __version__
 from ..defaults import DEFAULT_CONTEXT_TARGET, DEFAULT_MAX_NUM_SEQS
@@ -53,6 +54,16 @@ def endpoint() -> str:
 def models_root() -> pathlib.Path:
     try:
         return models_directory()[0]
+    except (OSError, ValueError) as exc:
+        raise SnowLLMError(str(exc)) from exc
+
+
+def models_roots(root=None) -> list[pathlib.Path]:
+    if root is not None:
+        values = [root] if isinstance(root, (str, os.PathLike)) else root
+        return [pathlib.Path(value).expanduser() for value in values]
+    try:
+        return models_directories()[0]
     except (OSError, ValueError) as exc:
         raise SnowLLMError(str(exc)) from exc
 
@@ -205,16 +216,17 @@ def cached_at(url: str) -> pathlib.Path:
 
 
 def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
-    out = []
-    for d in sorted((root or models_root()).glob("*")):
-        try:
-            raw = json.loads((d / MANIFEST).read_text())
-        except (OSError, ValueError):
-            continue
-        try:
-            out.append(Recipe({**raw, "dir": d.name}))
-        except SnowLLMError:
-            continue
+    out, seen = [], set()
+    for directory in models_roots(root):
+        for d in sorted(directory.glob("*")):
+            try:
+                raw = json.loads((d / MANIFEST).read_text())
+                recipe = Recipe({**raw, "dir": d.name})
+            except (OSError, ValueError, SnowLLMError):
+                continue
+            if recipe.id not in seen:
+                out.append(recipe)
+                seen.add(recipe.id)
     return out
 
 
@@ -465,7 +477,14 @@ def unfetched(recipe: Recipe, dest: pathlib.Path) -> list[Source]:
     if not dest.is_dir():
         return list(recipe.sources)
     here = [p.relative_to(dest).as_posix() for p in _on_disk_files(dest)]
-    return [s for s in recipe.sources if not any(_wanted(p, s) for p in here)]
+    missing = []
+    for source in recipe.sources:
+        required = [name for name in source.include if not glob.has_magic(name)
+                    and _keep(name, source.include, source.exclude)]
+        prefix = source.subdir.strip('/') + '/' if source.subdir else ''
+        if not any(_wanted(path, source) for path in here) or any(prefix + name not in here for name in required):
+            missing.append(source)
+    return missing
 
 
 def fetched_bytes(recipe: Recipe, dest: pathlib.Path) -> int:
@@ -479,14 +498,32 @@ def shortfall(recipe: Recipe, dest: pathlib.Path) -> int:
     return max(0, recipe.bytes - fetched_bytes(recipe, dest))
 
 
-def loadable(path: pathlib.Path) -> bool:
-    return path.is_dir() and ((path / "config.json").exists() or any(path.glob("*.gguf"))
-                              or any(path.glob("*.gguf.part*-of-*")))
+def loadable(path: pathlib.Path, recipe: Recipe | None = None) -> bool:
+    weights = path.is_dir() and ((path / "config.json").exists() or any(path.glob("*.gguf"))
+                                or any(path.glob("*.gguf.part*-of-*")))
+    if not weights or recipe is None:
+        return weights
+    if unfetched(recipe, path):
+        return False
+    saved = manifest(recipe, path)
+    if saved and saved.get('source_digest') == source_digest(recipe):
+        return complete(recipe, path)
+    return all(under(path, entry['path']).is_file() and under(path, entry['path']).stat().st_size == entry['size']
+               for entry in recipe.files)
 
 
 def installed(recipe: Recipe, root: pathlib.Path) -> pathlib.Path | None:
-    here = recipe.path(root)
-    return here if loadable(here) or _on_disk_files(here) else None
+    fallback = None
+    for directory in models_roots(root):
+        here = recipe.path(directory)
+        if not (loadable(here) or _on_disk_files(here)):
+            continue
+        if fallback is None:
+            fallback = here
+        if complete(recipe, here) or (not unfetched(recipe, here)
+                                      and not any(here.rglob('*' + PART_SUFFIX))):
+            return here
+    return fallback
 
 
 def _tokens(n: int) -> str:
@@ -502,14 +539,17 @@ NOT_DOWNLOADED = "not downloaded"
 
 
 def _on_disk(recipe: Recipe, root: pathlib.Path) -> str:
-    here = recipe.path(root)
-    if not _on_disk_files(here):
+    here = installed(recipe, root)
+    if here is None:
         return NOT_DOWNLOADED
     return INCOMPLETE if unfetched(recipe, here) else DOWNLOADED
 
 
 def _where(recipe: Recipe, root: pathlib.Path) -> str:
-    return recipe.dir if _on_disk(recipe, root) != NOT_DOWNLOADED else ""
+    here = installed(recipe, root)
+    if here is None:
+        return ''
+    return str(here) if len(models_roots(root)) > 1 else recipe.dir
 
 
 DISK_COLOUR = {DOWNLOADED: term.GREEN, NOT_DOWNLOADED: term.DIM}
@@ -537,7 +577,9 @@ def _paint_row(row: tuple[str, ...], recommended: set[str], out: TextIO) -> tupl
 
 
 def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout) -> None:
-    print(term.paint(f"Models root: {root}", term.DIM, stream=stream), file=stream)
+    directories = models_roots(root)
+    label = str(directories[0]) if len(directories) == 1 else '; '.join(map(str, directories))
+    print(term.paint(f"Models root: {label}", term.DIM, stream=stream), file=stream)
     book = sorted(recipes, key=lambda r: (-r.priority, r.id))
     by_id = {r.id: r for r in book}
     picks = []
@@ -597,8 +639,11 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
                         f"{CATALOGUE_TTL / 60:.0f} minutes")
     p.add_argument("--bundle", action="store_true",
                    help="use recipes bundled with this wheel instead of fetching the catalogue")
-    p.add_argument("--models-dir", metavar="DIR", default=None,
+    storage = p.add_mutually_exclusive_group()
+    storage.add_argument("--models-dir", metavar="DIR", default=None,
                    help="where checkpoints live (otherwise $SNOWLLM_MODELS, JSON config, or ~/models)")
+    storage.add_argument('--models-dirs', nargs='+', metavar='DIR',
+                         help='ordered model roots; downloads use the first, reads search all')
     if cmd == "recipes":
         p.add_argument("--json", action="store_true", help="print the catalogue as JSON")
         return p
@@ -626,7 +671,8 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
 def main(cmd: str, argv: list[str]) -> int:
     a = _parser(cmd).parse_args(argv)
     try:
-        root = pathlib.Path(a.models_dir).expanduser() if a.models_dir else models_root()
+        roots = models_roots(a.models_dirs or a.models_dir)
+        root = roots[0]
         name = getattr(a, "recipe", None)
         bundle = a.bundle or bool(name and name.startswith("b/"))
         recipes = catalogue(a.catalogue, a.refresh, bundle=bundle)
@@ -637,10 +683,10 @@ def main(cmd: str, argv: list[str]) -> int:
                 json.dump([r.raw for r in recipes], sys.stdout, indent=2)
                 print()
             else:
-                show(recipes, root)
+                show(recipes, roots)
             return 0
 
-        recipe = find(name, recipes) if name else choose(recipes, root)
+        recipe = find(name, recipes) if name else choose(recipes, roots)
         dest = pathlib.Path(a.dir).expanduser() if a.dir else recipe.path(root)
         if not recipe.servable and not a.dry_run:
             print(f"{term.stamp()} {why(recipe)}\n{term.stamp()} the weights download either way.",
@@ -675,14 +721,16 @@ def locate(name: str, *, bundle: bool = False) -> tuple[pathlib.Path, "Recipe | 
     if os.sep in name or name.startswith("~"):
         raise SnowLLMError(f"no checkpoint directory at {here}")
 
-    root = models_root()
+    roots = models_roots()
+    root = roots[0]
     recipe = find(name, catalogue(bundle=bundle))
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
-    dest = installed(recipe, root)
+    dest = installed(recipe, roots)
     if recipe.runtime == 'mineru':
-        dest = recipe.path(root)
+        dest = dest or recipe.path(root)
         if not complete(recipe, dest):
+            dest = recipe.path(root)
             pull(recipe, dest)
         return dest, recipe
     if dest is not None:

@@ -21,6 +21,26 @@ Windows keeps an existing `~/.config/snowllm/config.json` until the new-location
 
 Relative paths resolve against the configuration directory. UTF-8 paths and a UTF-8 BOM are supported.
 
+## Multiple model directories
+
+The existing `models_dir` string still selects one directory. Add an ordered list to search several locations:
+
+```json
+{
+  "models_dir": "D:/Models",
+  "models_dirs": ["D:/Models", "E:/ModelArchive"]
+}
+```
+
+Downloads use the first directory; discovery and loading search all directories in order. An incomplete
+copy does not hide a usable copy elsewhere. Only the first directory needs write access; existing models
+are not moved. Web UI Settings accepts one directory per line. Browse changes the first directory;
+Add directory appends a location.
+
+Saving a list also writes its first entry to `models_dir` for older clients. Saving only `models_dir`
+replaces the list with a single directory. `snowllm pull --dir PATH` keeps its existing behavior: it
+downloads directly into that checkpoint directory, overriding the list.
+
 ## Recipe catalogue compatibility
 
 | SnowLLM version | Default catalogue |
@@ -38,11 +58,11 @@ Highest priority first:
 
 | Setting | Precedence |
 | --- | --- |
-| Model root | `--models-dir` → `SNOWLLM_MODELS` → JSON `models_dir` → `~/models` |
+| Model roots | `--models-dir` / `--models-dirs` → `SNOWLLM_MODEL_DIRS` → `SNOWLLM_MODELS` → JSON `models_dirs` → JSON `models_dir` → `~/models` |
 | Catalogue | `--catalogue` → `SNOWLLM_RECIPES_URL` → JSON `recipes_url` → built-in URL |
 | Kernel library | `SNOWLLM_LIB` → JSON `library_path` → installed `snowllm-kernels` |
 
-`--models-dir` is available on `webui`, `pull` and `recipes`; `--catalogue` is available on standalone `pull`, `recipes` and `pi`. Direct serving reads the environment and JSON settings.
+`--models-dir` and `--models-dirs` are available on `webui`, `pull` and `recipes` and are mutually exclusive. Put the recipe ID before `--models-dirs` when using `pull`. `--catalogue` is available on standalone `pull`, `recipes` and `pi`. Direct serving reads environment and JSON settings.
 
 ## Save settings
 
@@ -50,6 +70,7 @@ Use Web UI Settings or, with the daemon running:
 
 ```sh
 snowllm webui config --models-dir ~/models
+snowllm webui config --models-dirs ~/models /mnt/model-archive
 snowllm webui config --recipes-url https://example.com/recipes.json
 snowllm webui config --library-path /path/to/build/lib/libsnowllm.so
 snowllm webui config --library-path ""
@@ -63,6 +84,7 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | --- | --- |
 | `SNOWLLM_CONFIG` | Configuration file. |
 | `SNOWLLM_MODELS` | Model root. |
+| `SNOWLLM_MODEL_DIRS` | Ordered JSON array, for example `'["/models/fast", "/models/archive"]'`. The legacy `SNOWLLM_MODELS` value remains one path. |
 | `SNOWLLM_RECIPES_URL` | Catalogue URL or local JSON file. |
 | `SNOWLLM_LIB` | Kernel library override. |
 | `SNOWLLM_NO_UPDATE_CHECK` | Set to `1` to disable startup update checks. |

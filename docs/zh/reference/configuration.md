@@ -21,6 +21,24 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 
 相对路径基于配置文件所在目录解析。支持 UTF-8 路径和 UTF-8 BOM。
 
+## 多个模型目录 {#multiple-model-directories}
+
+原来的 `models_dir` 字符串继续适用。需要多个目录时，增加有序列表：
+
+```json
+{
+  "models_dir": "D:/Models",
+  "models_dirs": ["D:/Models", "E:/ModelArchive"]
+}
+```
+
+下载默认写入第一个目录，模型发现与加载依次查找全部目录；前面的不完整副本不会遮住其它目录中可用的模型。
+仅第一个目录需要写权限，其余目录可以只读，已有模型不会移动。Web UI 每行填写一个目录，
+“浏览”修改第一个目录，“添加目录”追加位置。
+
+保存多目录设置时，也会将首项写入 `models_dir`，便于旧客户端继续使用首目录。
+通过旧接口单独保存 `models_dir` 时恢复为单目录。`snowllm pull --dir PATH` 仍直接下载到指定模型目录，优先于目录列表。
+
 ## Recipe 目录兼容性 {#recipe-catalogue-compatibility}
 
 | SnowLLM 版本 | 默认目录 |
@@ -38,11 +56,11 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 
 | 设置 | 优先级 |
 | --- | --- |
-| 模型根目录 | `--models-dir` → `SNOWLLM_MODELS` → JSON `models_dir` → `~/models` |
+| 模型根目录 | `--models-dir` / `--models-dirs` → `SNOWLLM_MODEL_DIRS` → `SNOWLLM_MODELS` → JSON `models_dirs` → JSON `models_dir` → `~/models` |
 | 方案目录 | `--catalogue` → `SNOWLLM_RECIPES_URL` → JSON `recipes_url` → 内置 URL |
 | 内核库 | `SNOWLLM_LIB` → JSON `library_path` → 已安装的 `snowllm-kernels` |
 
-`webui`、`pull` 和 `recipes` 支持 `--models-dir`；独立运行的 `pull`、`recipes` 和 `pi` 支持 `--catalogue`。直接推理服务读取环境变量和 JSON 设置。
+`webui`、`pull` 和 `recipes` 支持互斥的 `--models-dir` 与 `--models-dirs`；使用 `pull` 时将配方 ID 放在 `--models-dirs` 之前。独立运行的 `pull`、`recipes` 和 `pi` 支持 `--catalogue`。直接推理服务读取环境变量和 JSON 设置。
 
 ## 保存设置 {#save-settings}
 
@@ -50,6 +68,7 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 
 ```sh
 snowllm webui config --models-dir ~/models
+snowllm webui config --models-dirs ~/models /mnt/model-archive
 snowllm webui config --recipes-url https://example.com/recipes.json
 snowllm webui config --library-path /path/to/build/lib/libsnowllm.so
 snowllm webui config --library-path ""
@@ -63,6 +82,7 @@ snowllm webui config --library-path ""
 | --- | --- |
 | `SNOWLLM_CONFIG` | 配置文件。 |
 | `SNOWLLM_MODELS` | 模型根目录。 |
+| `SNOWLLM_MODEL_DIRS` | 有序 JSON 数组，例如 `'["/models/fast", "/models/archive"]'`。旧变量 `SNOWLLM_MODELS` 仍表示单个路径。 |
 | `SNOWLLM_RECIPES_URL` | 方案目录 URL 或本地 JSON 文件。 |
 | `SNOWLLM_LIB` | 覆盖内核库。 |
 | `SNOWLLM_NO_UPDATE_CHECK` | 设为 `1`，关闭启动更新检查。 |

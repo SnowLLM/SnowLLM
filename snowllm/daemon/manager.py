@@ -16,12 +16,14 @@ import httpx
 from ..updates import Update
 from ..errors import is_capacity_error
 from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
-from ..config import (models_directory, read_config, write_config, recipes_source,
+from ..config import (models_directory, models_directories, normalize_model_directories,
+                      read_config, write_config, recipes_source,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
 
 
 class DaemonManager:
-    def __init__(self, config: Path, load_timeout: float = 600, models_dir: str | None = None):
+    def __init__(self, config: Path, load_timeout: float = 600,
+                 models_dir: str | list[str] | None = None):
         self.config_path = config.expanduser().resolve()
         self.config = read_config(self.config_path)
         if not self.config_path.exists():
@@ -31,7 +33,7 @@ class DaemonManager:
             write_config(self.config_path, self.config)
         self.load_timeout = load_timeout
         self.inference_url = "http://127.0.0.1:8000"
-        self.models_override = str(Path(models_dir).expanduser().resolve()) if models_dir else None
+        self.models_override = models_dir
         self.process = None
         self.download = None
         self.download_recipe = None
@@ -87,8 +89,13 @@ class DaemonManager:
     def models_dir(self):
         return str(models_directory(self.config_path, self.config, self.models_override)[0])
 
+    @property
+    def models_dirs(self):
+        return list(map(str, models_directories(self.config_path, self.config, self.models_override)[0]))
+
     def status(self):
-        directory, source = models_directory(self.config_path, self.config, self.models_override)
+        directories, source = models_directories(self.config_path, self.config, self.models_override)
+        directory = directories[0]
         if self.process and self.process.poll() is not None and self.state == "ready":
             self.state = "failed"
             self.error = self.worker_error()
@@ -105,8 +112,10 @@ class DaemonManager:
                     error_kind="capacity" if self.error and is_capacity_error(self.error) else None,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
+                    models_dirs=list(map(str, directories)),
                     config_file=str(self.config_path),
                     saved_models_dir=self.config.get("models_dir"),
+                    saved_models_dirs=self.config.get('models_dirs'),
                     models_dir_source=source,
                     recipes_url=recipe_url, recipes_url_source=recipe_source,
                     saved_recipes_url=self.config.get("recipes_url"),
@@ -119,18 +128,28 @@ class DaemonManager:
 
     def configure(self, directory=None, **settings):
         updated = dict(self.config)
-        if directory is not None:
-            if not directory.strip():
-                raise ValueError("model directory must not be empty")
-            path = Path(directory).expanduser()
-            if not path.is_absolute():
-                path = self.config_path.parent / path
-            path = path.resolve()
+        directories = settings.pop('models_dirs', None)
+        if directories is not None or directory is not None:
+            if directories is not None and not isinstance(directories, list):
+                raise ValueError('models_dirs must be a list of paths')
+            paths = normalize_model_directories(directories if directories is not None else directory,
+                                                self.config_path.parent)
+            if directories is not None and directory is not None and normalize_model_directories(
+                    directory, self.config_path.parent)[0] != paths[0]:
+                raise ValueError('models_dir must match the first models_dirs entry')
+            for path in paths:
+                if path.exists() and not path.is_dir():
+                    raise ValueError(f'model directory is not a directory: {path}')
+            path = paths[0]
             path.mkdir(parents=True, exist_ok=True)
             import tempfile
             with tempfile.TemporaryFile(dir=path):
                 pass
             updated["models_dir"] = str(path)
+            if directories is None:
+                updated.pop('models_dirs', None)
+            else:
+                updated['models_dirs'] = list(map(str, paths))
         for key, value in settings.items():
             if key == "library_path" and self.backend and value != self.config.get(key):
                 raise ValueError("unload all models before changing the kernel library")
@@ -177,6 +196,7 @@ class DaemonManager:
         env = os.environ.copy()
         env["SNOWLLM_CONFIG"] = str(self.config_path)
         env["SNOWLLM_MODELS"] = self.models_dir
+        env['SNOWLLM_MODEL_DIRS'] = json.dumps(self.models_dirs)
         env["SNOWLLM_RECIPES_URL"] = recipes_source(self.config_path, self.config)[0]
         # Only the supervisor sends telemetry; workers expose local counters.
         env["SNOWLLM_TELEMETRY_CHILD"] = "1"
@@ -375,7 +395,8 @@ class DaemonManager:
         self.last_load = dict(model=model, options=list(options), id=model_id, target=target)
         return await self.model_operation('load', dict(model=model, options=options, id=model_id,
                                                      target=target,
-                                                     models_dir=self.models_dir, recipes_url=recipes_source(self.config_path, self.config)[0]))
+                                                     models_dir=self.models_dir, models_dirs=self.models_dirs,
+                                                     recipes_url=recipes_source(self.config_path, self.config)[0]))
 
     async def add_models(self, models):
         from ..loading import LoadBatch
@@ -391,6 +412,7 @@ class DaemonManager:
             return await self.add_model(item['model'], item['options'], item['id'], target=item['target'])
         self.last_load = dict(models=entries)
         return await self.model_operation('load', dict(models=entries, models_dir=self.models_dir,
+            models_dirs=self.models_dirs,
             recipes_url=recipes_source(self.config_path, self.config)[0]))
 
     def _advise_batch_load(self):
@@ -577,9 +599,10 @@ class DaemonManager:
                 raise ValueError("wait for the model transition to finish")
             if self.download and self.download.poll() is None:
                 raise ValueError("stop the download before deleting models")
-            root = Path(self.models_dir).resolve()
+            roots = [Path(value).resolve() for value in self.models_dirs]
+            root = roots[0]
             target = Path(path).expanduser().absolute()
-            if target.is_symlink() or target.resolve().parent != root or target.resolve() == root:
+            if target.is_symlink() or target.resolve().parent not in roots or target.resolve() in roots:
                 raise ValueError("only model directories directly inside model storage can be deleted; symlinks are excluded")
             target = target.resolve()
             if self.config_path == target or target in self.config_path.parents:
@@ -601,7 +624,7 @@ class DaemonManager:
                         match = next((r for r in recipes.catalogue(url=self.status()["recipes_url"],
                             bundle=self.model.startswith("b/")) if r.ref == self.model), None)
                         if match:
-                            active = str(match.path(root))
+                            active = str(recipes.installed(match, roots) or match.path(root))
                     except Exception:
                         raise ValueError("cannot verify the active model path; unload the model first")
                 active_path = Path(active).resolve()

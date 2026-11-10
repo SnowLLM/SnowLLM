@@ -58,7 +58,7 @@ class BundledRecipeTests(unittest.TestCase):
             root = Path(folder)
             entry.path(root).mkdir()
             (entry.path(root) / 'config.json').write_text('{}')
-            with patch.object(recipes, 'models_root', return_value=root), \
+            with patch.object(recipes, 'models_roots', return_value=[root]), \
                  patch.object(recipes, '_fetch_json', side_effect=AssertionError('network')):
                 for name, bundle in ((entry.ref, False), (entry.id, True)):
                     dest, selected = recipes.locate(name, bundle=bundle)
@@ -69,7 +69,7 @@ class BundledRecipeTests(unittest.TestCase):
     def test_missing_bundle_checkpoint_suggests_a_bundle_pull(self):
         entry = next(r for r in recipes.catalogue(bundle=True) if r.servable)
         with tempfile.TemporaryDirectory() as root, \
-             patch.object(recipes, 'models_root', return_value=Path(root)), \
+             patch.object(recipes, 'models_roots', return_value=[Path(root)]), \
              self.assertRaisesRegex(SnowLLMError, f'snowllm pull {entry.ref}'):
             recipes.locate(entry.ref)
 

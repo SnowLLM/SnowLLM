@@ -39,6 +39,7 @@ class SelectModel(BaseModel):
 class Directory(BaseModel):
     model_config = ConfigDict(extra="forbid")
     models_dir: str | None = Field(None, min_length=1)
+    models_dirs: list[str] | None = Field(None, min_length=1)
     recipes_url: str | None = None
     library_path: str | None = None
 
@@ -102,13 +103,14 @@ def create_app(manager: DaemonManager):
         from ..errors import SnowLLMError
 
         def inventory():
-            root = Path(manager.models_dir)
+            roots = [Path(value) for value in getattr(manager, 'models_dirs', [manager.models_dir])]
             rows = []
             for recipe in recipes.catalogue(url=manager.status()["recipes_url"], refresh=refresh, bundle=bundle):
-                path = recipe.path(root)
+                path = recipes.installed(recipe, roots) or recipe.path(roots[0])
                 rows.append({**recipe.raw, "id": recipe.ref, "path": str(path), "servable": recipe.servable,
-                             "loadable": recipes.loadable(path),
-                             "downloaded": (path / recipes.MANIFEST).is_file(),
+                             "download_path": str(recipe.path(roots[0])),
+                             "loadable": recipes.loadable(path, recipe),
+                             "downloaded": recipes.complete(recipe, path),
                              "exists": path.is_dir()})
             return {"recipes": rows}
         try:
@@ -121,13 +123,24 @@ def create_app(manager: DaemonManager):
         from ..hub.recipes import loadable, MANIFEST
 
         def inventory():
-            root = Path(manager.models_dir)
-            if not root.exists():
-                return {"models": []}
-            return {"models": [{"name": p.name, "path": str(p), "bytes": storage_bytes(p) if not p.is_symlink() else None,
-                                "loadable": loadable(p), "deletable": not p.is_symlink()}
-                                for p in sorted(root.iterdir()) if p.is_dir() and
-                                (loadable(p) or (p / MANIFEST).is_file() or (not p.is_symlink() and any(p.rglob("*.snowllm-part"))))]}
+            rows, seen = [], set()
+            for value in getattr(manager, 'models_dirs', [manager.models_dir]):
+                root = Path(value)
+                if not root.exists():
+                    continue
+                for p in sorted(root.iterdir()):
+                    if not p.is_dir():
+                        continue
+                    identity = p.resolve()
+                    if identity in seen:
+                        continue
+                    if loadable(p) or (p / MANIFEST).is_file() or (
+                            not p.is_symlink() and any(p.rglob('*.snowllm-part'))):
+                        rows.append({"name": p.name, "path": str(p), "root": str(root),
+                                     "bytes": storage_bytes(p) if not p.is_symlink() else None,
+                                     "loadable": loadable(p), "deletable": not p.is_symlink()})
+                        seen.add(identity)
+            return {"models": rows}
         try:
             return await asyncio.to_thread(inventory)
         except OSError as exc:

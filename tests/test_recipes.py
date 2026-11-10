@@ -407,7 +407,7 @@ def main() -> int:
                               "defaults": {"device_map": "auto"}}).defaults == {"device_map":
                                                                                 "auto"})
         check("and the one to recommend is first",
-              book and book[0]["id"] == "qwen3.8-flash-next-q3-k-xl" and book[0].get("priority"),
+              book and book[0]["id"] == "qwen3.8-flash-next-q3-k-xl-ud3.1" and book[0].get("priority"),
               book[0]["id"] if book else "none")
 
         print("\n=== coming soon ===")

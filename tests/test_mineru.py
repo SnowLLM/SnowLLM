@@ -75,7 +75,7 @@ class MinerURecipeTests(unittest.TestCase):
             with (
                 tempfile.TemporaryDirectory() as directory,
                 patch.object(recipes, "catalogue", return_value=[recipe]),
-                patch.object(recipes, "models_root", return_value=Path(directory)),
+                patch.object(recipes, "models_roots", return_value=[Path(directory)]),
                 patch.object(recipes, "pull") as pull,
             ):
                 if runtime == "mineru":

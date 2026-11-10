@@ -85,14 +85,14 @@ class RecipeCompatibilityTests(unittest.TestCase):
                 dest = entry.path(root)
                 dest.mkdir()
                 (dest / 'model.gguf').touch()
-            with patch.object(recipes, 'models_root', return_value=root), \
+            with patch.object(recipes, 'models_roots', return_value=[root]), \
                  patch.object(recipes, 'catalogue', return_value=selected), \
                  patch.object(recipes, '__version__', '0.3.22'):
                 for entry in selected:
                     dest, resolved = recipes.locate(entry.id)
                     self.assertEqual(dest, entry.path(root))
                     self.assertEqual(resolved.revision, entry.revision)
-            with patch.object(recipes, 'models_root', return_value=root), \
+            with patch.object(recipes, 'models_roots', return_value=[root]), \
                  patch.object(recipes, 'catalogue', return_value=selected), \
                  patch.object(recipes, '__version__', '0.3.21'), \
                  self.assertRaisesRegex(SnowLLMError, '0.3.22'):

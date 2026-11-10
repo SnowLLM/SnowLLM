@@ -31,28 +31,68 @@ def read_config(path: Path | None = None) -> dict:
         raise ValueError(f"configuration at {path} must be a JSON object")
     if "models_dir" in values and (not isinstance(values["models_dir"], str) or not values["models_dir"].strip()):
         raise ValueError(f"models_dir in {path} must be a non-empty string")
+    if "models_dirs" in values:
+        if not isinstance(values['models_dirs'], list):
+            raise ValueError(f'models_dirs in {path} must be a list of paths')
+        _model_paths(values['models_dirs'], 'models_dirs')
     for key in ("recipes_url", "library_path"):
         if values.get(key) is not None and (not isinstance(values[key], str) or not values[key].strip()):
             raise ValueError(f"{key} in {path} must be a non-empty string or null")
     return values
 
 
-def models_directory(path: Path | None = None, values: dict | None = None,
-                     override: str | None = None) -> tuple[Path, str]:
+def _model_paths(value, name):
+    paths = [value] if isinstance(value, (str, os.PathLike)) else value
+    if not isinstance(paths, (list, tuple)) or not paths or any(
+            not isinstance(item, (str, os.PathLike)) or not str(item).strip() for item in paths):
+        raise ValueError(f'{name} must be a non-empty list of non-empty paths')
+    return [os.fspath(item) for item in paths]
+
+
+def normalize_model_directories(value, base: Path | None = None) -> list[Path]:
+    result, seen = [], set()
+    for item in _model_paths(value, 'model directories'):
+        directory = Path(item).expanduser()
+        if base is not None and not directory.is_absolute():
+            directory = base / directory
+        directory = directory.resolve()
+        identity = os.path.normcase(str(directory))
+        if identity not in seen:
+            result.append(directory)
+            seen.add(identity)
+    return result
+
+
+def models_directories(path: Path | None = None, values: dict | None = None,
+                       override: str | list[str] | None = None) -> tuple[list[Path], str]:
     path = (path or default_config_path()).expanduser().resolve()
     values = read_config(path) if values is None else values
-    if override:
+    if override is not None and override != '':
         raw, source = override, "command-line"
+    elif environment := os.environ.get("SNOWLLM_MODEL_DIRS"):
+        try:
+            raw = json.loads(environment)
+        except ValueError as exc:
+            raise ValueError('SNOWLLM_MODEL_DIRS must be a JSON array of paths') from exc
+        if not isinstance(raw, list):
+            raise ValueError('SNOWLLM_MODEL_DIRS must be a JSON array of paths')
+        _model_paths(raw, 'SNOWLLM_MODEL_DIRS')
+        source = 'environment'
     elif environment := os.environ.get("SNOWLLM_MODELS"):
         raw, source = environment, "environment"
+    elif values.get('models_dirs') is not None:
+        raw, source = values['models_dirs'], 'config'
     elif values.get("models_dir"):
         raw, source = values["models_dir"], "config"
     else:
         raw, source = "~/models", "default"
-    directory = Path(raw).expanduser()
-    if source == "config" and not directory.is_absolute():
-        directory = path.parent / directory
-    return directory.resolve(), source
+    return normalize_model_directories(raw, path.parent if source == 'config' else None), source
+
+
+def models_directory(path: Path | None = None, values: dict | None = None,
+                     override: str | list[str] | None = None) -> tuple[Path, str]:
+    directories, source = models_directories(path, values, override)
+    return directories[0], source
 
 
 def write_config(path: Path, values: dict) -> None:

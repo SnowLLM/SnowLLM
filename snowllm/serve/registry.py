@@ -268,8 +268,10 @@ class ModelRegistry:
             def build_model():
                 import os
                 for name, value in (sources or {}).items():
-                    if name not in ('SNOWLLM_MODELS', 'SNOWLLM_RECIPES_URL'):
+                    if name not in ('SNOWLLM_MODELS', 'SNOWLLM_MODEL_DIRS', 'SNOWLLM_RECIPES_URL'):
                         raise ValueError('unknown model source setting')
+                    if value is None and name == 'SNOWLLM_MODEL_DIRS':
+                        os.environ.pop(name, None)
                     if value is not None:
                         os.environ[name] = value
                 return backend.build(source, options, model_id, scheduler=scheduler)
