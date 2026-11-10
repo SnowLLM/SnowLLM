@@ -8,6 +8,7 @@ import threading
 import uvicorn
 
 from .api import create_app, create_inference_app
+from .logging import access_log_config
 from ..updates import session as update_session
 
 
@@ -29,11 +30,13 @@ class Listener(uvicorn.Server):
 
 async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
     manager.inference_url = local_url(host, port)
+    log_config = access_log_config()
     servers = [
         Listener(uvicorn.Config(create_inference_app(manager), host=host, port=port,
-                               log_level="info", timeout_graceful_shutdown=15)),
+                               log_level="info", log_config=log_config, timeout_graceful_shutdown=15)),
         Listener(uvicorn.Config(create_app(manager), host=admin_host, port=admin_port,
-                               log_level="info", proxy_headers=False, timeout_graceful_shutdown=15)),
+                               log_level="info", log_config=log_config, proxy_headers=False,
+                               timeout_graceful_shutdown=15)),
     ]
     sockets, tasks, old_handlers = [], [], {}
 

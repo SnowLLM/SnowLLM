@@ -94,6 +94,7 @@ def main(argv):
     from ..cli import parser
     from ..serve.api import app
     from ..serve.registry import ModelRegistry
+    from .logging import access_log_config
 
     args = parser().parse_args(argv)
     source = getattr(args, 'model', None) or args.model_flag
@@ -102,4 +103,4 @@ def main(argv):
     options = argv[:index] + argv[index + 1 :] if source else []
     app.state.initial_model = (source, options) if source else None
     configure(app, ModelRegistry())
-    uvicorn.run(app, host=args.host, port=args.port, log_level='info')
+    uvicorn.run(app, host=args.host, port=args.port, log_level='info', log_config=access_log_config())

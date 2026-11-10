@@ -2,6 +2,7 @@
 """CPU-only supervision tests: python -m unittest discover -s tests -p test_daemon.py."""
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -17,6 +18,7 @@ import httpx
 
 from snowllm.daemon.api import create_app, create_inference_app
 from snowllm.daemon.manager import DaemonManager
+from snowllm.daemon.logging import PollingAccessFilter
 from snowllm.updates import Release
 
 # Real CPU child: proves readiness checks and process teardown without a GPU.
@@ -30,6 +32,18 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"status":"ok"}')
 HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 '''
+
+
+class AccessLogTests(unittest.TestCase):
+    def test_polling_successes_are_quiet_and_failures_stay_visible(self):
+        access_filter = PollingAccessFilter()
+        for path in ('/daemon/status', '/daemon/logs?download=false', '/daemon/metrics?format=json',
+                     '/worker/status', '/health', '/metrics?format=json'):
+            for method, status in [('GET', 200), ('GET', 503), ('POST', 200)]:
+                with self.subTest(path=path, method=method, status=status):
+                    record = logging.LogRecord('uvicorn.access', logging.INFO, '', 0,
+                        '%s - "%s %s HTTP/%s" %d', ('client', method, path, '1.1', status), None)
+                    self.assertEqual(access_filter.filter(record), method != 'GET' or status != 200)
 
 
 class ManagerTests(unittest.IsolatedAsyncioTestCase):
@@ -391,6 +405,9 @@ class TerminalTests(unittest.TestCase):
                     self.assertEqual(client.get(public + "/").status_code, 404)
                     self.assertEqual(client.get(public + "/v1/models").status_code, 503)
                     self.assertEqual(client.get(f"http://127.0.0.1:{port}/v1/models").status_code, 404)
+                    admin = f"http://127.0.0.1:{port}"
+                    self.assertEqual(client.get(admin + "/daemon/logs?download=false").status_code, 200)
+                    self.assertEqual(client.get(admin + "/daemon/metrics?format=json").status_code, 503)
                 for _ in range(100):
                     if marker.exists():
                         break
@@ -411,6 +428,13 @@ class TerminalTests(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait()
+            logs = (Path(tmp) / "daemon.log").read_text()
+            self.assertNotIn('"GET /daemon/status HTTP/1.1" 200', logs)
+            self.assertNotIn('"GET /daemon/logs?download=false HTTP/1.1" 200', logs)
+            self.assertIn('"GET /daemon/status HTTP/1.1" 404', logs)
+            self.assertIn('"GET /daemon/metrics?format=json HTTP/1.1" 503', logs)
+            self.assertIn('"GET /v1/models HTTP/1.1" 503', logs)
+            self.assertIn('"PUT /daemon/config HTTP/1.1" 200', logs)
 
 
 if __name__ == "__main__":

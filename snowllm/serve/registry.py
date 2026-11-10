@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
 import gc
+import logging
 import time
 import traceback
 import uuid
@@ -10,6 +11,8 @@ from collections.abc import Callable
 from ..execution import ExecutionScheduler
 from ..targets import TARGETS, NPU_UNAVAILABLE, Target, normalize_target, resolve_target
 from .state import validate_model_id
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,7 @@ class ModelRecord:
     active: int = 0
     error: str | None = None
     frozen: dict | None = None
+    blocked_by: str | None = None
 
     def snapshot(self):
         if self.phase == 'unloading' and self.frozen is not None:
@@ -51,6 +55,7 @@ class ModelRecord:
             state='failed' if error else self.phase,
             active_requests=self.active,
             error=error or self.error,
+            blocked_by=self.blocked_by,
             aliases=list(self.state.aliases) if self.state else [],
             runtime_config=getattr(engine.engine, 'runtime_config', None) if engine else None,
             memory=memory,
@@ -204,6 +209,13 @@ class ModelRegistry:
         parked = [record for record in self.records.values()
                   if record.target in targets and record.state and record.phase == 'ready']
         created = []
+        stopped_by = None
+        queued = []
+        for item in entries:
+            record = ModelRecord(item['id'] or item['model'], item['model'], list(item['options']),
+                                 target=item['target'], phase='queued')
+            self.records[record.id] = record
+            queued.append(record)
         self.operation = dict(kind='load', model=entries[0]['id'] or entries[0]['model'],
                               target=entries[0]['target'], stage='draining', total=len(entries), index=0,
                               started=time.time())
@@ -223,8 +235,23 @@ class ModelRegistry:
                     raise RuntimeError('model loading cancelled')
                 self.operation.update(model=item['id'] or item['model'], target=item['target'],
                                       stage='loading', index=index)
-                created.append(await self._load_one(item, sources))
+                try:
+                    created.append(await self._load_one(item, sources))
+                except Exception as exc:
+                    stopped_by = item['id'] or item['model'], str(exc)
+                    record = self.records.get(stopped_by[0])
+                    if record is not None and record.phase == 'queued':
+                        record.phase, record.error = 'failed', str(exc)
+                        logger.exception('Failed to start loading model %r: %s', record.id, exc)
+                    raise
         finally:
+            for record in queued:
+                if record.phase == 'queued' and self.records.get(record.id) is record:
+                    record.phase = 'skipped'
+                    record.blocked_by = stopped_by[0] if stopped_by else None
+                    record.error = (f'Not attempted: batch stopped after {stopped_by[0]!r} failed: {stopped_by[1]}'
+                                    if stopped_by else 'Not attempted: model loading was cancelled')
+                    logger.warning('Skipped model %r: %s', record.id, record.error)
             async def finish():
                 self.operation['stage'] = 'capturing'
                 try:
@@ -304,6 +331,8 @@ class ModelRegistry:
                 self.default = record.id
             return record
         except BaseException as exc:
+            logger.error('Failed to load model %r (source=%r, target=%s): %s',
+                         record.id, source, target, exc, exc_info=True)
             if state is not None:
                 await state.engine.close()
                 await scheduler.run(lambda: backend.dispose(state), context=state.engine.context)

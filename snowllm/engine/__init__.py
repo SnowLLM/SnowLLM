@@ -111,6 +111,8 @@ def _draft_geometry(path: str) -> DFlashGeometry:
     from ..models.geometry import DSparkGeometry
 
     p = pathlib.Path(path).expanduser()
+    if not p.exists():
+        raise SnowLLMError(f'draft model path does not exist: {p}. Download the complete recipe, including its draft weights.')
     gguf = find_dspark_gguf(p) if p.is_dir() else (p if p.suffix == ".gguf" else None)
     if gguf is None and p.is_dir():
         gguf = dflash_gguf.find_gguf(p)

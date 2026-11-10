@@ -334,6 +334,34 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.registry.records['b'].phase, 'failed')
         self.assertEqual(self.registry.default, 'a')
 
+    async def test_batch_failure_records_unattempted_models_and_logs_the_cause(self):
+        built = []
+        original = self.registry.builder
+
+        def build(source, options, model_id):
+            built.append(source)
+            if source == 'missing-draft':
+                raise FileNotFoundError('draft weights are missing')
+            return original(source, options, model_id)
+
+        self.registry.builder = build
+        with self.assertLogs('snowllm.serve.registry', level='WARNING') as logs:
+            with self.assertRaisesRegex(FileNotFoundError, 'draft weights are missing'):
+                await self.registry.load_many([dict(model='a'), dict(model='missing-draft'), dict(model='later')])
+        self.assertEqual(built, ['a', 'missing-draft'])
+        rows = {row['id']: row for row in self.registry.snapshot()['models']}
+        self.assertEqual({key: row['state'] for key, row in rows.items()},
+                         {'a': 'ready', 'missing-draft': 'failed', 'later': 'skipped'})
+        self.assertEqual(rows['later']['blocked_by'], 'missing-draft')
+        self.assertIn('Not attempted', rows['later']['error'])
+        self.assertIn('draft weights are missing', '\n'.join(logs.output))
+        self.assertIn('Traceback', '\n'.join(logs.output))
+        self.assertEqual(self.registry.default, 'a')
+        record = self.registry.acquire('a')
+        record.active -= 1
+        await self.registry.unload('later')
+        self.assertNotIn('later', self.registry.records)
+
     async def test_cancelled_load_disposes_completed_build(self):
         started, finish = threading.Event(), threading.Event()
 
