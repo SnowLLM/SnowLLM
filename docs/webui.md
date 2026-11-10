@@ -28,7 +28,7 @@ snowllm unload
 
 ## Browser interface
 
-- **Models:** download recipes, keep multiple checkpoints loaded, choose a default model, save per-model load settings and manage storage. Downloads show progress and can resume after stopping.
+- **Models:** download recipes, keep multiple checkpoints loaded, choose a default model, save per-model load settings and manage storage. Downloads show progress and can resume after stopping. Each load card has **Copy CLI command** to copy a shell command for loading that model into the current Web UI service with its selected settings.
 - **Chat:** bind each browser-local session to a model, switch sessions while generation continues, stop one session independently, and use template-based thinking controls, saved sampling settings, copy, regenerate and export.
 - **Language:** English and Simplified Chinese follow the browser language; select manually in Settings.
 

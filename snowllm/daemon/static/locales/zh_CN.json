@@ -204,6 +204,7 @@
   "Explain how speculative decoding works in simple terms.": "请用简单易懂的语言解释推测解码的工作原理。",
   "Write a Python function that streams lines from a large log file.": "请编写一个逐行流式读取大型日志文件的 Python 函数。",
   "Save load settings": "保存加载设置",
+  "Copy CLI command": "复制 CLI 命令",
   "Reset load settings": "重置加载设置",
   "Load settings saved": "已保存加载设置",
   "Cancel loading": "取消加载",

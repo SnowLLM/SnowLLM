@@ -4,8 +4,31 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import { spawnSync } from 'node:child_process';
 const source = await readFile(new URL('../snowllm/daemon/static/stream.js', import.meta.url), 'utf8');
 const { parseOptions, readEvents } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const commands = await readFile(new URL('../snowllm/daemon/static/commands.js', import.meta.url), 'utf8');
+const { modelLoadCommand } = await import('data:text/javascript;base64,' + Buffer.from(commands).toString('base64'));
+
+test('copied load command preserves the recipe, target, ID, service address and option boundary', () => {
+  assert.equal(modelLoadCommand({model: 'b/example', target: 'gpu', id: 'main', options: ['--max-model-len', '32k']}, 'http://127.0.0.1:9001/#workspace'),
+    'snowllm load --admin-host 127.0.0.1 --admin-port 9001 --id=main gpu:b/example -- --max-model-len 32k');
+  assert.equal(modelLoadCommand({model: '/models/example', target: 'npu', id: null, options: []}, 'http://[::1]:8001/'),
+    'snowllm load --admin-host ::1 --admin-port 8001 npu:/models/example');
+});
+
+test('copied load commands preserve shell metacharacters as literal arguments', () => {
+  if (process.platform === 'win32') return;
+  const request = {model: "/models/John's model; $(printf injected >&2)", target: 'gpu', id: '-main model',
+    options: ['--dflash', 'C:\\Models\\Draft Model', '--served-model-name', '雪 `printf injected >&2` $HOME\nnext', '--stop', '']};
+  const command = modelLoadCommand(request, 'http://localhost:8001/');
+  const shell = spawnSync('/bin/sh', ['-c', 'snowllm() { printf "%s\\0" "$@"; }\n' + command], {encoding: 'utf8'});
+  assert.equal(shell.status, 0, shell.stderr);
+  assert.equal(shell.stderr, '');
+  assert.deepEqual(shell.stdout.split('\0').slice(0, -1), ['load', '--admin-host', 'localhost', '--admin-port', '8001',
+    '--id=-main model', 'gpu:' + request.model, '--', ...request.options]);
+});
+
 test('required thinking cannot be switched off, including stale saved levels', async () => {
   const source = await readFile(new URL('../snowllm/daemon/static/thinking.js', import.meta.url), 'utf8');
   const { thinkingProfile, thinkingParameters } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));

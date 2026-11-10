@@ -204,6 +204,7 @@
   "Explain how speculative decoding works in simple terms.": "Explain how speculative decoding works in simple terms.",
   "Write a Python function that streams lines from a large log file.": "Write a Python function that streams lines from a large log file.",
   "Save load settings": "Save load settings",
+  "Copy CLI command": "Copy CLI command",
   "Reset load settings": "Reset load settings",
   "Load settings saved": "Load settings saved",
   "Cancel loading": "Cancel loading",

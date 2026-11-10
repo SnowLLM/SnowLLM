@@ -3,6 +3,7 @@ import { t, translatePage, language, setLanguage } from './i18n.js';
 import { parseOptions, readEvents } from './stream.js';
 import { thinkingProfile, thinkingParameters } from './thinking.js';
 import { renderLogs } from './logs.js';
+import { modelLoadCommand } from './commands.js';
 
 const $ = (id) => document.getElementById(id);
 const stateLabels = () => ({ queued: t("Queued"), skipped: t("Not attempted"), unloading: t("Unloading"), idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
@@ -95,6 +96,7 @@ function addLoadCard() {
     if (fields['local-model'].value) { fields['load-path'].value = fields['local-model'].value; restoreLoadSettings(card); }
   });
   fields['save-load-settings'].addEventListener('click', () => saveLoadSettings(card));
+  fields['copy-load-command'].addEventListener('click', () => action(fields['copy-load-command'], () => copyText(modelLoadCommand(modelLoadRequest(card), location.href))));
   fields['reset-load-settings'].addEventListener('click', () => {
     for (const id of loadFieldIds) fields[id].value = '';
     fields['load-target'].value = 'gpu'; updateTargetSettings(card); saveLoadSettings(card);
