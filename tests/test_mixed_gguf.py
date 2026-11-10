@@ -20,7 +20,8 @@ def blocks(name, n, k):
     block, size, offset = {'IQ3_S': (256, 110, 0), 'Q5_0': (32, 22, 0),
                            'Q5_1': (32, 24, 0), 'IQ4_NL': (32, 18, 0),
                            'IQ4_XS': (256, 136, 0), 'Q8_0': (32, 34, 0)}[name]
-    raw = torch.randint(0, 256, (n * k // block, size), dtype=torch.uint8, device='cuda')
+    source_k = -(-k // block) * block
+    raw = torch.randint(0, 256, (n * source_k // block, size), dtype=torch.uint8, device='cuda')
     scales = torch.empty(raw.shape[0], 1, dtype=torch.float16, device='cuda').uniform_(-.003, .003)
     raw[:, offset:offset + 2] = scales.view(torch.uint8)
     if name == 'Q5_1':
@@ -49,10 +50,11 @@ def main():
     torch.manual_seed(42)
     _capi.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
     for fmt, name, block, size in FORMATS:
-        for k in ((1024,) if block == 256 else (320, 640, 1024)):
+        for k in (320, 640, 1024):
             n = 384
             raw = blocks(name, n, k)
-            ref = dequantize(raw, name, n*k, torch.bfloat16).view(n, k)
+            source_k = -(-k // block) * block
+            ref = dequantize(raw, name, n*source_k, torch.bfloat16).view(n, source_k)[:, :k]
             quant, meta = ops.gemm_kquant_shuffle_b(fmt, raw, n, k)
             if k % 256 == 0:
                 ck(f'{name}: packed bytes preserve GGUF size',

@@ -30,7 +30,7 @@ from .names import (
 )
 
 KQUANT_ID = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8,
-             "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51}
+             "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51, "Q2_0": 52}
 
 RESHAPE = {
     "mlp.shared_expert_gate.weight": (1, -1),
@@ -216,12 +216,16 @@ class GGUFWeightSource:
 
     @staticmethod
     def _check_formats(rd: GGUFReader) -> None:
-        bad = sorted({t.quant.name for t in rd.gguf.tensors.values()
-                      if not supported(t.quant.name)})
+        formats = {t.quant.name for t in rd.gguf.tensors.values()}
+        bad = sorted(name for name in formats if not supported(name))
         if bad:
             raise SnowLLMError(
                 f"{rd.gguf.path.name} stores weights as {', '.join(bad)}, which SnowLLM "
                 f"cannot read. {', '.join(supported_names())} are the ones it can.")
+        if 'Q2_0' in formats and (not hasattr(lib, 'snowllm_kquant_supported')
+                                 or not lib.snowllm_kquant_supported(KQUANT_ID['Q2_0'])):
+            raise SnowLLMError('Q2_0 weights need a SnowLLM-Kernels build with Q2_0 support; '
+                               'upgrade or rebuild the native library')
 
 
     def has(self, key: str) -> bool:

@@ -70,9 +70,11 @@ TYPES = {
     39: Quant("MXFP4", 32, 17),
     40: Quant("NVFP4", 64, 36),
     41: Quant("Q1_0", 128, 18),
-    42: Quant("VQ", 1, 1),
+    42: Quant("Q2_0", 64, 18),
     44: Quant("FP8_32X32", 1024, 1025),
 }
+
+LEGACY_VQ = Quant("VQ", 1, 1)
 
 
 class Tensor:
@@ -225,6 +227,9 @@ class GGUF:
             dims = tuple(c.scalar("<Q") for _ in range(c.scalar("<I")))
             kind = c.scalar("<I")
             quant = TYPES.get(kind)
+            # Legacy VQ blob tensors reuse Q2_0's numeric type ID.
+            if kind == 42 and name.endswith(".ffn_exps_vq.blob") and len(dims) == 1:
+                quant = LEGACY_VQ
             if quant is None:
                 raise SnowLLMError(f"{path}: tensor {name!r} has ggml type {kind}, which "
                                    f"SnowLLM does not read")

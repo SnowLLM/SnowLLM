@@ -7,11 +7,14 @@ from snowllm.checkpoint.gguf.dequant import dequantize
 
 
 def quantized_weight(fmt, rows):
-    name, block, size = {21: ('IQ3_S', 256, 110), 23: ('IQ4_XS', 256, 136),
+    name, block, size = {6: ('Q6_K', 256, 210), 21: ('IQ3_S', 256, 110), 23: ('IQ4_XS', 256, 136),
                           50: ('Q5_0', 32, 22), 8: ('Q8_0', 32, 34)}[fmt]
     raw = torch.randint(0, 256, (rows * 2560 // block, size), device='cuda', dtype=torch.uint8)
     scale = torch.empty(raw.shape[0], 1, device='cuda', dtype=torch.float16).uniform_(-.003, .003)
-    raw[:, :2] = scale.view(torch.uint8)
+    if fmt == 6:
+        raw[:, -2:] = scale.view(torch.uint8)
+    else:
+        raw[:, :2] = scale.view(torch.uint8)
     dense = dequantize(raw.flatten(), name, rows * 2560, torch.bfloat16).view(rows, 2560)
     return raw.flatten(), dense
 
@@ -21,7 +24,7 @@ class FullQkvDecodeLdsTests(unittest.TestCase):
         _capi.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
         torch.manual_seed(6137)
         for fmt, n0, tail_fmt in ((23, 13312, 0), (21, 12288, 0),
-                                  (23, 12288, 0), (23, 12800, 50), (8, 13312, 0)):
+                                  (23, 12288, 0), (23, 12800, 50), (8, 13312, 0), (6, 13312, 0)):
             raw, dense = quantized_weight(fmt, n0)
             tail, dense_tail = None, None
             if n0 == 13312:
@@ -36,7 +39,8 @@ class FullQkvDecodeLdsTests(unittest.TestCase):
                 tail = ops.qkv_proj_kv_shuffle_w(dense_tail)
             index_dense = torch.randn(640, 2560, device='cuda', dtype=torch.bfloat16) * .01
             index = ops.qkv_proj_index_shuffle_w(index_dense)
-            for rows, path in ((1, ops.Path.DECODE), (7, ops.Path.DECODE),
+            for rows, path in ((1, ops.Path.DECODE), (3, ops.Path.DECODE),
+                               (4, ops.Path.DECODE), (8, ops.Path.DECODE), (7, ops.Path.DECODE),
                                (16, ops.Path.DECODE), (17, ops.Path.DECODE),
                                (17, ops.Path.PREFILL)):
                 x = torch.randn(rows, 2560, device='cuda', dtype=torch.bfloat16) * .1

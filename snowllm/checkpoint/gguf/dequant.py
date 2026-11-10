@@ -32,6 +32,12 @@ def _q8_0(b: torch.Tensor) -> torch.Tensor:
     return _f16(b, 0) * b[:, 2:34].contiguous().view(torch.int8).float()
 
 
+def _q2_0(b: torch.Tensor) -> torch.Tensor:
+    q = b[:, 2:18].int()
+    codes = torch.stack([(q >> shift) & 3 for shift in (0, 2, 4, 6)], dim=-1)
+    return _f16(b, 0) * (codes.reshape(-1, 64).float() - 1)
+
+
 def _q5(b: torch.Tensor, *, affine: bool) -> torch.Tensor:
     off = 4 if affine else 2
     high = b[:, off:off + 4].int()
@@ -250,6 +256,7 @@ def _signs_from_index(qs: torch.Tensor, signs: torch.Tensor) -> torch.Tensor:
 
 
 _BLOCK = {
+    "Q2_0": (64, 18, _q2_0),
     "Q5_0": (32, 22, partial(_q5, affine=False)),
     "Q5_1": (32, 24, partial(_q5, affine=True)),
     "Q8_0": (32, 34, _q8_0),

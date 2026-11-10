@@ -150,10 +150,9 @@ def moe_kquant_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> KQuantExpertWeight:
     if fmt in (21, 23):
         g = build_geometry()
-        stored_k = -(-g.moe_inter // 256) * 256
-        want = kquant_gguf_bytes(fmt, g.hidden, stored_k) * num_experts
+        want = kquant_gguf_bytes(fmt, g.hidden, g.moe_inter) * num_experts
         if down.numel() != want:
-            raise SnowLLMError(f'quantized MoE down needs {want} bytes at stored K={stored_k}')
+            raise SnowLLMError(f'quantized MoE down needs {want} GGUF source bytes at K={g.moe_inter}')
     quant = empty_bytes(lib.snowllm_moe_kquant_down_quant_bytes(fmt, num_experts))
     meta = empty_bytes(lib.snowllm_moe_kquant_down_meta_bytes(fmt, num_experts))
     check(lib.snowllm_moe_kquant_shuffle_down(fmt, _p(down), _p(quant), _p(meta), num_experts,
@@ -188,7 +187,7 @@ LOWBIT_FORMATS = {"IQ2_XXS": IQ2_XXS, "IQ3_XXS": IQ3_XXS, "MXFP4": MXFP4, "IQ2_S
                   "IQ3_S": IQ3_S}
 
 KQUANT_FORMATS = {"Q2_K": 2, "Q3_K": 3, "Q4_K": 4, "Q5_K": 5, "Q6_K": 6, "Q8_0": 8,
-                  "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51}
+                  "IQ4_NL": 20, "IQ4_XS": 23, "IQ3_S": 21, "Q5_0": 50, "Q5_1": 51, "Q2_0": 52}
 
 
 class LowBitExpertWeight:
@@ -228,10 +227,9 @@ def moe_lowbit_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> LowBitExpertWeight:
     if fmt == IQ3_S:
         g = build_geometry()
-        stored_k = -(-g.moe_inter // 256) * 256
-        want = kquant_gguf_bytes(21, g.hidden, stored_k) * num_experts
+        want = kquant_gguf_bytes(21, g.hidden, g.moe_inter) * num_experts
         if down.numel() != want:
-            raise SnowLLMError(f'IQ3_S MoE down needs {want} bytes at stored K={stored_k}')
+            raise SnowLLMError(f'IQ3_S MoE down needs {want} GGUF source bytes at K={g.moe_inter}')
     p0 = empty_bytes(lib.snowllm_moe_lowbit_down_p0_bytes(fmt, num_experts))
     p1 = empty_bytes(lib.snowllm_moe_lowbit_down_p1_bytes(fmt, num_experts))
     n2 = lib.snowllm_moe_lowbit_down_p2_bytes(fmt, num_experts)

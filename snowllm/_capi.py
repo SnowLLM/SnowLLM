@@ -769,6 +769,8 @@ if hasattr(lib, 'snowllm_hc_combine_mix'):
         ('snowllm_hc_linear_step_workspace_bytes', c_int64, [P,c_int64,c_int,c_int]),
         ('snowllm_hc_linear_step', c_int, [P,P,c_int64]+_linear_args),
     ))
+if hasattr(lib, 'snowllm_kquant_supported'):
+    _SIGS.append(('snowllm_kquant_supported', c_int, [c_int]))
 if hasattr(lib, 'snowllm_flash_prepare_weight'):
     _SIGS.extend((
         ('snowllm_flash_layout_bytes', c_int64, [c_int]*3+[c_int64]*2),
