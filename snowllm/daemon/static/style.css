@@ -58,6 +58,10 @@
 .resident-model .pill.failed{background:#fff1ee;color:#a14936}
 .resident-model .pill.loading,.resident-model .pill.queued{background:#f6f0df;color:#87661f}
 .chat-response-stats{margin-top:20px}
+.chat-response-stats dd{white-space:nowrap}
+.composer-footer .thinking-toggle{font-size:10px;padding:7px 10px;gap:0}
+.thinking-toggle[aria-pressed=true]{color:var(--teal);background:var(--teal-light);border-color:#a8d7d1}
+@media(max-width:600px){.composer-footer{flex-wrap:wrap}.composer-footer .thinking-toggle{max-width:100%;white-space:normal}.chat-response-stats{display:block}}
 @media(max-width:850px){.side-stack{grid-template-columns:1fr}.runtime-panel #resident-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}}
 @media(max-width:600px){.load-model-card{padding:14px}.load-model-card .advanced summary>span:last-child{display:none}.runtime-panel #resident-models{grid-template-columns:1fr}.load-footer{flex-wrap:wrap}}
 

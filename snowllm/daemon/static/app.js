@@ -205,6 +205,8 @@ function controls() {
   for (const card of loadCards) card.node.inert = submittingLoad;
   $('send-chat').disabled = !online || !chatModelReady() || Boolean(chatController);
   $('chat-model').disabled = Boolean(chatController);
+  $('thinking-level').disabled = Boolean(chatController);
+  updateThinkingToggle();
   $('cancel-load').hidden = !transition() || status?.operation?.kind === 'unload';
   $('cancel-load').disabled = !online || status?.cancel_requested;
   $('retry-load').disabled = !online;
@@ -415,6 +417,24 @@ function updateThinkingLevels() {
   const profile = thinkingProfile(selectedAlias()?.thinking);
   $('thinking-level').replaceChildren(...profile.options.map(([value, label]) => new Option(value.startsWith('effort:') ? label : t(label), value)));
   $('thinking-level').value = profile.options.some(([value]) => value === preferredThinkingLevel) ? preferredThinkingLevel : '';
+  updateThinkingToggle();
+}
+function updateThinkingToggle() {
+  const capabilities = selectedAlias()?.thinking, level = $('thinking-level').value;
+  const button = $('toggle-thinking');
+  button.hidden = !capabilities?.switch && !capabilities?.required;
+  button.disabled = Boolean(chatController) || Boolean(capabilities?.required);
+  const label = thinkingProfile(capabilities).options.find(([value]) => value === level)?.[1] || 'Model default';
+  button.textContent = t('Thinking: {0}', t(label));
+  button.setAttribute('aria-pressed', capabilities?.required ? 'true' : level === '' ? 'mixed' : String(level !== 'off' && level !== 'effort:none'));
+}
+function renderChatStats() {
+  const metrics = conversation.findLast(message => message.role === 'assistant' && message.metrics)?.metrics;
+  $('chat-ttft').textContent = Number.isFinite(metrics?.ttft_seconds) ? `${metrics.ttft_seconds.toFixed(2)} s` : '—';
+  $('chat-tokens').textContent = Number.isFinite(metrics?.completion_tokens) ? metrics.completion_tokens : '—';
+  const rate = value => Number.isFinite(value) ? `${value.toFixed(1)} tok/s` : '—';
+  $('chat-prefill').textContent = rate(metrics?.prefill_tok_s);
+  $('chat-decode').textContent = rate(metrics?.decode_tok_s);
 }
 async function refreshMetrics() {
   const ready = status?.state === 'ready';
@@ -652,6 +672,7 @@ function messageNode(message) {
   update(); return { root, update };
 }
 function renderConversation() {
+  renderChatStats();
   if (!conversation.length) { $('messages').replaceChildren(emptyChat); return; }
   $('messages').replaceChildren(); for (const message of conversation) $('messages').append(messageNode(message).root);
   $('messages').scrollTop = $('messages').scrollHeight;
@@ -694,14 +715,16 @@ async function sendMessage(event) {
       }
     });
     update();
-    if (sessionId === runningSession && firstToken !== null) $('chat-ttft').textContent = `${((firstToken - started) / 1000).toFixed(2)} s`;
+    assistant.metrics = { ttft_seconds: firstToken === null ? null : (firstToken - started) / 1000 };
     if (usage) {
-      if (sessionId === runningSession) $('chat-tokens').textContent = usage.completion_tokens;
       const timing = usage.timings || {};
+      Object.assign(assistant.metrics, { prompt_tokens: usage.prompt_tokens, completion_tokens: usage.completion_tokens,
+        prefill_tok_s: timing.prefill_tok_s, decode_tok_s: timing.decode_tok_s });
       const rate = value => Number.isFinite(value) ? `${value.toFixed(1)} tok/s` : '—';
       assistant.stats = t("{0} output tokens \u00b7 {1} s \u00b7 Prefill {2} \u00b7 Decode {3}", usage.completion_tokens, ((performance.now() - started) / 1000).toFixed(1), rate(timing.prefill_tok_s), rate(timing.decode_tok_s));
       node.root.append(element('div', 'chat-token-line', assistant.stats));
     }
+    if (sessionId === runningSession) renderChatStats();
   } catch (error) {
     update(); const message = error.name === 'AbortError' ? t("Generation stopped.") : t(error.message);
     assistant.error = message; node.root.append(element('p', 'message-error', message));
@@ -836,7 +859,13 @@ $('regenerate-chat').addEventListener('click', () => {
 $('temperature').addEventListener('change', saveConversation);
 $('max-tokens').addEventListener('change', saveConversation);
 $('system-prompt').addEventListener('change', saveConversation);
-$('thinking-level').addEventListener('change', () => { preferredThinkingLevel = $('thinking-level').value; saveConversation(); });
+$('thinking-level').addEventListener('change', () => { preferredThinkingLevel = $('thinking-level').value; updateThinkingToggle(); saveConversation(); });
+$('toggle-thinking').addEventListener('click', () => {
+  const level = $('thinking-level').value;
+  $('thinking-level').value = level && level !== 'off' && level !== 'effort:none' ? 'off' : 'on';
+  preferredThinkingLevel = $('thinking-level').value;
+  updateThinkingToggle(); saveConversation();
+});
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { $('chat-input').value = t(button.dataset.prompt); $('chat-input').focus(); }));
 if (sessions.some(item => item.id === sessionId)) selectSession(sessionId);
 else saveConversation();
