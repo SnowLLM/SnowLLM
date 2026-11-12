@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import json
+import asyncio
 import os
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +25,10 @@ class SelectModel(BaseModel):
     force: bool = False
 
 
+class BenchmarkReservation(SelectModel):
+    model_id: str = Field(min_length=1, max_length=256)
+
+
 class BatchLoad(LoadBatch):
     models_dir: str | None = None
     models_dirs: list[str] | None = Field(None, min_length=1)
@@ -41,6 +46,39 @@ def model_sources(body):
 
 def configure(app, registry):
     app.state.registry = registry
+    from ..benchmark.lease import BenchmarkLease
+    lease = app.state.benchmark = BenchmarkLease(registry)
+
+    @app.post('/worker/benchmark/reserve')
+    async def reserve_benchmark(body: BenchmarkReservation):
+        try:
+            return lease.reserve(body.id, body.model_id)
+        except (ValueError, RuntimeError, LookupError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get('/worker/benchmark/status')
+    async def benchmark_status():
+        return dict(id=lease.owner, idle=lease.idle(), started=lease.started)
+
+    @app.post('/worker/benchmark/begin')
+    async def begin_benchmark(body: SelectModel):
+        try:
+            row = lease.begin(body.id)
+            from ..benchmark.provenance import native_identity
+            runtime = registry.records[lease.model_id].state.engine.engine.runtime_config
+            runtime['native'] = await asyncio.to_thread(native_identity)
+            row['runtime_config'] = runtime
+            return row
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post('/worker/benchmark/release')
+    async def release_benchmark(body: SelectModel):
+        try:
+            await lease.release(body.id)
+            return dict(status='released')
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get('/worker/status')
     async def status():

@@ -279,6 +279,9 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  num_spec=0 if engine.dflash else engine.num_spec,
                                  dflash_path=str(pathlib.Path(dflash).resolve()) if dflash else None,
                                  dflash_block=engine.dflash_block if engine.dflash else None,
+                                 prefix_memory_ratio=prefix_memory_ratio, batch_prefill=batch_prefill,
+                                 mtp_window=mtp_window, mtp_sinks=mtp_sinks,
+                                 dflash_p_min=getattr(engine.dflash, 'p_min', None),
                                  dspark_adaptive=dspark_adaptive,
                                  enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
@@ -371,6 +374,7 @@ def parser() -> argparse.ArgumentParser:
                     "  load MODEL [...]  Add models to the running service\n"
                     "  unload [ID|--all] Unload one model or all models\n"
                     "  default ID        Choose the default loaded model\n"
+                    "  bench             Benchmark loaded models and review results\n"
                     "  status            Show service status",
         epilog="Use snowllm COMMAND --help for that command's options.",
         formatter_class=_HelpFormatter)
@@ -666,6 +670,9 @@ def main() -> None:
         from .daemon.worker import main as worker_main
         worker_main([arg for arg in argv if arg != "--managed-worker"])
         return
+    if argv and argv[0] == 'bench':
+        from .benchmark.cli import main as benchmark_main
+        raise SystemExit(benchmark_main(argv[1:]))
     if argv and argv[0] in ("webui", "load", "unload", "default", "status"):
         from .daemon.cli import main as daemon_main
         raise SystemExit(daemon_main(argv))

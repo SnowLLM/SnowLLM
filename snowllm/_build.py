@@ -18,3 +18,7 @@ class BundleRecipes(build_py):
         destination.mkdir(parents=True)
         for path in files:
             shutil.copyfile(path, destination / path.name)
+        corpus = Path(__file__).resolve().parent.parent / "benchmarks/data/pg19_context_bench.txt"
+        data = Path(self.build_lib) / "snowllm/benchmark/data"
+        data.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(corpus, data / corpus.name)

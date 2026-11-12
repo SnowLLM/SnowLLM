@@ -155,3 +155,25 @@ Use `snowllm COMMAND --help` for options specific to each command.
 | `status` | Show service status. |
 
 See [Web UI](../webui) for model management and [Performance tuning](../guides/performance) for tuning advice.
+
+## Benchmark {#benchmark}
+
+```sh
+snowllm bench run --model-id MODEL_ID --isl 1k,8k --osl 256 --reps 4 --warm 1
+snowllm bench list
+snowllm bench show RUN_ID
+snowllm bench cancel RUN_ID
+snowllm bench export RUN_ID --out result.json
+```
+
+Tests models loaded in the Web UI service. `--conc` accepts comma-separated concurrency levels; `--thinking` accepts `auto|on|off`. `--detach` starts a background task; `run --out` exports standard result rows after waiting for completion. `export --results-only` exports rows instead of the full record. All subcommands accept `--admin-host` and `--admin-port`. See [Web UI benchmarks](../webui#benchmark) for defaults, exclusive execution and metrics. The existing `benchmarks/bench_context.py`, `run.sh` and `perf_sweep.sh` entries remain available.
+
+For an ordinary inference server or an external HTTP server, use the packaged standard client directly:
+
+```sh
+snowllm bench context --base-url http://127.0.0.1:8000/v1 \
+  --model SERVED_NAME --tokenizer /models/example \
+  --isl 1024,8192 --osl 256 --reps 4 --warm 1 --out results.json
+```
+
+`context` preserves the legacy `benchmarks/bench_context.py` arguments and defaults. It does not manage model loading or reserve the server; ensure the server configuration and request isolation meet your test requirements.

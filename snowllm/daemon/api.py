@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 import asyncio
+import json
 from pathlib import Path
 import shutil
 from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -97,6 +98,42 @@ def create_app(manager: DaemonManager):
 
     app.mount("/ui", StaticFiles(directory=assets), name="ui")
 
+    from ..benchmark.config import BenchmarkConfig
+
+    @app.get('/daemon/benchmarks')
+    async def benchmark_list():
+        return {'runs': manager.benchmarks.list()}
+
+    @app.post('/daemon/benchmarks')
+    async def benchmark_start(body: BenchmarkConfig):
+        try:
+            return await manager.benchmarks.start(body)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get('/daemon/benchmarks/{run_id}')
+    async def benchmark_detail(run_id: str):
+        try:
+            return manager.benchmarks.detail(run_id)
+        except (ValueError, LookupError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post('/daemon/benchmarks/{run_id}/cancel')
+    async def benchmark_cancel(run_id: str):
+        try:
+            return await manager.benchmarks.cancel(run_id)
+        except (ValueError, LookupError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get('/daemon/benchmarks/{run_id}/export')
+    async def benchmark_export(run_id: str, results_only: bool = False):
+        try:
+            record = manager.benchmarks.detail(run_id)
+        except (ValueError, LookupError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return JSONResponse(record['rows'] if results_only else record,
+                            headers={'Content-Disposition': f'attachment; filename="snowllm-bench-{run_id}.json"'})
+
     @app.get("/daemon/recipes")
     async def catalogue(refresh: bool = False, bundle: bool = False):
         from ..hub import recipes
@@ -175,6 +212,22 @@ def create_app(manager: DaemonManager):
     @app.get("/daemon/status")
     async def status():
         return await manager.refresh()
+
+    @app.get('/daemon/tasks')
+    async def tasks():
+        await manager.refresh()
+        return {'tasks': manager.task_snapshot()}
+
+    @app.post('/daemon/tasks/{task_id}/cancel')
+    async def cancel_task(task_id: str):
+        try:
+            return await manager.jobs.cancel(task_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, 'could not reach the worker to cancel the task') from exc
 
     @app.post('/daemon/models/load')
     async def add_model(body: AddModel | LoadBatch):
@@ -289,40 +342,126 @@ def create_inference_app(manager: DaemonManager):
 
 
 async def forward(manager: DaemonManager, path: str, request: Request):
+    body = await request.body()
+    if manager.benchmarks.busy and request.method != 'GET':
+        raise HTTPException(503, 'a benchmark has exclusive use of inference')
     if manager.status()["state"] != "ready":
         raise HTTPException(503, f"model is {manager.state}")
     backend = manager.backend
+    cancelled = asyncio.Event()
+    task = None
+    if request.method == 'POST' and path.startswith('v1/'):
+        name = request.query_params.get('model')
+        try:
+            content = json.loads(body)
+            if isinstance(content, dict) and isinstance(content.get('model'), str):
+                name = content['model']
+        except (ValueError, UnicodeError):
+            pass
+        record = next((row for row in manager.models if row['id'] == (name or manager.default_model)
+                       or name in row.get('aliases', [])), None)
+
+        async def cancel_request():
+            cancelled.set()
+
+        task = manager.jobs.begin_request((record or {}).get('id') or name or manager.default_model,
+                                          (record or {}).get('target'), cancel_request)
+
+    async def wait_for_response(awaitable):
+        work = asyncio.ensure_future(awaitable)
+        stop = asyncio.create_task(cancelled.wait())
+        retrieved = False
+        try:
+            await asyncio.wait((work, stop), return_when=asyncio.FIRST_COMPLETED)
+            if cancelled.is_set():
+                raise asyncio.CancelledError
+            result = await work
+            retrieved = True
+            return result
+        finally:
+            for pending in (work, stop):
+                if not pending.done():
+                    pending.cancel()
+            await asyncio.gather(work, stop, return_exceptions=True)
+            if not retrieved and not work.cancelled() and work.exception() is None:
+                unused = work.result()
+                if isinstance(unused, httpx.Response):
+                    await unused.aclose()
+
     manager.active += 1
     response = None
+
+    async def watch_disconnect():
+        while True:
+            if (await request.receive())['type'] == 'http.disconnect':
+                cancelled.set()
+                return
+            await asyncio.sleep(0)
+
+    watcher = asyncio.create_task(watch_disconnect()) if task else None
     try:
         headers = {k: v for k, v in request.headers.items()
                    if k.lower() not in ("host", "connection", "content-length", "transfer-encoding")}
         upstream = manager.client.build_request(request.method, backend + "/" + path,
-                    params=request.query_params, headers=headers, content=await request.body())
-        response = await manager.client.send(upstream, stream=True)
+                    params=request.query_params, headers=headers, content=body)
+        sending = manager.client.send(upstream, stream=True)
+        response = await wait_for_response(sending) if task else await sending
     except BaseException as exc:
         manager.active -= 1
         if response:
             await response.aclose()
+        if task:
+            manager.jobs.finish_request(task['id'], 'cancelled' if isinstance(exc, asyncio.CancelledError) else 'failed',
+                                         None if isinstance(exc, asyncio.CancelledError) else str(exc))
+        if cancelled.is_set():
+            raise HTTPException(499, 'request cancelled') from exc
         if isinstance(exc, httpx.HTTPError):
             raise HTTPException(502, "inference connection failed") from exc
         raise
+    finally:
+        if watcher:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+    completed = False
 
     async def chunks():
-        async for chunk in response.aiter_raw():
-            yield chunk
+        nonlocal completed
+        iterator = response.aiter_raw().__aiter__()
+        try:
+            while True:
+                try:
+                    chunk = await wait_for_response(anext(iterator)) if task else await anext(iterator)
+                except StopAsyncIteration:
+                    completed = True
+                    return
+                yield chunk
+        except asyncio.CancelledError:
+            if not cancelled.is_set():
+                raise
 
     class ProxyResponse(StreamingResponse):
         async def __call__(self, scope, receive, send):
+            error = None
             try:
                 await super().__call__(scope, receive, send)
+            except Exception as exc:
+                error = str(exc)
+                raise
             finally:
                 # Also runs if the client disconnects before the iterator starts.
                 try:
                     await response.aclose()
                 finally:
                     manager.active -= 1
+                    if task:
+                        state = ('cancelled' if cancelled.is_set() or not completed and not error
+                                 else 'failed' if error or response.status_code >= 400 else 'completed')
+                        manager.jobs.finish_request(task['id'], state,
+                            error or (f'HTTP {response.status_code}' if response.status_code >= 400 else None))
 
     headers = {k: v for k, v in response.headers.items()
                if k.lower() not in ("connection", "transfer-encoding", "keep-alive")}
+    if task:
+        headers['X-SnowLLM-Task-ID'] = task['id']
     return ProxyResponse(chunks(), status_code=response.status_code, headers=headers)

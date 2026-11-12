@@ -612,3 +612,7 @@ main()
         args = parser().parse_args(['webui', 'logs', '--admin-port', '9001'])
         self.assertEqual(args.action, 'logs')
         self.assertEqual(args.admin_port, 9001)
+
+
+if __name__ == '__main__':
+    unittest.main()

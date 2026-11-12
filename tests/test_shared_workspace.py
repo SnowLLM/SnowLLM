@@ -157,3 +157,7 @@ class SharedWorkspaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(pool.buffer, original)
         self.assertIs(first.buf, original)
         self.assertEqual(pool.nbytes, 32)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -1,6 +1,19 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23.dev1 — 2026-11-12
+
+- Add a shared task queue with progress and cancellation for model operations and benchmarks in the CLI and Web UI.
+  为模型操作和 benchmark 增加统一任务队列，在 CLI 与 WebUI 显示进度并支持取消。
+- Ship the standard PG-19 benchmark client and corpus in the Python wheel, preserving the existing benchmark defaults and measurement rules.
+  在 Python wheel 中打包标准 PG-19 benchmark 客户端与语料，沿用既有默认配置和计时口径。
+- Keep tokenizer-only checkpoint inspection independent of GPU imports and improve checkpoint file discovery.
+  tokenizer 与 checkpoint 元数据检查不再依赖 GPU 模块导入，并改进权重文件定位。
+- Require SnowLLM-Kernels 0.3.17.dev1, including BF16 Flash-Next GDR scan and shared-expert prefill optimizations with checkpoint and graph regression coverage.
+  依赖 SnowLLM-Kernels 0.3.17.dev1，合入 BF16 Flash-Next GDR scan 与 shared expert prefill 优化，并覆盖 checkpoint 和图执行回归。
+- Validate release dependencies for Linux and Windows before publishing the Python package.
+  在发布 Python 包前验证 Linux 与 Windows 的内核精确依赖产物。
+
 ## 0.3.22 — 2026-11-10
 
 Bring multi-model serving, MinerU document parsing and the updated Web UI to the stable channel.

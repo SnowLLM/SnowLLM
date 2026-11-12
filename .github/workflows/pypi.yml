@@ -17,6 +17,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Tag matches __version__
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -26,10 +30,21 @@ jobs:
               exit 1
           }
 
+      - name: CPU release checks
+        run: |
+          python -m pip install --upgrade pip setuptools packaging fastapi uvicorn httpx 'pydantic>=2' transformers pillow
+          python -m unittest discover -s tests -p test_build_wheel.py
+          python -m unittest discover -s tests -p test_release_dependencies.py
+          python -m unittest discover -s tests -p test_benchmark.py
+          python -m unittest discover -s tests -p test_tasks.py
+          node --test tests/test_webui.mjs
+
       - name: Build
         run: |
-          python -m pip install --upgrade pip setuptools
           scripts/build-wheel.sh dist --python-only
+
+      - name: Both pinned native wheels are published
+        run: python scripts/check-release-dependencies.py dist/*.whl
 
       - name: dist/ holds nothing but this release's wheel
         run: |

@@ -53,7 +53,7 @@
   "install.noChannelRelease": "No {channel} release is currently available on PyPI.",
   "install.versionError": "Could not load versions from PyPI. The command installs the latest available version for this channel.",
   "install.wsl": "WSL2 requires a specific Windows driver version and <a href=\"https://github.com/ROCm/librocdxg\">ROCDXG</a>. See <a href=\"https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html\">AMD's official WSL guide ↗</a> for compatible hardware and driver versions.",
-  "install.windows": "Windows supports manual pip installation only. Please note the <a href=\"/docs/guides/windows-pagefile#bios-uma\">Windows additional settings ↗</a>.",
+  "install.windows": "Windows supports manual pip installation only. Please note the <a href=\"/docs/guides/windows-pagefile\">Windows additional settings ↗</a>.",
   "benchmark.description": "Performance comparisons across models and context lengths.",
   "benchmark.heading": "Benchmarks",
   "benchmark.methodology": "Measured on Ryzen AI Max+ 395. <a href=\"/docs/development/benchmarks\">Methodology ↗</a>",

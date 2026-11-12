@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import torch
 
-from snowllm import ops
+from snowllm import _capi, ops
 from snowllm.engine.inputs import synthetic_batch
 from snowllm.engine.qwen4exp_runner import Qwen4ExpRunner
 from snowllm.engine.qwen_runner import QwenRunner
@@ -11,6 +11,7 @@ from snowllm.engine.qwen_runner import QwenRunner
 
 class Qwen4ExpPrefillPlanTest(unittest.TestCase):
     def setUp(self):
+        _capi.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
         self.runner = Qwen4ExpRunner.__new__(Qwen4ExpRunner)
         self.runner.max_num_seqs = 4
         self.runner.max_blocks_per_seq = 8

@@ -169,6 +169,28 @@ for p in sys.argv[1:]: print('>>', pathlib.Path(p).stem, 'PASS', 0)
         self.assertIn('exit 124', out)
         self.assert_collected()
 
+    def test_test_runner_distinguishes_all_skipped_partial_and_failed_unittests(self):
+        self.sandbox()
+        source = '''import unittest
+class Checks(unittest.TestCase):
+    @unittest.skip('fixture unavailable')
+    def test_skipped(self): pass
+{extra}
+if __name__ == '__main__': unittest.main()
+'''
+        self.script('tests/test_skipped.py', source.format(extra=''))
+        self.script('tests/test_partial.py', source.format(
+            extra='    def test_success(self): self.assertTrue(True)'))
+        self.script('tests/test_failed.py', source.format(
+            extra="    def test_failure(self): self.fail('expected failure')"))
+        result = subprocess.run(['bash', 'scripts/run-tests.sh'], cwd=self.base,
+                                env=self.env, capture_output=True, text=True, timeout=8)
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 1, output)
+        self.assertIn('1 passed, 1 skipped, 1 failed', output)
+        self.assertRegex(output, r'skip\s+test_skipped')
+        self.assertIn('test_failed (exit 1)', output)
+
     def test_llama_launcher_cancel(self):
         self.sandbox()
         worker = self.script('llama-server', WORKER)

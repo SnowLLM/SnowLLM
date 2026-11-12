@@ -4,7 +4,7 @@
 import json
 from typing import TYPE_CHECKING, NamedTuple
 
-from ..._capi import SnowLLMError
+from ...errors import SnowLLMError
 from . import GGUF
 
 if TYPE_CHECKING:

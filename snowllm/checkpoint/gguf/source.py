@@ -11,6 +11,7 @@ from ..._capi import SnowLLMError, check, lib
 from ..._platform import release_device_cache
 from ..reader import FileReader, note_bytes
 from . import GGUF, part_number
+from .files import SIDECARS, models_in, gguf_dir, find_gguf
 from . import qwen4exp as qwen4exp_names
 from .dequant import dequantize, fp8_32x32, supported, supported_names
 from .names import (
@@ -38,8 +39,6 @@ RESHAPE = {
 }
 
 
-SIDECARS = ("mmproj", "mtp-", "dspark-")
-
 
 def find_mtp_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
     root = pathlib.Path(root)
@@ -63,11 +62,6 @@ def find_dspark_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
     return None
 
 
-def models_in(d: pathlib.Path) -> list:
-    return [p for p in (*d.glob("*.[gG][gG][uU][fF]"), *d.glob("*.[gG][gG][uU][fF].part*-of-*"))
-            if not p.name.lower().startswith(SIDECARS) and not p.name.lower().endswith(".vision.gguf")]
-
-
 def find_mmproj(root: str | pathlib.Path) -> pathlib.Path | None:
     got = sorted(pathlib.Path(root).glob("mmproj-*.gguf"))
     return got[0] if got else None
@@ -83,33 +77,6 @@ def vision_state(rd: "GGUFReader") -> dict[str, torch.Tensor]:
         for hf, name in VISION_BLOCK.items():
             out[f"{VISION_PREFIX}blocks.{i}.{hf}"] = rd.tensor(f"v.blk.{i}.{name}")
     return out
-
-
-def gguf_dir(root: pathlib.Path) -> pathlib.Path:
-    if models_in(root):
-        return root
-    subs = sorted(d for d in root.iterdir() if d.is_dir() and models_in(d))
-    if len(subs) == 1:
-        return subs[0]
-    if len(subs) > 1:
-        raise SnowLLMError(f"{root} holds GGUFs in {len(subs)} subdirectories and no way to tell "
-                           f"which is the model: {', '.join(d.name for d in subs)}. Point "
-                           f"--model at one of them.")
-    return root
-
-
-def find_gguf(root: str | pathlib.Path) -> pathlib.Path:
-    root = gguf_dir(pathlib.Path(root))
-    files = sorted(models_in(root))
-    if not files:
-        raise SnowLLMError(f"{root} holds no GGUF (mmproj-*.gguf is the vision tower, "
-                           f"mtp-*.gguf the draft head and dspark-*.gguf the DSpark drafter, "
-                           f"not models)")
-    files = [p for p in files if part_number(p.name) in (None, 1)]
-    if len(files) > 1:
-        raise SnowLLMError(f"{root} holds {len(files)} GGUFs and no way to tell which is the "
-                           f"model: {', '.join(p.name for p in files)}")
-    return files[0]
 
 
 class GGUFReader(FileReader):

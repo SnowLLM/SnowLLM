@@ -44,3 +44,17 @@ New HTTP results count `usage.completion_tokens`, including reasoning, rather th
 chunks. They retain each sample, finish reason, actual output length, timing data,
 runtime configuration, server GPU, corpus hash and TTFT median/p95. Failed or incomplete
 streams are rejected. See the methodology document for timing definitions and historical runs.
+
+The HTTP benchmark implementation is shipped in `snowllm.benchmark.context`.
+`benchmarks/bench_context.py` remains a compatibility entry point with its existing
+arguments and defaults; `run.sh` and `perf_sweep.sh` continue to use that same code.
+The source corpus stays at `benchmarks/data/pg19_context_bench.txt` and is bundled
+in the installed package during builds. `SNOWLLM_BENCH_CORPUS` still overrides it.
+
+For models already loaded in a Web UI service, use
+`snowllm bench run --model-id MODEL_ID --isl 1k,8k` or the Benchmark page.
+Managed tasks reuse the GPU worker's existing withgpu lock. Do not wrap the
+benchmark HTTP client in a second acquisition of that same lock.
+
+`snowllm bench context` also exposes the same standalone HTTP client and legacy
+arguments without requiring a source checkout or a Web UI daemon.

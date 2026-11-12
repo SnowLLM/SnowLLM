@@ -124,6 +124,9 @@ class AsyncEngine:
         self.accepting = False
         if getattr(self, 'mineru', None) is not None:
             self.mineru.cancel()
+        self.abort_requests()
+
+    def abort_requests(self):
         for request in list(self._live):
             self.abort(request)
 

@@ -39,7 +39,7 @@ import subprocess
 import sys
 root, source = map(Path, sys.argv[1:])
 if (root / '.git').exists():
-    inputs = ('snowllm', 'recipes', 'MANIFEST.in', 'pyproject.toml', 'README.md', 'CHANGELOG.md', 'LICENSE')
+    inputs = ('snowllm', 'recipes', 'benchmarks/data/pg19_context_bench.txt', 'MANIFEST.in', 'pyproject.toml', 'README.md', 'CHANGELOG.md', 'LICENSE')
     result = subprocess.run(['git', '-C', str(root), 'status', '--porcelain=v1',
                              '-z', '--untracked-files=all', '--ignored=matching', '--', *inputs],
                             capture_output=True, text=True)
@@ -62,6 +62,10 @@ shutil.copytree(root / 'snowllm', source / 'snowllm',
                 ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
 if (root / 'recipes').is_dir():
     shutil.copytree(root / 'recipes', source / 'recipes')
+corpus = root / 'benchmarks/data/pg19_context_bench.txt'
+if corpus.is_file():
+    (source / 'benchmarks/data').mkdir(parents=True)
+    shutil.copyfile(corpus, source / 'benchmarks/data' / corpus.name)
 if (root / 'MANIFEST.in').is_file():
     shutil.copyfile(root / 'MANIFEST.in', source / 'MANIFEST.in')
 for name in ('pyproject.toml', 'README.md', 'CHANGELOG.md', 'LICENSE'):

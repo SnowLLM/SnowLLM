@@ -7,7 +7,7 @@ import pathlib
 import re
 import struct
 
-from ..._capi import SnowLLMError
+from ...errors import SnowLLMError
 
 MAGIC = b"GGUF"
 VERSIONS = (2, 3)

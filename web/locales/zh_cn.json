@@ -53,7 +53,7 @@
   "install.noChannelRelease": "PyPI 上暂无 {channel} 版本。",
   "install.versionError": "无法从 PyPI 获取版本信息，命令将安装该渠道当前可用的最新版本。",
   "install.wsl": "WSL2 需使用特定版本的 Windows 驱动，并安装 <a href=\"https://github.com/ROCm/librocdxg\">ROCDXG</a>。硬件兼容性及驱动版本请参阅 <a href=\"https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/wsl/howto_wsl.html\">AMD 官方 WSL 教程 ↗</a>。",
-  "install.windows": "Windows 仅支持 pip 手动安装，请注意 <a href=\"/docs/guides/windows-pagefile#bios-uma\">Windows 额外设置 ↗</a>。",
+  "install.windows": "Windows 仅支持 pip 手动安装，请注意 <a href=\"/docs/guides/windows-pagefile\">Windows 额外设置 ↗</a>。",
   "benchmark.description": "不同模型与上下文长度的性能对比。",
   "benchmark.heading": "性能测试",
   "benchmark.methodology": "测试硬件为 Ryzen AI Max+ 395。<a href=\"/docs/development/benchmarks\">测试方法 ↗</a>",

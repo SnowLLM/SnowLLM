@@ -16,6 +16,12 @@ class ModelRouting:
             return await self.app(scope, receive, send)
         registry = getattr(scope['app'].state, 'registry', None)
         path = scope['path']
+        lease = getattr(scope['app'].state, 'benchmark', None)
+        if (lease and lease.owner and scope['method'] != 'GET'
+                and not path.startswith('/worker/benchmark/')
+                and dict(scope.get('headers', [])).get(b'x-snowllm-benchmark', b'') != lease.owner.encode()):
+            return await JSONResponse({'detail': 'a benchmark has exclusive use of inference'},
+                                      status_code=503)(scope, receive, send)
         if registry is None or not path.startswith('/v1/') or path == '/v1/models':
             return await self.app(scope, receive, send)
 

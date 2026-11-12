@@ -69,6 +69,18 @@ run_logged() {
     return "$rc"
 }
 
+all_unittest_skipped() {
+    awk '
+        /^Ran [0-9]+ tests? / { total += $2 }
+        /^OK \(skipped=[0-9]+\)$/ {
+            count = $0
+            gsub(/[^0-9]/, "", count)
+            skipped += count
+        }
+        END { exit !(total > 0 && skipped == total) }
+    ' "$1"
+}
+
 PASS=() SKIP=() FAIL=() SECS=()
 
 record() {
@@ -98,7 +110,9 @@ for t in ${SOLO[@]+"${SOLO[@]}"}; do
     rc=$?
     st=PASS
     (( rc != 0 )) && st="exit $rc"
-    [[ "$st" == PASS ]] && grep -q -- "-- skipping" "$LOG/$n" && st=SKIP
+    if [[ "$st" == PASS ]] && { grep -q -- "-- skipping" "$LOG/$n" || all_unittest_skipped "$LOG/$n"; }; then
+        st=SKIP
+    fi
     record "$n" "$(( SECONDS - t0 ))" "$st"
 done
 

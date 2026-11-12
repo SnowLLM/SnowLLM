@@ -1,17 +1,35 @@
 # SPDX-License-Identifier: Apache-2.0
-import importlib.util
 import io
 import json
 import tempfile
+import threading
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 
-spec = importlib.util.spec_from_file_location(
-    'bench_context', Path(__file__).resolve().parents[1] / 'benchmarks/bench_context.py')
-bench = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bench)
+from snowllm.benchmark import context as bench
+
+
+class ConcurrentInitializationTests(unittest.TestCase):
+    def test_corpus_is_initialized_before_request_threads(self):
+        owner = threading.get_ident()
+        initialized = []
+
+        def prepare(path):
+            self.assertEqual(threading.get_ident(), owner)
+            initialized.append(path)
+
+        def request(*args, **kwargs):
+            self.assertEqual(initialized, ['local'])
+            return dict(ttft_s=1., decode_tok_s=2., total_s=3., isl=8192, osl=256,
+                        timings=None, loop_period=.5, text_tail='done')
+
+        with patch.object(bench, '_tokenized_corpus', side_effect=prepare), \
+                patch.object(bench, 'one_at', side_effect=request):
+            result = bench.one_rep('url', 'model', 8192, 0, 256, False, 'local', 4)
+        self.assertEqual(len(result['lanes']), 4)
+        self.assertEqual(result['decode_tok_s'], 8.)
 
 
 class Tokenizer:
@@ -82,6 +100,15 @@ class InputLengthTests(unittest.TestCase):
         with patch.object(bench, '_passage_of', side_effect=lambda n, *args: 'a' * (n+n % 2)):
             text = bench.prompt_of(target, 0, 'model')
         self.assertEqual(bench._prompt_tokens(self.tokenizer, text), target)
+
+    def test_start_boundary_can_resolve_an_unrepresentable_end_boundary(self):
+        def count(tok, text, thinking):
+            return 11 if text.startswith('X') else len(text)
+
+        with patch.object(bench, '_passage_of', return_value='Xabcdefghij'), \
+                patch.object(bench, '_prompt_tokens', side_effect=count):
+            text = bench.prompt_of(10, 0, 'model')
+        self.assertEqual(text, 'abcdefghij')
 
 
 class ThinkingTests(unittest.TestCase):

@@ -38,6 +38,12 @@ Deletion requires confirmation. Loaded models, their drafters and symlinks are p
 
 ## Monitoring
 
+The Overview task center shows inference requests, model loads/unloads, and benchmarks together, with queue state, waiting reasons, cancellation, and results. Inference requests are grouped by default and can be cancelled individually when expanded. Benchmark client requests go directly to the worker and are not duplicated in the task center. Task records contain model and execution metadata, without prompts or replies.
+
+Loads, unloads, and benchmarks execute in submission order; operations submitted while busy enter the queue. Inference retains its concurrent scheduler. Model operations drain affected requests, while a benchmark drains existing requests and reserves the entire inference service. New inference requests still receive HTTP 503 during a benchmark; model operations may queue behind it. Pending tasks can be cancelled, running loads and benchmarks clean up at safe boundaries, and an unload cannot be cancelled once started.
+
+Assign an explicit model ID when loading to select that pending ID on the benchmark page and queue its test after loading. Model readiness, instance identity, and capacity are checked again before execution. A failed load prevents a dependent benchmark from starting. The queue accepts up to 64 pending operations, with a one-hour queue wait limit. The UI shows the latest 20 completed tasks; the service retains 100. Browser refreshes and disconnects do not stop management tasks. Restarting the service clears the task list without replaying pending operations; benchmark results remain on disk.
+
 Chat replies show prefill and generation speed (tok/s), including thinking tokens. These figures exclude browser and network delays and remain visible after refreshing the conversation.
 
 The Overview shows request and cache statistics, plus GPU utilization, power, temperature and memory when Linux sensors provide them. Unsupported readings appear as unavailable. On integrated GPUs, power readings may include the entire APU.
@@ -124,3 +130,25 @@ ready, or when connecting to an existing daemon, unless `--no-browser` is given.
 If opening the browser fails, the service continues and prints the URL. Management
 binds only to loopback and rejects cross-origin requests. Direct `snowllm PATH|RECIPE`
 serving remains available.
+
+## Benchmark {#benchmark}
+
+Select a loaded model on the **Benchmark** page and choose input lengths, output cap, concurrency, warm-ups and measured repetitions. The test uses the standard PG-19 HTTP method and the model's current inference settings. Input lengths include the chat template. Input plus output must fit the loaded context, and concurrency must fit its request slots.
+
+The task waits for existing requests, then reserves inference exclusively. New inference requests are blocked until cleanup finishes; model loads and unloads may queue in the task center. Refreshing or closing the browser does not stop the task. Stopping it terminates its client and requests, preserves completed samples and restores serving. Cancelling while waiting for existing requests leaves those requests running.
+
+History includes charts, comparison of two runs and JSON exports. Differences in configuration, incomplete runs and outdated records are shown explicitly. Full exports include settings, raw samples, model file metadata, the native library hash and logs. Result-only exports retain the existing benchmark row format. Records live in `benchmarks/<run_id>/` beside the daemon configuration file.
+
+Decode throughput is the median of retained requests; TTFT and prefill use the first retained request. These HTTP client measurements include transport time and differ from the engine phase timings shown in chat.
+
+```sh
+snowllm bench run --model-id main --isl 1k,8k
+snowllm bench run --model-id main --isl 1k,8k --detach
+snowllm bench list
+snowllm bench show RUN_ID
+snowllm bench cancel RUN_ID
+snowllm bench export RUN_ID --out result.json
+snowllm bench export RUN_ID --results-only --out rows.json
+```
+
+`run` waits by default; Ctrl+C requests cancellation. `--detach` returns the run ID immediately. Use `--admin-port` for another management port. Defaults match the standard sweep: 1K/8K/32K/128K/220K inputs, a 256-token output cap, concurrency 1, one warm-up and four retained requests per point, and `thinking=auto`. Choose shorter lengths explicitly for smaller loaded contexts.

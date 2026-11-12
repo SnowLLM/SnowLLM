@@ -32,7 +32,7 @@ class Qwen38FlashNextUD31Tests(unittest.TestCase):
             try:
                 for formats, layer in representatives.items():
                     moe = load_moe(weights, f'model.language_model.layers.{layer}.', geo)
-                    for rows in (1, 3, 4, 8, 17, 1024, 8192, 8193):
+                    for rows in (1, 2, 3, 4, 6, 8, 9, 12, 16, 17, 1024, 2048, 8192, 8193):
                         with self.subTest(layer=layer, formats=formats, rows=rows):
                             torch.manual_seed(1743 + rows)
                             x = torch.randn(rows, geo.hidden, device='cuda').bfloat16() * .1

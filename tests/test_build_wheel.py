@@ -180,6 +180,13 @@ class PublicWheelInputTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((generated / 'PKG-INFO').exists())
 
+    def test_modified_corpus_blocks_build(self):
+        (self.root / 'benchmarks/data').mkdir(parents=True)
+        (self.root / 'benchmarks/data/pg19_context_bench.txt').write_text('modified corpus')
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('uncommitted changes or untracked files', result.stderr)
+
     def test_modified_recipe_blocks_build(self):
         (self.root / 'recipes/example.json').write_text('{"id": "changed", "repo": "a/b"}\n')
         result = self.build()
@@ -235,6 +242,9 @@ class BundledRecipeWheelTests(unittest.TestCase):
             shutil.copytree(ROOT / 'snowllm', source / 'snowllm',
                             ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
             shutil.copytree(ROOT / 'recipes', source / 'recipes')
+            (source / 'benchmarks/data').mkdir(parents=True)
+            shutil.copyfile(ROOT / 'benchmarks/data/pg19_context_bench.txt',
+                            source / 'benchmarks/data/pg19_context_bench.txt')
             for name in ('pyproject.toml', 'MANIFEST.in', 'README.md', 'CHANGELOG.md', 'LICENSE'):
                 shutil.copyfile(ROOT / name, source / name)
             expected = {path.name: json.loads(path.read_text()) for path in (source / 'recipes').glob('*.json')}
@@ -255,6 +265,8 @@ class BundledRecipeWheelTests(unittest.TestCase):
                         actual = {Path(name).name: json.loads(archive.read(name)) for name in archive.namelist()
                                   if name.startswith('snowllm/hub/bundle/') and name.endswith('.json')}
                         self.assertEqual(actual, expected)
+                        self.assertEqual(archive.read('snowllm/benchmark/data/pg19_context_bench.txt'),
+                                         (ROOT / 'benchmarks/data/pg19_context_bench.txt').read_bytes())
                         installed = wheels / 'installed'
                         archive.extractall(installed)
                     code = '''
@@ -262,6 +274,8 @@ import json, sys
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
 from snowllm.hub import recipes
+from snowllm.benchmark.context import _CORPUS_PATH
+assert _CORPUS_PATH.is_relative_to(sys.argv[1]) and _CORPUS_PATH.is_file()
 with patch.object(recipes, 'recipes_source', side_effect=AssertionError('server config')):
     print(json.dumps([r.raw for r in recipes.catalogue(bundle=True)]))
 '''

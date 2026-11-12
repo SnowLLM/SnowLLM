@@ -154,3 +154,7 @@ class CapacityTests(unittest.TestCase):
         self.assertEqual(largest_fitting(lambda n: n <= 129, 1000, unit=16), 128)
         with self.assertRaises(SnowLLMError):
             largest_fitting(lambda n: False, 1000)
+
+
+if __name__ == '__main__':
+    unittest.main()

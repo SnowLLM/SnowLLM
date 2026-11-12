@@ -118,8 +118,9 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.05)
             self.assertEqual(self.manager.state, "draining")
             self.assertIsNone(first.poll())
-            with self.assertRaises(ValueError):
-                await self.manager.switch("third", [])
+            queued = await self.manager.switch("third", [])
+            self.assertEqual(queued['tasks'][-1]['state'], 'queued')
+            await self.manager.jobs.cancel(queued['task_id'])
             self.manager.active = 0
             await self.manager.task
             self.assertEqual(self.manager.model, "second")
@@ -230,6 +231,8 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("data: [DONE]", response.text)
             self.assertEqual(self.manager.active, 0)
+            self.assertEqual(self.manager.task_snapshot()[-1]['id'], response.headers['X-SnowLLM-Task-ID'])
+            self.assertEqual(self.manager.task_snapshot()[-1]['state'], 'completed')
 
     async def test_bundle_catalogue_references_survive_download_and_load(self):
         from snowllm.hub import recipes

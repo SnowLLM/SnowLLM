@@ -16,6 +16,7 @@ from .._capi import SnowLLMError
 from .._platform import release_device_cache
 from ..capacity import placement_options
 from .reader import Reader
+from .tokenizer import is_gguf, load_tokenizer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -127,34 +128,6 @@ def load_vision(w: WeightSource, vision_config: dict | None) -> "VisionModel | N
     from ..models.vision import VisionModel
     return VisionModel.from_hf_state({k: w.read_dequant(k) for k in keys}, vision_config,
                                      prefix=VISUAL_PREFIX)
-
-
-def is_gguf(root: pathlib.Path) -> bool:
-    from .gguf.source import gguf_dir, models_in
-    return not (root / "config.json").exists() and bool(models_in(gguf_dir(root)))
-
-
-def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[int, ...]]":
-    if is_gguf(root):
-        from .gguf import GGUF
-        from .gguf.source import find_gguf
-        from .gguf.tokenizer import build, stop_token_ids
-        container = GGUF(find_gguf(root))
-        tok = build(container)
-        template = root / "chat_template.jinja"
-        if template.is_file():
-            tok.chat_template = template.read_text(encoding="utf-8")
-        return tok, stop_token_ids(container)
-
-    from transformers import AutoTokenizer, PreTrainedTokenizerFast
-    if (root / "tokenizer.json").exists():
-        tok = PreTrainedTokenizerFast.from_pretrained(str(root))
-    else:
-        tok = AutoTokenizer.from_pretrained(str(root))
-    path = root / "generation_config.json"
-    cfg = json.loads(path.read_text()) if path.exists() else {}
-    eos = cfg.get("eos_token_id", tok.eos_token_id)
-    return tok, tuple(eos) if isinstance(eos, list) else (eos,)
 
 
 def sampling_defaults(root: pathlib.Path) -> dict[str, float | int]:

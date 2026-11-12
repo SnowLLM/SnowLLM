@@ -42,7 +42,8 @@ def check(wheel, root=None):
                            name.startswith('snowllm/hub/bundle/') and name.endswith('.json') or
                            name.startswith('snowllm/daemon/static/') and path.suffix in {
                                '.html', '.css', '.js', '.svg', '.json'} or
-                           name == 'snowllm/models/deepseek_v4/LICENSE-DeepSeek.txt')
+                           name == 'snowllm/models/deepseek_v4/LICENSE-DeepSeek.txt' or
+                           name == 'snowllm/benchmark/data/pg19_context_bench.txt')
                 if any(part in {'internal', 'experiments', 'scratchpad', '__pycache__', '.git',
                                 'csrc', 'include', 'tests'} for part in path.parts):
                     allowed = False

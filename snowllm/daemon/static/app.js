@@ -4,10 +4,14 @@ import { parseOptions, readEvents } from './stream.js';
 import { thinkingProfile, thinkingParameters } from './thinking.js';
 import { renderLogs } from './logs.js';
 import { modelLoadCommand } from './commands.js';
+import { createBenchmarkUI } from './benchmark.js';
+import { createTaskUI } from './tasks.js';
 
 const $ = (id) => document.getElementById(id);
 const stateLabels = () => ({ queued: t("Queued"), skipped: t("Not attempted"), unloading: t("Unloading"), idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
 let savedRecipesUrl, savedLibraryPath;
+let benchmarkUI = null;
+let taskUI = null;
 let status = null, recipes = [], localModels = [], page = 'workspace';
 let bundleCatalog = false;
 let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
@@ -193,19 +197,20 @@ async function action(button, task) {
 }
 function navigate() {
   const next = location.hash.slice(1);
-  page = ['workspace', 'models', 'chat', 'settings'].includes(next) ? next : 'workspace';
-  for (const name of ['workspace', 'models', 'chat', 'settings']) $('page-' + name).hidden = name !== page;
+  page = ['workspace', 'models', 'chat', 'benchmark', 'settings'].includes(next) ? next : 'workspace';
+  for (const name of ['workspace', 'models', 'chat', 'benchmark', 'settings']) $('page-' + name).hidden = name !== page;
   document.querySelectorAll('nav a').forEach(link => { link.classList.toggle('active', link.dataset.page === page); if (link.dataset.page === page) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
-  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), settings: t("Settings") }[page];
+  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), settings: t("Settings"), benchmark: t("Benchmark") }[page];
   if (page === 'workspace') refreshLogs().catch(error => toast(error.message));
   if (page === 'settings') storageSpace();
+  if (page === 'benchmark') benchmarkUI?.refresh().catch(error => toast(error.message));
 }
 function controls() {
   const online = !$('connection-banner').hidden ? false : Boolean(status);
-  $('load-button').disabled = !online || transition() || submittingLoad;
+  $('load-button').disabled = !online || submittingLoad;
   $('add-load-model').disabled = submittingLoad;
   for (const card of loadCards) card.node.inert = submittingLoad;
-  $('send-chat').disabled = !online || !chatModelReady() || Boolean(chatController);
+  $('send-chat').disabled = !online || !chatModelReady() || Boolean(status?.benchmark) || Boolean(chatController);
   $('chat-model').disabled = Boolean(chatController);
   $('thinking-level').disabled = Boolean(chatController);
   updateThinkingToggle();
@@ -214,8 +219,10 @@ function controls() {
   $('retry-load').disabled = !online;
   $('retry-load').hidden = !status?.error || !status?.last_load;
   renderSessions();
-  document.querySelectorAll('[data-download]').forEach(button => button.disabled = !online || status?.download?.exit_code === null);
-  document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online || transition());
+  document.querySelectorAll('[data-download]').forEach(button => button.disabled = !online || Boolean(status?.benchmark) || status?.download?.exit_code === null);
+  document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online);
+  benchmarkUI?.update(online ? status : null);
+  taskUI?.update(status, online);
 }
 function renderLoadError(next) {
   const banner = $('model-error');
@@ -281,15 +288,26 @@ function renderResidentModels(next) {
   const queues = $('execution-queues'); queues.replaceChildren();
   for (const target of ['gpu', 'npu']) {
     const queue = next.queues?.[target];
-    const detail = queue?.error || (queue?.available === false || !queue && target === 'npu' ? t('Backend not configured')
+    const unavailable = queue?.available === false || !queue && target === 'npu';
+    const detail = queue?.error || (unavailable ? t('Backend not configured')
       : t('Running {0} · Queued {1}', queue?.running ? 1 : 0, queue?.waiting || 0));
-    queues.append(element('p', 'field-hint', `${target.toUpperCase()} · ${detail}`));
+    const row = element('div', `execution-queue${unavailable ? ' unavailable' : ''}`);
+    row.append(element('strong', '', target.toUpperCase()), element('span', '', detail));
+    queues.append(row);
   }
   const list = $('resident-models');
   const expanded = new Set([...list.querySelectorAll('.resident-model:has(details[open])')].map(node => node.dataset.modelId));
   list.replaceChildren();
   $('runtime-model-count').textContent = t('Ready {0} / Total {1}', (next.models || []).filter(row => row.state === 'ready').length, next.models?.length || 0);
-  if (!next.models?.length) list.append(element('p', 'muted', t('None loaded')));
+  $('runtime-model-count').hidden = !next.models?.length;
+  $('force-switch').closest('label').hidden = !next.models?.length;
+  if (!next.models?.length) {
+    const empty = element('div', 'runtime-empty');
+    const icon = element('span', 'runtime-empty-icon', '◇');
+    icon.setAttribute('aria-hidden', 'true');
+    empty.append(icon, element('strong', '', t('None loaded')), element('p', '', t('Choose a model and load it to start.')));
+    list.append(empty);
+  }
   for (const row of next.models || []) {
     const card = element('section', 'resident-model');
     card.dataset.modelId = row.id;
@@ -314,10 +332,13 @@ function renderResidentModels(next) {
       ? t('Not attempted: model {0} failed earlier in this batch. Fix the error, then retry loading.', row.blocked_by) : row.error));
     const buttons = element('div', 'runtime-actions');
     const use = element('button', 'button secondary', t('Set as default'));
-    use.disabled = Boolean(operation) || row.state !== 'ready' || next.default_model === row.id;
+    use.disabled = (next.tasks || []).some(task => task.kind !== 'inference'
+      && !['completed', 'failed', 'cancelled', 'interrupted'].includes(task.state))
+      || Boolean(operation) || Boolean(next.benchmark) || row.state !== 'ready' || next.default_model === row.id;
     use.addEventListener('click', () => action(use, async () => renderStatus(await post('/daemon/models/default', {id: row.id}))));
     const unload = element('button', 'button secondary', t(['failed', 'skipped'].includes(row.state) && !row.runtime_config ? 'Remove' : 'Unload model'));
-    unload.disabled = Boolean(operation) || row.state === 'unloading';
+    unload.disabled = row.state === 'unloading' || (next.tasks || []).some(task => task.kind === 'unload'
+      && task.model === row.id && !['completed', 'failed', 'cancelled', 'interrupted'].includes(task.state));
     unload.addEventListener('click', () => action(unload, async () => renderStatus(await post('/daemon/models/unload', {id: row.id, force: $('force-switch').checked}))));
     buttons.append(use, unload); card.append(buttons); list.append(card);
   }
@@ -326,6 +347,7 @@ function renderStatus(next) {
   const oldModel = status?.model;
   const oldState = status?.state;
   status = next;
+  benchmarkUI?.update(next);
   renderUpdate(next.update);
   renderLoadAdvice(next.load_advice);
   renderLoadCards();
@@ -811,7 +833,7 @@ $('load-form').addEventListener('submit', (event) => {
     submittingLoad = true; controls();
     try {
       const result = await post('/daemon/models/load', {models}); renderStatus(result);
-      $('load-feedback').textContent = t("Model load requested. Watch model status for progress."); toast(t("Model load requested"));
+      $('load-feedback').textContent = t('Load task submitted. Follow progress in Tasks.'); toast(t('Load task submitted'));
     } finally { submittingLoad = false; }
   });
 });
@@ -871,11 +893,13 @@ $('toggle-thinking').addEventListener('click', () => {
 document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { $('chat-input').value = t(button.dataset.prompt); $('chat-input').focus(); }));
 if (sessions.some(item => item.id === sessionId)) selectSession(sessionId);
 else saveConversation();
+benchmarkUI = createBenchmarkUI({api, post, action, toast, getStatus: () => status, renderSettings: renderEffectiveSettings, refreshStatus});
+taskUI = createTaskUI({post, action, refreshStatus, onBenchmark: id => { benchmarkUI.select(id); location.hash = 'benchmark'; }});
 addLoadCard(); renderConversation(); updateThinkingLevels(); navigate();
 async function poll() {
   if (polling) return;
   polling = true;
-  try { await refreshStatus(); if (page === 'workspace') await Promise.allSettled([refreshLogs(), refreshMetrics()]); }
+  try { await refreshStatus(); if (page === 'workspace') await Promise.allSettled([refreshLogs(), refreshMetrics()]); if (page === 'benchmark') await benchmarkUI.refresh(); }
   catch { /* The connection banner communicates daemon availability. */ }
   finally { polling = false; }
 }

@@ -19,6 +19,7 @@ from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_ou
 from ..config import (models_directory, models_directories, normalize_model_directories,
                       read_config, write_config, recipes_source,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
+from .tasks import TaskQueue
 
 
 class DaemonManager:
@@ -65,6 +66,9 @@ class DaemonManager:
         self.closing = False
         self.storage_busy = False
         self.telemetry = None
+        self.jobs = TaskQueue()
+        from ..benchmark.jobs import BenchmarkJobs
+        self.benchmarks = BenchmarkJobs(self)
         self.log_path = self.config_path.parent / "inference.log"
         self.download_log = self.config_path.parent / "download.log"
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=5), trust_env=False)
@@ -108,7 +112,8 @@ class DaemonManager:
                 progress = json.loads(self.progress_path.read_text())
             except (OSError, ValueError):
                 pass
-        return dict(load_advice=self.load_advice, process_config=self.process_config, memory=self.memory, queues=self.queues, target_errors=self.target_errors, cancel_requested=self.cancel_requested, models=self.models, default_model=self.default_model, operation=self.operation, last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
+        return dict(tasks=self.task_snapshot(), benchmark=(dict(id=self.benchmarks.current['id'], state=self.benchmarks.current['state'])
+                               if self.benchmarks.busy else None), load_advice=self.load_advice, process_config=self.process_config, memory=self.memory, queues=self.queues, target_errors=self.target_errors, cancel_requested=self.cancel_requested, models=self.models, default_model=self.default_model, operation=self.operation, last_load=self.last_load, runtime_config=self.runtime_config, update=asdict(self.update), state=self.state, model=self.model, error=self.error,
                     error_kind="capacity" if self.error and is_capacity_error(self.error) else None,
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
@@ -127,6 +132,7 @@ class DaemonManager:
                               if self.download else None), log=str(self.log_path))
 
     def configure(self, directory=None, **settings):
+        self.ensure_no_benchmark()
         updated = dict(self.config)
         directories = settings.pop('models_dirs', None)
         if directories is not None or directory is not None:
@@ -151,7 +157,7 @@ class DaemonManager:
             else:
                 updated['models_dirs'] = list(map(str, paths))
         for key, value in settings.items():
-            if key == "library_path" and self.backend and value != self.config.get(key):
+            if key == "library_path" and (self.backend or self.jobs.busy) and value != self.config.get(key):
                 raise ValueError("unload all models before changing the kernel library")
             if key not in ("recipes_url", "library_path"):
                 raise ValueError(f"unknown setting: {key}")
@@ -241,23 +247,90 @@ class DaemonManager:
         if os.name != "nt":
             terminate(signal.SIGKILL)
 
+    def ensure_no_benchmark(self):
+        if self.benchmarks.busy:
+            raise ValueError("wait for the benchmark to finish or cancel it")
+
+    def task_snapshot(self):
+        rows = self.jobs.snapshot()
+        for row in rows:
+            if (self.jobs.active and row['id'] == self.jobs.active['id']
+                    and row['kind'] in ('load', 'unload') and self.operation
+                    and row['state'] != 'cancelling'):
+                if self.operation.get('stage') == 'draining':
+                    row.update(state='waiting', wait_reason='active_requests')
+                row['stage'] = self.operation.get('stage')
+            elif (self.jobs.active and row['id'] == self.jobs.active['id']
+                  and self.transition_stage == 'waiting' and row['state'] != 'cancelling'):
+                row.update(state='waiting', wait_reason='active_requests')
+        return rows
+
+    async def _submit_model_job(self, kind, payload, *, legacy=False):
+        async with self.lock:
+            if self.closing or self.storage_busy:
+                raise ValueError('a storage operation is running or the service is shutting down')
+            first = payload.get('models', [{}])[0]
+            model = payload.get('id') or payload.get('model') or first.get('id') or first.get('model')
+            record = next((row for row in self.models if row['id'] == model), None)
+            instance = (record or {}).get('instance') if kind == 'unload' else None
+            target = payload.get('target') or (record or {}).get('target') or first.get('target')
+
+            async def run(job):
+                self.error = None
+                self.cancel_requested = False
+                if instance and not any(row['id'] == model and row.get('instance') == instance for row in self.models):
+                    raise ValueError('the queued operation refers to a model instance that is no longer loaded')
+                if legacy:
+                    await self._switch_now(payload['model'], payload['options'], payload['force'],
+                                           all_models=payload['all_models'])
+                    if self.error:
+                        raise RuntimeError(self.error)
+                    return
+                if kind == 'load':
+                    self.last_load = ({'models': payload['models']} if 'models' in payload else
+                                      {key: payload[key] for key in ('model', 'options', 'id', 'target')})
+                    self._advise_batch_load()
+                if kind == 'unload' and (not self.backend or not self.process or self.process.poll() is not None):
+                    await self._remove_stopped_model(model)
+                    return
+                self.operation = dict(kind=kind, model=model, target=target or 'gpu', stage='queued')
+                try:
+                    await self._model_operation(kind, payload)
+                finally:
+                    if job['cancel_requested']:
+                        self.error = None
+
+            row, _ = self.jobs.submit(kind, model, target, run,
+                                      cancel=self._cancel_model_execution if kind == 'load' else None)
+            if kind == 'load':
+                row['models'] = [dict(id=item.get('id'), model=item['model'], target=item.get('target'))
+                                 for item in payload.get('models', [payload])]
+                row['targets'] = sorted({item['target'] for item in row['models'] if item['target']})
+            self.task = self.jobs.runner
+        return {**self.status(), 'task_id': row['id']}
+
     async def switch(self, model, options, force=False, *, all_models=False):
         from ..targets import NPU_UNAVAILABLE, resolve_target
+        if any(not isinstance(value, str) for value in options):
+            raise ValueError('options must be strings')
+        if any(value.split('=', 1)[0] in ('--host', '--port', '--model', '--managed-worker') for value in options):
+            raise ValueError('--host, --port and --model are managed by the daemon')
+        target = resolve_target(options) if model is not None else None
+        if target == 'npu':
+            raise ValueError(NPU_UNAVAILABLE)
+        return await self._submit_model_job('load' if model is not None else 'unload',
+            dict(model=model, options=list(options), force=force, all_models=all_models, target=target), legacy=True)
+
+    async def _switch_now(self, model, options, force=False, *, all_models=False):
         async with self.lock:
+            self.ensure_no_benchmark()
             if (self.process and self.process.poll() is None
                     and len([row for row in self.models if row.get("runtime_config")]) > 1
                     and not (model is None and all_models)):
                 raise ValueError("multiple models are loaded; use `snowllm unload MODEL_ID` or "
                                  "`snowllm unload --all`; use `snowllm load MODEL` to add a model")
-            if self.closing or (self.task and not self.task.done()):
+            if self.closing:
                 raise ValueError("a model transition is already in progress")
-            # The supervisor owns the backend address; callers cannot override it.
-            if any(not isinstance(x, str) for x in options):
-                raise ValueError("options must be strings")
-            if any(x.split("=", 1)[0] in ("--host", "--port", "--model", "--managed-worker") for x in options):
-                raise ValueError("--host, --port and --model are managed by the daemon")
-            if model is not None and resolve_target(options) == 'npu':
-                raise ValueError(NPU_UNAVAILABLE)
             if model is not None:
                 self._advise_batch_load()
             if model is not None:
@@ -265,8 +338,7 @@ class DaemonManager:
             self.state = "draining"
             self.transition_stage = "waiting"
             self.error = None
-            self.task = asyncio.create_task(self.transition(model, options, force))
-        return self.status()
+        await self.transition(model, options, force)
 
     async def transition(self, model, options, force):
         try:
@@ -388,11 +460,6 @@ class DaemonManager:
         options = list(options)
         if not any(value.split('=', 1)[0] == '--target' for value in options):
             options.extend(['--target', target])
-        if not self.backend or not self.process or self.process.poll() is not None:
-            if model_id:
-                options = ['--served-model-name', model_id, *options]
-            return await self.switch(model, options)
-        self.last_load = dict(model=model, options=list(options), id=model_id, target=target)
         return await self.model_operation('load', dict(model=model, options=options, id=model_id,
                                                      target=target,
                                                      models_dir=self.models_dir, models_dirs=self.models_dirs,
@@ -410,7 +477,6 @@ class DaemonManager:
         if len(entries) == 1:
             item = entries[0]
             return await self.add_model(item['model'], item['options'], item['id'], target=item['target'])
-        self.last_load = dict(models=entries)
         return await self.model_operation('load', dict(models=entries, models_dir=self.models_dir,
             models_dirs=self.models_dirs,
             recipes_url=recipes_source(self.config_path, self.config)[0]))
@@ -458,30 +524,28 @@ class DaemonManager:
             raise
 
     async def unload_model(self, model_id, force=False):
-        if not self.backend or not self.process or self.process.poll() is not None:
-            async with self.lock:
-                if self.task and not self.task.done():
-                    raise ValueError('wait for the model operation to finish')
-                if not any(row['id'] == model_id for row in self.models):
-                    raise ValueError(f'unknown model: {model_id}')
-                await self.stop_process(self.process)
-                self.process = self.backend = None
-                self.shared_worker = False
-                self.models = [row for row in self.models if row['id'] != model_id]
-                if self.default_model == model_id:
-                    self.model = self.default_model = self.runtime_config = None
-                self.state = 'failed' if self.models else 'idle'
-                if not self.models:
-                    self.error = None
-                    self.memory = {}
-                    self.process_config = None
-                return self.status()
         return await self.model_operation('unload', dict(id=model_id, force=force))
+
+    async def _remove_stopped_model(self, model_id):
+        if not any(row['id'] == model_id for row in self.models):
+            raise ValueError(f'unknown model: {model_id}')
+        await self.stop_process(self.process)
+        self.process = self.backend = None
+        self.shared_worker = False
+        self.models = [row for row in self.models if row['id'] != model_id]
+        if self.default_model == model_id:
+            self.model = self.default_model = self.runtime_config = None
+        self.state = 'failed' if self.models else 'idle'
+        if not self.models:
+            self.error = None
+            self.memory = {}
+            self.process_config = None
 
     async def set_default(self, model_id):
         if not self.backend:
             raise ValueError('no GPU worker is running')
         async with self.lock:
+            self.ensure_no_benchmark()
             if self.task and not self.task.done():
                 raise ValueError('wait for the model operation to finish')
             response = await self.client.post(self.backend + '/worker/default', json=dict(id=model_id))
@@ -491,22 +555,7 @@ class DaemonManager:
             return self.status()
 
     async def model_operation(self, kind, payload):
-        notice = None
-        async with self.lock:
-            if self.closing or self.storage_busy or (self.task and not self.task.done()):
-                raise ValueError('a model operation is already in progress')
-            self.error = None
-            if kind == 'load':
-                notice = self._advise_batch_load()
-            row = next((row for row in self.models if row['id'] == payload.get('id')), None)
-            first = payload.get('models', [{}])[0]
-            self.operation = dict(kind=kind, model=payload.get('id') or payload.get('model') or first.get('id') or first.get('model'),
-                                  target=payload.get('target') or (row or {}).get('target', 'gpu'), stage='queued')
-            self.task = asyncio.create_task(self._model_operation(kind, payload))
-        result = self.status()
-        if notice is not None:
-            result['load_advice_new'] = notice
-        return result
+        return await self._submit_model_job(kind, payload)
 
     async def _model_operation(self, kind, payload):
         try:
@@ -537,6 +586,8 @@ class DaemonManager:
                 self.process_config = None
                 self.memory = {}
                 self.state = 'idle'
+            if self.error:
+                raise RuntimeError(self.error)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -545,10 +596,12 @@ class DaemonManager:
                 self.state = 'failed'
                 self.shared_worker = False
             await self.refresh()
+            raise
         finally:
             self.operation = None
 
     def pull(self, recipe):
+        self.ensure_no_benchmark()
         if self.closing or self.storage_busy or (self.download and self.download.poll() is None):
             raise ValueError("a download or storage operation is already running")
         self.progress_path.unlink(missing_ok=True)
@@ -563,21 +616,32 @@ class DaemonManager:
         return self.status()
 
     async def cancel_load(self):
+        active = self.jobs.active
+        if not active or active['kind'] != 'load':
+            raise ValueError('no model load is in progress')
+        await self.jobs.cancel(active['id'])
+        return self.status()
+
+    async def _cancel_model_execution(self):
         async with self.lock:
-            if not self.task or self.task.done():
+            execution = self.jobs.execution
+            if not execution or execution.done():
                 raise ValueError("no model transition is in progress")
-            if self.shared_worker and self.backend and self.operation and self.operation.get('kind') == 'load':
-                response = await self.client.post(self.backend + '/worker/load/cancel')
-                if not response.is_success:
-                    raise ValueError(response.json().get('detail', 'could not cancel model loading'))
-                self.accept_snapshot(response.json())
-                return self.status()
-            if self.shared_worker and self.operation:
-                raise ValueError('only loading can be cancelled; an unload is already in progress')
+            if self.shared_worker and self.backend and self.transition_stage is None:
+                deadline = asyncio.get_running_loop().time() + 5
+                while not execution.done():
+                    response = await self.client.post(self.backend + '/worker/load/cancel', timeout=5)
+                    if response.is_success:
+                        self.accept_snapshot(response.json())
+                        return
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise ValueError('loading has not reached a cancellable stage; try again')
+                    await asyncio.sleep(.05)
+                return
             waiting = self.transition_stage == "waiting"
-            self.task.cancel()
+            execution.cancel()
             try:
-                await self.task
+                await execution
             except asyncio.CancelledError:
                 pass
             # Cancellation during draining preserves the old ready worker.
@@ -591,10 +655,10 @@ class DaemonManager:
                 self.runtime_config = None
                 self.state = "idle"
             self.error = None
-            return self.status()
 
     async def delete_model(self, path):
         async with self.lock:
+            self.ensure_no_benchmark()
             if self.closing or (self.task and not self.task.done()):
                 raise ValueError("wait for the model transition to finish")
             if self.download and self.download.poll() is None:
@@ -647,6 +711,8 @@ class DaemonManager:
 
     async def close(self):
         self.closing = True
+        await self.jobs.close()
+        await self.benchmarks.close()
         if self.task and not self.task.done():
             self.task.cancel()
             try:

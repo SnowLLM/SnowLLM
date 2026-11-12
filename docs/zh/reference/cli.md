@@ -147,3 +147,25 @@ $env:SNOWLLM_MOE_CACHE_DIRS = 'D:\SnowLLM\moe;E:\SnowLLM\moe'
 | `status` | 显示服务状态。 |
 
 模型管理见 [Web UI](../webui)，调优建议见[性能调优](../guides/performance)。
+
+## 性能测试 {#benchmark}
+
+```sh
+snowllm bench run --model-id MODEL_ID --isl 1k,8k --osl 256 --reps 4 --warm 1
+snowllm bench list
+snowllm bench show RUN_ID
+snowllm bench cancel RUN_ID
+snowllm bench export RUN_ID --out result.json
+```
+
+测试 WebUI 服务中已加载的模型。`--conc` 支持逗号分隔的并发档位，`--thinking` 支持 `auto|on|off`；`--detach` 后台运行，`--out` 在等待测试结束后导出标准结果行。`export --results-only` 仅导出结果行，否则导出完整记录。所有子命令均支持 `--admin-host` 和 `--admin-port`。默认配置、独占行为和指标口径见 [Web UI 性能测试](../webui#benchmark)。原有 `benchmarks/bench_context.py`、`run.sh` 和 `perf_sweep.sh` 入口继续可用。
+
+直接测试普通推理服务或外部 HTTP 服务时，可使用安装包自带的标准客户端：
+
+```sh
+snowllm bench context --base-url http://127.0.0.1:8000/v1 \
+  --model SERVED_NAME --tokenizer /models/example \
+  --isl 1024,8192 --osl 256 --reps 4 --warm 1 --out results.json
+```
+
+`context` 与旧 `benchmarks/bench_context.py` 的参数和默认值相同；它不管理模型加载和服务独占，请确保服务端运行配置和测试期间的请求隔离符合测试要求。
