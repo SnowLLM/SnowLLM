@@ -21,12 +21,27 @@ from .forward_context import (
 )
 from .inputs import synthetic_batch
 from .qwen_runner import QwenRunner
+from .qwen4exp_spec import Qwen4ExpSpecDecoder
 
 GATHER_CHUNK = 4096
 
 
 class Qwen4ExpRunner(QwenRunner):
     auto_yarn = True
+    spec_decoder_type = Qwen4ExpSpecDecoder
+
+    def _graph_cases(self, shape):
+        yield from super()._graph_cases(shape)
+        proposer = getattr(self, 'mtp_proposer', None)
+        if proposer is not None:
+            case = proposer.graph_case(shape)
+            if case is not None:
+                yield case
+
+    def capture(self, shapes):
+        result = super().capture(shapes)
+        self.n_draft_eager = self.n_draft_replays = 0
+        return result
 
     def set_rope(self, inv_freq: torch.Tensor, mscale: float) -> None:
         if mscale != 1.0 and not hasattr(lib, 'snowllm_qwen4exp_qsa_produce_snapshot_scaled'):
