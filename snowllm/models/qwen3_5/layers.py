@@ -129,7 +129,7 @@ class FullAttention(nn.Module):
             ops.paged_attention(q,pools,attn_out,b.cu_seqlens,b.block_tables,b.seq_lens,
                 b.q_block_map,b.total_q_blocks,ctx.decode_plan,decode_ws,ctx.num_slots,
                 b.tokens_per_req,ctx.block_size,self.attn_scale,b.varlen_attn,scratch,
-                self.shuf(ctx,proj))
+                self.shuf(ctx,proj),host_seq_lens=b.host_seq_lens)
 
     def shuf(self, ctx: ForwardContext, proj: torch.Tensor, row0: int = 0) -> tuple:
         return ops.attn_output_gating(proj,ctx.batch.is_prefill,ctx.kv_int8,row0)

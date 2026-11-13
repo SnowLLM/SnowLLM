@@ -116,7 +116,7 @@ def paged_attention_varlen(prefill: bool,tokens: int,chunk_decode: bool) -> bool
 
 @operator
 def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,slots,tokens,
-                     block_size,scale,varlen,scratch,gate=(0,0,0)):
+                     block_size,scale,varlen,scratch,gate=(0,0,0),*,host_seq_lens=None):
     batch=lens.numel()
     _chk(q,'attention Q',torch.bfloat16)
     _chk(out,'attention output',torch.bfloat16)
@@ -126,10 +126,13 @@ def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,s
     if need and (scratch is None or scratch.nbytes<need):
         raise SnowLLMError(f'paged attention needs {need} scratch bytes')
     ks,vs=pools[2:] if len(pools)==4 else (None,None)
+    mode=int(varlen)
+    if varlen and batch==1 and host_seq_lens is not None and host_seq_lens[0]==tokens:
+        mode|=2  # Host metadata avoids reading sequence lengths back from the GPU.
     step=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
          (q,pools[0],pools[1],ks,vs,cu,table,lens,qmap)],gate[0]),
          (ctypes.c_void_p*3)(_p(out),_p(plan),_p(workspace)),batch,table.shape[1],total_blocks,
-         slots,tokens,block_size,gate[1],gate[2],scale,int(varlen))
+         slots,tokens,block_size,gate[1],gate[2],scale,mode)
     check(lib.snowllm_paged_attention(ctypes.byref(step),_p(scratch),
           scratch.nbytes if scratch is not None else 0,_stream()),'paged_attention')
 
