@@ -212,14 +212,40 @@ class _HcStep(ctypes.Structure):
     _fields_ = [('weights',ctypes.c_void_p*6)]+[(n,ctypes.c_void_p) for n in (
         'residual','inject','xn','lo','mixed')]+[(n,ctypes.c_int64) for n in (
         'rows','count','hidden','stride','down_n','lr')]+[('eps',ctypes.c_float)]+[
-        (n,ctypes.c_int) for n in ('fmt','up_fmt','inject_bf16','weight_inject_bf16')]
+        (n,ctypes.c_int) for n in ('fmt','up_fmt','inject_bf16','weight_inject_bf16')]+[
+        (n,ctypes.c_void_p) for n in ('prepared_output','prepared_input')]+[
+        (n,ctypes.c_int64) for n in ('prepared_output_bytes','prepared_input_bytes')]
 
 
-def _hc_step(hc, rows, count, hidden, residual=None, inject=None, xn=None, lo=None, mixed=None):
+def _hc_step(hc, rows, count, hidden, residual=None, inject=None, xn=None, lo=None, mixed=None,
+             prepared_output=None, prepared_input=None):
+    for prepared in (prepared_output, prepared_input):
+        if prepared is not None:
+            _chk(prepared, 'prepared HC activation', torch.uint8, hc_prepared_bytes(rows))
     v=hc.args
     return _HcStep((ctypes.c_void_p*6)(*v[:5],v[7]),_p(residual),_p(inject),_p(xn),_p(lo),
         _p(mixed),rows,count,hidden,inject.stride(0) if inject is not None else count,
-        hc.down_n,hc.lr,v[11],v[5],v[6],inject is None or inject.dtype is torch.bfloat16,v[8])
+        hc.down_n,hc.lr,v[11],v[5],v[6],inject is None or inject.dtype is torch.bfloat16,v[8],
+        _p(prepared_output),_p(prepared_input),
+        0 if prepared_output is None else prepared_output.nbytes,
+        0 if prepared_input is None else prepared_input.nbytes)
+
+
+@operator
+def hc_prepared_bytes(rows):
+    query = getattr(lib,'snowllm_hc_prepared_bytes',None)
+    return query(rows) if query is not None else 0
+
+
+@operator
+def hc_prepared_qkv(prepared, w, scale, v, kv, workspace, out, index_w=None, index_out=None):
+    from .inference import _weights
+    rows = out.shape[0]
+    _chk(prepared, 'prepared HC activation', torch.uint8, hc_prepared_bytes(rows))
+    _chk(out, 'projection', torch.bfloat16, rows, out.shape[1])
+    weights = _weights((w,scale),(v,None),(kv,None))
+    check(lib.snowllm_hc_prepared_qkv(weights,_p(prepared),prepared.nbytes,_p(workspace),
+        _p(out),rows,_p(index_w),_p(index_out),_stream()),'hc_prepared_qkv')
 
 
 @operator
@@ -231,9 +257,9 @@ def hc_combine_mix_workspace_bytes(rows, hc, count, hidden):
 
 
 @operator
-def hc_combine_mix(streams, block, inject, hc, lo, mixed, workspace, xn=None):
+def hc_combine_mix(streams, block, inject, hc, lo, mixed, workspace, xn=None, prepared=None):
     rows,count,hidden=streams.shape
-    post=_hc_step(hc,rows,count,hidden,streams,inject,xn,lo,mixed)
+    post=_hc_step(hc,rows,count,hidden,streams,inject,xn,lo,mixed,prepared_output=prepared)
     if hasattr(lib,'snowllm_hc_combine_mix'):
         check(lib.snowllm_hc_combine_mix(ctypes.byref(post),_p(block),_p(workspace),
             workspace.nbytes,_stream()),'hc_combine_mix')
@@ -301,11 +327,12 @@ def hc_linear_step(streams, hc, lo, mixed, post_hc, post_lo, post_mixed, xn, w,
         hc_combine_mix(streams,block,lo[:,hc.lr:hc.lr+streams.shape[1]],post_hc,
                        post_lo,post_mixed,workspace,xn)
         return
+    prepared = mixed is not None and mixed.dtype is torch.uint8
     post=_hc_step(post_hc,*streams.shape,streams,lo[:,hc.lr:hc.lr+streams.shape[1]],xn,
-                  post_lo,post_mixed)
+                  post_lo,post_mixed,prepared_input=mixed if prepared else None)
     at,slots,n,ck_conv,ck_rec=ckpt or (None,None,0,None,None)
     rq,rc,rb=retain or (None,None,None)
-    check(lib.snowllm_hc_linear_step(ctypes.byref(post),_p(mixed),workspace.nbytes,
+    check(lib.snowllm_hc_linear_step(ctypes.byref(post),_p(None if prepared else mixed),workspace.nbytes,
         _p(streams),*hc.args,_p(lo),_p(input_xn),*w.args,_p(cu_seqlens),_p(has_state),
         _p(state_indices),_p(num_accepted),_p(conv_state),_p(recurrent_state),_p(at),_p(slots),
         n,_p(ck_conv),_p(ck_rec),_p(workspace),_p(block),B,streams.shape[0],int(path),_stream(),

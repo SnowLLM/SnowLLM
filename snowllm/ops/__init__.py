@@ -220,6 +220,8 @@ from .mtp import (
 )
 from .hyper import (
     HcMixWeights,
+    hc_prepared_bytes,
+    hc_prepared_qkv,
     hc_combine_mix,
     hc_combine_mix_workspace_bytes,
     hc_output_project,

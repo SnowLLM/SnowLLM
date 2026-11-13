@@ -43,7 +43,12 @@ class Qwen4ExpModel(nn.Module):
                 ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True,
                                  mscale=ctx.mscale)
 
-            mixed = ctx.arena.new(ctx.M,self.geo.hidden)
+            prepared_bytes = (ops.hc_prepared_bytes(ctx.M)
+                              if b.is_prefill and self.geo.hidden == 2560 else 0)
+            ctx.hc_prepared = ctx.arena.new(prepared_bytes,dtype=torch.uint8) if prepared_bytes else None
+            # Attention consumes prepared input before the post-attention mixer writes dense input for MoE.
+            mixed = (ctx.hc_prepared[:ctx.M*self.geo.hidden*2].view(torch.bfloat16).view(ctx.M,self.geo.hidden)
+                     if prepared_bytes else ctx.arena.new(ctx.M,self.geo.hidden))
             lo = ctx.arena.new(ctx.M*self.hc_columns)
             prepared = False
             for i, layer in enumerate(self.layers):

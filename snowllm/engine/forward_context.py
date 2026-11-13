@@ -188,6 +188,7 @@ class Qwen4ExpContext(ForwardContext):
     qsa_lens: list | None = None
     qsa: QsaStep | None = None
     hc_xn: torch.Tensor | None = None
+    hc_prepared: torch.Tensor | None = None
     xn_live: bool = False
 
     def open(self) -> None:

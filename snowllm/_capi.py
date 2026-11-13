@@ -172,23 +172,25 @@ except OSError as exc:
     raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
 _lib_path = lib._name
 
-ABI_VERSION = 89
+ABI_VERSION = 90
 
 
-def _check_abi() -> None:
+def _check_abi() -> int:
     try:
         lib.snowllm_abi_version.restype = c_int
         got = lib.snowllm_abi_version()
     except AttributeError:
         got = 0
-    if got != ABI_VERSION:
+    # ABI 89 reads the unchanged HC step prefix and keeps the dense activation path.
+    if got not in (89, ABI_VERSION):
         raise SnowLLMError(
-            f"ABI mismatch: this snowllm expects {ABI_VERSION}, "
+            f"ABI mismatch: this snowllm expects 89 or {ABI_VERSION}, "
             f"{_lib_path} provides {got or 'no version at all'}. Rebuild the one that is stale."
         )
+    return got
 
 
-_check_abi()
+ABI_VERSION = _check_abi()
 
 class Stream:
     pass
@@ -768,6 +770,11 @@ if hasattr(lib, 'snowllm_hc_combine_mix'):
         ('snowllm_hc_output_project', c_int, [P,P,P,c_int64]+[P]*4+[c_int,P,P,c_int64,c_int,c_int,S]),
         ('snowllm_hc_linear_step_workspace_bytes', c_int64, [P,c_int64,c_int,c_int]),
         ('snowllm_hc_linear_step', c_int, [P,P,c_int64]+_linear_args),
+    ))
+if hasattr(lib, 'snowllm_hc_prepared_bytes'):
+    _SIGS.extend((
+        ('snowllm_hc_prepared_bytes', c_int64, [c_int64]),
+        ('snowllm_hc_prepared_qkv', c_int, [P,P,c_int64,P,P,c_int64,P,P,S]),
     ))
 if hasattr(lib, 'snowllm_kquant_supported'):
     _SIGS.append(('snowllm_kquant_supported', c_int, [c_int]))
