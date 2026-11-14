@@ -76,6 +76,8 @@ class Qwen4ExpRunner(QwenRunner):
                                    device="cuda")
         if self.model.mtp is not None:
             self._alloc_streams(rows)
+        gather_bytes = ops.ple_prepared_bytes(min(rows,GATHER_CHUNK)) if self._ple_fused else 0
+        self.ple_gather_buffer = torch.empty(gather_bytes,dtype=torch.uint8,device='cuda')
 
     def _alloc_mtp_hidden(self) -> None:
         self.mtp_h = torch.zeros(self.max_num_seqs, self.geo.hc_count, self.geo.hidden,
@@ -190,8 +192,17 @@ class Qwen4ExpRunner(QwenRunner):
         for at in range(0, hi - lo, GATHER_CHUNK):
             n = min(GATHER_CHUNK, hi - lo - at)
             if prepared_rows:
-                source=self.ple_table.gather(rows[at:at+n],dtype=torch.float32)
-                ops.ple_pack_fp32(source,self.ple_emb.view(torch.uint8).view(-1)[:ops.ple_prepared_bytes(prepared_rows)],lo+at,prepared_rows)
+                destination=self.ple_emb.view(torch.uint8).view(-1)[:ops.ple_prepared_bytes(prepared_rows)]
+                offset=lo+at
+                packed_bytes=ops.ple_prepared_bytes(n)
+                begin=offset*self.geo.ple_embed_dim*2
+                if n>32 and offset%32==0 and begin+packed_bytes<=destination.nbytes:
+                    packed=self.ple_gather_buffer[:packed_bytes]
+                    self.ple_table.gather(rows[at:at+n],packed_out=packed)
+                    destination[begin:begin+packed_bytes].copy_(packed)
+                else:
+                    source=self.ple_table.gather(rows[at:at+n],dtype=torch.float32)
+                    ops.ple_pack_fp32(source,destination,offset,prepared_rows)
             else:
                 ops.copy_rows(self.ple_emb[lo+at:lo+at+n],self.ple_table.gather(rows[at:at+n]))
 

@@ -74,7 +74,8 @@ class PleTable:
     def __del__(self) -> None:
         self.close()
 
-    def gather(self, rows: np.ndarray, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
+    def gather(self, rows: np.ndarray, device: str = "cuda", dtype: torch.dtype = torch.bfloat16,
+               *, packed_out: torch.Tensor | None = None) -> torch.Tensor:
         if self._staging is None:
             raise SnowLLMError('PLE table is closed')
         idx = np.asarray(rows, dtype=np.int64)
@@ -89,5 +90,12 @@ class PleTable:
         q = self._staging.host[:n].to(device, non_blocking=True)
         self._copied.record()
         w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32)
-        result = w.reshape(t, heads * self.geo.ple_head_dim).to(dtype)
-        return result
+        result = w.reshape(t, heads * self.geo.ple_head_dim)
+        if packed_out is not None:
+            if dtype != torch.bfloat16:
+                raise ValueError('packed PLE output requires bf16 storage')
+            from ... import ops
+            # Pack before returning so FP32 intermediates retain the row path's lifetime.
+            ops.ple_pack_fp32(result, packed_out, 0, t)
+            return packed_out
+        return result.to(dtype)
