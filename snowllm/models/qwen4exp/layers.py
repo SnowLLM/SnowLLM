@@ -114,12 +114,18 @@ class Ple(nn.Module):
         a, M, E, n_hc = ctx.arena, streams.shape[0], self.hidden, self.n_hc
         b, C = ctx.batch, n_hc * E
         with a.frame():
-            emb = ctx.ple_emb[:M]
+            prepared = getattr(ctx,'ple_prepared',None)
+            emb = prepared if prepared is not None else ctx.ple_emb[:M]
             key_raw, value_raw = a.new(M, self.key.n), a.new(M, self.value.n)
             with a.frame():
-                ws = a.flat(ops.gemm_bf16_a_ws_bytes(M, self.key.k), torch.uint8)
-                ops.gemm_bf16_a2(emb, self.key.w, self.value.w, key_raw, value_raw, M,
-                                 self.key.n, self.value.n, self.key.k, ws)
+                if getattr(ctx,'ple_fused',False):
+                    ws=a.flat(ops.ple_project_workspace_bytes(M),torch.uint8)
+                    ops.ple_project(emb,self.key.w,self.value.w,key_raw,value_raw,ws,M,
+                                    prepared is not None)
+                else:
+                    ws = a.flat(ops.gemm_bf16_a_ws_bytes(M, self.key.k), torch.uint8)
+                    ops.gemm_bf16_a2(emb, self.key.w, self.value.w, key_raw, value_raw, M,
+                                     self.key.n, self.value.n, self.key.k, ws)
             key = a.new(M, n_hc, E)
             ops.qwen4exp_hc_norm(key_raw.view(M, n_hc, E), self.norm_key, key, ctx.eps)
             query = a.new(M, n_hc, E)

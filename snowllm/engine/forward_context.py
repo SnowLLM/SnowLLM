@@ -179,6 +179,8 @@ class Qwen4ExpContext(ForwardContext):
     geo: object = None
     max_prefill_seqs: int = 0
     ple_emb: torch.Tensor | None = None
+    ple_prepared: torch.Tensor | None = None
+    ple_fused: bool = False
     ple_has_state: torch.Tensor | None = None
     stream_buf: torch.Tensor | None = None
     inv_freq: torch.Tensor | None = None

@@ -72,6 +72,44 @@ def mtp_norm_project(x,gamma,weight,out,workspace,n_hc,eps):
         workspace.nbytes,M,n_hc,eps,_stream()),'mtp_norm_project')
 
 
+def ple_fused_enabled():
+    return geometry_id() == GEO_QWEN38_FLASH_NEXT and os.environ.get('SNOWLLM_INTERNAL_02','1')!='0' and all(hasattr(lib,n) for n in (
+        'snowllm_ple_prepared_bytes','snowllm_ple_project_workspace_bytes',
+        'snowllm_ple_pack_fp32','snowllm_ple_project'))
+
+
+@operator
+def ple_prepared_bytes(rows):
+    return lib.snowllm_ple_prepared_bytes(rows)
+
+
+@operator
+def ple_project_workspace_bytes(rows):
+    return lib.snowllm_ple_project_workspace_bytes(rows)
+
+
+@operator
+def ple_pack_fp32(source,out,row_offset,total_rows):
+    rows=source.shape[0]
+    _chk(source,'PLE source',torch.float32,rows,2560)
+    _chk(out,'PLE prepared activation',torch.uint8,ple_prepared_bytes(total_rows))
+    check(lib.snowllm_ple_pack_fp32(_p(source),_p(out),out.nbytes,rows,row_offset,total_rows,
+                                  _stream()),'ple_pack_fp32')
+
+
+@operator
+def ple_project(x,key,value,out_key,out_value,workspace,rows,prepared):
+    if prepared:_chk(x,'PLE prepared activation',torch.uint8,ple_prepared_bytes(rows))
+    else:_chk(x,'PLE activation',torch.bfloat16,rows,2560)
+    _chk(key,'PLE key weight',torch.bfloat16)
+    _chk(value,'PLE value weight',torch.bfloat16)
+    _chk(out_key,'PLE key output',torch.bfloat16,rows,10240)
+    _chk(out_value,'PLE value output',torch.bfloat16,rows,2560)
+    _chk(workspace,'PLE workspace',torch.uint8,ple_project_workspace_bytes(rows))
+    check(lib.snowllm_ple_project(_p(x),x.nbytes,_p(key),_p(value),_p(out_key),_p(out_value),
+        _p(workspace),workspace.nbytes,rows,int(prepared),_stream()),'ple_project')
+
+
 @operator
 def kquant_bytes(fmt: int, N: int, K: int) -> tuple[int, int, int]:
     return (lib.snowllm_kquant_quant_bytes(fmt, N, K), lib.snowllm_kquant_meta_bytes(fmt, N, K),

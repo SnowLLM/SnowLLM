@@ -74,7 +74,7 @@ class PleTable:
     def __del__(self) -> None:
         self.close()
 
-    def gather(self, rows: np.ndarray, device: str = "cuda") -> torch.Tensor:
+    def gather(self, rows: np.ndarray, device: str = "cuda", dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
         if self._staging is None:
             raise SnowLLMError('PLE table is closed')
         idx = np.asarray(rows, dtype=np.int64)
@@ -89,5 +89,5 @@ class PleTable:
         q = self._staging.host[:n].to(device, non_blocking=True)
         self._copied.record()
         w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32)
-        result = w.reshape(t, heads * self.geo.ple_head_dim).to(torch.bfloat16)
+        result = w.reshape(t, heads * self.geo.ple_head_dim).to(dtype)
         return result

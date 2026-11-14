@@ -70,7 +70,9 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
-        self.ple_emb = torch.zeros(rows, self.geo.ple_embed_dim, dtype=torch.bfloat16,
+        self._ple_fused = ops.ple_fused_enabled() and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
+        ple_rows = max(rows,ops.ple_prepared_bytes(rows)//(2*self.geo.ple_embed_dim)) if self._ple_fused else rows
+        self.ple_emb = torch.zeros(ple_rows, self.geo.ple_embed_dim, dtype=torch.bfloat16,
                                    device="cuda")
         if self.model.mtp is not None:
             self._alloc_streams(rows)
@@ -136,6 +138,8 @@ class Qwen4ExpRunner(QwenRunner):
         # Prefill already carries its ragged offsets in Batch. Equal-width row
         # maps are decode metadata; M // B is not a prefill sequence length.
         rows_of, cu = (None, None) if b.is_prefill else self._qsa_shape(b)
+        ple_fused = getattr(self,'_ple_fused',False)
+        ple_bytes = ops.ple_prepared_bytes(M) if ple_fused else 0
         return Qwen4ExpContext(
             batch=b, M=M, eps=self.model.eps,
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
@@ -145,7 +149,9 @@ class Qwen4ExpRunner(QwenRunner):
             num_slots=ops.paged_decode_num_slots(b.batch_size),
             block_size=self.block_size, kv_int8=self.kv_int8, mscale=self.d_mscale,
             tap_at=self.tap_at, taps=self.taps[:M] if self.taps is not None else None,
-            ple_emb=self.ple_emb[:M], ple_has_state=self._has_state(b),
+            ple_emb=None if ple_bytes else self.ple_emb[:M],ple_fused=ple_fused,
+            ple_prepared=self.ple_emb.view(torch.uint8).view(-1)[:ple_bytes] if ple_bytes else None,
+            ple_has_state=self._has_state(b),
             stream_buf=self.mtp_streams if draft else self.trunk_streams,
             inv_freq=self.model.model.inv_freq,
             qsa_max_blocks=self.ctx_cap // self.geo.index_ratio if self._qsa() else 0,
@@ -175,14 +181,19 @@ class Qwen4ExpRunner(QwenRunner):
                 if hi <= lo:
                     continue
                 past = None if b.prev_ids is None else np.asarray(b.prev_ids[i], dtype=np.int64)
-                self._gather(ngram_rows(np.asarray(ids[lo:hi], dtype=np.int64), past, self.geo),
-                             lo, hi)
+                rows=ngram_rows(np.asarray(ids[lo:hi],dtype=np.int64),past,self.geo)
+                if getattr(self,'_ple_fused',False) and ops.ple_prepared_bytes(len(ids)):
+                    self._gather(rows,lo,hi,len(ids))
+                else:self._gather(rows,lo,hi)
 
-    def _gather(self, rows: np.ndarray, lo: int, hi: int) -> None:
+    def _gather(self, rows: np.ndarray, lo: int, hi: int, prepared_rows: int = 0) -> None:
         for at in range(0, hi - lo, GATHER_CHUNK):
             n = min(GATHER_CHUNK, hi - lo - at)
-            ops.copy_rows(self.ple_emb[lo + at:lo + at + n],
-                          self.ple_table.gather(rows[at:at + n]))
+            if prepared_rows:
+                source=self.ple_table.gather(rows[at:at+n],dtype=torch.float32)
+                ops.ple_pack_fp32(source,self.ple_emb.view(torch.uint8).view(-1)[:ops.ple_prepared_bytes(prepared_rows)],lo+at,prepared_rows)
+            else:
+                ops.copy_rows(self.ple_emb[lo+at:lo+at+n],self.ple_table.gather(rows[at:at+n]))
 
     def _probe_batch(self, rows: int, prefill: bool) -> Batch:
         if not prefill:
