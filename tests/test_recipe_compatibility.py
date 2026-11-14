@@ -39,7 +39,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
             if old['repo'] != 'unsloth/Qwen3.8-Flash-Next-GGUF' or old['id'].endswith('-ud3.1'):
                 continue
             self.assertEqual(old['revision'], '766911a6b7369840a91dbcd95f9f997acaab6cd6')
-            if old['precision'] == 'UD-IQ4_XS':
+            if old['id'] == 'qwen3.8-flash-next-iq4-xs-dflash2':
                 self.assertNotIn(old['id'] + '-ud3.1', book)
                 continue
             new = book[old['id'] + '-ud3.1']
@@ -217,7 +217,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         book = builder.recipes()
         for view in (book, builder.for_client(book, '0.3.13')):
             selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
-            self.assertEqual(len(selected), 9 if view is book else 5)
+            self.assertEqual(len(selected), 10 if view is book else 5)
             for raw in selected:
                 with self.subTest(recipe=raw['id'], legacy=view is not book):
                     defaults = raw['defaults']
