@@ -783,6 +783,8 @@ if hasattr(lib, 'snowllm_flash_prepare_weight'):
         ('snowllm_flash_layout_bytes', c_int64, [c_int]*3+[c_int64]*2),
         ('snowllm_flash_prepare_weight', c_int, [c_int]*2+[P]*4+[c_int64]*2+[S]),
     ))
+if hasattr(lib, 'snowllm_mtp_norm_project'):
+    _SIGS.append(('snowllm_mtp_norm_project', c_int, [P]*5+[c_int64,c_int64,c_int,c_float,S]))
 for _name, _res, _args in _SIGS:
     try:
         _fn = getattr(lib, _name)

@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 from .operation import operator
+import os
 import torch
 
-from .._capi import SnowLLMError, check, lib
+from .._capi import GEO_QWEN38_FLASH_NEXT, SnowLLMError, check, geometry_id, lib
 from ._common import _chk, _p, _stream, empty_bytes, empty_shaped, empty_shaped_like
 
 
@@ -52,6 +53,23 @@ def gemm_bf16_a2(a: torch.Tensor, b0_shuffled: torch.Tensor, b1_shuffled: torch.
     _chk(c1, "c1", dt, M, N1)
     check(lib.snowllm_gemm_bf16_a2(_p(a), _p(b0_shuffled), _p(b1_shuffled), _p(c0), _p(c1), M, N0,
                                    N1, K, bf16, _p(ws), _stream()), "gemm_bf16_a2")
+
+
+def mtp_norm_project_enabled():
+    return geometry_id() == GEO_QWEN38_FLASH_NEXT and hasattr(lib,'snowllm_mtp_norm_project') and os.environ.get('SNOWLLM_INTERNAL_03','1') != '0'
+
+
+@operator
+def mtp_norm_project(x,gamma,weight,out,workspace,n_hc,eps):
+    M = x.shape[0]
+    shape = (M,2560) if n_hc == 1 else (M,n_hc,2560)
+    _chk(x,'MTP norm input',torch.bfloat16,*shape)
+    _chk(gamma,'MTP norm gamma',torch.bfloat16,n_hc*2560)
+    _chk(weight,'MTP EH weight',torch.bfloat16)
+    _chk(out,'MTP EH output',torch.bfloat16,M*n_hc,2560)
+    _chk(workspace,'MTP norm workspace',torch.uint8,gemm_bf16_a_ws_bytes(M*n_hc,2560))
+    check(lib.snowllm_mtp_norm_project(_p(x),_p(gamma),_p(weight),_p(out),_p(workspace),
+        workspace.nbytes,M,n_hc,eps,_stream()),'mtp_norm_project')
 
 
 @operator

@@ -152,6 +152,8 @@ from .embedding import (
 from .gemm import (
     gemm_bf16_a,
     gemm_bf16_a2,
+    mtp_norm_project,
+    mtp_norm_project_enabled,
     gemm_bf16_a_ws_bytes,
     gemm_kquant_a,
     gemm_kquant_a_ws_bytes,

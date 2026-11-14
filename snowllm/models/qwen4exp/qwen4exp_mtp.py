@@ -31,13 +31,23 @@ class Qwen4ExpMTP(nn.Module):
         try:
             b, streams = ctx.batch, ctx.residual
             with a.frame():
-                e, en = a.new(M, E), a.new(M, E)
+                e = a.new(M, E)
                 parent.model.embed_tokens(next_ids, e)
-                ops.rmsnorm(e, self.enorm, en, ctx.eps)
-                h = a.new(M, n_hc, E)
-                ops.qwen4exp_hc_norm(hidden, self.hnorm, h, ctx.eps)
-                self.eh_hidden(ctx, h.view(M * n_hc, E), M * n_hc, out=streams.view(M * n_hc, E))
-                self.eh_embed(ctx, en, M, out=e)
+                if ops.mtp_norm_project_enabled():
+                    with a.frame():
+                        ws = a.flat(ops.gemm_bf16_a_ws_bytes(M*n_hc,E),torch.uint8)
+                        ops.mtp_norm_project(hidden,self.hnorm,self.eh_hidden.w,
+                            streams.view(M*n_hc,E),ws,n_hc,ctx.eps)
+                    with a.frame():
+                        ws = a.flat(ops.gemm_bf16_a_ws_bytes(M,E),torch.uint8)
+                        ops.mtp_norm_project(e,self.enorm,self.eh_embed.w,e,ws,1,ctx.eps)
+                else:
+                    en = a.new(M, E)
+                    ops.rmsnorm(e, self.enorm, en, ctx.eps)
+                    h = a.new(M, n_hc, E)
+                    ops.qwen4exp_hc_norm(hidden, self.hnorm, h, ctx.eps)
+                    self.eh_hidden(ctx, h.view(M * n_hc, E), M * n_hc, out=streams.view(M * n_hc, E))
+                    self.eh_embed(ctx, en, M, out=e)
                 streams += e.unsqueeze(1)
             ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True,
                              mscale=ctx.mscale)
