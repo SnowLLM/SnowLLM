@@ -59,8 +59,8 @@ class Qwen4ExpRunner(QwenRunner):
                 "it with --kv-cache-dtype bf16.")
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
-        if self.draft_geo is not None:
-            # The native MoE selector is process-wide; draft checkpoints retain the row baseline.
+        if self.num_spec or self.draft_geo is not None:
+            # The native MoE option is process-wide; speculative modes retain its row baseline.
             os.environ.setdefault('SNOWLLM_INTERNAL_01','0')
         super()._configure()
         self.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
