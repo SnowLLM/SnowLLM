@@ -55,8 +55,8 @@ def gemm_bf16_a2(a: torch.Tensor, b0_shuffled: torch.Tensor, b1_shuffled: torch.
                                    N1, K, bf16, _p(ws), _stream()), "gemm_bf16_a2")
 
 
-def mtp_norm_project_enabled(*,prefill=False):
-    default = '0' if prefill else '1'
+def mtp_norm_project_enabled(rows=None,*,prefill=False):
+    default = '1' if not prefill and rows is not None and 0<rows<=128 else '0'
     return geometry_id() == GEO_QWEN38_FLASH_NEXT and hasattr(lib,'snowllm_mtp_norm_project') and os.environ.get('SNOWLLM_INTERNAL_03',default) != '0'
 
 
