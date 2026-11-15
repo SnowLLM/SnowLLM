@@ -76,6 +76,25 @@ def inference_moe(x,router,gate,down,shared_gate,shared_down,out,scratch,gate_sc
         _p(out),_p(scratch),capacity,x.shape[0],0,_stream()),'inference_moe')
 
 
+inference_moe_norm_available = hasattr(lib,'snowllm_inference_moe_norm')
+
+
+@operator
+def inference_moe_norm(x,residual,gamma,eps,hidden_row,router,gate,down,shared_gate,shared_down,
+                       out,scratch,gate_scale=None,down_scale=None):
+    _io(x,out)
+    M,H=x.shape
+    _chk(residual,'residual',torch.bfloat16,M,H)
+    _chk(gamma,'gamma',torch.bfloat16,H)
+    _chk(hidden_row,'hidden scratch',torch.bfloat16,M,H)
+    weights=_weights((gate,gate_scale),(down,down_scale),(shared_gate,None),(shared_down,None))
+    capacity=0 if scratch is None else scratch.nbytes
+    if capacity<inference_moe_workspace_bytes(M):
+        raise SnowLLMError('MoE scratch is too small')
+    check(lib.snowllm_inference_moe_norm(weights,_p(x),_p(residual),_p(gamma),eps,_p(hidden_row),
+        _p(router),_p(out),_p(scratch),capacity,M,_stream()),'inference_moe_norm')
+
+
 @operator
 def inference_head(x,w,out,scratch):
     _chk(x,'hidden',torch.bfloat16,x.shape[0],x.shape[1])

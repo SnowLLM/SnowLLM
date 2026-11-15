@@ -171,11 +171,18 @@ class FusedMoE(nn.Module):
         self.gate_up_scale, self.down_scale = gate_up_scale, down_scale
         self.shared_gate_up_w, self.shared_down_w = shared_gate_up_w, shared_down_w
 
-    def forward(self, ctx: ForwardContext, x: torch.Tensor, out: torch.Tensor) -> None:
+    def forward(self, ctx: ForwardContext, x: torch.Tensor, out: torch.Tensor,
+                norm: tuple = ()) -> None:
         with ctx.arena.frame():
             ws = ctx.arena.flat(ops.moe_workspace_bytes(ctx.M), torch.uint8)
-            ops.inference_moe(x,self.router_w,self.gate_up_w,self.down_w,self.shared_gate_up_w,
-                              self.shared_down_w,out,ws,self.gate_up_scale,self.down_scale)
+            if norm:
+                residual,gamma,hidden_row=norm
+                ops.inference_moe_norm(x,residual,gamma,ctx.eps,hidden_row,self.router_w,
+                    self.gate_up_w,self.down_w,self.shared_gate_up_w,self.shared_down_w,out,ws,
+                    self.gate_up_scale,self.down_scale)
+            else:
+                ops.inference_moe(x,self.router_w,self.gate_up_w,self.down_w,self.shared_gate_up_w,
+                                  self.shared_down_w,out,ws,self.gate_up_scale,self.down_scale)
 
 
 

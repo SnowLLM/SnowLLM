@@ -36,8 +36,13 @@ class Qwen3_5DecoderLayer(DecoderLayerBase):
         if tap is not None:
             ops.copy_rows(tap,ctx.residual)
         with span(self._mlp_span):
-            self.post_attention_layernorm.add_residual(ctx, ctx.blk, ctx.residual, hidden)
-            self.mlp(ctx, hidden, ctx.blk)
+            if (768<ctx.M<=32768 and isinstance(self.mlp,FusedMoE)
+                    and ops.inference_moe_norm_available):
+                self.mlp(ctx,ctx.blk,ctx.blk,
+                    norm=(ctx.residual,self.post_attention_layernorm.gamma,hidden))
+            else:
+                self.post_attention_layernorm.add_residual(ctx, ctx.blk, ctx.residual, hidden)
+                self.mlp(ctx, hidden, ctx.blk)
 
 
 class Qwen3_5Model(nn.Module):

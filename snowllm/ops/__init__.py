@@ -318,7 +318,8 @@ from .vision import (
 
 from .ple import qsa_job_plan, qsa_group_rows, qsa_decode_rows, qsa_attention, ple_step
 from .inference import (qkv_projection_blocks, inference_qkv, inference_mlp, inference_moe,
-                        inference_moe_workspace_bytes, inference_head, inference_hc)
+                        inference_moe_workspace_bytes, inference_head, inference_hc,
+                        inference_moe_norm, inference_moe_norm_available)
 from .inference import indexer_select, indexer_select_scratch_bytes
 from .metadata import (metadata_ranges, copy_rows, copy_batch, gather_rows, causal_compress_mask,
                        qsa_metadata, spec_accept, spec_first_metadata, spec_step_metadata, spec_step_table_width,

@@ -792,6 +792,9 @@ if hasattr(lib,'snowllm_ple_project'):
         ('snowllm_ple_pack_fp32',c_int,[P,P]+[c_int64]*4+[S]),
         ('snowllm_ple_project',c_int,[P,c_int64]+[P]*5+[c_int64,c_int64,c_int,S]),
     ))
+if hasattr(lib, 'snowllm_inference_moe_norm'):
+    _SIGS.append(('snowllm_inference_moe_norm', c_int,
+                  [c_void_p]*4+[c_float]+[c_void_p]*4+[c_int64,c_int64,S]))
 for _name, _res, _args in _SIGS:
     try:
         _fn = getattr(lib, _name)
