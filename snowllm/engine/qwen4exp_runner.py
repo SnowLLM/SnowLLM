@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+import os
 
 import numpy as np
 import torch
@@ -58,6 +59,9 @@ class Qwen4ExpRunner(QwenRunner):
                 "it with --kv-cache-dtype bf16.")
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
+        if self.draft_geo is not None:
+            # The native MoE selector is process-wide; draft checkpoints retain the row baseline.
+            os.environ.setdefault('SNOWLLM_INTERNAL_01','0')
         super()._configure()
         self.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
         if self.tap_layers:
