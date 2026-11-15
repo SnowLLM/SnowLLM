@@ -60,7 +60,7 @@ class Qwen4ExpRunner(QwenRunner):
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
         if self.num_spec or self.draft_geo is not None:
-            # The native MoE option is process-wide; speculative modes retain its row baseline.
+            # The native option is process-wide; speculative modes retain conservative defaults.
             os.environ.setdefault('SNOWLLM_INTERNAL_01','0')
         super()._configure()
         self.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
@@ -74,7 +74,6 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
-        # Keep row-only readers while making speculative blocked storage opt-in.
         self._ple_row = ops.ple_fused_enabled(default=self.draft_geo is None) and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
         self._ple_decode = self._ple_row and ops.ple_fused_enabled(default=False)
         self._ple_fused = self._ple_row and ops.ple_fused_enabled(default=not self.num_spec and self.draft_geo is None)
