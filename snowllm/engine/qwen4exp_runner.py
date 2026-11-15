@@ -70,9 +70,9 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
-        self._ple_decode = ops.ple_fused_enabled() and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
+        self._ple_decode = ops.ple_fused_enabled(default=self.draft_geo is None) and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
         self._ple_fused = self._ple_decode and ops.ple_fused_enabled(
-            prefill=True,speculative=bool(self.num_spec or self.draft_geo is not None))
+            default=not self.num_spec and self.draft_geo is None)
         packed_rows = rows if self._ple_fused else min(rows,self.decode_rows)
         ple_rows = max(rows,ops.ple_prepared_bytes(packed_rows)//(2*self.geo.ple_embed_dim)) if self._ple_decode else rows
         self.ple_emb = torch.zeros(ple_rows, self.geo.ple_embed_dim, dtype=torch.bfloat16,

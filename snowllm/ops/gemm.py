@@ -73,10 +73,8 @@ def mtp_norm_project(x,gamma,weight,out,workspace,n_hc,eps):
         workspace.nbytes,M,n_hc,eps,_stream()),'mtp_norm_project')
 
 
-def ple_fused_enabled(*,prefill=False,speculative=True):
-    # Speculative prefill remains opt-in; retain the measured non-speculative and decode paths.
-    default = '0' if prefill and speculative else '1'
-    return geometry_id() == GEO_QWEN38_FLASH_NEXT and os.environ.get('SNOWLLM_INTERNAL_02',default)!='0' and all(hasattr(lib,n) for n in (
+def ple_fused_enabled(*,default=True):
+    return geometry_id() == GEO_QWEN38_FLASH_NEXT and os.environ.get('SNOWLLM_INTERNAL_02','1' if default else '0')!='0' and all(hasattr(lib,n) for n in (
         'snowllm_ple_prepared_bytes','snowllm_ple_project_workspace_bytes',
         'snowllm_ple_pack_fp32','snowllm_ple_project'))
 
