@@ -70,8 +70,11 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
-        self._ple_fused = ops.ple_fused_enabled() and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
-        ple_rows = max(rows,ops.ple_prepared_bytes(rows)//(2*self.geo.ple_embed_dim)) if self._ple_fused else rows
+        self._ple_decode = ops.ple_fused_enabled() and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
+        self._ple_fused = self._ple_decode and ops.ple_fused_enabled(
+            prefill=True,speculative=bool(self.num_spec or self.draft_geo is not None))
+        packed_rows = rows if self._ple_fused else min(rows,self.decode_rows)
+        ple_rows = max(rows,ops.ple_prepared_bytes(packed_rows)//(2*self.geo.ple_embed_dim)) if self._ple_decode else rows
         self.ple_emb = torch.zeros(ple_rows, self.geo.ple_embed_dim, dtype=torch.bfloat16,
                                    device="cuda")
         if self.model.mtp is not None:
@@ -140,7 +143,7 @@ class Qwen4ExpRunner(QwenRunner):
         # Prefill already carries its ragged offsets in Batch. Equal-width row
         # maps are decode metadata; M // B is not a prefill sequence length.
         rows_of, cu = (None, None) if b.is_prefill else self._qsa_shape(b)
-        ple_fused = getattr(self,'_ple_fused',False)
+        ple_fused = self._ple_path(b)
         ple_bytes = ops.ple_prepared_bytes(M) if ple_fused else 0
         return Qwen4ExpContext(
             batch=b, M=M, eps=self.model.eps,
@@ -170,6 +173,9 @@ class Qwen4ExpRunner(QwenRunner):
         self._feed_ple(b)
         return super()._prepare_batch(b)
 
+    def _ple_path(self, b: Batch) -> bool:
+        return self._ple_fused or (self._ple_decode and (not b.is_prefill or b.input_ids.numel()<=32))
+
     def _feed_ple(self, b: Batch) -> None:
         if not self.ple_mods:
             return
@@ -184,7 +190,7 @@ class Qwen4ExpRunner(QwenRunner):
                     continue
                 past = None if b.prev_ids is None else np.asarray(b.prev_ids[i], dtype=np.int64)
                 rows=ngram_rows(np.asarray(ids[lo:hi],dtype=np.int64),past,self.geo)
-                if getattr(self,'_ple_fused',False) and ops.ple_prepared_bytes(len(ids)):
+                if self._ple_path(b) and ops.ple_prepared_bytes(len(ids)):
                     self._gather(rows,lo,hi,len(ids))
                 else:self._gather(rows,lo,hi)
 

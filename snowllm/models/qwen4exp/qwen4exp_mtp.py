@@ -33,7 +33,7 @@ class Qwen4ExpMTP(nn.Module):
             with a.frame():
                 e = a.new(M, E)
                 parent.model.embed_tokens(next_ids, e)
-                if ops.mtp_norm_project_enabled():
+                if ops.mtp_norm_project_enabled(prefill=b.is_prefill):
                     with a.frame():
                         ws = a.flat(ops.gemm_bf16_a_ws_bytes(M*n_hc,E),torch.uint8)
                         ops.mtp_norm_project(hidden,self.hnorm,self.eh_hidden.w,
