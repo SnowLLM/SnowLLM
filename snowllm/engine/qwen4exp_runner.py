@@ -23,6 +23,8 @@ from .forward_context import (
 from .inputs import synthetic_batch
 from .qwen_runner import QwenRunner
 from .qwen4exp_spec import Qwen4ExpSpecDecoder
+from .resources import ActivationProbe
+from ..models.qwen4exp import mtp_tail
 
 GATHER_CHUNK = 4096
 
@@ -139,9 +141,25 @@ class Qwen4ExpRunner(QwenRunner):
         from .prefix_cache import Qwen4ExpResidue
         return Qwen4ExpResidue(self.linear_mods, self.ple_mods)
 
+    def _activation_cases(self, chunk, decode):
+        yield from super()._activation_cases(chunk,decode)
+        if chunk < 8192 or not mtp_tail.available(self.model.mtp) or self.kv_int8:
+            return
+        total,qmap=ops.prefill_q_plan([8192])
+        batch=synthetic_batch([8192],self.max_blocks_per_seq,
+            state_indices=[0],has_state=[0],last_row=[8191],is_prefill=True,
+            need_logits=True,total_q_blocks=total,q_block_map=qmap)
+        def walk():
+            with mtp_tail.planning():
+                return self.mtp_draft(self._mtp_input(8192),batch.input_ids,batch)
+        yield ActivationProbe(mtp_tail.PLAN,8192,walk,
+            lifetimes='uses' if self.plan_activations else 'references')
+
     def _ctx(self, b: Batch, plan_key: tuple = PLAN_MAIN) -> Qwen4ExpContext:
         M = b.input_ids.numel()
         draft = plan_key is PLAN_MTP
+        if draft and mtp_tail.enabled(self.model.mtp,b,M,self.kv_int8):
+            plan_key = mtp_tail.PLAN
         if not b.is_prefill:
             plan_key = PLAN_MTP_DECODE if draft else PLAN_DECODE
         # Prefill already carries its ragged offsets in Batch. Equal-width row

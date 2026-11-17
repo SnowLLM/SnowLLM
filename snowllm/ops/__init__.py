@@ -36,6 +36,7 @@ from .attention_full import (
     attn_output_shape,
     attn_output_gating,
     attn_output_project,
+    attention_projection_rows,
     dsv4_attn_fanout,
     dsv4_attn_fanout_scratch_bytes,
     dsv4_norm_proj_bf16,

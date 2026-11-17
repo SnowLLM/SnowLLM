@@ -51,6 +51,9 @@ class Qwen4ExpMTP(nn.Module):
                 streams += e.unsqueeze(1)
             ops.rope_cos_sin(b.positions, parent.inv_freq, ctx.cos, ctx.sin, mrope=True,
                              mscale=ctx.mscale)
+            from . import mtp_tail
+            if mtp_tail.enabled(self,b,M,ctx.kv_int8):
+                return mtp_tail.tail_prefill(self,ctx,streams)
             self.layer(ctx, streams)
 
             folded = streams

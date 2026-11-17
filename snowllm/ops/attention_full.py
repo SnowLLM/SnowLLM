@@ -78,6 +78,24 @@ def attn_output_gating(proj: torch.Tensor,prefill: bool,kv_int8: bool,row0: int 
 
 
 @operator
+def attention_projection_rows(src: torch.Tensor, ids: torch.Tensor | None = None) -> torch.Tensor | None:
+    _chk(src,'projection source',torch.bfloat16,*src.shape)
+    if src.ndim != 2:
+        raise SnowLLMError('projection selection requires a matrix source')
+    rows,columns=src.shape
+    out=None
+    if ids is not None:
+        if ids.dtype not in (torch.int32,torch.int64):
+            raise SnowLLMError('projection selection needs int32 or int64 row indices')
+        _chk(ids,'projection row indices',ids.dtype,ids.numel())
+        out=empty((ids.numel(),columns),dtype=src.dtype,device=src.device)
+    check(lib.snowllm_attention_projection_rows(_p(src),rows,columns,_p(ids),
+          int(ids is not None and ids.dtype==torch.int64),ids.numel() if ids is not None else 0,
+          _p(out),_stream()),'attention_projection_rows')
+    return out
+
+
+@operator
 def attn_output_project(a: torch.Tensor,proj: torch.Tensor,w: torch.Tensor | KQuantProjWeight,
                          scale: torch.Tensor | None,scratch: torch.Tensor | None,
                          out: torch.Tensor,prefill: bool,kv_int8: bool) -> None:
