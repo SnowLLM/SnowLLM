@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23.dev2 — 2026-11-18
+
+- Update Flash-Next attention, projection and MoE execution, with native dispatch and workspace planning shared by prefill and MTP paths.
+  更新 Flash-Next 的注意力、投影与 MoE 执行，由 native 层统一管理 prefill 和 MTP 路径的选择及工作区规划。
+- Add explicit HTTP profiling controls and compressed trace archives, including CLI options and bilingual usage documentation.
+  新增显式 HTTP profiling 控制与压缩 trace 归档，并补充 CLI 选项和中英文使用说明。
+- Refresh UD3.1 Q3 and IQ4 standard HTTP benchmark comparisons for SnowLLM with and without MTP and llama.cpp b12479; retain the updated Radeon 780M results.
+  更新 UD3.1 Q3、IQ4 的标准 HTTP benchmark 对比，覆盖 SnowLLM MTP／无 MTP 和 llama.cpp b12479，并保留最新 Radeon 780M 结果。
+- Require SnowLLM-Kernels 0.3.17.dev2 and check release artifacts for private implementation details and local machine identifiers.
+  依赖升级至 SnowLLM-Kernels 0.3.17.dev2，并检查发布产物中的私有实现信息及本机标识。
+
 ## 0.3.23.dev1 — 2026-11-12
 
 - Add a shared task queue with progress and cancellation for model operations and benchmarks in the CLI and Web UI.
