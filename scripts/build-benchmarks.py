@@ -67,6 +67,18 @@ COMPARISONS = [
 
 
 ARMS = {
+    "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_b12479_20261117_llama":
+        ("llama.cpp", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "None, b12479, F16 KV, HTTP", 0),
+    "qwen3_8_flash_next_iq4_xs_no_mtp_ud3_1_b12479_20261117_llama":
+        ("llama.cpp", "Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS", "None, b12479, F16 KV, HTTP", 0),
+    "qwen3_8_flash_next_q3_k_xl_ud3_1_production_20261117_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_production_20261117_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "None, SEQS=4, HTTP", 0),
+    "qwen3_8_flash_next_iq4_xs_ud3_1_production_20261117_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_iq4_xs_no_mtp_ud3_1_production_20261117_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS", "None, SEQS=4, HTTP", 0),
     "qwen3_8_flash_next_q3_k_xl_ud3_1_release_20261115_snowllm":
         ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "MTP k=2, SEQS=4, HTTP"),
     "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm":
@@ -173,7 +185,9 @@ def short_isl(isl_target: int) -> str:
 
 
 def featured_labels() -> set:
-    return {"qwen3_8_flash_next_q3_k_xl_ud3_1_release_20261115_snowllm"}
+    return {"qwen3_8_flash_next_q3_k_xl_ud3_1_production_20261117_snowllm",
+            "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_production_20261117_snowllm",
+            "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_b12479_20261117_llama"}
 
 
 def point_of(r: dict, n_max: int | None) -> dict:

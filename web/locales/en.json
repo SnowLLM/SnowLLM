@@ -240,5 +240,6 @@
   "benchmark.gfx1103.hardware": "DDR5 5600 MT/s / 32G",
   "benchmark.gfx1103.resultsNote": "Complete Radeon 780M measurements. Rates are in tokens per second; TTFT is in seconds and step time is in milliseconds. llama.cpp AL uses the retained server-log mean length; its step time is estimated from AL and decode rate. K = 1024 tokens.",
   "benchmark.gfx1103.details": "Methodology ↗",
-  "benchmark.gfx1151.hardware": "LPDDR5X 8000 MT/s / 128G"
+  "benchmark.gfx1151.hardware": "LPDDR5X 8000 MT/s / 128G",
+  "benchmark.latestRun": "Updated 17 November 2026: UD3.1 Q3 and IQ4 now include SnowLLM MTP k=2 / no MTP and llama.cpp b12479 / no MTP. All five lengths use OSL 256, one warm-up and four retained HTTP requests. Settings differ: SnowLLM ctx 409600, BF16 KV, chunk 8192; llama.cpp ctx 262144, F16 KV, ubatch 2048, host prompt cache off, four checkpoints and PLE read on demand. Q3 SnowLLM and both llama.cpp runs used host-memory limits with no swap; cache reclaim occurred. IQ4 SnowLLM used an earlier native library."
 }
