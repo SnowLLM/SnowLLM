@@ -1,0 +1,1492 @@
+[
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm",
+  "isl_target": 1024,
+  "input_length_mode": "chat_template_exact",
+  "isl": 1024,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 0.7040854430524632,
+  "ttft_s_reps": [
+   0.7040854430524632,
+   0.6968627989990637,
+   0.7103918680222705,
+   0.7098850179463625
+  ],
+  "decode_tok_s": 34.63973050497684,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1454.3689407362156,
+  "edge_before_c": 40,
+  "edge_after_c": 58,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.0288686039629301,
+  "step_s_reps": [
+   0.028892080552930778,
+   0.028772337384083694,
+   0.02896142868215547,
+   0.02884512737292942
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "Between Sidney and K.**\nThe scene shifts to a domestic setting where a young woman named Sidney confronts a man referred to as \"K.\" (who is thirty years old but",
+   "out informing her. Palmer attempts to justify his secrecy by citing professional caution and his new marriage, but Grace remains hostile. However, she reveals a",
+   " cover expenses and that Tillie has moved out of the main house into the barn because she disapproved of his new lifestyle. Schwitter asks K. not to reveal this",
+   " Evening (Likely from a different novel, possibly *The Magnificent Ambersons* or similar)**\nThis section shifts to a garage where men gossip about Max Wilson, a"
+  ],
+  "measurement": "http_stream_usage_tokens",
+  "decode_token_count": "usage.completion_tokens_minus_first",
+  "aggregation": "decode median; TTFT and prefill first retained request",
+  "thinking": "off",
+  "thinking_requested": "auto",
+  "thinking_capabilities": {
+   "switch": true,
+   "levels": [],
+   "source": "chat_template"
+  },
+  "output_cap": 256,
+  "ttft_s_median": 0.7069852304994129,
+  "ttft_s_p95": 0.7103918680222705,
+  "decode_tok_s_reps": [
+   34.61156070667819,
+   34.75560524162284,
+   34.52868333861403,
+   34.66790030327549
+  ],
+  "osl_reps": [
+   256,
+   256,
+   256,
+   256
+  ],
+  "samples": [
+   {
+    "ttft_s": 0.7040854430524632,
+    "decode_tok_s": 34.61156070667819,
+    "decode_seconds": 7.367480540997349,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 8.071565984049812,
+    "isl": 1024,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.6994106939528137,
+     "decode_tokens": 255,
+     "decode_seconds": 7.3365673122461885,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1464.0897098852265,
+     "decode_tok_s": 34.7573993595553
+    },
+    "loop_period": 0,
+    "text_tail": "Between Sidney and K.**\nThe scene shifts to a domestic setting where a young woman named Sidney confronts a man referred to as \"K.\" (who is thirty years old but"
+   },
+   {
+    "ttft_s": 0.6968627989990637,
+    "decode_tok_s": 34.75560524162284,
+    "decode_seconds": 7.336946032941341,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 8.033808831940405,
+    "isl": 1024,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.6927803559228778,
+     "decode_tokens": 255,
+     "decode_seconds": 7.307277571409941,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1478.101957200984,
+     "decode_tok_s": 34.896717348975386
+    },
+    "loop_period": 0,
+    "text_tail": "out informing her. Palmer attempts to justify his secrecy by citing professional caution and his new marriage, but Grace remains hostile. However, she reveals a"
+   },
+   {
+    "ttft_s": 0.7103918680222705,
+    "decode_tok_s": 34.52868333861403,
+    "decode_seconds": 7.385164313949645,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 8.095556181971915,
+    "isl": 1024,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.7061954539967701,
+     "decode_tokens": 255,
+     "decode_seconds": 7.354049377492629,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1450.0234944937545,
+     "decode_tok_s": 34.674773979684986
+    },
+    "loop_period": 0,
+    "text_tail": " cover expenses and that Tillie has moved out of the main house into the barn because she disapproved of his new lifestyle. Schwitter asks K. not to reveal this"
+   },
+   {
+    "ttft_s": 0.7098850179463625,
+    "decode_tok_s": 34.66790030327549,
+    "decode_seconds": 7.355507480097003,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 8.065392498043366,
+    "isl": 1024,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.7060942150419578,
+     "decode_tokens": 255,
+     "decode_seconds": 7.32283444236964,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1450.2313971502394,
+     "decode_tok_s": 34.82258161192062
+    },
+    "loop_period": 0,
+    "text_tail": " Evening (Likely from a different novel, possibly *The Magnificent Ambersons* or similar)**\nThis section shifts to a garage where men gossip about Max Wilson, a"
+   }
+  ],
+  "runtime_config": {
+   "moe_cache_experts": 0,
+   "moe_cache_mode": "all",
+   "gpu_arch": "gfx1151",
+   "gpu_name": "AMD Radeon 8060S Graphics",
+   "host_total_bytes": 32727916544,
+   "version": "0.3.23.dev1",
+   "max_disk_mem_gib": null,
+   "disk_offloaded_weight_bytes": 0,
+   "host_offload": null,
+   "host_alloc": false,
+   "max_model_len": 409600,
+   "kv_capacity_tokens": 409600,
+   "model_context_limit": 1000000,
+   "max_num_seqs": 4,
+   "kv_cache_dtype": "bf16",
+   "max_gpu_mem_util": 0.9,
+   "max_gpu_mem_gib": null,
+   "max_gpu_mem_bytes": 92771293593,
+   "max_host_mem_util": null,
+   "automatic_host_weight_offload": false,
+   "max_host_mem_gib": null,
+   "max_host_mem_bytes": null,
+   "offload_ratio": 0.0,
+   "num_spec": 0,
+   "dflash_block": null,
+   "prefix_memory_ratio": 0.08,
+   "batch_prefill": false,
+   "mtp_window": 0,
+   "mtp_sinks": 64,
+   "dflash_p_min": null,
+   "dspark_adaptive": false,
+   "enforce_eager": false,
+   "prefill_chunk": 8192
+  },
+  "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+  "platform": "gfx1151",
+  "hardware": "Ryzen AI Max+ 395 / Radeon 8060S",
+  "version": "0.3.23.dev1",
+  "commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+  "benchmark_status": "current",
+  "benchmark_provenance": {
+   "status": "current",
+   "measured_at": "2026-11-16T03:00:41.415704+00:00",
+   "snowllm_commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+   "snowllm_runtime_tree": "4f493cb34134ce5ded56d83cb24265593c7251fb",
+   "native_library_sha256": "8288f60157260a126452efd3b5411eee7a6f0f9704f57d923fdb84322157920b",
+   "recipe": {
+    "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+    "model": "Qwen3.8-Flash-Next",
+    "family": "Qwen",
+    "modalities": [
+     "text",
+     "image"
+    ],
+    "precision": "UD-Q3_K_XL",
+    "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+    "bytes": 90372492225,
+    "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+    "include": [
+     "UD-Q3_K_XL/*.gguf",
+     "mmproj-BF16.gguf"
+    ],
+    "spec": "none",
+    "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+    "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+    "defaults": {
+     "num_spec": 0,
+     "max_num_seqs": 4,
+     "max_num_batched_tokens": 8192
+    },
+    "serve_as": "Qwen3.8-Flash-Next",
+    "sources": [
+     {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+       "preprocessor_config.json",
+       "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+     }
+    ],
+    "priority": 89,
+    "requires": "0.3.22"
+   },
+   "weight_identity_validation": "pinned_manifest_and_stat",
+   "weight_files": [
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null
+    },
+    {
+     "path": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+     "size": 2786568256,
+     "sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+     "size": 10946618,
+     "sha256": "7666000ba91eb5527f8e12e0414de36766dc82a082876337f7827c2caa859143"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+     "size": 49742117248,
+     "sha256": "e954cb3044ae087a003ce8cc1631c9d40fe15ae64a8befcf4aa06457848c647c"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+     "size": 10911746208,
+     "sha256": "fcce26b1e5e6e54559a7e7c2f8d6e37067ec695ff1f14bce662810bde78abe1f"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf",
+     "size": 28800138432,
+     "sha256": "5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36"
+    },
+    {
+     "path": "mmproj-BF16.gguf",
+     "size": 907542944,
+     "sha256": "2e788f8c511d8093c7b43cb87b2fd7e14228340318057f8fb20c86df2efe2355"
+    }
+   ],
+   "benchmark_client_sha256": "4090ceacef0f77d0d9e2a07de46fdba5d9fdc64a6dcc703c71773eb1a02366a9",
+   "raw_result_sha256": "1f8ccca333cc8d1b0c362e150dbbc235410bdafd2b18de793425a843e85fe621",
+   "runtime_verified": true
+  }
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm",
+  "isl_target": 8192,
+  "input_length_mode": "chat_template_exact",
+  "isl": 8192,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 3.9809467729646713,
+  "ttft_s_reps": [
+   3.9809467729646713,
+   3.983947282889858,
+   4.0067065169569105,
+   4.011663697077893
+  ],
+  "decode_tok_s": 33.993643229234095,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 2057.8019418981817,
+  "edge_before_c": 58,
+  "edge_after_c": 65,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.02941727387266891,
+  "step_s_reps": [
+   0.029400821117793813,
+   0.029433726627544007,
+   0.02948723201566905,
+   0.029291187337252732
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "e is noticed by the Hon. George Sylvester Brander, a junior U.S. Senator and permanent resident of the hotel. Brander is struck by Jennie\u2019s beauty and innocence",
+   "t distress and Jennie\u2019s beauty, arranges for them to scrub the main staircase and parlor halls. While working, they are observed by the Hon. George Sylvester Br",
+   "ie and her mother are noticed by the Hon. George Sylvester Brander, a junior U.S. Senator and permanent guest at the hotel. Brander is struck by Jennie\u2019s beauty",
+   "ion, eating hominy and mush, and scavenging coal from railroad yards.\n\n**The Hotel and Senator Brander**\nMrs. Gerhardt secures a job scrubbing the floors of the"
+  ],
+  "measurement": "http_stream_usage_tokens",
+  "decode_token_count": "usage.completion_tokens_minus_first",
+  "aggregation": "decode median; TTFT and prefill first retained request",
+  "thinking": "off",
+  "thinking_requested": "auto",
+  "thinking_capabilities": {
+   "switch": true,
+   "levels": [],
+   "source": "chat_template"
+  },
+  "output_cap": 256,
+  "ttft_s_median": 3.995326899923384,
+  "ttft_s_p95": 4.011663697077893,
+  "decode_tok_s_reps": [
+   34.01265549671282,
+   33.974630961755366,
+   33.9129830656406,
+   34.13996122745742
+  ],
+  "osl_reps": [
+   256,
+   256,
+   256,
+   256
+  ],
+  "samples": [
+   {
+    "ttft_s": 3.9809467729646713,
+    "decode_tok_s": 34.01265549671282,
+    "decode_seconds": 7.497209385037422,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 11.478156158002093,
+    "isl": 8192,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 8192,
+     "prefill_seconds": 3.966743126977235,
+     "decode_tokens": 255,
+     "decode_seconds": 7.462636700947769,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 2065.170276413266,
+     "decode_tok_s": 34.170228327960075
+    },
+    "loop_period": 0,
+    "text_tail": "e is noticed by the Hon. George Sylvester Brander, a junior U.S. Senator and permanent resident of the hotel. Brander is struck by Jennie\u2019s beauty and innocence"
+   },
+   {
+    "ttft_s": 3.983947282889858,
+    "decode_tok_s": 33.974630961755366,
+    "decode_seconds": 7.505600290023722,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 11.48954757291358,
+    "isl": 8192,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 8192,
+     "prefill_seconds": 3.9718060930026695,
+     "decode_tokens": 255,
+     "decode_seconds": 7.475625206716359,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 2062.5377493710625,
+     "decode_tok_s": 34.11085935272668
+    },
+    "loop_period": 0,
+    "text_tail": "t distress and Jennie\u2019s beauty, arranges for them to scrub the main staircase and parlor halls. While working, they are observed by the Hon. George Sylvester Br"
+   },
+   {
+    "ttft_s": 4.0067065169569105,
+    "decode_tok_s": 33.9129830656406,
+    "decode_seconds": 7.519244163995609,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 11.52595068095252,
+    "isl": 8192,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 8192,
+     "prefill_seconds": 3.9941934809321538,
+     "decode_tokens": 255,
+     "decode_seconds": 7.481838641804643,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 2050.977259641457,
+     "decode_tok_s": 34.082531341319225
+    },
+    "loop_period": 0,
+    "text_tail": "ie and her mother are noticed by the Hon. George Sylvester Brander, a junior U.S. Senator and permanent guest at the hotel. Brander is struck by Jennie\u2019s beauty"
+   },
+   {
+    "ttft_s": 4.011663697077893,
+    "decode_tok_s": 34.13996122745742,
+    "decode_seconds": 7.4692527709994465,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 11.48091646807734,
+    "isl": 8192,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 8192,
+     "prefill_seconds": 3.9992933300090954,
+     "decode_tokens": 255,
+     "decode_seconds": 7.433706029551104,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 2048.3618789675947,
+     "decode_tok_s": 34.30321282363093
+    },
+    "loop_period": 0,
+    "text_tail": "ion, eating hominy and mush, and scavenging coal from railroad yards.\n\n**The Hotel and Senator Brander**\nMrs. Gerhardt secures a job scrubbing the floors of the"
+   }
+  ],
+  "runtime_config": {
+   "moe_cache_experts": 0,
+   "moe_cache_mode": "all",
+   "gpu_arch": "gfx1151",
+   "gpu_name": "AMD Radeon 8060S Graphics",
+   "host_total_bytes": 32727916544,
+   "version": "0.3.23.dev1",
+   "max_disk_mem_gib": null,
+   "disk_offloaded_weight_bytes": 0,
+   "host_offload": null,
+   "host_alloc": false,
+   "max_model_len": 409600,
+   "kv_capacity_tokens": 409600,
+   "model_context_limit": 1000000,
+   "max_num_seqs": 4,
+   "kv_cache_dtype": "bf16",
+   "max_gpu_mem_util": 0.9,
+   "max_gpu_mem_gib": null,
+   "max_gpu_mem_bytes": 92771293593,
+   "max_host_mem_util": null,
+   "automatic_host_weight_offload": false,
+   "max_host_mem_gib": null,
+   "max_host_mem_bytes": null,
+   "offload_ratio": 0.0,
+   "num_spec": 0,
+   "dflash_block": null,
+   "prefix_memory_ratio": 0.08,
+   "batch_prefill": false,
+   "mtp_window": 0,
+   "mtp_sinks": 64,
+   "dflash_p_min": null,
+   "dspark_adaptive": false,
+   "enforce_eager": false,
+   "prefill_chunk": 8192
+  },
+  "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+  "platform": "gfx1151",
+  "hardware": "Ryzen AI Max+ 395 / Radeon 8060S",
+  "version": "0.3.23.dev1",
+  "commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+  "benchmark_status": "current",
+  "benchmark_provenance": {
+   "status": "current",
+   "measured_at": "2026-11-16T03:00:41.415704+00:00",
+   "snowllm_commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+   "snowllm_runtime_tree": "4f493cb34134ce5ded56d83cb24265593c7251fb",
+   "native_library_sha256": "8288f60157260a126452efd3b5411eee7a6f0f9704f57d923fdb84322157920b",
+   "recipe": {
+    "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+    "model": "Qwen3.8-Flash-Next",
+    "family": "Qwen",
+    "modalities": [
+     "text",
+     "image"
+    ],
+    "precision": "UD-Q3_K_XL",
+    "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+    "bytes": 90372492225,
+    "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+    "include": [
+     "UD-Q3_K_XL/*.gguf",
+     "mmproj-BF16.gguf"
+    ],
+    "spec": "none",
+    "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+    "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+    "defaults": {
+     "num_spec": 0,
+     "max_num_seqs": 4,
+     "max_num_batched_tokens": 8192
+    },
+    "serve_as": "Qwen3.8-Flash-Next",
+    "sources": [
+     {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+       "preprocessor_config.json",
+       "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+     }
+    ],
+    "priority": 89,
+    "requires": "0.3.22"
+   },
+   "weight_identity_validation": "pinned_manifest_and_stat",
+   "weight_files": [
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null
+    },
+    {
+     "path": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+     "size": 2786568256,
+     "sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+     "size": 10946618,
+     "sha256": "7666000ba91eb5527f8e12e0414de36766dc82a082876337f7827c2caa859143"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+     "size": 49742117248,
+     "sha256": "e954cb3044ae087a003ce8cc1631c9d40fe15ae64a8befcf4aa06457848c647c"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+     "size": 10911746208,
+     "sha256": "fcce26b1e5e6e54559a7e7c2f8d6e37067ec695ff1f14bce662810bde78abe1f"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf",
+     "size": 28800138432,
+     "sha256": "5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36"
+    },
+    {
+     "path": "mmproj-BF16.gguf",
+     "size": 907542944,
+     "sha256": "2e788f8c511d8093c7b43cb87b2fd7e14228340318057f8fb20c86df2efe2355"
+    }
+   ],
+   "benchmark_client_sha256": "4090ceacef0f77d0d9e2a07de46fdba5d9fdc64a6dcc703c71773eb1a02366a9",
+   "raw_result_sha256": "1f8ccca333cc8d1b0c362e150dbbc235410bdafd2b18de793425a843e85fe621",
+   "runtime_verified": true
+  }
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm",
+  "isl_target": 32768,
+  "input_length_mode": "chat_template_exact",
+  "isl": 32768,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 16.746000093990006,
+  "ttft_s_reps": [
+   16.746000093990006,
+   16.76466188696213,
+   16.82295880909078,
+   16.783749270951375
+  ],
+  "decode_tok_s": 33.768483598303746,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1956.7657838339646,
+  "edge_before_c": 65,
+  "edge_after_c": 70,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.029613412696155993,
+  "step_s_reps": [
+   0.029619403098089,
+   0.029607422294222988,
+   0.02963086363503381,
+   0.02953277204331814
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "Jennie catches the eye of the Hon. George Sylvester Brander, a distinguished, middle-aged, unmarried U.S. Senator who resides at the hotel. Brander is struck by",
+   "ished, middle-aged, unmarried U.S. Senator. Brander is charmed by Jennie\u2019s beauty and innocence. He begins to assist the family financially, initially under the",
+   "e seek employment at the prestigious Columbus House hotel. While scrubbing the grand staircase, they are noticed by the Hon. George Sylvester Brander, a wealthy",
+   " with shame due to the public exposure of their poverty.\n\n**The Introduction of Senator Brander**\nWhile cleaning, Jennie catches the eye of the Hon. George Sylv"
+  ],
+  "measurement": "http_stream_usage_tokens",
+  "decode_token_count": "usage.completion_tokens_minus_first",
+  "aggregation": "decode median; TTFT and prefill first retained request",
+  "thinking": "off",
+  "thinking_requested": "auto",
+  "thinking_capabilities": {
+   "switch": true,
+   "levels": [],
+   "source": "chat_template"
+  },
+  "output_cap": 256,
+  "ttft_s_median": 16.774205578956753,
+  "ttft_s_p95": 16.82295880909078,
+  "decode_tok_s_reps": [
+   33.761652680452514,
+   33.77531451615497,
+   33.74859444925723,
+   33.86068867945136
+  ],
+  "osl_reps": [
+   256,
+   256,
+   256,
+   256
+  ],
+  "samples": [
+   {
+    "ttft_s": 16.746000093990006,
+    "decode_tok_s": 33.761652680452514,
+    "decode_seconds": 7.552947790012695,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 24.2989478840027,
+    "isl": 32768,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 32768,
+     "prefill_seconds": 4.973995864042081,
+     "decode_tokens": 255,
+     "decode_seconds": 7.514483223669231,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 6587.862333558784,
+     "decode_tok_s": 33.93446926553741
+    },
+    "loop_period": 0,
+    "text_tail": "Jennie catches the eye of the Hon. George Sylvester Brander, a distinguished, middle-aged, unmarried U.S. Senator who resides at the hotel. Brander is struck by"
+   },
+   {
+    "ttft_s": 16.76466188696213,
+    "decode_tok_s": 33.77531451615497,
+    "decode_seconds": 7.549892685026862,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 24.314554571988992,
+    "isl": 32768,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 32768,
+     "prefill_seconds": 4.987774037988856,
+     "decode_tokens": 255,
+     "decode_seconds": 7.513741088332608,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 6569.664092724725,
+     "decode_tok_s": 33.93782098719982
+    },
+    "loop_period": 0,
+    "text_tail": "ished, middle-aged, unmarried U.S. Senator. Brander is charmed by Jennie\u2019s beauty and innocence. He begins to assist the family financially, initially under the"
+   },
+   {
+    "ttft_s": 16.82295880909078,
+    "decode_tok_s": 33.74859444925723,
+    "decode_seconds": 7.555870226933621,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 24.3788290360244,
+    "isl": 32768,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 32768,
+     "prefill_seconds": 4.995796022936702,
+     "decode_tokens": 255,
+     "decode_seconds": 7.5222369346302,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 6559.114873696912,
+     "decode_tok_s": 33.89949056590518
+    },
+    "loop_period": 0,
+    "text_tail": "e seek employment at the prestigious Columbus House hotel. While scrubbing the grand staircase, they are noticed by the Hon. George Sylvester Brander, a wealthy"
+   },
+   {
+    "ttft_s": 16.783749270951375,
+    "decode_tok_s": 33.86068867945136,
+    "decode_seconds": 7.530856871046126,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 24.3146061419975,
+    "isl": 32768,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 32768,
+     "prefill_seconds": 4.9479072951944545,
+     "decode_tokens": 255,
+     "decode_seconds": 7.499398203450255,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 6622.59780651614,
+     "decode_tok_s": 34.002728363281456
+    },
+    "loop_period": 0,
+    "text_tail": " with shame due to the public exposure of their poverty.\n\n**The Introduction of Senator Brander**\nWhile cleaning, Jennie catches the eye of the Hon. George Sylv"
+   }
+  ],
+  "runtime_config": {
+   "moe_cache_experts": 0,
+   "moe_cache_mode": "all",
+   "gpu_arch": "gfx1151",
+   "gpu_name": "AMD Radeon 8060S Graphics",
+   "host_total_bytes": 32727916544,
+   "version": "0.3.23.dev1",
+   "max_disk_mem_gib": null,
+   "disk_offloaded_weight_bytes": 0,
+   "host_offload": null,
+   "host_alloc": false,
+   "max_model_len": 409600,
+   "kv_capacity_tokens": 409600,
+   "model_context_limit": 1000000,
+   "max_num_seqs": 4,
+   "kv_cache_dtype": "bf16",
+   "max_gpu_mem_util": 0.9,
+   "max_gpu_mem_gib": null,
+   "max_gpu_mem_bytes": 92771293593,
+   "max_host_mem_util": null,
+   "automatic_host_weight_offload": false,
+   "max_host_mem_gib": null,
+   "max_host_mem_bytes": null,
+   "offload_ratio": 0.0,
+   "num_spec": 0,
+   "dflash_block": null,
+   "prefix_memory_ratio": 0.08,
+   "batch_prefill": false,
+   "mtp_window": 0,
+   "mtp_sinks": 64,
+   "dflash_p_min": null,
+   "dspark_adaptive": false,
+   "enforce_eager": false,
+   "prefill_chunk": 8192
+  },
+  "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+  "platform": "gfx1151",
+  "hardware": "Ryzen AI Max+ 395 / Radeon 8060S",
+  "version": "0.3.23.dev1",
+  "commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+  "benchmark_status": "current",
+  "benchmark_provenance": {
+   "status": "current",
+   "measured_at": "2026-11-16T03:00:41.415704+00:00",
+   "snowllm_commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+   "snowllm_runtime_tree": "4f493cb34134ce5ded56d83cb24265593c7251fb",
+   "native_library_sha256": "8288f60157260a126452efd3b5411eee7a6f0f9704f57d923fdb84322157920b",
+   "recipe": {
+    "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+    "model": "Qwen3.8-Flash-Next",
+    "family": "Qwen",
+    "modalities": [
+     "text",
+     "image"
+    ],
+    "precision": "UD-Q3_K_XL",
+    "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+    "bytes": 90372492225,
+    "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+    "include": [
+     "UD-Q3_K_XL/*.gguf",
+     "mmproj-BF16.gguf"
+    ],
+    "spec": "none",
+    "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+    "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+    "defaults": {
+     "num_spec": 0,
+     "max_num_seqs": 4,
+     "max_num_batched_tokens": 8192
+    },
+    "serve_as": "Qwen3.8-Flash-Next",
+    "sources": [
+     {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+       "preprocessor_config.json",
+       "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+     }
+    ],
+    "priority": 89,
+    "requires": "0.3.22"
+   },
+   "weight_identity_validation": "pinned_manifest_and_stat",
+   "weight_files": [
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null
+    },
+    {
+     "path": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+     "size": 2786568256,
+     "sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+     "size": 10946618,
+     "sha256": "7666000ba91eb5527f8e12e0414de36766dc82a082876337f7827c2caa859143"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+     "size": 49742117248,
+     "sha256": "e954cb3044ae087a003ce8cc1631c9d40fe15ae64a8befcf4aa06457848c647c"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+     "size": 10911746208,
+     "sha256": "fcce26b1e5e6e54559a7e7c2f8d6e37067ec695ff1f14bce662810bde78abe1f"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf",
+     "size": 28800138432,
+     "sha256": "5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36"
+    },
+    {
+     "path": "mmproj-BF16.gguf",
+     "size": 907542944,
+     "sha256": "2e788f8c511d8093c7b43cb87b2fd7e14228340318057f8fb20c86df2efe2355"
+    }
+   ],
+   "benchmark_client_sha256": "4090ceacef0f77d0d9e2a07de46fdba5d9fdc64a6dcc703c71773eb1a02366a9",
+   "raw_result_sha256": "1f8ccca333cc8d1b0c362e150dbbc235410bdafd2b18de793425a843e85fe621",
+   "runtime_verified": true
+  }
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm",
+  "isl_target": 131072,
+  "input_length_mode": "chat_template_exact",
+  "isl": 131072,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 70.58278076804709,
+  "ttft_s_reps": [
+   70.58278076804709,
+   4.674932082998566,
+   70.80382207594812,
+   2.65025279391557
+  ],
+  "decode_tok_s": 32.84242585435306,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1856.996828032829,
+  "edge_before_c": 66,
+  "edge_after_c": 72,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.030448421686385556,
+  "step_s_reps": [
+   0.030377562882323916,
+   0.0304430075843508,
+   0.030453835788420307,
+   0.030589005784314203
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   "discovers she is pregnant. Her father, viewing this as a moral disgrace, banishes her from the home.\n\n**2. Cleveland and Lester Kane (Chapters XI\u2013XXII)**\nJennie",
+   "es to Cleveland with her brother Bass and later her mother and siblings. She takes a job as a maid in the household of Mrs. Bracebridge. There, she meets Lester",
+   "ave her family and live with him in Chicago, promising to support her and her relatives. They establish a comfortable life, though they are not legally married.",
+   "and banishes Jennie from the home. Jennie gives birth to a daughter, Vesta, and the family eventually moves to Cleveland to escape the gossip of Columbus. There"
+  ],
+  "measurement": "http_stream_usage_tokens",
+  "decode_token_count": "usage.completion_tokens_minus_first",
+  "aggregation": "decode median; TTFT and prefill first retained request",
+  "thinking": "off",
+  "thinking_requested": "auto",
+  "thinking_capabilities": {
+   "switch": true,
+   "levels": [],
+   "source": "chat_template"
+  },
+  "output_cap": 256,
+  "ttft_s_median": 37.62885642552283,
+  "ttft_s_p95": 70.80382207594812,
+  "decode_tok_s_reps": [
+   32.9190331651615,
+   32.84826563962915,
+   32.83658606907697,
+   32.69148422315811
+  ],
+  "osl_reps": [
+   256,
+   256,
+   256,
+   256
+  ],
+  "samples": [
+   {
+    "ttft_s": 70.58278076804709,
+    "decode_tok_s": 32.9190331651615,
+    "decode_seconds": 7.746278534992598,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 78.32905930303968,
+    "isl": 131072,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 131072,
+     "prefill_seconds": 8.932624571025372,
+     "decode_tokens": 255,
+     "decode_seconds": 7.714304250781424,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 14673.402980033035,
+     "decode_tok_s": 33.0554761272437
+    },
+    "loop_period": 0,
+    "text_tail": "discovers she is pregnant. Her father, viewing this as a moral disgrace, banishes her from the home.\n\n**2. Cleveland and Lester Kane (Chapters XI\u2013XXII)**\nJennie"
+   },
+   {
+    "ttft_s": 4.674932082998566,
+    "decode_tok_s": 32.84826563962915,
+    "decode_seconds": 7.762966934009455,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 12.437899017008021,
+    "isl": 131072,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 8192,
+     "prefill_seconds": 4.499734509037808,
+     "decode_tokens": 255,
+     "decode_seconds": 7.726260910509154,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1820.5518533473926,
+     "decode_tok_s": 33.00432161864382
+    },
+    "loop_period": 0,
+    "text_tail": "es to Cleveland with her brother Bass and later her mother and siblings. She takes a job as a maid in the household of Mrs. Bracebridge. There, she meets Lester"
+   },
+   {
+    "ttft_s": 70.80382207594812,
+    "decode_tok_s": 32.83658606907697,
+    "decode_seconds": 7.765728126047179,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 78.5695502019953,
+    "isl": 131072,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 131072,
+     "prefill_seconds": 9.02928112319205,
+     "decode_tokens": 255,
+     "decode_seconds": 7.724025585688651,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 14516.327292472555,
+     "decode_tok_s": 33.01387303435052
+    },
+    "loop_period": 0,
+    "text_tail": "ave her family and live with him in Chicago, promising to support her and her relatives. They establish a comfortable life, though they are not legally married."
+   },
+   {
+    "ttft_s": 2.65025279391557,
+    "decode_tok_s": 32.69148422315811,
+    "decode_seconds": 7.800196475000121,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 10.45044926891569,
+    "isl": 131072,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 4096,
+     "prefill_seconds": 2.4732854530448094,
+     "decode_tokens": 255,
+     "decode_seconds": 7.7557891481556,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1656.096749753451,
+     "decode_tok_s": 32.87866587510845
+    },
+    "loop_period": 0,
+    "text_tail": "and banishes Jennie from the home. Jennie gives birth to a daughter, Vesta, and the family eventually moves to Cleveland to escape the gossip of Columbus. There"
+   }
+  ],
+  "runtime_config": {
+   "moe_cache_experts": 0,
+   "moe_cache_mode": "all",
+   "gpu_arch": "gfx1151",
+   "gpu_name": "AMD Radeon 8060S Graphics",
+   "host_total_bytes": 32727916544,
+   "version": "0.3.23.dev1",
+   "max_disk_mem_gib": null,
+   "disk_offloaded_weight_bytes": 0,
+   "host_offload": null,
+   "host_alloc": false,
+   "max_model_len": 409600,
+   "kv_capacity_tokens": 409600,
+   "model_context_limit": 1000000,
+   "max_num_seqs": 4,
+   "kv_cache_dtype": "bf16",
+   "max_gpu_mem_util": 0.9,
+   "max_gpu_mem_gib": null,
+   "max_gpu_mem_bytes": 92771293593,
+   "max_host_mem_util": null,
+   "automatic_host_weight_offload": false,
+   "max_host_mem_gib": null,
+   "max_host_mem_bytes": null,
+   "offload_ratio": 0.0,
+   "num_spec": 0,
+   "dflash_block": null,
+   "prefix_memory_ratio": 0.08,
+   "batch_prefill": false,
+   "mtp_window": 0,
+   "mtp_sinks": 64,
+   "dflash_p_min": null,
+   "dspark_adaptive": false,
+   "enforce_eager": false,
+   "prefill_chunk": 8192
+  },
+  "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+  "platform": "gfx1151",
+  "hardware": "Ryzen AI Max+ 395 / Radeon 8060S",
+  "version": "0.3.23.dev1",
+  "commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+  "benchmark_status": "current",
+  "benchmark_provenance": {
+   "status": "current",
+   "measured_at": "2026-11-16T03:00:41.415704+00:00",
+   "snowllm_commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+   "snowllm_runtime_tree": "4f493cb34134ce5ded56d83cb24265593c7251fb",
+   "native_library_sha256": "8288f60157260a126452efd3b5411eee7a6f0f9704f57d923fdb84322157920b",
+   "recipe": {
+    "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+    "model": "Qwen3.8-Flash-Next",
+    "family": "Qwen",
+    "modalities": [
+     "text",
+     "image"
+    ],
+    "precision": "UD-Q3_K_XL",
+    "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+    "bytes": 90372492225,
+    "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+    "include": [
+     "UD-Q3_K_XL/*.gguf",
+     "mmproj-BF16.gguf"
+    ],
+    "spec": "none",
+    "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+    "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+    "defaults": {
+     "num_spec": 0,
+     "max_num_seqs": 4,
+     "max_num_batched_tokens": 8192
+    },
+    "serve_as": "Qwen3.8-Flash-Next",
+    "sources": [
+     {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+       "preprocessor_config.json",
+       "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+     }
+    ],
+    "priority": 89,
+    "requires": "0.3.22"
+   },
+   "weight_identity_validation": "pinned_manifest_and_stat",
+   "weight_files": [
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null
+    },
+    {
+     "path": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+     "size": 2786568256,
+     "sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+     "size": 10946618,
+     "sha256": "7666000ba91eb5527f8e12e0414de36766dc82a082876337f7827c2caa859143"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+     "size": 49742117248,
+     "sha256": "e954cb3044ae087a003ce8cc1631c9d40fe15ae64a8befcf4aa06457848c647c"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+     "size": 10911746208,
+     "sha256": "fcce26b1e5e6e54559a7e7c2f8d6e37067ec695ff1f14bce662810bde78abe1f"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf",
+     "size": 28800138432,
+     "sha256": "5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36"
+    },
+    {
+     "path": "mmproj-BF16.gguf",
+     "size": 907542944,
+     "sha256": "2e788f8c511d8093c7b43cb87b2fd7e14228340318057f8fb20c86df2efe2355"
+    }
+   ],
+   "benchmark_client_sha256": "4090ceacef0f77d0d9e2a07de46fdba5d9fdc64a6dcc703c71773eb1a02366a9",
+   "raw_result_sha256": "1f8ccca333cc8d1b0c362e150dbbc235410bdafd2b18de793425a843e85fe621",
+   "runtime_verified": true
+  }
+ },
+ {
+  "label": "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm",
+  "isl_target": 225280,
+  "input_length_mode": "chat_template_exact",
+  "isl": 225280,
+  "osl": 256,
+  "conc": 1,
+  "reps": 4,
+  "warm": 1,
+  "ttft_s": 124.38210762303788,
+  "ttft_s_reps": [
+   124.38210762303788,
+   1.2480004160897806,
+   1.6089505760464817,
+   1.2199202809715644
+  ],
+  "decode_tok_s": 31.695068450780106,
+  "decode_tok_s_user": null,
+  "prefill_tok_s": 1811.192978677859,
+  "edge_before_c": 69,
+  "edge_after_c": 72,
+  "accept_unit": "AL",
+  "accept_mean": 1.0,
+  "accept_stdev": 0.0,
+  "accept_reps": [
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ],
+  "step_s": 0.031550880384348404,
+  "step_s_reps": [
+   0.03163620443539877,
+   0.03228658680785813,
+   0.03145916259199308,
+   0.03146555633329805
+  ],
+  "loop_period_reps": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "text_tails": [
+   " prospects and Carrie\u2019s growing desire for social status. They are discovered by Hurstwood\u2019s family, leading to his disinheritance and social ostracization.\n*  ",
+   "as a maid for the Bracebridge family. There, she meets Hurstwood, a wealthy, sophisticated, and morally ambiguous manager of a Chicago saloon. Hurstwood is capt",
+   " **The Tragedy of Brander:** Carrie becomes pregnant by Brander. Before he can marry her, he dies suddenly of typhoid fever. Carrie is left alone, pregnant, and",
+   "ovides financial aid to the Gerhardt family, eventually taking Carrie to live with him in Chicago. However, Brander dies suddenly of typhoid fever before he can"
+  ],
+  "measurement": "http_stream_usage_tokens",
+  "decode_token_count": "usage.completion_tokens_minus_first",
+  "aggregation": "decode median; TTFT and prefill first retained request",
+  "thinking": "off",
+  "thinking_requested": "auto",
+  "thinking_capabilities": {
+   "switch": true,
+   "levels": [],
+   "source": "chat_template"
+  },
+  "output_cap": 256,
+  "ttft_s_median": 1.4284754960681312,
+  "ttft_s_p95": 124.38210762303788,
+  "decode_tok_s_reps": [
+   31.609354467347792,
+   30.972614291846213,
+   31.787241541340897,
+   31.780782434212423
+  ],
+  "osl_reps": [
+   256,
+   256,
+   256,
+   256
+  ],
+  "samples": [
+   {
+    "ttft_s": 124.38210762303788,
+    "decode_tok_s": 31.609354467347792,
+    "decode_seconds": 8.067232131026685,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 132.44933975406457,
+    "isl": 225280,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 225280,
+     "prefill_seconds": 10.727675102418289,
+     "decode_tokens": 255,
+     "decode_seconds": 8.024182851193473,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 20999.89026972081,
+     "decode_tok_s": 31.778936837421732
+    },
+    "loop_period": 0,
+    "text_tail": " prospects and Carrie\u2019s growing desire for social status. They are discovered by Hurstwood\u2019s family, leading to his disinheritance and social ostracization.\n*  "
+   },
+   {
+    "ttft_s": 1.2480004160897806,
+    "decode_tok_s": 30.972614291846213,
+    "decode_seconds": 8.233079636003822,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 9.481080052093603,
+    "isl": 225280,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.9205443520331755,
+     "decode_tokens": 255,
+     "decode_seconds": 8.172100649564527,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1112.385294351462,
+     "decode_tok_s": 31.20372728321553
+    },
+    "loop_period": 0,
+    "text_tail": "as a maid for the Bracebridge family. There, she meets Hurstwood, a wealthy, sophisticated, and morally ambiguous manager of a Chicago saloon. Hurstwood is capt"
+   },
+   {
+    "ttft_s": 1.6089505760464817,
+    "decode_tok_s": 31.787241541340897,
+    "decode_seconds": 8.022086460958235,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 9.631037037004717,
+    "isl": 225280,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1536,
+     "prefill_seconds": 1.2682951969327405,
+     "decode_tokens": 255,
+     "decode_seconds": 7.975808132323436,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1211.074522488676,
+     "decode_tok_s": 31.97168183704989
+    },
+    "loop_period": 0,
+    "text_tail": " **The Tragedy of Brander:** Carrie becomes pregnant by Brander. Before he can marry her, he dies suddenly of typhoid fever. Carrie is left alone, pregnant, and"
+   },
+   {
+    "ttft_s": 1.2199202809715644,
+    "decode_tok_s": 31.780782434212423,
+    "decode_seconds": 8.023716864991002,
+    "stream_chunks": 256,
+    "finish_reason": "length",
+    "total_s": 9.243637145962566,
+    "isl": 225280,
+    "osl": 256,
+    "timings": {
+     "prefill_tokens": 1024,
+     "prefill_seconds": 0.9001619799528271,
+     "decode_tokens": 255,
+     "decode_seconds": 7.982077681343071,
+     "queue_seconds": 0.0,
+     "scheduler_wait_seconds": 0.0,
+     "prefill_tok_s": 1137.5730399696092,
+     "decode_tok_s": 31.94656957498984
+    },
+    "loop_period": 0,
+    "text_tail": "ovides financial aid to the Gerhardt family, eventually taking Carrie to live with him in Chicago. However, Brander dies suddenly of typhoid fever before he can"
+   }
+  ],
+  "runtime_config": {
+   "moe_cache_experts": 0,
+   "moe_cache_mode": "all",
+   "gpu_arch": "gfx1151",
+   "gpu_name": "AMD Radeon 8060S Graphics",
+   "host_total_bytes": 32727916544,
+   "version": "0.3.23.dev1",
+   "max_disk_mem_gib": null,
+   "disk_offloaded_weight_bytes": 0,
+   "host_offload": null,
+   "host_alloc": false,
+   "max_model_len": 409600,
+   "kv_capacity_tokens": 409600,
+   "model_context_limit": 1000000,
+   "max_num_seqs": 4,
+   "kv_cache_dtype": "bf16",
+   "max_gpu_mem_util": 0.9,
+   "max_gpu_mem_gib": null,
+   "max_gpu_mem_bytes": 92771293593,
+   "max_host_mem_util": null,
+   "automatic_host_weight_offload": false,
+   "max_host_mem_gib": null,
+   "max_host_mem_bytes": null,
+   "offload_ratio": 0.0,
+   "num_spec": 0,
+   "dflash_block": null,
+   "prefix_memory_ratio": 0.08,
+   "batch_prefill": false,
+   "mtp_window": 0,
+   "mtp_sinks": 64,
+   "dflash_p_min": null,
+   "dspark_adaptive": false,
+   "enforce_eager": false,
+   "prefill_chunk": 8192
+  },
+  "corpus_sha256": "1b415671ce0e7723773b80c0c160395390d52e31d60edb64168eebb5022395d7",
+  "platform": "gfx1151",
+  "hardware": "Ryzen AI Max+ 395 / Radeon 8060S",
+  "version": "0.3.23.dev1",
+  "commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+  "benchmark_status": "current",
+  "benchmark_provenance": {
+   "status": "current",
+   "measured_at": "2026-11-16T03:00:41.415704+00:00",
+   "snowllm_commit": "e9680829c5f7f422be9531c943b764c1c8b5f318",
+   "snowllm_runtime_tree": "4f493cb34134ce5ded56d83cb24265593c7251fb",
+   "native_library_sha256": "8288f60157260a126452efd3b5411eee7a6f0f9704f57d923fdb84322157920b",
+   "recipe": {
+    "id": "qwen3.8-flash-next-q3-k-xl-no-mtp-ud3.1",
+    "model": "Qwen3.8-Flash-Next",
+    "family": "Qwen",
+    "modalities": [
+     "text",
+     "image"
+    ],
+    "precision": "UD-Q3_K_XL",
+    "dir": "Qwen3.8-Flash-Next-UD-Q3_K_XL-UD3.1",
+    "bytes": 90372492225,
+    "repo": "unsloth/Qwen3.8-Flash-Next-GGUF",
+    "revision": "084c631ac221016019d6e0a863afe92d90edd3b0",
+    "include": [
+     "UD-Q3_K_XL/*.gguf",
+     "mmproj-BF16.gguf"
+    ],
+    "spec": "none",
+    "summary": "Unsloth Dynamic v3.1: Qwen3.8-Flash-Next in UD-Q3_K_XL with speculative decoding disabled.",
+    "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations.",
+    "defaults": {
+     "num_spec": 0,
+     "max_num_seqs": 4,
+     "max_num_batched_tokens": 8192
+    },
+    "serve_as": "Qwen3.8-Flash-Next",
+    "sources": [
+     {
+      "repo": "Qwen/Qwen3.8-Flash-Next",
+      "include": [
+       "preprocessor_config.json",
+       "video_preprocessor_config.json"
+      ],
+      "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
+     }
+    ],
+    "priority": 89,
+    "requires": "0.3.22"
+   },
+   "weight_identity_validation": "pinned_manifest_and_stat",
+   "weight_files": [
+    {
+     "path": "preprocessor_config.json",
+     "size": 390,
+     "sha256": null
+    },
+    {
+     "path": "video_preprocessor_config.json",
+     "size": 385,
+     "sha256": null
+    },
+    {
+     "path": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+     "size": 2786568256,
+     "sha256": "5ff54097406a905cf3a724c709124ceb0e3e10235ee862298969e91c96fa96e6"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00001-of-00004.gguf",
+     "size": 10946618,
+     "sha256": "7666000ba91eb5527f8e12e0414de36766dc82a082876337f7827c2caa859143"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00002-of-00004.gguf",
+     "size": 49742117248,
+     "sha256": "e954cb3044ae087a003ce8cc1631c9d40fe15ae64a8befcf4aa06457848c647c"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00003-of-00004.gguf",
+     "size": 10911746208,
+     "sha256": "fcce26b1e5e6e54559a7e7c2f8d6e37067ec695ff1f14bce662810bde78abe1f"
+    },
+    {
+     "path": "UD-Q3_K_XL/Qwen3.8-Flash-Next-UD-Q3_K_XL-00004-of-00004.gguf",
+     "size": 28800138432,
+     "sha256": "5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36"
+    },
+    {
+     "path": "mmproj-BF16.gguf",
+     "size": 907542944,
+     "sha256": "2e788f8c511d8093c7b43cb87b2fd7e14228340318057f8fb20c86df2efe2355"
+    }
+   ],
+   "benchmark_client_sha256": "4090ceacef0f77d0d9e2a07de46fdba5d9fdc64a6dcc703c71773eb1a02366a9",
+   "raw_result_sha256": "1f8ccca333cc8d1b0c362e150dbbc235410bdafd2b18de793425a843e85fe621",
+   "runtime_verified": true
+  }
+ }
+]

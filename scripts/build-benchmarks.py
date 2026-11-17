@@ -67,6 +67,26 @@ COMPARISONS = [
 
 
 ARMS = {
+    "qwen3_8_flash_next_q3_k_xl_ud3_1_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "None, SEQS=4, HTTP", 0),
+    "qwen3_8_flash_next_q3_k_xl_dflash2_ud3_1_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "DFlash2 block 4, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_iq4_xs_ud3_1_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q3_k_xl_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q3_k_xl_no_mtp_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "None, SEQS=4, HTTP", 0),
+    "qwen3_8_flash_next_q3_k_xl_dflash2_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-Q3_K_XL", "DFlash2 block 4, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_iq4_xs_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "MTP k=2, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_iq4_xs_dflash2_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "DFlash2 block 4, SEQS=4, HTTP"),
+    "qwen3_8_flash_next_q4_fast_release_20261115_snowllm":
+        ("SnowLLM", "Qwen3.8-Flash-Next q4-fast", "None, SEQS=4, HTTP", 0),
     "qwen3_8_flash_next_q4_fast_none_standard_20261108T152240Z":
         ("SnowLLM", "Qwen3.8-Flash-Next q4-fast", "None, SEQS=4, HTTP"),
     "qwen3_8_flash_next_q4_fast_dflash2_standard_20261108T152240Z":
@@ -153,7 +173,7 @@ def short_isl(isl_target: int) -> str:
 
 
 def featured_labels() -> set:
-    return {"qwen3_8_flash_next_q3_k_xl_mtp_engine_snowllm"}
+    return {"qwen3_8_flash_next_q3_k_xl_ud3_1_release_20261115_snowllm"}
 
 
 def point_of(r: dict, n_max: int | None) -> dict:
