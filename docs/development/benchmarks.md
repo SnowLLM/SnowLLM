@@ -76,13 +76,13 @@ reached the output cap; these measurements evaluate throughput, not answer quali
 
 | Input | Prefill tok/s | Decode tok/s | TTFT s | AL |
 | --- | ---: | ---: | ---: | ---: |
-| 1K | 1174.2 | 44.94 | 0.872 | 2.656 |
-| 8K | 1234.6 | 42.34 | 6.635 | 2.796 |
+| 1K | 1184.8 | 45.96 | 0.864 | 2.656 |
+| 8K | 1265.5 | 43.42 | 6.474 | 2.796 |
 
 The client rejects a server architecture mismatch before warm-up. Raw samples, the
 corpus hash and runtime settings are in
-[`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json).
-The source was dirty: it includes the benchmark fixes described above.
+[`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json).
+The 2026-11-17 rerun uses the installed remote SnowLLM 0.3.21 / kernels 0.3.13 release, with hashes of the actual native library, loader, target, draft and client source. The previous record is retained as historical evidence; differing versions do not establish a matched performance comparison.
 
 ## Radeon 780M MiniCPM comparison (2026-10-29) {#radeon-780m}
 

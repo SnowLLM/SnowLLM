@@ -57,10 +57,10 @@ LFM2.5-8B-A1B Q4_K_M 在 Windows 的 Ryzen 9 7940HS / Radeon 780M（`gfx1103`）
 
 | 输入 | 预填充 tok/s | 生成 tok/s | TTFT 秒 | AL |
 | --- | ---: | ---: | ---: | ---: |
-| 1K | 1174.2 | 44.94 | 0.872 | 2.656 |
-| 8K | 1234.6 | 42.34 | 6.635 | 2.796 |
+| 1K | 1184.8 | 45.96 | 0.864 | 2.656 |
+| 8K | 1265.5 | 43.42 | 6.474 | 2.796 |
 
-客户端在预热前核对服务端架构。原始样本、语料哈希和运行配置见 [`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm.json)。源码包含上述 benchmark 修正，测试时尚未提交，数据已标记 `source_dirty`。
+客户端在预热前核对服务端架构。原始样本、语料哈希和运行配置见 [`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json)。2026-11-17 复测使用远端已安装的 SnowLLM 0.3.21 / kernels 0.3.13，并记录实际 native、loader、主模型、草稿和客户端源码哈希。旧记录保留并标记为历史；不同版本之间不据此宣称性能回退或提升。
 
 ## Radeon 780M MiniCPM 对比（2026-10-29） {#radeon-780m}
 

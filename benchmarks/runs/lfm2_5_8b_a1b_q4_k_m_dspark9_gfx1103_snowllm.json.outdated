@@ -1,0 +1,4 @@
+{
+  "reason": "Superseded by the validated 2026-11-17 standard HTTP rerun on the same 780M. Historical samples are retained; differing runtime/native versions do not establish a matched regression comparison.",
+  "replacement": "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json"
+}
