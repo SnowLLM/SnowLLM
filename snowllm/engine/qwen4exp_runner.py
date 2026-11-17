@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-import os
-
 import numpy as np
 import torch
 
@@ -61,9 +59,6 @@ class Qwen4ExpRunner(QwenRunner):
                 "it with --kv-cache-dtype bf16.")
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
-        if self.num_spec or self.draft_geo is not None:
-            # The native option is process-wide; speculative modes retain conservative defaults.
-            os.environ.setdefault('SNOWLLM_INTERNAL_01','0')
         super()._configure()
         self.tap_at = {layer: j for j, layer in enumerate(self.tap_layers)}
         if self.tap_layers:
@@ -76,16 +71,13 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
-        self._ple_row = ops.ple_fused_enabled(default=self.draft_geo is None) and self.geo.ple_embed_dim==2560 and self.geo.hidden==2560
-        self._ple_decode = self._ple_row and ops.ple_fused_enabled(default=False)
-        self._ple_fused = self._ple_row and ops.ple_fused_enabled(default=not self.num_spec and self.draft_geo is None)
-        packed_rows = rows if self._ple_fused else min(rows,self.decode_rows)
-        ple_rows = max(rows,ops.ple_prepared_bytes(packed_rows)//(2*self.geo.ple_embed_dim)) if self._ple_fused or self._ple_decode else rows
+        _,prefill_bytes,gather_bytes = self._ple_layout(rows,True)
+        _,decode_bytes,_ = self._ple_layout(min(rows,self.decode_rows),False)
+        ple_rows = max(rows,max(prefill_bytes,decode_bytes)//(2*self.geo.ple_embed_dim))
         self.ple_emb = torch.zeros(ple_rows, self.geo.ple_embed_dim, dtype=torch.bfloat16,
                                    device="cuda")
         if self.model.mtp is not None:
             self._alloc_streams(rows)
-        gather_bytes = ops.ple_prepared_bytes(min(rows,GATHER_CHUNK)) if self._ple_fused else 0
         self.ple_gather_buffer = torch.empty(gather_bytes,dtype=torch.uint8,device='cuda')
 
     def _alloc_mtp_hidden(self) -> None:
@@ -165,8 +157,7 @@ class Qwen4ExpRunner(QwenRunner):
         # Prefill already carries its ragged offsets in Batch. Equal-width row
         # maps are decode metadata; M // B is not a prefill sequence length.
         rows_of, cu = (None, None) if b.is_prefill else self._qsa_shape(b)
-        ple_fused = self._ple_path(b)
-        ple_bytes = ops.ple_prepared_bytes(M) if ple_fused else 0
+        ple_fused,ple_bytes,_ = self._ple_layout(M,b.is_prefill)
         return Qwen4ExpContext(
             batch=b, M=M, eps=self.model.eps,
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
@@ -195,8 +186,9 @@ class Qwen4ExpRunner(QwenRunner):
         self._feed_ple(b)
         return super()._prepare_batch(b)
 
-    def _ple_path(self, b: Batch) -> bool:
-        return (self._ple_fused and b.is_prefill) or (self._ple_decode and not b.is_prefill) or (self._ple_row and b.input_ids.numel()<=32)
+    def _ple_layout(self, rows: int, prefill: bool):
+        return ops.ple_plan(rows,GATHER_CHUNK,prefill=prefill,
+                            speculative=bool(self.num_spec),draft_checkpoint=self.draft_geo is not None)
 
     def _feed_ple(self, b: Batch) -> None:
         if not self.ple_mods:
@@ -206,13 +198,14 @@ class Qwen4ExpRunner(QwenRunner):
             cu = (b.host_cu_seqlens if b.is_prefill and b.host_cu_seqlens is not None else
                   b.cu_seqlens.tolist() if b.is_prefill and b.cu_seqlens is not None else
                   list(range(len(ids)+1)))
+            _,prepared_bytes,_ = self._ple_layout(len(ids),b.is_prefill)
             for i in range(len(cu) - 1):
                 lo, hi = cu[i], cu[i + 1]
                 if hi <= lo:
                     continue
                 past = None if b.prev_ids is None else np.asarray(b.prev_ids[i], dtype=np.int64)
                 rows=ngram_rows(np.asarray(ids[lo:hi],dtype=np.int64),past,self.geo)
-                if self._ple_path(b) and ops.ple_prepared_bytes(len(ids)):
+                if prepared_bytes:
                     self._gather(rows,lo,hi,len(ids))
                 else:self._gather(rows,lo,hi)
 
@@ -224,7 +217,7 @@ class Qwen4ExpRunner(QwenRunner):
                 offset=lo+at
                 packed_bytes=ops.ple_prepared_bytes(n)
                 begin=offset*self.geo.ple_embed_dim*2
-                if n>32 and offset%32==0 and begin+packed_bytes<=destination.nbytes:
+                if packed_bytes and offset%32==0 and begin+packed_bytes<=destination.nbytes:
                     packed=self.ple_gather_buffer[:packed_bytes]
                     self.ple_table.gather(rows[at:at+n],packed_out=packed)
                     destination[begin:begin+packed_bytes].copy_(packed)

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
-import os
+from .operation import geometry_cache, operator
+import ctypes
 import torch
 
-from .._capi import GEO_QWEN38_FLASH_NEXT, SnowLLMError, check, geometry_id, lib
+from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _p, _stream, empty_bytes, empty_shaped, empty_shaped_like
 
 
@@ -55,28 +55,44 @@ def gemm_bf16_a2(a: torch.Tensor, b0_shuffled: torch.Tensor, b1_shuffled: torch.
                                    N1, K, bf16, _p(ws), _stream()), "gemm_bf16_a2")
 
 
-def mtp_norm_project_enabled(rows=None,*,prefill=False):
-    default = '1' if not prefill and rows is not None and 0<rows<=128 else '0'
-    return geometry_id() == GEO_QWEN38_FLASH_NEXT and hasattr(lib,'snowllm_mtp_norm_project') and os.environ.get('SNOWLLM_INTERNAL_03',default) != '0'
+mtp_norm_project_available = all(hasattr(lib,n) for n in (
+    'snowllm_mtp_norm_project_workspace_bytes','snowllm_mtp_norm_project_step'))
 
 
 @operator
-def mtp_norm_project(x,gamma,weight,out,workspace,n_hc,eps):
-    M = x.shape[0]
-    shape = (M,2560) if n_hc == 1 else (M,n_hc,2560)
-    _chk(x,'MTP norm input',torch.bfloat16,*shape)
-    _chk(gamma,'MTP norm gamma',torch.bfloat16,n_hc*2560)
+def mtp_norm_project_workspace_bytes(rows,n_hc,hidden,*,prefill=False):
+    return lib.snowllm_mtp_norm_project_workspace_bytes(rows,n_hc,hidden,int(prefill))
+
+
+@operator
+def mtp_norm_project(x,gamma,weight,out,workspace,n_hc,eps,*,prefill=False):
+    _chk(x,'MTP norm input',torch.bfloat16)
+    if x.ndim<2:
+        raise SnowLLMError('MTP norm input needs row and feature dimensions')
+    M,E = x.shape[0],x.shape[-1]
+    if x.numel()!=M*n_hc*E:
+        raise SnowLLMError('MTP norm input does not match its stream count')
+    _chk(gamma,'MTP norm gamma',torch.bfloat16,n_hc*E)
     _chk(weight,'MTP EH weight',torch.bfloat16)
-    _chk(out,'MTP EH output',torch.bfloat16,M*n_hc,2560)
-    _chk(workspace,'MTP norm workspace',torch.uint8,gemm_bf16_a_ws_bytes(M*n_hc,2560))
-    check(lib.snowllm_mtp_norm_project(_p(x),_p(gamma),_p(weight),_p(out),_p(workspace),
-        workspace.nbytes,M,n_hc,eps,_stream()),'mtp_norm_project')
+    if weight.numel()!=E*E:
+        raise SnowLLMError('MTP EH weight does not match its input width')
+    _chk(out,'MTP EH output',torch.bfloat16,M*n_hc,E)
+    _chk(workspace,'MTP norm workspace',torch.uint8,
+         mtp_norm_project_workspace_bytes(M,n_hc,E,prefill=prefill))
+    check(lib.snowllm_mtp_norm_project_step(_p(x),_p(gamma),_p(weight),_p(out),_p(workspace),
+        workspace.nbytes,M,n_hc,E,eps,int(prefill),_stream()),'mtp_norm_project')
 
 
-def ple_fused_enabled(*,default=True):
-    return geometry_id() == GEO_QWEN38_FLASH_NEXT and os.environ.get('SNOWLLM_INTERNAL_02','1' if default else '0')!='0' and all(hasattr(lib,n) for n in (
-        'snowllm_ple_prepared_bytes','snowllm_ple_project_workspace_bytes',
-        'snowllm_ple_pack_fp32','snowllm_ple_project'))
+@geometry_cache
+def ple_plan(rows, gather_rows=0, *, prefill=False, speculative=False, draft_checkpoint=False):
+    if not all(hasattr(lib,n) for n in (
+        'snowllm_ple_plan','snowllm_ple_prepared_bytes','snowllm_ple_project_workspace_bytes',
+        'snowllm_ple_pack_fp32','snowllm_ple_project')):
+        return False,0,0
+    plan=(ctypes.c_int64*3)()
+    check(lib.snowllm_ple_plan(rows,gather_rows,int(prefill),int(speculative),
+                             int(draft_checkpoint),plan),'ple_plan')
+    return bool(plan[0]),plan[1],plan[2]
 
 
 @operator

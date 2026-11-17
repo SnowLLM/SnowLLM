@@ -788,6 +788,13 @@ if hasattr(lib,'snowllm_attention_projection_rows'):
     _SIGS.append(('snowllm_attention_projection_rows',c_int,[P,c_int64,c_int64,P,c_int,c_int64,P,S]))
 if hasattr(lib, 'snowllm_mtp_norm_project'):
     _SIGS.append(('snowllm_mtp_norm_project', c_int, [P]*5+[c_int64,c_int64,c_int,c_float,S]))
+if hasattr(lib,'snowllm_mtp_norm_project_step'):
+    _SIGS.extend((
+        ('snowllm_mtp_norm_project_workspace_bytes',c_int64,[c_int64,c_int,c_int64,c_int]),
+        ('snowllm_mtp_norm_project_step',c_int,[P]*5+[c_int64,c_int64,c_int,c_int64,c_float,c_int,S]),
+    ))
+if hasattr(lib,'snowllm_ple_plan'):
+    _SIGS.append(('snowllm_ple_plan',c_int,[c_int64,c_int64,c_int,c_int,c_int,P]))
 if hasattr(lib,'snowllm_ple_project'):
     _SIGS.extend((
         ('snowllm_ple_prepared_bytes',c_int64,[c_int64]),

@@ -20,7 +20,7 @@ class AttentionCapacityTests(unittest.TestCase):
                     decode_ws_bytes=4096, block_size=16, kv_int8=False,
                     d_mscale=None, tap_at={}, x=torch.empty(40, 8), taps=None,
                     ple_emb=torch.empty(40, 0), trunk_streams=None, mtp_streams=None,
-                    _qsa=lambda: False, _qsa_shape=lambda b: (None, None), _ple_path=lambda b: False,
+                    _qsa=lambda: False, _qsa_shape=lambda b: (None, None), _ple_layout=lambda rows,prefill: (False,0,0),
                     _has_state=lambda b: None, _qsa_jobs=lambda b: [])
                 for active in range(1, capacity+1):
                     batch = SimpleNamespace(input_ids=torch.zeros(active*10),

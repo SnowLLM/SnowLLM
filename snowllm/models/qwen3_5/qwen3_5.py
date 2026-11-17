@@ -36,8 +36,7 @@ class Qwen3_5DecoderLayer(DecoderLayerBase):
         if tap is not None:
             ops.copy_rows(tap,ctx.residual)
         with span(self._mlp_span):
-            if (768<ctx.M<=32768 and isinstance(self.mlp,FusedMoE)
-                    and ops.inference_moe_norm_available):
+            if isinstance(self.mlp,FusedMoE) and ops.inference_moe_norm_available:
                 self.mlp(ctx,ctx.blk,ctx.blk,
                     norm=(ctx.residual,self.post_attention_layernorm.gamma,hidden))
             else:
