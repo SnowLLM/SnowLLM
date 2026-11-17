@@ -15,16 +15,17 @@ def quantized(fmt, n, k):
 
 
 class HcWorkspaceTests(unittest.TestCase):
-    def check_execution(self, fmt, rows, *, prefill=True, project=True, first_graph=False):
+    def check_execution(self, fmt, rows, *, prefill=True, project=True, first_graph=False,
+                        hc_formats=(23,50)):
         ops.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
         if not hasattr(_capi.lib,'snowllm_hc_combine_mix'):
             self.skipTest('HC composition requires an updated kernel library')
         torch.manual_seed(73)
         gamma = torch.randn(4*2560,device='cuda',dtype=torch.bfloat16)
-        down = quantized(23,384,10240)
+        down = quantized(hc_formats[0],384,10240)
         q,meta,df = ops.flash_prepare_weight(0,down.quant,down.meta,down.fmt,384,10240)
         down = SimpleNamespace(quant=q,meta=meta,fmt=df)
-        up = quantized(50,10240,320)
+        up = quantized(hc_formats[1],10240,320)
         weights = ops.HcMixWeights(gamma,q,meta,up.quant,up.meta,df,384,320,1e-6,up.fmt)
         elements,need = ops.attn_output_plan(rows,prefill,False)
         a = torch.randn(elements,device='cuda',dtype=torch.bfloat16)
@@ -97,6 +98,12 @@ class HcWorkspaceTests(unittest.TestCase):
 
     def test_combine_and_mix(self):
         self.check_execution(50,2049,project=False)
+
+    def test_q8_projection_combine_tails_and_first_graph(self):
+        for rows in (2048,2051,8192):
+            with self.subTest(rows=rows):
+                self.check_execution(8,rows,hc_formats=(8,8))
+        self.check_execution(8,2051,project=False,first_graph=True,hc_formats=(8,8))
 
     def test_small_large_and_decode_shapes(self):
         for rows,prefill in ((1,False),(17,True),(2047,True),(8193,True),(3,False)):
