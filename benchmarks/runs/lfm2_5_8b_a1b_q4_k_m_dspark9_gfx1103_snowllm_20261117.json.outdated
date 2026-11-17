@@ -1,0 +1,4 @@
+{
+  "reason": "Superseded by the complete four-length standard matrix at one 128000-token context capacity. Previous 9216-capacity samples remain historical evidence and are not mixed into this curve.",
+  "replacement": "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_128k_20261117.json"
+}

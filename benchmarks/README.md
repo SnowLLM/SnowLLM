@@ -23,11 +23,12 @@ withgpu installation under `~/withgpu`, use
 The server launchers do not acquire this lock themselves. Acquire it once for
 the complete run; avoid nesting another acquisition of the same lock.
 
-The standard LFM Q4 profile uses 1K and 8K input lengths, a 256-token output cap,
-one warm-up and four retained requests. The server needs capacity for input plus output:
+The standard LFM Q4 profile uses 1K, 8K, 32K and 127744 input tokens, a 256-token
+output cap, one warm-up and four retained requests at each length. LFM declares a
+128000-token total context; the final input leaves room for the full output cap:
 
 ```sh
-CTX=9216 ISL=1024,8192 OSL=256 REPS=4 WARM=1 \
+CTX=128000 ISL=1024,8192,32768,127744 OSL=256 REPS=4 WARM=1 \
   PLATFORM=gfx1103 HARDWARE='Ryzen 9 7940HS / Radeon 780M' \
   "$HOME/withgpu/withgpu" benchmarks/run.sh snowllm b/lfm2.5-8b-a1b-q4-k-m-dspark \
   --prefix-memory-ratio 0

@@ -62,27 +62,20 @@ Published runs live in [`benchmarks/runs/`](https://github.com/SnowLLM/SnowLLM/t
 
 ## LFM2.5 on Radeon 780M {#lfm25-780m}
 
-The LFM2.5-8B-A1B Q4_K_M run uses Windows on the Ryzen 9 7940HS / Radeon 780M
-(`gfx1103`), verified from the CPU registry entry and server GPU metadata. The machine
-has 32 GiB installed RAM; its host-visible RAM excludes BIOS-reserved UMA. The README's
-16 GiB entry is a deployment estimate, not a measurement on a physical 16 GiB machine.
+LFM2.5-8B-A1B Q4_K_M is measured on Windows with Ryzen 9 7940HS / Radeon 780M (`gfx1103`) and 32 GiB installed RAM. Host-visible RAM excludes BIOS-reserved UMA.
 
-The official Q4 target and Q8_0 DSpark draft use block 9, graphs, BF16 KV, a shared
-9216-token capacity, one request slot, 512-token prefill chunks and no prefix reuse.
-The unchanged standard client workload constructs exact 1K/8K chat inputs from PG19.
-Thinking stays on, temperature is zero, EOS is honored and the output cap is 256 tokens.
-Each length has one warm-up and four retained requests. All eight retained requests
-reached the output cap; these measurements evaluate throughput, not answer quality.
+The official Q4 target uses its Q8_0 DSpark draft, fixed block 9, graphs, BF16 KV, one request slot, 512-token prefill chunks and no prefix reuse. All four lengths share one 128000-token context capacity. The standard PG19 client constructs exact 1024, 8192, 32768 and 127744-token chat inputs. The model declares a 128000-token total limit, so the last input leaves 256 tokens for output. With K=1024, it is 124.75K input, not 131072 input.
+
+Thinking remains on, temperature is zero and EOS is honored. Each length has one warm-up and four retained requests with a 256-token output cap. All 16 retained requests reached the cap. Decode uses the retained median; TTFT and prefill use the first retained request. This measures throughput, not answer quality.
 
 | Input | Prefill tok/s | Decode tok/s | TTFT s | AL |
 | --- | ---: | ---: | ---: | ---: |
-| 1K | 1184.8 | 45.96 | 0.864 | 2.656 |
-| 8K | 1265.5 | 43.42 | 6.474 | 2.796 |
+| 1K | 1119.9 | 45.92 | 0.914 | 2.656 |
+| 8K | 1269.4 | 43.38 | 6.453 | 2.796 |
+| 32K | 1126.4 | 30.45 | 29.092 | 2.604 |
+| 127744 (124.75K) | 769.3 | 9.85 | 166.042 | 1.693 |
 
-The client rejects a server architecture mismatch before warm-up. Raw samples, the
-corpus hash and runtime settings are in
-[`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_20261117.json).
-The 2026-11-17 rerun uses the installed remote SnowLLM 0.3.21 / kernels 0.3.13 release, with hashes of the actual native library, loader, target, draft and client source. The previous record is retained as historical evidence; differing versions do not establish a matched performance comparison.
+The client checks server architecture before warm-up. Raw samples, corpus/configuration and binary identity are in [`lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_128k_20261117.json`](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_snowllm_128k_20261117.json). The 2026-11-17 run uses the installed remote SnowLLM 0.3.21 / kernels 0.3.13 release. Earlier two-length measurements at 9216 capacity remain historical evidence and are not mixed into this uniform-capacity curve.
 
 ## Radeon 780M MiniCPM comparison (2026-10-29) {#radeon-780m}
 

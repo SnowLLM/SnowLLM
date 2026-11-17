@@ -149,7 +149,7 @@ def al_of(row: dict, n_max: int | None) -> tuple[float | None, bool]:
 
 
 def short_isl(isl_target: int) -> str:
-    return f"{isl_target // 1024}K" if isl_target >= 1024 else str(isl_target)
+    return f"{isl_target / 1024:g}K" if isl_target >= 1024 else str(isl_target)
 
 
 def featured_labels() -> set:
