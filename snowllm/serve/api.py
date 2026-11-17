@@ -92,8 +92,14 @@ async def metrics(format: str = "prometheus"):
 async def start_profile() -> dict:
     try:
         registry = getattr(app.state, "registry", None)
-        engine = registry.records[registry.default].state.engine if registry and registry.default else serving().engine
-        await engine.start_profile()
+        if registry is None:
+            await serving().engine.start_profile()
+        else:
+            record = registry.acquire()
+            try:
+                await record.state.engine.start_profile()
+            finally:
+                record.active -= 1
     except RuntimeError as e:
         raise HTTPException(400, str(e))
     return {"status": "profiling"}

@@ -84,3 +84,31 @@ curl http://127.0.0.1:8001/daemon/models/load \
 ```
 
 Loading is asynchronous. Wait for `ready` using `GET /daemon/status`, then use `documents` as the model ID. See [Web UI](../webui) for model management and port configuration.
+
+### Profiling
+
+Enable the torch profiler when starting the model. `--profiler-dir` is optional;
+it defaults to `~/.cache/snowllm/profiler` on the server.
+
+```sh
+snowllm PATH --enable-profiler --profiler-dir /tmp/snowllm-traces
+```
+
+Use the inference port to capture a request, then stop and flush the trace:
+
+```sh
+curl -f -X POST http://127.0.0.1:8000/start_profile
+curl -f http://127.0.0.1:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Hello","max_tokens":8}'
+curl -f -X POST http://127.0.0.1:8000/stop_profile
+```
+
+Start returns `{"status":"profiling"}`. Stop returns
+`{"status":"stopped","trace_dir":"/tmp/snowllm-traces"}` and writes a
+`*.pt.trace.tar.gz` archive containing one `*.pt.trace.json` file in that directory.
+Extract the JSON before opening it in a trace viewer. Repeat start/stop to capture another window.
+Disabled profiling, duplicate starts, and stops without an active profile return HTTP 400.
+With multiple models, start uses the default model's configuration and captures work
+on its shared GPU worker; stop ends the active recording even if the default model changes.
+Pass the flags as model load `options` when using the management service.

@@ -85,3 +85,30 @@ curl http://127.0.0.1:8001/daemon/models/load \
 ```
 
 加载是异步操作，通过 `GET /daemon/status` 等待模型变为 `ready`，再使用 `documents` 作为模型 ID。模型管理、端口与访问方式见 [Web UI](../webui)。
+
+### Profiling {#profiling}
+
+启动模型时启用 torch profiler。`--profiler-dir` 可省略，默认使用服务端的
+`~/.cache/snowllm/profiler` 目录。
+
+```sh
+snowllm PATH --enable-profiler --profiler-dir /tmp/snowllm-traces
+```
+
+向推理端口发送请求，限定采集窗口，再停止并写出 trace：
+
+```sh
+curl -f -X POST http://127.0.0.1:8000/start_profile
+curl -f http://127.0.0.1:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Hello","max_tokens":8}'
+curl -f -X POST http://127.0.0.1:8000/stop_profile
+```
+
+开始时返回 `{"status":"profiling"}`；停止时返回
+`{"status":"stopped","trace_dir":"/tmp/snowllm-traces"}`，并在该目录写出
+`*.pt.trace.tar.gz` 压缩包，内含一个 `*.pt.trace.json` 文件，解压后可用 trace 查看器打开。
+可以重复开关，采集多个窗口。未启用 profiling、重复开始、
+未开始就停止均返回 HTTP 400。多模型服务使用默认模型的配置启动采集，覆盖其共享
+GPU worker 上的工作；即使默认模型改变，停止接口仍会结束正在运行的采集。
+通过管理服务加载模型时，把上述参数放入模型加载请求的 `options`。

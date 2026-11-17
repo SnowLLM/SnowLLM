@@ -101,9 +101,13 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | --- | --- | --- |
 | `--version` | — | 显示当前版本后退出。 |
 | `--enforce-eager` | 关闭 | 禁用 GPU 图执行。 |
-| `--profile-dir` | `SNOWLLM_TORCH_PROFILER_DIR` 或未设置 | 通过 profiling 端点采集的 trace 目录。 |
+| `--enable-profiler` | 关闭 | 启用由 `POST /start_profile` 和 `POST /stop_profile` 控制的 torch profiling；启动时不自动采集。 |
+| `--profiler-dir` | `SNOWLLM_TORCH_PROFILER_DIR` 或 `~/.cache/snowllm/profiler` | Trace 输出目录；配合 `--enable-profiler` 使用。 |
 | `--stats-interval` | `10.0` | 吞吐日志间隔（秒）；`0` 禁用日志。 |
 | `--stats-exact` | 关闭 | 每步同步以测量 GPU 时间；会降低推理速度。 |
+
+兼容旧用法：`--profile-dir DIR` 和非空的 `SNOWLLM_TORCH_PROFILER_DIR` 也会启用
+profiling 端点。完整流程见 [curl profiling 示例](../integrations/http-api#profiling)。
 
 ## 专家磁盘缓存
 

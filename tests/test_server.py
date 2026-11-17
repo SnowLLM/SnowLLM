@@ -142,7 +142,7 @@ async def main() -> int:
     r = await http.post("/stop_profile")
     check("POST /stop_profile", r.status_code == 200)
     if r.status_code == 200:
-        files = glob.glob(os.path.join(r.json()["trace_dir"], "*.json*"))
+        files = glob.glob(os.path.join(r.json()["trace_dir"], "*.tar.gz"))
         size = os.path.getsize(files[0]) // 1024 if files else 0
         check("trace written", files and size > 0, f"{len(files)} file(s), {size} KiB")
     r = await http.post("/stop_profile")

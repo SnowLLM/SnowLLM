@@ -17,9 +17,10 @@ if sys.platform == "win32":
     # https://github.com/ROCm/rocm-systems/pull/12952
     os.environ.setdefault("PAL_DISABLE_SDMA", "1")
 
-_PROFILER_ENV = ("SNOWLLM_TRACE", "HSA_TOOLS_LIB", "ROCP_TOOL_LIBRARIES",
+_PROFILER_ENV = ("SNOWLLM_TRACE", "SNOWLLM_TORCH_PROFILER_DIR", "HSA_TOOLS_LIB", "ROCP_TOOL_LIBRARIES",
                  "ROCPROFILER_REGISTER_LIBRARY", "ROCPROF_KERNEL_TRACE")
-if not (any(a == "--profile-dir" or a.startswith("--profile-dir=") for a in sys.argv)
+# Managed workers can enable profiling on a later model load.
+if not (any(a.split('=', 1)[0] in ('--enable-profiler', '--profile-dir', '--managed-worker') for a in sys.argv)
         or any(os.environ.get(v) for v in _PROFILER_ENV)):
     os.environ.setdefault("HSA_TOOLS_DISABLE_REGISTER", "1")
 

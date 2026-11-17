@@ -49,9 +49,7 @@ class AsyncEngine:
         if self.scheduler is not None and self.scheduler.target != 'gpu':
             raise RuntimeError('profiling is not available for this target')
         if self.profile_dir is None:
-            raise RuntimeError("profiling is off; start the server with --profile-dir")
-        if self._profiler is not None:
-            raise RuntimeError("a profile is already running")
+            raise RuntimeError("profiling is off; start the server with --enable-profiler")
         if self.scheduler is None:
             await self.call(self._profiler_start)
             return
@@ -66,29 +64,35 @@ class AsyncEngine:
             raise
 
     async def stop_profile(self) -> str:
-        if self._profiler is None:
-            raise RuntimeError("no profile is running")
         if self.scheduler is None:
             return await self.call(self._profiler_stop)
-        try:
-            return await self.scheduler.run(self._profiler_stop)
-        finally:
-            self.scheduler.profiler_owner = None
+        return await self.scheduler.run(self._profiler_stop)
 
     def _profiler_start(self) -> None:
         import torch
+        from functools import partial
+        from ..trace_archive import export_profile
 
-        self._profiler = torch.profiler.profile(
+        if self._profiler is not None:
+            raise RuntimeError("a profile is already running")
+        profiler = torch.profiler.profile(
             activities=[torch.profiler.ProfilerActivity.CPU,
                         torch.profiler.ProfilerActivity.CUDA],
             with_stack=True,
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(self.profile_dir)),
+            on_trace_ready=partial(export_profile, directory=self.profile_dir),
         )
-        self._profiler.start()
+        profiler.start()
+        self._profiler = profiler
 
     def _profiler_stop(self) -> str:
+        if self._profiler is None:
+            raise RuntimeError("no profile is running")
         p, self._profiler = self._profiler, None
-        p.stop()
+        try:
+            p.stop()
+        finally:
+            if self.scheduler is not None:
+                self.scheduler.profiler_owner = None
         return str(self.profile_dir)
 
     async def close(self) -> None:
@@ -101,7 +105,11 @@ class AsyncEngine:
             except asyncio.CancelledError:
                 pass
         if self.scheduler is None:
-            self._worker.shutdown(wait=True)
+            try:
+                if self._profiler is not None:
+                    await self.stop_profile()
+            finally:
+                self._worker.shutdown(wait=True)
             return
         if self._profiler is not None:
             await self.stop_profile()

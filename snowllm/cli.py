@@ -73,6 +73,13 @@ class _MemoryLimit(argparse.Action):
         setattr(namespace, self.dest + '_gib', gib)
 
 
+class _ProfilerDirectory(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        if option_string == '--profile-dir':
+            namespace.enable_profiler = True
+
+
 def _log(msg: str) -> None:
     print(f"{term.stamp(time.strftime('%H:%M:%S'))} {msg}", flush=True)
 
@@ -470,8 +477,11 @@ def parser() -> argparse.ArgumentParser:
 
     g = p.add_argument_group("diagnostics")
     g.add_argument("--enforce-eager", action="store_true", help='Disable GPU graph execution.')
-    g.add_argument("--profile-dir", default=os.environ.get("SNOWLLM_TORCH_PROFILER_DIR"),
-                   metavar="DIR",
+    profile_dir = os.environ.get("SNOWLLM_TORCH_PROFILER_DIR")
+    g.add_argument("--enable-profiler", action="store_true", default=bool(profile_dir),
+                   help='Enable torch profiling controlled by POST /start_profile and /stop_profile.')
+    g.add_argument("--profiler-dir", "--profile-dir", dest="profile_dir", action=_ProfilerDirectory,
+                   default=profile_dir or "~/.cache/snowllm/profiler", metavar="DIR",
                    help='Directory for traces captured via profiling endpoints.')
     g.add_argument("--stats-interval", type=float, default=10.0, metavar="SECONDS",
                    help='Seconds between throughput logs; 0 disables logs.')
@@ -642,7 +652,8 @@ def build_prepared(a, model, recipe, scheduler=None):
 
 def _build_prepared(a, model, recipe, scheduler=None):
     return build(model, a.max_num_seqs, a.max_model_len, num_kv_blocks=a.num_kv_blocks,
-              default_max_tokens=a.default_max_tokens, seed=a.seed, profile_dir=a.profile_dir,
+              default_max_tokens=a.default_max_tokens, seed=a.seed,
+              profile_dir=a.profile_dir if a.enable_profiler else None,
               stats_interval=a.stats_interval, exact_stats=a.stats_exact,
               enforce_eager=a.enforce_eager, num_spec=a.num_spec,
               mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,

@@ -103,9 +103,13 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | --- | --- | --- |
 | `--version` | — | Show the installed version and exit. |
 | `--enforce-eager` | Off | Disable GPU graph execution. |
-| `--profile-dir` | `SNOWLLM_TORCH_PROFILER_DIR` or unset | Directory for traces captured via profiling endpoints. |
+| `--enable-profiler` | Off | Enable torch profiling controlled by `POST /start_profile` and `POST /stop_profile`; does not start recording at startup. |
+| `--profiler-dir` | `SNOWLLM_TORCH_PROFILER_DIR` or `~/.cache/snowllm/profiler` | Trace output directory; use with `--enable-profiler`. |
 | `--stats-interval` | `10.0` | Seconds between throughput logs; 0 disables logs. |
 | `--stats-exact` | Off | Synchronize each step for GPU timing; slows inference. |
+
+For compatibility, `--profile-dir DIR` and a nonempty `SNOWLLM_TORCH_PROFILER_DIR`
+also enable profiling endpoints. See the [curl profiling example](../integrations/http-api#profiling).
 
 ## Expert disk cache
 

@@ -115,6 +115,28 @@ class CLITests(unittest.TestCase):
         args, _ = self.launch_options(('--max-ctx-len', '2M'))
         self.assertEqual(args[2], 2 << 20)
 
+    @patch.dict('os.environ', {'SNOWLLM_TORCH_PROFILER_DIR': ''})
+    def test_profiler_is_opt_in_and_has_a_default_directory(self):
+        _, options = self.launch_options()
+        self.assertIsNone(options['profile_dir'])
+        _, options = self.launch_options(('--enable-profiler',))
+        self.assertEqual(options['profile_dir'], '~/.cache/snowllm/profiler')
+        _, options = self.launch_options(('--profiler-dir', '/tmp/custom-traces'))
+        self.assertIsNone(options['profile_dir'])
+        _, options = self.launch_options(('--enable-profiler', '--profiler-dir', '/tmp/custom-traces'))
+        self.assertEqual(options['profile_dir'], '/tmp/custom-traces')
+
+    @patch.dict('os.environ', {'SNOWLLM_TORCH_PROFILER_DIR': '/tmp/env-traces'})
+    def test_profiler_environment_and_legacy_directory_remain_compatible(self):
+        _, options = self.launch_options()
+        self.assertEqual(options['profile_dir'], '/tmp/env-traces')
+        for flag in ('--profiler-dir', '--profile-dir'):
+            _, options = self.launch_options((flag, '/tmp/custom-traces'))
+            self.assertEqual(options['profile_dir'], '/tmp/custom-traces')
+        with patch.dict('os.environ', {'SNOWLLM_TORCH_PROFILER_DIR': ''}):
+            _, options = self.launch_options(('--profile-dir', '/tmp/legacy-traces'))
+            self.assertEqual(options['profile_dir'], '/tmp/legacy-traces')
+
     def launch_options(self, extra=(), recipe=None, failure=None):
         from snowllm import cli
         from snowllm.errors import SnowLLMError
