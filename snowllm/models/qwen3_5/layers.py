@@ -124,12 +124,15 @@ class FullAttention(nn.Module):
         b=ctx.batch
         with ctx.arena.frame():
             decode_ws = ctx.arena.workspace(0 if b.is_prefill else ctx.decode_ws_bytes)
-            scratch=ctx.arena.flat(ops.paged_attention_scratch_bytes(
-                b.batch_size,b.tokens_per_req,b.varlen_attn),torch.uint8)
+            scratch = ctx.attention_prepared
+            if scratch is None:
+                scratch=ctx.arena.flat(ops.paged_attention_scratch_bytes(
+                    b.batch_size,b.tokens_per_req,b.varlen_attn),torch.uint8)
             ops.paged_attention(q,pools,attn_out,b.cu_seqlens,b.block_tables,b.seq_lens,
                 b.q_block_map,b.total_q_blocks,ctx.decode_plan,decode_ws,ctx.num_slots,
                 b.tokens_per_req,ctx.block_size,self.attn_scale,b.varlen_attn,scratch,
-                self.shuf(ctx,proj),host_seq_lens=b.host_seq_lens)
+                self.shuf(ctx,proj),host_seq_lens=b.host_seq_lens,
+                prepared=ctx.attention_prepared is not None)
 
     def shuf(self, ctx: ForwardContext, proj: torch.Tensor, row0: int = 0) -> tuple:
         return ops.attn_output_gating(proj,ctx.batch.is_prefill,ctx.kv_int8,row0)

@@ -114,6 +114,9 @@ def attn_output_project(a: torch.Tensor,proj: torch.Tensor,w: torch.Tensor | KQu
           'attn_output_project')
 
 
+_PAGED_ATTENTION_PREPARED = 4
+
+
 class _PagedAttentionStep(ctypes.Structure):
     _fields_=[('inputs',ctypes.c_void_p*10),('outputs',ctypes.c_void_p*3)]+[
         (n,ctypes.c_int64) for n in ('batch','pages','q_blocks','slots','tokens','page_size','gate_stride','gate_row0')]+[
@@ -132,9 +135,28 @@ def paged_attention_varlen(prefill: bool,tokens: int,chunk_decode: bool) -> bool
     return bool(lib.snowllm_paged_attention_varlen(int(prefill),tokens,int(chunk_decode)))
 
 
+def paged_attention_uses_prepared(batch, tokens, varlen):
+    return hasattr(lib, 'snowllm_paged_attention_prepare') and bool(
+        paged_attention_scratch_bytes(batch,tokens,varlen))
+
+
+@operator
+def paged_attention_prepare(lens, tokens, slots, block_size, varlen, arena):
+    if not hasattr(lib, 'snowllm_paged_attention_prepare'):
+        return None
+    batch = lens.numel()
+    size = lib.snowllm_paged_attention_prepared_bytes(batch,tokens,slots,int(varlen))
+    if not size:
+        return None
+    result = arena.flat(size, torch.uint8)
+    check(lib.snowllm_paged_attention_prepare(_p(lens),_p(result),batch,tokens,slots,
+          block_size,_stream()),'paged_attention_prepare')
+    return result
+
+
 @operator
 def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,slots,tokens,
-                     block_size,scale,varlen,scratch,gate=(0,0,0),*,host_seq_lens=None):
+                     block_size,scale,varlen,scratch,gate=(0,0,0),*,host_seq_lens=None,prepared=False):
     batch=lens.numel()
     _chk(q,'attention Q',torch.bfloat16)
     _chk(out,'attention output',torch.bfloat16)
@@ -144,7 +166,7 @@ def paged_attention(q,pools,out,cu,table,lens,qmap,total_blocks,plan,workspace,s
     if need and (scratch is None or scratch.nbytes<need):
         raise SnowLLMError(f'paged attention needs {need} scratch bytes')
     ks,vs=pools[2:] if len(pools)==4 else (None,None)
-    mode=int(varlen)
+    mode=int(varlen) | (_PAGED_ATTENTION_PREPARED if prepared else 0)
     if varlen and batch==1 and host_seq_lens is not None and host_seq_lens[0]==tokens:
         mode|=2  # Host metadata avoids reading sequence lengths back from the GPU.
     step=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in

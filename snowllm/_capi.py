@@ -805,6 +805,11 @@ if hasattr(lib,'snowllm_ple_project'):
 if hasattr(lib, 'snowllm_inference_moe_norm'):
     _SIGS.append(('snowllm_inference_moe_norm', c_int,
                   [c_void_p]*4+[c_float]+[c_void_p]*4+[c_int64,c_int64,S]))
+if hasattr(lib, 'snowllm_paged_attention_prepare'):
+    _SIGS += [
+        ('snowllm_paged_attention_prepared_bytes', c_int64, [c_int64,c_int64,c_int64,c_int]),
+        ('snowllm_paged_attention_prepare', c_int, [P,P,c_int64,c_int64,c_int64,c_int64,S]),
+    ]
 for _name, _res, _args in _SIGS:
     try:
         _fn = getattr(lib, _name)

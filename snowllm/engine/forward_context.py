@@ -108,6 +108,7 @@ class ForwardContext:
 
     x: torch.Tensor | None = None
     decode_plan: torch.Tensor | None = None
+    attention_prepared: torch.Tensor | None = None
     decode_ws: torch.Tensor | None = None
     decode_ws_bytes: int = 0
     num_slots: int = 0
@@ -149,6 +150,11 @@ class ForwardContext:
         self.residual, self.blk = self.streams(a, M)
         self.cos = a.new(M, 64, dtype=torch.float32)
         self.sin = a.new(M, 64, dtype=torch.float32)
+        b = self.batch
+        self.attention_prepared = None
+        if self.decode_plan is not None and not b.is_prefill:
+            self.attention_prepared = ops.paged_attention_prepare(b.seq_lens,b.tokens_per_req,
+                self.num_slots,self.block_size,b.varlen_attn,a)
 
     def close(self) -> None:
         if not self.defer_end:

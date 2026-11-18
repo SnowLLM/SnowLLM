@@ -9,7 +9,7 @@ import torch
 
 from .._capi import check, lib
 from ._common import _chk, _chk_dense, _chk_rows, _p, _stream
-from .attention_full import _PagedAttentionStep
+from .attention_full import _PAGED_ATTENTION_PREPARED, _PagedAttentionStep
 
 
 @operator
@@ -246,11 +246,12 @@ def qsa_attention(ctx, module, q, index_q, pools, out, proj):
     b=ctx.batch
     gate=module.shuf(ctx,proj)
     ks,vs=pools[2:] if len(pools)==4 else (None,None)
+    prepared = ctx.attention_prepared
     att=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
         (q,pools[0],pools[1],ks,vs,b.cu_seqlens,b.block_tables,b.seq_lens,b.q_block_map)],gate[0]),
-        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan),_p(decode_ws)),b.batch_size,
+        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan if prepared is None else prepared),_p(decode_ws)),b.batch_size,
         b.block_tables.shape[1],b.total_q_blocks,ctx.num_slots,b.tokens_per_req,ctx.block_size,
-        gate[1],gate[2],module.attn_scale,int(b.varlen_attn))
+        gate[1],gate[2],module.attn_scale,int(b.varlen_attn) | (_PAGED_ATTENTION_PREPARED if prepared is not None else 0))
     jobs=(_QsaJob*len(ctx.qsa_lens or []))(*[
         _QsaJob(at,n,r,first,total,_p(cu),_p(seq),_p(qmap))
         for at,n,r,first,cu,seq,total,qmap in ctx.qsa_lens or []])

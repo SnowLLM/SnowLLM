@@ -25,7 +25,7 @@ from .fp4_kv import dsv41_fp4_pack, dsv41_fp4_unpack, dsv41_fp4_row_bytes
 from .flash import flash_prepare_weight
 from .metadata import copy_tensor, copy_from_host, fill_ranges_
 from .attention_full import (
-    paged_attention,
+    paged_attention, paged_attention_prepare, paged_attention_uses_prepared,
     paged_attention_scratch_bytes,
     paged_attention_varlen,
     dsv4_attention,

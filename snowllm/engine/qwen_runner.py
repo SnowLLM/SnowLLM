@@ -200,7 +200,9 @@ class QwenRunner(GraphRunner):
                                     B, T, cu_seqlens)
 
     def _plan_attn(self, ctx: ForwardContext) -> None:
-        if not ctx.batch.varlen_attn:
+        b = ctx.batch
+        if not b.varlen_attn and not ops.paged_attention_uses_prepared(
+                b.batch_size,b.tokens_per_req,b.varlen_attn):
             with span("attn_plan"):
                 ops.paged_attn_decode_plan(ctx.batch.seq_lens, ctx.decode_plan,
                                            ctx.num_slots, ctx.block_size)
