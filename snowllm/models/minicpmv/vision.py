@@ -157,6 +157,7 @@ class MiniCPMVision:
         ops.vision_pos_embed_add(hidden, self.positions, b["positions"])
         copy_into(b["cu"],_cu(grids))
         cu = b["cu"]
+        b["tile_map"] = ops.vision_attention_tile_map(cu,hidden.shape[0])
         for i, block in enumerate(self.blocks):
             n = hidden.shape[0]
             block.forward(hidden, cu, b, self.heads, self.dim, self.eps)
@@ -179,6 +180,7 @@ class MiniCPMVision:
                 self._gemm(ff, block.fc2, hidden, b, residual=residual)
                 grids = [(y // 2, x // 2) for y, x in grids]
                 copy_into(b["cu"],_cu(grids))
+                b["tile_map"] = ops.vision_attention_tile_map(cu,hidden.shape[0])
         n = hidden.shape[0]
         ln = arena.new(n,h)
         self._norm(hidden, self.post_norm, ln)

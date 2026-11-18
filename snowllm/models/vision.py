@@ -286,7 +286,7 @@ class VisionModel:
         indices, weights = _bilinear_pos_inputs(grid_thw, g.grid_side, g.spatial_merge)
         indices, weights = indices.to(x.device), weights.to(x.device)
         out = torch.empty(M // MERGE_UNIT,OUT_HIDDEN,dtype=torch.bfloat16,device=x.device)
-        return self.execute_plan(('vision',),M,
+        return self.execute_plan(('vision',cu.numel()),M,
             lambda: self._forward_gpu(x,indices,weights,cos,sin,cu,out))
 
     def _forward_gpu(self,x,indices,weights,cos,sin,cu,out):
@@ -298,7 +298,7 @@ class VisionModel:
         self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
         ops.vision_pos_embed_add(hidden, self.pos_embed, indices.to(x.device), weights.to(x.device))
 
-        buffers = dict(scratch=None)
+        buffers = dict(scratch=None, tile_map=ops.vision_attention_tile_map(cu,M))
         for blk in self.blocks:
             blk.forward(hidden, cu, buffers, g.num_heads, g.head_dim, LN_EPS, cos, sin)
 

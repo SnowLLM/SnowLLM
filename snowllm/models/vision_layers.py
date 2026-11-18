@@ -61,7 +61,7 @@ class VisionBlock:
         if arena is not None:qkv = arena.new(m,self.qkv.n)
         self.qkv.forward(ln, qkv, scratch)
         if arena is not None:attn = arena.new(m,self.proj.k)
-        ops.vision_attention(qkv, cos, sin, cu, attn, heads, dim)
+        ops.vision_attention(qkv, cos, sin, cu, attn, heads, dim, tile_map=buffers.get("tile_map"))
         self.proj.forward(attn, x, scratch, residual=x)
 
     def forward(self, x, cu, buffers, heads, dim, eps, cos=None, sin=None):

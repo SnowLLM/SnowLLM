@@ -82,11 +82,12 @@ class Qwen2Vision(VisionModel):
             patch[:, : g.patch_in].copy_(pixels)
             hidden = self._buf("hidden", rows, g.hidden)
             self.patch.forward(patch, hidden, None)
+            buffers = {"scratch": None, "tile_map": ops.vision_attention_tile_map(cu,rows)}
             for block in self.blocks:
                 block.forward(
                     hidden,
                     cu,
-                    {"scratch": None},
+                    buffers,
                     g.num_heads,
                     g.head_dim,
                     1e-6,
@@ -112,7 +113,7 @@ class Qwen2Vision(VisionModel):
             )
 
         return self.execute_plan(
-            ("qwen2_vision",), rows, execute, arena=arena, admit=admit,
-            family=("qwen2_vision",),
+            ("qwen2_vision", cu.numel()), rows, execute, arena=arena, admit=admit,
+            family=("qwen2_vision", cu.numel()),
             probe=probe,
         )

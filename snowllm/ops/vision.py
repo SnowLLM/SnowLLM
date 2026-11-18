@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 from .operation import operator
+from .allocation import empty
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -96,9 +97,24 @@ def vision_pos_embed_add(hidden: torch.Tensor, table: torch.Tensor,
 
 
 @operator
+def vision_attention_tile_map(cu: torch.Tensor, rows: int) -> torch.Tensor | None:
+    if cu.numel() <= 2 or not hasattr(lib, 'snowllm_vision_attention_mapped'):
+        return None
+    _chk(cu, "image row offsets", torch.int32)
+    segments = cu.numel() - 1
+    count = lib.snowllm_vision_attention_tile_count(rows, segments)
+    if not count:
+        return None
+    out = empty(count,3,dtype=torch.int32,device=cu.device)
+    check(lib.snowllm_vision_attention_tile_map(_p(cu),_p(out),rows,segments,_stream()),
+          "vision_attention_tile_map")
+    return out
+
+
+@operator
 def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Tensor | None,
                      cu: torch.Tensor | None, out: torch.Tensor, num_heads: int,
-                     head_dim: int) -> None:
+                     head_dim: int, *, tile_map: torch.Tensor | None = None) -> None:
     M, H = out.shape
     _chk(qkv, "qkv", torch.bfloat16, M, 3 * H)
     _chk(out, "attention output", torch.bfloat16, M, H)
@@ -115,10 +131,18 @@ def vision_attention(qkv: torch.Tensor, cos: torch.Tensor | None, sin: torch.Ten
         raise SnowLLMError("vision_attention: four-token windows require M%4=0 without RoPE")
     if drying() is None and any(t.device != qkv.device for t in (cos, sin, cu, out) if t is not None):
         raise SnowLLMError("vision_attention: all tensors must share a device")
-    check(lib.snowllm_vision_attention(_p(qkv), _p(cos), _p(sin), _p(cu), _p(out),
-                                      M, cu.numel() - 1 if cu is not None else M // 4,
-                                      H, num_heads, head_dim, _stream()),
-          "vision_attention")
+    segments = cu.numel() - 1 if cu is not None else M // 4
+    args = (_p(qkv), _p(cos), _p(sin), _p(cu), _p(out))
+    if tile_map is None:
+        status = lib.snowllm_vision_attention(*args,M,segments,H,num_heads,head_dim,_stream())
+    else:
+        count = lib.snowllm_vision_attention_tile_count(M,segments)
+        _chk(tile_map,"vision attention tile map",torch.int32,count,3)
+        if cu is None or not count or (drying() is None and tile_map.device != qkv.device):
+            raise SnowLLMError("vision_attention: tile map requires matching ragged input")
+        status = lib.snowllm_vision_attention_mapped(*args,_p(tile_map),M,segments,H,num_heads,
+                                                    head_dim,_stream())
+    check(status, "vision_attention")
 
 
 @operator

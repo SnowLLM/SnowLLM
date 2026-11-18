@@ -308,7 +308,7 @@ from .trace import (
 from .vision import (
     vision_bias_act,
     vision_attn,
-    vision_attention,
+    vision_attention, vision_attention_tile_map,
     vision_merge_norm,
     vision_pos_embed_add,
     vision_gemm_bias_act,
