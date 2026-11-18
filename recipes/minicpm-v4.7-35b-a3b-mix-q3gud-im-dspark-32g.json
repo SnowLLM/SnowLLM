@@ -46,7 +46,7 @@
     "host_offload": "7040MiB",
     "host_alloc": false,
     "prefix_memory_ratio": 0,
-    "enforce_eager": true,
+    "enforce_eager": false,
     "limit_mm_per_prompt": 1
   },
   "note": "Windows Radeon 780M profile for 32 GiB RAM, 16 GiB BIOS UMA and a 32 GiB page file; shares the base recipe's model files.",
