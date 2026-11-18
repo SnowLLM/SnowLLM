@@ -240,6 +240,14 @@ def qsa_decode_rows(rows):
     return lib.snowllm_qsa_decode_rows(rows)
 
 
+def qsa_job_descriptors(jobs):
+    if jobs is None:
+        return None
+    return (_QsaJob*len(jobs))(*[
+        _QsaJob(at,n,r,first,total,_p(cu),_p(seq),_p(qmap))
+        for at,n,r,first,cu,seq,total,qmap in jobs])
+
+
 @operator
 def qsa_attention(ctx, module, q, index_q, pools, out, proj):
     decode_ws = ctx.arena.workspace(0 if ctx.batch.is_prefill else ctx.decode_ws_bytes)
@@ -252,20 +260,18 @@ def qsa_attention(ctx, module, q, index_q, pools, out, proj):
         (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan if prepared is None else prepared),_p(decode_ws)),b.batch_size,
         b.block_tables.shape[1],b.total_q_blocks,ctx.num_slots,b.tokens_per_req,ctx.block_size,
         gate[1],gate[2],module.attn_scale,int(b.varlen_attn) | (_PAGED_ATTENTION_PREPARED if prepared is not None else 0))
-    jobs=(_QsaJob*len(ctx.qsa_lens or []))(*[
-        _QsaJob(at,n,r,first,total,_p(cu),_p(seq),_p(qmap))
-        for at,n,r,first,cu,seq,total,qmap in ctx.qsa_lens or []])
+    jobs = ctx.qsa_jobs
     ck,cv=module.compact or (None,None)
     table=module.compact_table
     ix=module.indexer
     step=_QsaStep(att,(ctypes.c_void_p*6)(*[_p(t) for t in
-        (index_q,ix.pool,ctx.qsa.weights,ctx.qsa.comp,ctx.qsa.cells,ctx.qsa_seq_of_row)]),
+        (index_q,ix.pool,ctx.qsa.weights,ctx.qsa.comp,ctx.qsa.cells,ctx.qsa_job_row if b.is_prefill else ctx.qsa_seq_of_row)]),
         (ctypes.c_void_p*5)(*[_p(t) for t in (ck,cv,table,module.plan,module.plan_ws)]),
-        ctypes.addressof(jobs) if ctx.qsa_lens is not None else 0,len(jobs),q.shape[0],
+        ctypes.addressof(jobs) if jobs is not None else 0,len(jobs) if jobs is not None else 0,q.shape[0],
         ctx.qsa_max_blocks,ix.heads,ix.dim,ix.ratio,ix.topk,
         table.shape[0] if table is not None else 0,table.shape[1] if table is not None else 0,
         module.plan_slots,int(b.is_prefill),int(ks is not None or vs is not None),
-        int(ck is not None),int(ctx.qsa_seq_of_row is not None))
+        int(ck is not None),2 if ctx.qsa_job_row is not None else int(ctx.qsa_seq_of_row is not None))
     need=lib.snowllm_qsa_attention_scratch_bytes(ctypes.byref(step))
     with ctx.arena.frame():
         ws=ctx.arena.flat(need,torch.uint8)

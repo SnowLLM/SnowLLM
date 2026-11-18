@@ -44,6 +44,16 @@ class Qwen4ExpPrefillPlanTest(unittest.TestCase):
         needed, _ = ops.prefill_q_plan([3073, 3072])
         self.assertGreaterEqual(b.total_q_blocks, needed)
 
+    def test_qsa_job_descriptors_preserve_job_and_null_plan(self):
+        self.assertIsNone(ops.qsa_job_descriptors(None))
+        self.assertEqual(len(ops.qsa_job_descriptors([])), 0)
+        with patch('snowllm.ops.ple._p', side_effect=lambda value: value):
+            jobs = ops.qsa_job_descriptors([(1280, 512, 1, 130560, 10, 20, 32, 30)])
+        job = jobs[0]
+        self.assertEqual((job.at, job.rows, job.request, job.first, job.q_blocks),
+                         (1280, 512, 1, 130560, 32))
+        self.assertEqual((job.cu, job.length, job.qmap), (10, 20, 30))
+
     def test_decode_uses_existing_probe(self):
         sentinel = object()
         with patch.object(QwenRunner, '_probe_batch', return_value=sentinel) as base:

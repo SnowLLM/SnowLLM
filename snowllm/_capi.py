@@ -810,6 +810,8 @@ if hasattr(lib, 'snowllm_paged_attention_prepare'):
         ('snowllm_paged_attention_prepared_bytes', c_int64, [c_int64,c_int64,c_int64,c_int]),
         ('snowllm_paged_attention_prepare', c_int, [P,P,c_int64,c_int64,c_int64,c_int64,S]),
     ]
+if hasattr(lib, 'snowllm_qsa_prefill_metadata'):
+    _SIGS.append(('snowllm_qsa_prefill_metadata', c_int, [P]*9+[c_int64]*7+[c_float,P,P,S]))
 for _name, _res, _args in _SIGS:
     try:
         _fn = getattr(lib, _name)

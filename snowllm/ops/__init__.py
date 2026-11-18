@@ -318,13 +318,13 @@ from .vision import (
     vision_rope_qk,
 )
 
-from .ple import qsa_job_plan, qsa_group_rows, qsa_decode_rows, qsa_attention, ple_step
+from .ple import qsa_job_descriptors, qsa_job_plan, qsa_group_rows, qsa_decode_rows, qsa_attention, ple_step
 from .inference import (qkv_projection_blocks, inference_qkv, inference_mlp, inference_moe,
                         inference_moe_workspace_bytes, inference_head, inference_hc,
                         inference_moe_norm, inference_moe_norm_available)
 from .inference import indexer_select, indexer_select_scratch_bytes
 from .metadata import (metadata_ranges, copy_rows, copy_batch, gather_rows, causal_compress_mask,
-                       qsa_metadata, spec_accept, spec_first_metadata, spec_step_metadata, spec_step_table_width,
+                       qsa_metadata, qsa_prefill_metadata_available, spec_accept, spec_first_metadata, spec_step_metadata, spec_step_table_width,
                        draft_metadata)
 
 from .dspark import (dspark_pack_weight, dspark_tap_mean, dspark_context,

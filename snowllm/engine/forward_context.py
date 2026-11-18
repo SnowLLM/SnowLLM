@@ -194,6 +194,8 @@ class Qwen4ExpContext(ForwardContext):
     qsa_seq_of_row: torch.Tensor | None = None
     qsa_cu_seqlens: torch.Tensor | None = None
     qsa_lens: list | None = None
+    qsa_jobs: object = None
+    qsa_job_row: torch.Tensor | None = None
     qsa: QsaStep | None = None
     hc_xn: torch.Tensor | None = None
     hc_prepared: torch.Tensor | None = None
@@ -204,9 +206,13 @@ class Qwen4ExpContext(ForwardContext):
         a, b, g, M = self.arena, self.batch, self.geo, self.M
         self.xn_live = False
         self.hc_xn = None if b.is_prefill else a.new(M, g.hc_count, g.hidden)
+        self.qsa_jobs = ops.qsa_job_descriptors(self.qsa_lens)
+        self.qsa_job_row = None
+        if self.qsa_lens and b.cu_seqlens is not None and ops.qsa_prefill_metadata_available():
+            self.qsa_job_row = a.new(M, dtype=torch.int32)
         self.qsa = QsaStep(*ops.qsa_metadata(b.state_indices,b.positions,b.seq_lens,M,
             g.index_ratio,g.index_n_heads,1.0/math.sqrt(float(g.index_head_dim)),b.is_prefill,a,
-            max_prefill_seqs=self.max_prefill_seqs))
+            max_prefill_seqs=self.max_prefill_seqs,cu=b.cu_seqlens,job_row=self.qsa_job_row))
 
     def take_xn(self) -> torch.Tensor | None:
         live, self.xn_live = self.xn_live, False

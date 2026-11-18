@@ -209,8 +209,13 @@ def causal_compress_mask(positions,lengths,seq,ratio,stride):
     return out
 
 
+def qsa_prefill_metadata_available():
+    return hasattr(lib, 'snowllm_qsa_prefill_metadata')
+
+
 @operator
-def qsa_metadata(states,positions,lens,m,ratio,heads,weight,prefill,arena,*,max_prefill_seqs=0):
+def qsa_metadata(states,positions,lens,m,ratio,heads,weight,prefill,arena,*,max_prefill_seqs=0,
+                 cu=None, job_row=None):
     b=lens.numel();slots=states.view(b,-1);pos=positions[:,:m]
     _chk(slots,'QSA states',torch.int32,b,slots.shape[1]);_chk_rows(pos,'QSA positions',torch.int64)
     _chk(lens,'QSA lengths',torch.int32,b)
@@ -225,8 +230,14 @@ def qsa_metadata(states,positions,lens,m,ratio,heads,weight,prefill,arena,*,max_
     out_pos=arena.new(pos.shape[0],m,dtype=torch.int64)
     comp=arena.new(capacity,dtype=torch.int32)[:b];weights=arena.new(m,heads,dtype=torch.float32)
     cells=arena.new(m,dtype=torch.int64)
-    check(lib.snowllm_qsa_metadata(*[_p(t) for t in (slots,pos,lens,resume,snaps,out_pos,comp,weights,cells)],
-          b,m,slots.shape[1],pos.shape[0],pos.stride(0),ratio,heads,weight,int(prefill),_stream()),'qsa_metadata')
+    args = (*[_p(t) for t in (slots,pos,lens,resume,snaps,out_pos,comp,weights,cells)],
+            b,m,slots.shape[1],pos.shape[0],pos.stride(0),ratio,heads,weight)
+    if job_row is not None:
+        _chk(cu,'QSA cumulative lengths',torch.int32,b+1)
+        _chk(job_row,'QSA job-local row map',torch.int32,m)
+        check(lib.snowllm_qsa_prefill_metadata(*args,_p(cu),_p(job_row),_stream()),'qsa_prefill_metadata')
+    else:
+        check(lib.snowllm_qsa_metadata(*args,int(prefill),_stream()),'qsa_metadata')
     return resume,snaps.view(-1),out_pos,comp,weights,cells
 
 
