@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23.dev3 — 2026-11-18
+
+- Improve attention performance in paged decode, QSA prefill and vision encoding with SnowLLM-Kernels 0.3.17.dev3.
+  使用 SnowLLM-Kernels 0.3.17.dev3 改善分页解码、QSA prefill 和视觉编码的注意力性能。
+- Enable graphs in the 32 GiB MiniCPM-V 4.7 recipe, add the Radeon 780M graph and eager retest at 1K and 8K, and synchronize the English and Chinese benchmark methodology.
+  在 32 GiB MiniCPM-V 4.7 配方中启用图执行，补充 Radeon 780M 上 1K 和 8K 的图执行与 eager 重测，并同步中英文测试方法。
+- Require HTTPX 0.27 or later within the 0.x series at runtime.
+  运行时依赖 HTTPX 0.27 及以上的 0.x 版本。
+
 ## 0.3.23.dev2 — 2026-11-18
 
 - Update Flash-Next attention, projection and MoE execution, with native dispatch and workspace planning shared by prefill and MTP paths.
