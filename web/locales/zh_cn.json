@@ -238,8 +238,7 @@
   "home.target": "Target",
   "install.targets": "官方测试仅涵盖 Ryzen AI Max+ 395 / 7940HS，遇到问题欢迎<a href=\"https://github.com/SnowLLM/SnowLLM/issues\">提 issue ↗</a>。",
   "benchmark.gfx1103.hardware": "DDR5 5600 MT/s / 32G",
-  "benchmark.gfx1103.resultsNote": "Radeon 780M 的完整测试数据。速度单位为 token/秒，首 token 延迟以秒计，每步耗时以毫秒计。llama.cpp 的 AL 取正式请求服务端日志中的平均长度，每步耗时由 AL 和生成速度估算。K = 1024 个 token。",
+  "benchmark.gfx1103.resultsNote": "Radeon 780M 测试数据。11 月 18 日的 MiniCPM 重测覆盖 1K 和 8K 输入。速度单位为 token/秒，首 token 延迟以秒计，每步耗时以毫秒计。llama.cpp 的 AL 取正式请求服务端日志中的平均长度，每步耗时由 AL 和生成速度估算。K = 1024 个 token。",
   "benchmark.gfx1103.details": "测试方法 ↗",
-  "benchmark.gfx1151.hardware": "LPDDR5X 8000 MT/s / 128G",
-  "benchmark.latestRun": "2026年11月17日更新：UD3.1 的 Q3、IQ4 均包含 SnowLLM MTP k=2／无 MTP，以及 llama.cpp b12479／无 MTP。五个长度均为输出上限256、预热1次、保留4次 HTTP 请求。引擎配置不同：SnowLLM ctx409600、BF16 KV、chunk8192；llama.cpp ctx262144、F16 KV、ubatch2048、关闭主机 prompt cache、4个 checkpoint、PLE按需读取。Q3 SnowLLM和两组llama.cpp使用主机内存上限并禁止测试进程交换，发生过缓存回收；IQ4 SnowLLM使用本日较早的另一native库。"
+  "benchmark.gfx1151.hardware": "LPDDR5X 8000 MT/s / 128G"
 }

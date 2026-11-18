@@ -13,6 +13,8 @@ START = "<!-- BEGIN GENERATED BENCHMARK DATA -->"
 END = "<!-- END GENERATED BENCHMARK DATA -->"
 GFX1103_LABELS = {
     "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http",
+    "minicpm_mix_q3_dspark8_graph_gfx1103_20261118",
+    "minicpm_mix_q3_dspark8_eager_gfx1103_20261118",
     "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http",
     "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http",
 }
@@ -34,11 +36,11 @@ def merged_rows() -> list[dict]:
 COMPARISONS = [
     {
         "model": "MiniCPM-V 4.7 35B-A3B mix_q3gud_im",
-        "snow_label": "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http",
+        "snow_label": "minicpm_mix_q3_dspark8_graph_gfx1103_20261118",
         "llama_label": "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http",
-        "snow_arm": "DSpark block 8, static eager, HTTP",
+        "snow_arm": "DSpark block 8, HTTP (0.3.21)",
         "llama_arm": "DSpark block 8, ROCm, HTTP",
-        "rungs": [(1024, "1K"), (8192, "8K"), (32768, "32K"), (122880, "120K")],
+        "rungs": [(1024, "1K"), (8192, "8K")],
     },
     {
         "model": "GLM-5.3-Flash UD-IQ2_XXS",
@@ -117,8 +119,12 @@ ARMS = {
         ("SnowLLM", "Qwen3.8-Flash-Next Unsloth UD-IQ4_XS", "DFlash2 block 4, SEQS=4, HTTP"),
     "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http":
         ("SnowLLM", "LFM2.5-8B-A1B Q4_K_M", "DSpark block 9, HTTP, usage tokens"),
+    "minicpm_mix_q3_dspark8_graph_gfx1103_20261118":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, HTTP (0.3.21)"),
+    "minicpm_mix_q3_dspark8_eager_gfx1103_20261118":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, eager control, HTTP (0.3.21)"),
     "minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_static_bf16_4k_gfx1103_http":
-        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, static eager, HTTP"),
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, eager, HTTP (0.3.19, 2026-10-29)"),
     "minicpm_mix_q3gud_dspark8_llama_rocm_bf16_ub512_nocache_http":
         ("llama.cpp", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, ROCm, HTTP", None),
     "glm5_3_flash_iq2_xxs_mtp_snowllm":
@@ -185,7 +191,8 @@ def short_isl(isl_target: int) -> str:
 
 
 def featured_labels() -> set:
-    return {"qwen3_8_flash_next_q3_k_xl_ud3_1_production_20261117_snowllm",
+    return {"minicpm_mix_q3_dspark8_graph_gfx1103_20261118",
+            "qwen3_8_flash_next_q3_k_xl_ud3_1_production_20261117_snowllm",
             "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_production_20261117_snowllm",
             "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_b12479_20261117_llama"}
 
