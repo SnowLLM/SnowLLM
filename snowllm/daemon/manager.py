@@ -72,6 +72,7 @@ class DaemonManager:
         self.benchmarks = BenchmarkJobs(self)
         self.log_path = self.config_path.parent / "inference.log"
         self.download_log = self.config_path.parent / "download.log"
+        self._has_inference_log = False
         self.client = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=5), trust_env=False)
 
     def start_telemetry(self):
@@ -183,6 +184,9 @@ class DaemonManager:
         return self.status()
 
     def read_log(self, download=False):
+        available = self.download is not None if download else self._has_inference_log
+        if not available:
+            return ""
         path = self.download_log if download else self.log_path
         try:
             with path.open("rb") as stream:
@@ -371,6 +375,7 @@ class DaemonManager:
                 port = sock.getsockname()[1]
             self.backend = f"http://127.0.0.1:{port}"
             self.process = self.spawn([model, *options, "--host", "127.0.0.1", "--port", str(port)], self.log_path)
+            self._has_inference_log = True
             deadline = asyncio.get_running_loop().time() + self.load_timeout
             while asyncio.get_running_loop().time() < deadline:
                 if self.process.poll() is not None:
@@ -507,6 +512,7 @@ class DaemonManager:
             port = sock.getsockname()[1]
         self.backend = f'http://127.0.0.1:{port}'
         self.process = self.spawn(['--host', '127.0.0.1', '--port', str(port)], self.log_path)
+        self._has_inference_log = True
         try:
             deadline = asyncio.get_running_loop().time() + self.load_timeout
             while asyncio.get_running_loop().time() < deadline:

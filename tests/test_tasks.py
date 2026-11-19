@@ -256,8 +256,11 @@ class ManagerQueueTests(unittest.IsolatedAsyncioTestCase):
             await self.manager.jobs.cancel(second['task_id'])
             self.assertFalse(self.manager.task.done())
             self.assertEqual(self.manager.jobs.records[following['task_id']]['state'], 'queued')
-            release.set()
-            await asyncio.wait_for(self.manager.task, 3)
+            with self.assertLogs('snowllm.serve.registry', level='ERROR') as logs:
+                release.set()
+                await asyncio.wait_for(self.manager.task, 3)
+            self.assertEqual(len(logs.records), 1)
+            self.assertIn('model loading cancelled', logs.records[0].getMessage())
             self.assertEqual(self.manager.jobs.records[second['task_id']]['state'], 'cancelled')
             self.assertEqual(self.manager.jobs.records[following['task_id']]['state'], 'completed')
             self.assertNotIn('first', registry.records)

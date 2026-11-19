@@ -37,13 +37,16 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 class AccessLogTests(unittest.TestCase):
     def test_polling_successes_are_quiet_and_failures_stay_visible(self):
         access_filter = PollingAccessFilter()
-        for path in ('/daemon/status', '/daemon/logs?download=false', '/daemon/metrics?format=json',
-                     '/worker/status', '/health', '/metrics?format=json'):
-            for method, status in [('GET', 200), ('GET', 503), ('POST', 200)]:
+        benchmark = '/daemon/benchmarks/' + 'a1' * 16
+        quiet = ('/daemon/status', '/daemon/logs?download=false', '/daemon/metrics?format=json',
+                 '/worker/status', '/health', '/metrics?format=json', '/daemon/benchmarks', benchmark)
+        other = (benchmark + '/export?results_only=true', benchmark + '/cancel', '/daemon/benchmarks/invalid')
+        for path in (*quiet, *other):
+            for method, status in [('GET', 200), ('GET', 404), ('GET', 503), ('POST', 200)]:
                 with self.subTest(path=path, method=method, status=status):
                     record = logging.LogRecord('uvicorn.access', logging.INFO, '', 0,
                         '%s - "%s %s HTTP/%s" %d', ('client', method, path, '1.1', status), None)
-                    self.assertEqual(access_filter.filter(record), method != 'GET' or status != 200)
+                    self.assertEqual(access_filter.filter(record), path not in quiet or method != 'GET' or status != 200)
 
 
 class ManagerTests(unittest.IsolatedAsyncioTestCase):
@@ -422,7 +425,8 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(upstream.is_closed)
 
     async def test_download_survives_model_unload_and_closes_with_daemon(self):
-        def download(*args, **kwargs):
+        def download(args, log):
+            log.write_text("current download\n")
             child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
                                      start_new_session=os.name != "nt")
             self.children.append(child)
@@ -435,6 +439,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             await self.manager.task
             self.assertIsNone(self.manager.download.poll())
             self.assertEqual(self.manager.status()["download"]["recipe"], "recipe")
+            self.assertEqual(self.manager.read_log(download=True), "current download\n")
             await self.manager.close()
             self.assertIsNotNone(self.children[-1].poll())
 
@@ -448,6 +453,8 @@ class TerminalTests(unittest.TestCase):
                 sock.bind(("127.0.0.1", 0))
                 inference_port = str(sock.getsockname()[1])
             config = Path(tmp) / "config.json"
+            for name in ("inference", "download"):
+                (config.parent / f"{name}.log").write_text(f"previous {name}\n")
             command = [sys.executable, "-m", "snowllm.cli"]
             env = os.environ.copy()
             # This real daemon test must never send usage data to production.
@@ -493,7 +500,11 @@ class TerminalTests(unittest.TestCase):
                     self.assertEqual(client.get(public + "/v1/models").status_code, 503)
                     self.assertEqual(client.get(f"http://127.0.0.1:{port}/v1/models").status_code, 404)
                     admin = f"http://127.0.0.1:{port}"
-                    self.assertEqual(client.get(admin + "/daemon/logs?download=false").status_code, 200)
+                    for download, name in (("false", "inference"), ("true", "download")):
+                        response = client.get(admin + f"/daemon/logs?download={download}")
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.json(), {"text": ""})
+                        self.assertEqual((config.parent / f"{name}.log").read_text(), f"previous {name}\n")
                     self.assertEqual(client.get(admin + "/daemon/metrics?format=json").status_code, 503)
                 for _ in range(100):
                     if marker.exists():
