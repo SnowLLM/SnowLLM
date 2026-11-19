@@ -1,5 +1,6 @@
 {
   "id": "minicpm-v4.7-35b-a3b-q4-k-m",
+  "type": "minicpm",
   "model": "MiniCPM-V-4.7-35B-A3B",
   "family": "MiniCPM",
   "modalities": ["text", "image"],
@@ -13,7 +14,7 @@
     "mmproj-model-f16.gguf"
   ],
   "spec": "none",
-  "priority": 55,
+  "priority": 155,
   "requires": "0.3.11",
   "summary": "MiniCPM-V 4.7 with vision support and speculative decoding disabled.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",

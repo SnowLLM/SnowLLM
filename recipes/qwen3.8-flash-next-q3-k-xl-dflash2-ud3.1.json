@@ -1,5 +1,6 @@
 {
   "id": "qwen3.8-flash-next-q3-k-xl-dflash2-ud3.1",
+  "type": "qwen38fn",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
   "modalities": [
@@ -43,7 +44,7 @@
       "revision": "a22a1744e85c17364dcc54a6a420af7135d4c7f6"
     }
   ],
-  "priority": 80,
+  "priority": 169,
   "requires": "0.3.22",
   "bytes": 91578633469
 }

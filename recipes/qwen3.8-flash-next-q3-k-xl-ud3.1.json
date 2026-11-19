@@ -1,5 +1,6 @@
 {
   "id": "qwen3.8-flash-next-q3-k-xl-ud3.1",
+  "type": "qwen38fn",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
   "modalities": [
@@ -35,7 +36,7 @@
       "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
     }
   ],
-  "priority": 90,
+  "priority": 170,
   "requires": "0.3.22",
   "note": "Pinned Dynamic v3.1 weights with Q2_0 expert down projections. Uses a separate directory from earlier quantizations."
 }

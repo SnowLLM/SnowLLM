@@ -255,6 +255,40 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             for invalid in ('b/../model', 'b/b/model', '../model'):
                 self.assertEqual((await client.post('/daemon/pull', json={'recipe': invalid})).status_code, 422)
 
+    async def test_recipe_picker_orders_an_older_official_catalogue(self):
+        from snowllm.hub import recipes
+        bundled = recipes.catalogue(bundle=True)
+        remote = [{**recipe.raw, 'priority': 0} for recipe in reversed(bundled)]
+        for row in remote:
+            row.pop('type')
+        remote.insert(0, {'id': 'server-only', 'repo': 'example/new', 'priority': -1})
+        remote[-1]['summary'] = 'Latest server metadata'
+        raw = {'schema': recipes.SCHEMA, 'recipes': remote}
+        cache = Path(self.tmp.name) / 'catalogue-cache.json'
+        custom = Path(self.tmp.name) / 'custom-catalogue.json'
+        custom.write_text(json.dumps(raw))
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
+                                     base_url='http://127.0.0.1') as client:
+            with patch.dict(os.environ, {'SNOWLLM_RECIPES_URL': recipes.CATALOGUE_URL}), \
+                 patch.object(recipes, 'cached_at', return_value=cache), \
+                 patch.object(recipes, '_fetch_json', return_value=(raw, None)) as fetch:
+                for _ in range(2):
+                    response = await client.get('/daemon/recipes')
+                    self.assertEqual(response.status_code, 200, response.text)
+                    catalogue = response.json()
+                    self.assertEqual(catalogue['recipe_types'], recipes.RECIPE_TYPES)
+                    rows = catalogue['recipes']
+                    self.assertEqual([row['id'] for row in rows], [r.id for r in bundled] + ['server-only'])
+                    self.assertEqual([row['type'] for row in rows], [r.raw['type'] for r in bundled] + [None])
+                    self.assertEqual(rows[0]['summary'], 'Latest server metadata')
+                fetch.assert_called_once_with(recipes.CATALOGUE_URL)
+
+            with patch.dict(os.environ, {'SNOWLLM_RECIPES_URL': str(custom)}):
+                response = await client.get('/daemon/recipes')
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([row['id'] for row in response.json()['recipes']], [r['id'] for r in remote])
+
     async def test_update_notes_are_exposed_only_on_the_management_listener(self):
         self.manager.update.latest = "100.0.0.dev1"
         self.manager.update.changelog = "# Changelog\n\n- Example / 示例。"

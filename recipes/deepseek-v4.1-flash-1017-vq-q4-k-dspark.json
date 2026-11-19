@@ -1,5 +1,6 @@
 {
   "id": "deepseek-v4.1-flash-1017-vq-q4-k-dspark",
+  "type": "deepseek",
   "model": "DeepSeek-V4.1-Flash-1017",
   "family": "DeepSeek",
   "precision": "VQ + Q4_K",
@@ -20,7 +21,7 @@
   "bytes": 317600818409,
   "status": "supported",
   "spec": "DSpark",
-  "priority": 10,
+  "priority": 149,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
   "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
   "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Vision is not enabled.",

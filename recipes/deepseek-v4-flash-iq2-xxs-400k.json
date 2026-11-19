@@ -1,5 +1,6 @@
 {
   "id": "deepseek-v4-flash-iq2-xxs-400k",
+  "type": "deepseek",
   "model": "DeepSeek-V4-Flash-0731",
   "family": "DeepSeek",
   "modalities": [
@@ -38,5 +39,5 @@
     "max_host_mem_util": 0.75
   },
   "serve_as": "DeepSeek-V4-Flash-0731",
-  "priority": 80
+  "priority": 150
 }

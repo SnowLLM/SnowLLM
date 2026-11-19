@@ -1,5 +1,6 @@
 {
   "id": "minicpm-v4.7-35b-a3b-q4-k-m-dspark",
+  "type": "minicpm",
   "model": "MiniCPM-V-4.7-35B-A3B",
   "family": "MiniCPM",
   "modalities": ["text", "image"],
@@ -12,7 +13,7 @@
     "MiniCPM-V-4_7-35B-A3B-Q4_K_M.gguf",
     "mmproj-model-f16.gguf"
   ],
-  "priority": 56,
+  "priority": 156,
   "requires": "0.3.11",
   "summary": "MiniCPM-V 4.7 with vision support and a Q8 DSpark drafter.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",

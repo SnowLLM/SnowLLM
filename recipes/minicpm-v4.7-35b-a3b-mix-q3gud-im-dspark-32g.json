@@ -1,5 +1,6 @@
 {
   "id": "minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark-32g",
+  "type": "minicpm",
   "model": "MiniCPM-V-4.7-35B-A3B",
   "family": "MiniCPM",
   "modalities": ["text", "image"],
@@ -12,7 +13,7 @@
     "MiniCPM-V-4_7-35B-A3B-mix_q3gud_im.gguf",
     "mmproj-model-f16.gguf"
   ],
-  "priority": 54,
+  "priority": 154,
   "requires": "0.3.19",
   "summary": "MiniCPM-V 4.7 mixed Q3 with DSpark and a 132K BF16 context for 32 GiB RAM.",
   "serve_as": "MiniCPM-V-4.7-35B-A3B",

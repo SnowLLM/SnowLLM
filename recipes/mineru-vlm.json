@@ -1,5 +1,6 @@
 {
   "id": "mineru-vlm",
+  "type": "mineru",
   "model": "MinerU VLM",
   "serve_as": "MinerU-VLM",
   "requires": "0.3.22",

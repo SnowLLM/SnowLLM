@@ -1,5 +1,6 @@
 {
   "id": "glm5.3-flash-iq2-xxs",
+  "type": "glm",
   "model": "GLM-5.3-Flash",
   "family": "GLM",
   "modalities": [
@@ -13,7 +14,7 @@
   "include": [
     "UD-IQ2_XXS/*.gguf"
   ],
-  "priority": 60,
+  "priority": 148,
   "requires": "0.3.14",
   "serve_as": "GLM-5.3-Flash",
   "spec": "none",

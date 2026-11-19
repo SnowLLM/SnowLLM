@@ -1,5 +1,6 @@
 {
   "id": "qwen3.6-35b-a3b-fp8",
+  "type": "qwen35moe",
   "model": "Qwen3.6-35B-A3B",
   "family": "Qwen",
   "modalities": ["text", "image"],
@@ -18,7 +19,7 @@
     "num_spec": 0,
     "max_num_seqs": 4
   },
-  "priority": 60,
+  "priority": 160,
   "summary": "Qwen3.6-35B-A3B in FP8 with speculative decoding disabled.",
   "serve_as": "Qwen3.6-35B-A3B"
 }

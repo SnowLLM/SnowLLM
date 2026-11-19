@@ -1,5 +1,6 @@
 {
   "id": "qwen3.6-35b-a3b-fp8-mtp",
+  "type": "qwen35moe",
   "model": "Qwen3.6-35B-A3B",
   "family": "Qwen",
   "modalities": ["text", "image"],
@@ -18,7 +19,7 @@
     "num_spec": 2,
     "max_num_seqs": 4
   },
-  "priority": 59,
+  "priority": 159,
   "summary": "Qwen3.6-35B-A3B in FP8 with MTP depth 2.",
   "serve_as": "Qwen3.6-35B-A3B"
 }

@@ -1,5 +1,6 @@
 {
   "id": "qwen3.8-27b-q4-k-xl-dflash2",
+  "type": "qwen35dense",
   "model": "Qwen3.8-27B",
   "family": "Qwen",
   "modalities": ["text", "image"],

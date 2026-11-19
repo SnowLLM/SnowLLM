@@ -150,15 +150,18 @@ def create_app(manager: DaemonManager, *, admin_host="127.0.0.1", admin_key=None
 
         def inventory():
             roots = [Path(value) for value in getattr(manager, 'models_dirs', [manager.models_dir])]
+            url = manager.status()["recipes_url"]
+            book = recipes.catalogue(url=url, refresh=refresh, bundle=bundle)
             rows = []
-            for recipe in recipes.catalogue(url=manager.status()["recipes_url"], refresh=refresh, bundle=bundle):
+            for recipe, recipe_type in recipes.catalogue_for_display(book, url, bundle=bundle):
                 path = recipes.installed(recipe, roots) or recipe.path(roots[0])
-                rows.append({**recipe.raw, "id": recipe.ref, "path": str(path), "servable": recipe.servable,
+                rows.append({**recipe.raw, "id": recipe.ref, "type": recipe_type,
+                             "path": str(path), "servable": recipe.servable,
                              "download_path": str(recipe.path(roots[0])),
                              "loadable": recipes.loadable(path, recipe),
                              "downloaded": recipes.complete(recipe, path),
                              "exists": path.is_dir()})
-            return {"recipes": rows}
+            return {"recipe_types": recipes.RECIPE_TYPES, "recipes": rows}
         try:
             return await asyncio.to_thread(inventory)
         except (SnowLLMError, OSError, ValueError) as exc:

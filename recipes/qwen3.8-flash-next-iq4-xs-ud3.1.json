@@ -1,5 +1,6 @@
 {
   "id": "qwen3.8-flash-next-iq4-xs-ud3.1",
+  "type": "qwen38fn",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
   "modalities": [
@@ -35,7 +36,7 @@
       "revision": "812d96e10a0dd82b69d749e68693698cf6c36daa"
     }
   ],
-  "priority": 90,
+  "priority": 168,
   "requires": "0.3.22",
   "note": "Pinned Dynamic v3.1 IQ4 weights. Uses a separate directory from the earlier IQ4 quantization."
 }

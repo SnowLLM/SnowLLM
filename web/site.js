@@ -886,7 +886,14 @@ function needsNewer(requires, have) {
 
 loadTable("recipes-catalogue", function (container, data) {
   var query = "", filters = {};
-  var fields = ["family", "modality"];
+  var fields = ["type", "modality"];
+  var types = new Map(Object.entries(data.recipe_types || {}));
+  var legacy = !types.size;
+  if (legacy) data.recipes.forEach(function (recipe) {
+    if (recipe.family) types.set(recipe.family, recipe.family);
+  });
+  types.set("other", "");
+  function typeLabel(type) { return types.get(type) || t("recipe.other"); }
   function vendorOf(recipe) {
     var owner = (recipe.repo || "").split("/")[0];
     return { unsloth: "Unsloth", openbmb: "OpenBMB" }[owner] || owner;
@@ -902,12 +909,15 @@ loadTable("recipes-catalogue", function (container, data) {
       : needsNewer(recipe.requires, data.version) ? "recipe.newer" : "recipe.supported";
   }
   function valueOf(recipe, field) {
-    if (field === "family") return recipe.family;
+    if (field === "type") {
+      var type = legacy ? recipe.family : recipe.type;
+      return types.has(type) ? type : "other";
+    }
     var modalities = recipe.modalities || [];
     if (modalities.some(function (input) { return input !== "text"; })) return "multimodal";
     return modalities.length ? "text" : "";
   }
-  var search, count, grid, dialog;
+  var search, count, groups, dialog;
   function showDetails(recipe) {
     dialog.replaceChildren();
     var close = el("button", { type: "button", class: "recipe-dialog-close", text: "×", "aria-label": t("recipe.close") });
@@ -977,13 +987,22 @@ loadTable("recipes-catalogue", function (container, data) {
   }
   function renderCards() {
     var visible = data.recipes.filter(function (recipe) {
-      return [recipe.model, recipe.id, recipe.precision, vendorOf(recipe)].join(" ").toLowerCase().includes(query)
+      var type = valueOf(recipe, "type");
+      return [recipe.model, recipe.id, recipe.precision, vendorOf(recipe), type, typeLabel(type)].join(" ").toLowerCase().includes(query)
         && fields.every(function (field) { return !filters[field] || valueOf(recipe, field) === filters[field]; });
     });
     count.textContent = t("recipe.count", { count: visible.length });
-    grid.replaceChildren();
-    visible.forEach(function (recipe) { grid.appendChild(recipeCard(recipe)); });
-    if (!visible.length) grid.appendChild(el("p", { class: "empty", text: t("recipe.noResults") }));
+    groups.replaceChildren();
+    types.forEach(function (_, type) {
+      var cards = visible.filter(function (recipe) { return valueOf(recipe, "type") === type; });
+      if (!cards.length) return;
+      var label = typeLabel(type);
+      groups.appendChild(el("section", { class: "recipe-group", "data-recipe-type": type, "aria-label": label }, [
+        el("h2", { class: "recipe-section-title", text: label }),
+        el("div", { class: "recipe-grid" }, cards.map(recipeCard)),
+      ]));
+    });
+    if (!visible.length) groups.appendChild(el("p", { class: "empty", text: t("recipe.noResults") }));
   }
   function render() {
     container.replaceChildren();
@@ -993,36 +1012,22 @@ loadTable("recipes-catalogue", function (container, data) {
     count = el("span", { class: "recipe-count", role: "status" });
     var tools = el("div", { class: "recipe-tools" }, [search, count]);
     var controls = el("div", { class: "recipe-filters" });
+    var availableTypes = new Set(data.recipes.map(function (recipe) { return valueOf(recipe, "type"); }));
     fields.forEach(function (field) {
-      var label = t(field === "family" ? "recipe.family" : "recipe.modality");
+      var label = t(field === "type" ? "recipe.type" : "recipe.modality");
       var select = el("select", { "aria-label": t("common.filter", { label: label }) });
-      select.appendChild(el("option", { value: "", text: t(field === "family" ? "recipe.allFamilies" : "recipe.allModalities") }));
-      var values = field === "family" ? Array.from(new Set(data.recipes.map(function (recipe) { return recipe.family; }).filter(Boolean))).sort()
+      select.appendChild(el("option", { value: "", text: t(field === "type" ? "recipe.allTypes" : "recipe.allModalities") }));
+      var values = field === "type" ? Array.from(types.keys()).filter(function (type) { return availableTypes.has(type); })
         : ["multimodal", "text"];
       values.forEach(function (value) {
-        select.appendChild(el("option", { value: value, text: field === "family" ? value : t(value === "multimodal" ? "recipe.multimodal" : "recipe.textOnly") }));
+        select.appendChild(el("option", { value: value, text: field === "type" ? typeLabel(value) : t(value === "multimodal" ? "recipe.multimodal" : "recipe.textOnly") }));
       });
       select.value = filters[field] || "";
       select.addEventListener("change", function () { filters[field] = select.value; renderCards(); });
       controls.appendChild(el("label", {}, [document.createTextNode(label), select]));
     });
-    var featuredIds = [
-      "qwen3.8-flash-next-q3-k-xl-dflash2",
-      "minicpm-v4.7-35b-a3b-q4-k-m-dspark",
-      "deepseek-v4-flash-iq2-xxs-400k",
-    ];
-    var featuredGrid = el("div", { class: "recipe-grid recipe-featured-grid" });
-    featuredIds.forEach(function (id) {
-      var recipe = data.recipes.find(function (recipe) { return recipe.id === id; });
-      if (recipe) featuredGrid.appendChild(recipeCard(recipe));
-    });
-    if (featuredGrid.childElementCount) container.appendChild(el("section", { class: "recipe-featured", "aria-labelledby": "recipe-featured-title" }, [
-      el("h2", { class: "recipe-section-title", id: "recipe-featured-title", text: t("recipe.featured") }), featuredGrid,
-    ]));
-    grid = el("div", { class: "recipe-grid" });
-    container.appendChild(el("section", { class: "recipe-all", "aria-labelledby": "recipe-all-title" }, [
-      el("h2", { class: "recipe-section-title", id: "recipe-all-title", text: t("recipe.allModels") }), tools, controls, grid,
-    ]));
+    groups = el("div", { class: "recipe-groups" });
+    container.append(tools, controls, groups);
     dialog = el("dialog", { class: "recipe-dialog", "aria-labelledby": "recipe-detail-title" });
     dialog.addEventListener("click", function (event) { if (event.target === dialog) {
       var bounds = dialog.getBoundingClientRect();

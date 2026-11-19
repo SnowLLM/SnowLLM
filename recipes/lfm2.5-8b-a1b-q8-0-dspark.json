@@ -1,5 +1,6 @@
 {
   "id": "lfm2.5-8b-a1b-q8-0-dspark",
+  "type": "lfm",
   "model": "LFM2.5-8B-A1B",
   "family": "LFM",
   "modalities": [
@@ -14,7 +15,7 @@
     "LFM2.5-8B-A1B-Q8_0.gguf"
   ],
   "spec": "DSpark",
-  "priority": 63,
+  "priority": 153,
   "requires": "0.3.21",
   "summary": "LFM2.5-8B-A1B official Q8_0 with its Q8_0 DSpark draft.",
   "serve_as": "LFM2.5-8B-A1B",

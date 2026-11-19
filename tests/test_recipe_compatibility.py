@@ -17,10 +17,23 @@ SPEC.loader.exec_module(builder)
 
 
 def recipe(**updates):
-    return {'id': 'example', 'repo': 'example/model', 'revision': 'a' * 40, **updates}
+    return {'id': 'example', 'type': 'qwen35moe', 'repo': 'example/model', 'revision': 'a' * 40, **updates}
 
 
 class RecipeCompatibilityTests(unittest.TestCase):
+    def test_bundled_recipe_order_matches_the_website_catalogue(self):
+        book = builder.recipes()
+        ids = [row['id'] for row in book]
+        self.assertEqual([row.id for row in recipes.catalogue(bundle=True)], ids)
+        self.assertEqual(ids[:3], [
+            'qwen3.8-flash-next-q3-k-xl-ud3.1',
+            'qwen3.8-flash-next-q3-k-xl-dflash2-ud3.1',
+            'qwen3.8-flash-next-iq4-xs-ud3.1',
+        ])
+        self.assertEqual({r['model'] for r in book if r['type'] == 'qwen35dense'},
+                         {'Qwen3.6-27B', 'Qwen3.8-27B'})
+        self.assertEqual({r['type'] for r in book if r['model'].endswith('-27B')}, {'qwen35dense'})
+
     def test_published_sources_reject_mutable_or_missing_revisions(self):
         for update in ({'revision': 'main'}, {'revision': ''},
                        {'sources': [{'repo': 'example/draft', 'revision': 'main'}]}):
@@ -192,6 +205,12 @@ class RecipeCompatibilityTests(unittest.TestCase):
             old = json.loads((path.parent / 'recipes/0.3.13.json').read_text())
             self.assertEqual(current['schema'], 2)
             self.assertEqual(old['schema'], 1)
+            self.assertEqual(list(current['recipe_types']), [
+                'qwen38fn', 'minicpm', 'qwen35moe', 'lfm', 'deepseek', 'glm', 'qwen35dense', 'mineru',
+            ])
+            self.assertEqual({r['type'] for r in current['recipes']}, current['recipe_types'].keys())
+            self.assertNotIn('recipe_types', old)
+            self.assertTrue(all('type' not in r for r in old['recipes']))
             self.assertEqual((path.parent/'recipe.json').read_bytes(),
                              (path.parent/'recipes/0.3.13.json').read_bytes())
 

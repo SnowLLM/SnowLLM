@@ -1,5 +1,6 @@
 {
   "id": "qwen3.8-flash-next-q3-k-xl",
+  "type": "qwen38fn",
   "model": "Qwen3.8-Flash-Next",
   "family": "Qwen",
   "modalities": [

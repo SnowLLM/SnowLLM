@@ -11,7 +11,7 @@ from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from snowllm.hub.recipes import SCHEMA, SETTABLE, version as parts
+from snowllm.hub.recipes import RECIPE_TYPES, SCHEMA, SETTABLE, recipe_rank, version as parts
 
 SOURCE = ROOT / "recipes"
 OUT = ROOT / "web" / "recipe-v2.json"
@@ -44,14 +44,16 @@ def for_client(book: list[dict], client: str) -> list[dict]:
         unknown = set(defaults) - CLIENT_DEFAULTS[client]
         if unknown:
             raise ValueError(f"{recipe['id']}: defaults {sorted(unknown)} require a version newer than {client}")
-        result.append({**recipe, "defaults": defaults})
+        legacy = {**recipe, "defaults": defaults}
+        legacy.pop("type", None)
+        result.append(legacy)
     return result
 
 
 def needs_newer(r: dict) -> bool:
     return bool(r.get("requires")) and parts(VERSION) < parts(str(r["requires"]))
 
-REQUIRED = ("id", "model", "precision", "dir", "repo")
+REQUIRED = ("id", "type", "model", "precision", "dir", "repo")
 OPTIONAL = ("revision", "include", "exclude", "bytes", "priority", "requires", "summary", "note",
             "files", "sources", "defaults", "serve_as", "spec", "status", "family", "modalities", "runtime")
 LISTS = ("include", "exclude")
@@ -85,6 +87,8 @@ def load(path: pathlib.Path) -> dict | None:
         complain(path, f"is the recipe {r['id']!r}, so it should be named {r['id']}.json")
     if not re.fullmatch(r"[a-z0-9][a-z0-9.\-]*", r["id"]):
         complain(path, f"has an id that is not a-z, 0-9, dot and dash: {r['id']!r}")
+    if not isinstance(r["type"], str) or r["type"] not in RECIPE_TYPES:
+        complain(path, f"has unknown recipe type {r['type']!r}")
     if not isinstance(r.get("defaults", {}), dict):
         complain(path, "has a defaults that is not an object")
     for k in (r.get("defaults") or {}):
@@ -217,8 +221,7 @@ def url_of(repo: str, revision: str = "main") -> str:
 
 
 def rank(r: dict) -> tuple:
-    return (-r.get("priority", 0), r.get("status", "supported") != "supported" or needs_newer(r),
-            r.get("bytes", 0), r["id"])
+    return recipe_rank(r, VERSION)
 
 
 def updated() -> str:
@@ -296,7 +299,7 @@ def main() -> None:
             src["url"] = url_of(src["repo"], src.get("revision", "main"))
     stamp = updated()
     OUT.write_text(json.dumps({"schema": SCHEMA, "version": VERSION, "updated": stamp,
-                               "recipes": book}, indent=2) + "\n")
+                               "recipe_types": RECIPE_TYPES, "recipes": book}, indent=2) + "\n")
     destination = OUT.parent / "recipes"
     destination.mkdir(parents=True, exist_ok=True)
     for client in CLIENT_DEFAULTS:

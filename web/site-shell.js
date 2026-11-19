@@ -19,7 +19,7 @@ applyTranslations()
 if (current === '/') await import('./install-ui.js?v=install-channels-1')
 else if (current === '/status/') await import('./status/status.js?v=stats-clean-1')
 else if (current === '/benchmark/') await import('./site.js?v=benchmark-unified-1')
-else await import('./site.js')
+else await import('./site.js?v=recipe-types-1')
 if (current === '/') {
   function legacyAnchor() {
     const destination = { '#benchmarks': '/benchmark/', '#recipes': '/recipe/' }[location.hash]

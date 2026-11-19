@@ -1,5 +1,6 @@
 {
   "id": "qwen3.6-35b-a3b-fp8-dflash",
+  "type": "qwen35moe",
   "model": "Qwen3.6-35B-A3B",
   "family": "Qwen",
   "modalities": ["text", "image"],
@@ -29,7 +30,7 @@
     "dflash": "@model/dflash",
     "max_num_seqs": 4
   },
-  "priority": 60,
+  "priority": 160,
   "summary": "Qwen3.6-35B-A3B in FP8 with an external DFlash drafter.",
   "serve_as": "Qwen3.6-35B-A3B"
 }

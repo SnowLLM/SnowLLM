@@ -42,6 +42,16 @@ SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens
 TIMEOUT = 30.0
 SUPPORTED = "supported"
 COMING_SOON = "coming soon"
+RECIPE_TYPES = {
+    "qwen38fn": "Qwen3.8 Flash-Next",
+    "minicpm": "MiniCPM",
+    "qwen35moe": "Qwen 35B MoE",
+    "lfm": "LFM",
+    "deepseek": "DeepSeek",
+    "glm": "GLM",
+    "qwen35dense": "Qwen 27B Dense",
+    "mineru": "MinerU",
+}
 RECOMMENDED = (("simple tasks", ("qwen3.6-35b-a3b-fp8-dflash",
                                   "qwen3.6-35b-a3b-q4-k-xl-dflash")),
                ("complex tasks", ("qwen3.8-flash-next-iq4-xs",)))
@@ -192,6 +202,12 @@ def version(v: str) -> tuple[int, ...]:
     return tuple(int(n) for n in re.findall(r"\d+", v)[:3])
 
 
+def recipe_rank(raw: dict, client: str) -> tuple:
+    unavailable = (raw.get("status", SUPPORTED) != SUPPORTED
+                   or version(str(raw.get("requires") or "0")) > version(client))
+    return (-int(raw.get("priority", 0)), unavailable, int(raw.get("bytes", 0)), raw["id"])
+
+
 def _open(url: str) -> http.client.HTTPResponse:
     return urllib.request.urlopen(urllib.request.Request(url, headers=headers(url)),
                                   timeout=TIMEOUT)
@@ -230,20 +246,37 @@ def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
     return out
 
 
+def _bundled_entries() -> list[dict]:
+    directory = pathlib.Path(__file__).with_name("bundle")
+    if not directory.is_dir():
+        directory = pathlib.Path(__file__).resolve().parents[2] / "recipes"
+    try:
+        entries = [json.loads(path.read_text(encoding="utf-8"))
+                   for path in sorted(directory.glob("*.json"))]
+    except (OSError, ValueError) as exc:
+        raise SnowLLMError(f"bundled recipes: {exc}") from exc
+    if not entries:
+        raise SnowLLMError("no bundled recipes found; reinstall snowllm")
+    return entries
+
+
+def catalogue_for_display(book: list[Recipe], url: str, *, bundle: bool) -> list[tuple[Recipe, str | None]]:
+    bundled = {}
+    if not bundle:
+        try:
+            bundled = {entry["id"]: entry for entry in _bundled_entries()}
+        except SnowLLMError:
+            pass
+    if bundled and url == CATALOGUE_URL:
+        book = sorted(book, key=lambda r: recipe_rank(bundled.get(r.id, r.raw), __version__))
+    return [(r, r.raw.get("type") or bundled.get(r.id, {}).get("type")) for r in book]
+
+
 def catalogue(url: str | None = None, refresh: bool = False, *, bundle: bool = False) -> list[Recipe]:
     print(f"{term.stamp()} {BUNDLE_HELP}", file=sys.stderr, flush=True)
     if bundle:
-        directory = pathlib.Path(__file__).with_name("bundle")
-        if not directory.is_dir():
-            directory = pathlib.Path(__file__).resolve().parents[2] / "recipes"
-        try:
-            entries = [json.loads(path.read_text(encoding="utf-8"))
-                       for path in sorted(directory.glob("*.json"))]
-        except (OSError, ValueError) as exc:
-            raise SnowLLMError(f"bundled recipes: {exc}") from exc
-        if not entries:
-            raise SnowLLMError("no bundled recipes found; reinstall snowllm")
-        return _catalogue({"recipes": entries}, "bundled recipes", bundle=True)
+        book = _catalogue({"recipes": _bundled_entries()}, "bundled recipes", bundle=True)
+        return sorted(book, key=lambda recipe: recipe_rank(recipe.raw, __version__))
     try:
         url = recipes_source(override=url)[0]
     except (OSError, ValueError) as exc:

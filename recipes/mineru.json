@@ -1,5 +1,6 @@
 {
   "id": "mineru",
+  "type": "mineru",
   "model": "MinerU",
   "serve_as": "MinerU",
   "runtime": "mineru",
