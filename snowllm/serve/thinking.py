@@ -21,10 +21,19 @@ def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
     except (ValueError, TypeError, TemplateError, AttributeError):
         return result
 
+    effort_names = {"reasoning_effort"}
+
+    def effort(node):
+        if isinstance(node, nodes.Filter) and node.name == "default":
+            return effort(node.node)
+        return isinstance(node, nodes.Name) and node.name in effort_names
+
     constants = {}
     for assignment in tree.find_all(nodes.Assign):
         if isinstance(assignment.target, nodes.Name):
             constants[assignment.target.name] = assignment.node
+            if effort(assignment.node):
+                effort_names.add(assignment.target.name)
 
     def literals(node, seen=frozenset()):
         if isinstance(node, nodes.Const):
@@ -40,17 +49,14 @@ def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
             return literals(constants[node.name], seen | {node.name})
         return []
 
-    def effort(node):
-        if isinstance(node, nodes.Filter) and node.name == "default":
-            return effort(node.node)
-        return isinstance(node, nodes.Name) and node.name == "reasoning_effort"
-
+    allowed = []
     candidates = []
     for comparison in tree.find_all(nodes.Compare):
         left = comparison.expr
         for operand in comparison.ops:
             if effort(left):
-                candidates.extend(literals(operand.expr))
+                values = allowed if operand.op in ("in", "notin") else candidates
+                values.extend(literals(operand.expr))
             elif effort(operand.expr):
                 candidates.extend(literals(left))
             left = operand.expr
@@ -71,13 +77,6 @@ def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
             [{"role": "user", "content": "Hello"}], tokenize=False,
             add_generation_prompt=True, **kwargs)
 
-    def accepts(**kwargs):
-        try:
-            render(**kwargs)
-            return True
-        except (ValueError, TypeError, TemplateError):
-            return False
-
     names = {node.name for node in tree.find_all(nodes.Name)}
     if names & {"enable_thinking", "thinking"}:
         try:
@@ -85,8 +84,18 @@ def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
                 enable_thinking=False, thinking=False)
         except (ValueError, TypeError, TemplateError):
             pass
-    result["levels"] = [value for value in dict.fromkeys(candidates)
-                        if accepts(reasoning_effort=value, enable_thinking=True, thinking=True)]
+    allowed_prompts = set()
+    for value in dict.fromkeys(allowed + candidates):
+        try:
+            prompt = render(reasoning_effort=value, enable_thinking=True, thinking=True)
+        except (ValueError, TypeError, TemplateError):
+            continue
+        if value in allowed:
+            allowed_prompts.add(prompt)
+        elif prompt in allowed_prompts:
+            # Prefer listed spellings over aliases that render the same prompt.
+            continue
+        result["levels"].append(value)
     return result
 
 

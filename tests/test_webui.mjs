@@ -9,6 +9,8 @@ const source = await readFile(new URL('../snowllm/daemon/static/stream.js', impo
 const { parseOptions, readEvents } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const commands = await readFile(new URL('../snowllm/daemon/static/commands.js', import.meta.url), 'utf8');
 const { modelLoadCommand } = await import('data:text/javascript;base64,' + Buffer.from(commands).toString('base64'));
+const thinking = await readFile(new URL('../snowllm/daemon/static/thinking.js', import.meta.url), 'utf8');
+const { thinkingProfile, thinkingParameters } = await import('data:text/javascript;base64,' + Buffer.from(thinking).toString('base64'));
 
 test('copied load command preserves the recipe, target, ID, service address and option boundary', () => {
   assert.equal(modelLoadCommand({model: 'b/example', target: 'gpu', id: 'main', options: ['--max-model-len', '32k']}, 'http://127.0.0.1:9001/#workspace'),
@@ -31,16 +33,24 @@ test('copied load commands preserve shell metacharacters as literal arguments', 
     '--id=-main model', 'gpu:' + request.model, '--', ...request.options]);
 });
 
-test('required thinking cannot be switched off, including stale saved levels', async () => {
-  const source = await readFile(new URL('../snowllm/daemon/static/thinking.js', import.meta.url), 'utf8');
-  const { thinkingProfile, thinkingParameters } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+test('required thinking cannot be switched off, including stale saved levels', () => {
   const required = { required: true, switch: true, levels: ['none', 'low'] };
   assert.deepEqual(thinkingProfile(required).options, [['', 'Always on'], ['effort:low', 'low']]);
   assert.deepEqual(thinkingParameters('', required), {});
   assert.throws(() => thinkingParameters('off', required), /not supported/);
   assert.throws(() => thinkingParameters('effort:none', required), /not supported/);
   assert.deepEqual(thinkingParameters('off', { switch: true }), { enable_thinking: false });
-  assert.deepEqual(thinkingProfile({ switch: false }).options, [['', 'Model default']]);
+  assert.deepEqual(thinkingProfile({ switch: false }).options, [['', 'Default']]);
+});
+
+test('thinking options offer On only when there is no enabling effort level', () => {
+  const capabilities = { switch: true, levels: ['xhigh', 'medium', 'low'] };
+  assert.deepEqual(thinkingProfile(capabilities).options.map(([value]) => value),
+    ['', 'off', 'effort:xhigh', 'effort:medium', 'effort:low']);
+  assert.deepEqual(thinkingParameters('effort:medium', capabilities), { reasoning_effort: 'medium' });
+  for (const levels of [[], ['none']]) {
+    assert.deepEqual(thinkingParameters('on', { switch: true, levels }), { enable_thinking: true });
+  }
 });
 
 test('extra inference options preserve Windows paths and quoted spaces', () => {

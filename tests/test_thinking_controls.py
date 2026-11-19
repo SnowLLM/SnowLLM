@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 import httpx
+from jinja2 import Environment
 
 from snowllm.serve import api, generation as gen
 from snowllm.serve.protocol import ChatRequest, MessagesRequest, ResponsesRequest
@@ -35,6 +36,21 @@ def state(required=True):
 
 
 class ThinkingControlsTests(unittest.TestCase):
+    def test_effort_levels_declared_on_a_normalized_template_variable(self):
+        source = """
+        {% if enable_thinking %}
+          {%- set effort = reasoning_effort | default('xhigh') -%}
+          {%- if effort == 'high' %}{% set effort = 'xhigh' %}{% endif -%}
+          {%- if effort in ('xhigh', 'medium', 'low') %}{{ effort }}{% endif -%}
+        {% else %}off{% endif %}
+        """
+        template = Environment().from_string(source)
+        tokenizer = SimpleNamespace(get_chat_template=lambda: source,
+            apply_chat_template=lambda messages, **kwargs: template.render(**kwargs))
+        capabilities = thinking_capabilities(tokenizer)
+        self.assertTrue(capabilities["switch"])
+        self.assertEqual(capabilities["levels"], ["xhigh", "medium", "low"])
+
     def test_required_model_capabilities_override_template_switch(self):
         tok = state().tokenizer
         required = thinking_capabilities(tok, required=True)
