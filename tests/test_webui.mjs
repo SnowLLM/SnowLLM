@@ -65,7 +65,7 @@ test('SSE survives one-byte UTF-8 chunks and CRLF boundaries', async () => {
   const encoded = new TextEncoder().encode(text), events = [];
   let canceled = false;
   const stream = new ReadableStream({ start(controller) { for (const byte of encoded) controller.enqueue(new Uint8Array([byte])); }, cancel() { canceled = true; } });
-  await readEvents(stream, value => events.push(value));
+  assert.equal(await readEvents(stream, value => events.push(value)), true);
   assert.equal(events[0].choices[0].delta.content, '雪 ❄');
   assert.equal(events[1].usage.completion_tokens, 3);
   assert.equal(events.length, 2);
@@ -77,6 +77,17 @@ test('malformed events fail visibly and close the stream', async () => {
   const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('data: invalid\n\n')); }, cancel() { canceled = true; } });
   await assert.rejects(readEvents(stream, () => {}), SyntaxError);
   assert.equal(canceled, true);
+});
+
+test('a stream closed without the completion marker preserves partial events', async () => {
+  const partial = { choices: [{ delta: { content: 'Partial reply' } }] };
+  const stream = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(partial)}\n\n`));
+    controller.close();
+  } });
+  const events = [];
+  assert.equal(await readEvents(stream, value => events.push(value)), false);
+  assert.deepEqual(events, [partial]);
 });
 
 test('update banner renders both channels, their notes and exact commands without HTML interpretation', async () => {
@@ -141,22 +152,24 @@ test('switching to bundled recipes completes while the server is pending and ign
     api: async path => {
       requests.push(path);
       if (path === '/daemon/local-models') return { models: [] };
-      if (path.includes('bundle=true')) return { recipes: [{ id: 'b/bundled' }] };
+      if (path.includes('bundle=true')) return { recipes: [{ id: 'b/bundled', type: 'lfm' }], recipe_types: { lfm: 'LFM' } };
       return server;
     },
-    renderRecipeOptions() {}, renderRecipes() {}, recipeDescription() {}, renderLocal() {},
+    renderRecipeOptions() {}, renderRecipes() {}, renderLoadHints() {}, renderLocal() {},
   });
   vm.runInContext(`let catalogLoading = false, catalogRequest = 0, bundleCatalog = false;
     const loadCards = [];
-    let status = {models_dir: '/models'}, recipes = [], localModels = [];
+    let status = {models_dir: '/models'}, recipes = [], recipeTypes = {}, localModels = [];
     ${refresh}`, context);
   const pending = vm.runInContext('refreshCatalog(false)', context);
   await vm.runInContext('bundleCatalog = true; refreshCatalog(false, true)', context);
   assert.equal(vm.runInContext('recipes[0].id', context), 'b/bundled');
+  assert.equal(vm.runInContext('recipeTypes.lfm', context), 'LFM');
   assert.equal(elements.get('refresh-recipes').disabled, false);
-  finishServer({ recipes: [{ id: 'server' }] });
+  finishServer({ recipes: [{ id: 'server' }], recipe_types: { glm: 'GLM' } });
   await pending;
   assert.equal(vm.runInContext('recipes[0].id', context), 'b/bundled');
+  assert.equal(vm.runInContext('recipeTypes.lfm', context), 'LFM');
   assert.ok(requests.includes('/daemon/recipes?refresh=false&bundle=false'));
   assert.ok(requests.includes('/daemon/recipes?refresh=false&bundle=true'));
 });
@@ -171,6 +184,21 @@ test('benchmark commands preserve the selected model, settings and shell quoting
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.split('\0').slice(0, -1), ['bench', 'run', '--admin-host', 'localhost', '--admin-port', '9001',
     '--model-id=' + config.model_id, '--isl', '1024,8192', '--osl', '256', '--conc', '1,2', '--reps', '4', '--warm', '1', '--thinking', 'auto']);
+});
+
+test('benchmark step metrics use measured step time and only derive it when AL is known', async () => {
+  const source = (await readFile(new URL('../snowllm/daemon/static/benchmark-results.js', import.meta.url), 'utf8')).replace(/^import .*;\n/gm, '');
+  const { resultMetrics } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const row = {decode_tok_s: 100, accept_unit: 'AL', accept_mean: 2.5, prefill_tok_s: 2000, ttft_s: 0.5};
+  assert.deepEqual(resultMetrics({...row, step_s: 0.02}), {
+    decode_tok_s: 100, step_hz: 50, step_ms: 20, al: 2.5, prefill_tok_s: 2000, ttft_s: 0.5,
+  });
+  assert.equal(resultMetrics(row).step_ms, 25);
+  assert.equal(resultMetrics({...row, accept_length_mean: 2, accept_unit: 'accept%'}).step_hz, 50);
+  const missing = resultMetrics({...row, accept_unit: 'accept%', accept_mean: 0.5});
+  assert.equal(missing.al, null);
+  assert.equal(missing.step_hz, null);
+  assert.equal(missing.step_ms, null);
 });
 
 test('benchmark comparisons expose outdated, incomplete and mismatched measurements', async () => {

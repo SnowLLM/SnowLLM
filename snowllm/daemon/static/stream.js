@@ -49,6 +49,7 @@ export async function readEvents(body, onEvent) {
       if (chunk.done) { pending += decoder.decode(); consume(true); break; }
       pending += decoder.decode(chunk.value, { stream: true }); consume();
     }
+    return done;
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

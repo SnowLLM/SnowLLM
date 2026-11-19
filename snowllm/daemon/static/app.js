@@ -1,36 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t, translatePage, language, setLanguage } from './i18n.js';
-import { parseOptions, readEvents } from './stream.js';
-import { thinkingProfile, thinkingParameters } from './thinking.js';
+import { parseOptions, readEvents } from './stream.js?v=2';
+import { thinkingProfile, thinkingParameters } from './thinking.js?v=3';
 import { renderLogs } from './logs.js';
 import { modelLoadCommand } from './commands.js';
-import { createBenchmarkUI } from './benchmark.js';
+import { writeClipboard } from './clipboard.js';
+import { createBenchmarkUI } from './benchmark.js?v=2';
 import { createTaskUI } from './tasks.js';
+import { renderMarkdown } from './markdown.js';
 
 const $ = (id) => document.getElementById(id);
 const stateLabels = () => ({ queued: t("Queued"), skipped: t("Not attempted"), unloading: t("Unloading"), idle: t("Idle"), draining: t("Finishing requests"), loading: t("Loading"), ready: t("Ready"), failed: t("Failed") });
 let savedRecipesUrl, savedLibraryPath;
 let benchmarkUI = null;
 let taskUI = null;
-let status = null, recipes = [], localModels = [], page = 'workspace';
+let status = null, recipes = [], recipeTypes = {}, localModels = [], page = 'workspace';
+const pages = {workspace: 'Overview', models: 'Models', chat: 'Chat', benchmark: 'Benchmark', tasks: 'Tasks', settings: 'Settings'};
 let bundleCatalog = false;
-let toastTimer, chatController = null, directoryTarget = '', directoryData = null;
+let toastTimer, directoryTarget = '', directoryData = null;
 let polling = false, catalogLoading = false, modelRoot = null, lastDownloadExit = null;
 let catalogRequest = 0;
 let logRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
 const activeChats = new Map();
+const chatHistoryMedia = matchMedia('(min-width: 720px) and (min-height: 620px)');
+let chatDrafts = new Map();
 let modelSignature = '', aliasRequest = 0;
 let preferredThinkingLevel = '';
 let conversation = [];
-let sessions = [], sessionId = crypto.randomUUID(), loadSettings = {};
+let sessions = [], sessionId = newSessionId(), loadSettings = {};
 const loadFieldIds = ['load-id', 'load-target', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
 const loadCards = [];
 let loadCardSequence = 0, submittingLoad = false;
 let seenLoadAdvice = null;
+let savedLoadSelection = null;
 try { seenLoadAdvice = sessionStorage.getItem('snowllm.load-advice'); } catch {}
 try { loadSettings = JSON.parse(localStorage.getItem('snowllm.load-settings') || '{}'); if (!loadSettings || Array.isArray(loadSettings) || typeof loadSettings !== 'object') loadSettings = {}; } catch {}
+try {
+  const saved = JSON.parse(localStorage.getItem('snowllm.load-selection'));
+  if (['recipe', 'path'].includes(saved?.source) && typeof saved.model === 'string' && saved.model.trim()) savedLoadSelection = saved;
+} catch {}
 try {
   const saved = JSON.parse(localStorage.getItem('snowllm.conversation') || '{}');
   if (Array.isArray(saved.messages)) conversation = saved.messages.filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-100);
@@ -46,7 +56,22 @@ try {
   if (Array.isArray(stored.sessions)) sessions = stored.sessions.filter(item => item && typeof item.id === 'string' && Array.isArray(item.messages)).slice(-50).map(item => ({ ...item, messages: item.messages.filter(message => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string').slice(-100) }));
   if (sessions.some(item => item.id === stored.current)) sessionId = stored.current;
 } catch {}
+try {
+  chatDrafts = new Map(Object.entries(JSON.parse(localStorage.getItem('snowllm.chat-drafts') || '{}'))
+    .filter(([, text]) => typeof text === 'string'));
+} catch {}
 function loadKey(card) { return card.source === 'recipe' ? card.fields['load-recipe'].value : card.fields['load-path'].value.trim(); }
+function selectLoadModel(card) {
+  card.restored = false;
+  card.pendingRecipe = '';
+  const model = loadKey(card);
+  if (card.source === 'path') syncLocalModel(card);
+  if (model) {
+    try { localStorage.setItem('snowllm.load-selection', JSON.stringify({source: card.source, model})); } catch {}
+  }
+  restoreLoadSettings(card);
+  renderLoadHints(card);
+}
 function saveLoadSettings(card, notify = true) {
   if (!loadKey(card)) { toast(t('Choose a recipe or enter a checkpoint directory.')); return; }
   loadSettings[loadKey(card)] = Object.fromEntries(loadFieldIds.map(id => [id, card.fields[id].value]));
@@ -81,9 +106,10 @@ function renderLoadCards() {
   $('load-model-count').textContent = loadCards.length === 1 ? t('1 model to load') : t('{0} models to load', loadCards.length);
   $('load-button').textContent = t(loadCards.length === 1 ? 'Load model' : 'Load all models');
 }
-function addLoadCard() {
+function addLoadCard(selection = null) {
   const node = $('load-model-template').content.firstElementChild.cloneNode(true);
-  const card = {node, source: 'recipe', fields: {}};
+  const card = {node, source: selection?.source || 'recipe', fields: {}, restored: Boolean(selection),
+    pendingRecipe: selection?.source === 'recipe' ? selection.model : ''};
   const prefix = `load-card-${++loadCardSequence}-`;
   node.querySelectorAll('[data-field]').forEach(field => {
     card.fields[field.dataset.field] = field;
@@ -91,13 +117,20 @@ function addLoadCard() {
   });
   node.querySelectorAll('[data-for]').forEach(label => label.htmlFor = prefix + label.dataset.for);
   loadCards.push(card); $('load-models').append(node);
-  node.querySelectorAll('[data-source]').forEach(button => button.addEventListener('click', () => chooseSource(card, button.dataset.source)));
+  node.querySelectorAll('[data-source]').forEach(button => button.addEventListener('click', () => {
+    if (card.source === button.dataset.source) return;
+    chooseSource(card, button.dataset.source);
+    selectLoadModel(card);
+  }));
   const fields = card.fields;
-  fields['load-recipe'].addEventListener('change', () => { restoreLoadSettings(card); recipeDescription(card); });
-  fields['load-path'].addEventListener('change', () => restoreLoadSettings(card));
+  fields['load-recipe'].addEventListener('change', () => selectLoadModel(card));
+  fields['load-path'].addEventListener('change', () => selectLoadModel(card));
   fields['load-target'].addEventListener('change', () => updateTargetSettings(card));
   fields['local-model'].addEventListener('change', () => {
-    if (fields['local-model'].value) { fields['load-path'].value = fields['local-model'].value; restoreLoadSettings(card); }
+    if (fields['local-model'].value) {
+      fields['load-path'].value = fields['local-model'].value;
+      selectLoadModel(card);
+    }
   });
   fields['save-load-settings'].addEventListener('click', () => saveLoadSettings(card));
   fields['copy-load-command'].addEventListener('click', () => action(fields['copy-load-command'], () => copyText(modelLoadCommand(modelLoadRequest(card), location.href))));
@@ -113,17 +146,36 @@ function addLoadCard() {
     loadCards[Math.min(index, loadCards.length - 1)].node.querySelector('[data-role="load-title"]').focus();
   });
   node.querySelector('[data-role="load-title"]').tabIndex = -1;
-  renderRecipeOptions(); renderLocalOptions(); chooseSource(card, 'recipe');
+  if (selection?.source === 'path') fields['load-path'].value = selection.model;
+  renderRecipeOptions(); renderLocalOptions(); chooseSource(card, card.source);
+  restoreLoadSettings(card); renderLoadHints(card);
   translatePage(); renderLoadCards();
   return card;
 }
 function configureModel(source, model) {
-  const card = loadCards.find(item => !loadKey(item)) || addLoadCard();
+  const card = loadCards.find(item => item.restored || !loadKey(item)) || addLoadCard();
   chooseSource(card, source);
   card.fields[source === 'recipe' ? 'load-recipe' : 'load-path'].value = model;
-  restoreLoadSettings(card); recipeDescription(card);
-  location.hash = 'workspace';
-  card.fields[source === 'recipe' ? 'load-recipe' : 'load-path'].focus();
+  selectLoadModel(card);
+  openModelLoader(card.fields[source === 'recipe' ? 'load-recipe' : 'load-path']);
+}
+function openModelLoader(field) {
+  if (page !== 'workspace') {
+    location.hash = 'workspace';
+    navigate();
+  }
+  if (!$('load-dialog').open) {
+    $('load-feedback').textContent = '';
+    $('load-dialog').showModal();
+  }
+  field?.focus();
+}
+async function submitLoad(body) {
+  const result = await post('/daemon/models/load', body);
+  renderStatus(result);
+  const link = $('load-task-link');
+  link.hidden = !result.task_id;
+  if (result.task_id) link.href = `#tasks/${result.task_id}`;
 }
 function renderLoadAdvice(notice) {
   if (!notice || seenLoadAdvice === notice.id) return;
@@ -133,33 +185,73 @@ function renderLoadAdvice(notice) {
   $('load-advice').hidden = false;
 }
 function renderSessions() {
-  $('chat-session').replaceChildren(...sessions.map(item => new Option(item.title || t('New conversation'), item.id)));
-  if (!sessions.some(item => item.id === sessionId)) $('chat-session').append(new Option(t('New conversation'), sessionId));
-  $('chat-session').value = sessionId;
-  $('chat-session').disabled = false;
-  $('delete-chat').disabled = Boolean(chatController);
-  $('new-chat').disabled = false;
-  $('regenerate-chat').hidden = Boolean(chatController) || conversation.at(-1)?.role !== 'assistant';
-  $('regenerate-chat').disabled = !chatModelReady();
+  const history = $('chat-session');
+  const focusedId = history.contains(document.activeElement) ? document.activeElement.dataset.sessionId : null;
+  const scrollTop = history.scrollTop;
+  const items = [...sessions].reverse();
+  if (!items.some(item => item.id === sessionId)) items.unshift({id: sessionId});
+  history.replaceChildren(...items.map(item => {
+    const row = element('button', 'chat-session-row');
+    row.type = 'button';
+    row.dataset.sessionId = item.id;
+    if (item.id === sessionId) row.setAttribute('aria-current', 'true');
+    const title = item.title || chatDrafts.get(item.id)?.trim().slice(0, 48) || t('New conversation');
+    const label = element('span', 'chat-session-title', title);
+    label.title = title;
+    row.append(label);
+    const running = activeChats.has(item.id);
+    const details = [running && t('Generating…'), item.model].filter(Boolean).join(' · ');
+    if (details) row.append(element('span', running ? 'chat-session-running' : 'chat-session-model', details));
+    return row;
+  }));
+  history.scrollTop = scrollTop;
+  if (focusedId) {
+    const focused = [...history.children].find(row => row.dataset.sessionId === focusedId);
+    (focused || history.querySelector('[aria-current]'))?.focus({preventScroll: Boolean(focused)});
+  }
+}
+function placeChatHistory() {
+  const rail = $('chat-history-rail'), dialog = $('chat-history-dialog');
+  const panel = $('chat-history-panel'), opener = $('open-chat-history');
+  const inSidebar = page === 'chat' && chatHistoryMedia.matches;
+  const host = inSidebar ? rail : dialog;
+  const focused = panel.contains(document.activeElement) ? document.activeElement : null;
+  const wasOpen = dialog.open;
+  if (wasOpen && (inSidebar || page !== 'chat')) dialog.close();
+  rail.hidden = !inSidebar;
+  opener.hidden = inSidebar;
+  if (panel.parentElement === host) return;
+  host.append(panel);
+  if (inSidebar) {
+    const current = panel.querySelector('[aria-current]');
+    current?.scrollIntoView({block: 'nearest'});
+    if (focused || wasOpen) (focused || current)?.focus({preventScroll: true});
+  } else if (focused && page === 'chat') opener.focus({preventScroll: true});
+}
+function newSessionId() {
+  return crypto.randomUUID?.() ?? crypto.getRandomValues(new Uint32Array(4)).join('-');
 }
 function selectSession(id) {
   const item = sessions.find(item => item.id === id);
-  sessionId = item?.id || crypto.randomUUID();
-  conversation = item?.messages || [];
+  sessionId = item?.id || newSessionId();
+  conversation = activeChats.get(sessionId)?.conversation || item?.messages || [];
   currentChatModel = item?.model || null;
+  $('chat-input').value = chatDrafts.get(sessionId) || '';
   $('system-prompt').value = item?.system || '';
   $('temperature').value = item?.temperature || '';
   $('max-tokens').value = item?.maxTokens || '2048';
   preferredThinkingLevel = item?.thinkingLevel || '';
-  syncChatControls(); updateThinkingLevels(); renderChatModels(); renderConversation(); saveConversation(); controls();
+  updateThinkingLevels(); renderChatModels(); renderConversation(); saveConversation(); controls();
 }
 function newSession() {
   saveConversation();
-  sessionId = crypto.randomUUID(); conversation = []; currentChatModel = status?.default_model || status?.model || null;
-  syncChatControls(); renderChatModels(); updateThinkingLevels(); saveConversation(); renderConversation(); controls();
+  sessionId = newSessionId(); conversation = []; currentChatModel = status?.default_model || status?.model || null;
+  $('chat-input').value = '';
+  renderChatModels(); updateThinkingLevels(); saveConversation(); renderConversation(); controls();
+  $('chat-session').scrollTop = 0;
 }
 async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); toast(t('Copied')); } catch { toast(t('Copy failed')); }
+  try { await writeClipboard(text); toast(t('Copied')); } catch { toast(t('Copy failed')); }
 }
 function renderEffectiveSettings(container, config) {
   container.replaceChildren();
@@ -177,7 +269,15 @@ function renderEffectiveSettings(container, config) {
 function element(tag, className = '', text = '') {
   const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
 }
-function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 5500); }
+function toast(message) {
+  const node = $('toast');
+  const parent = $('load-dialog').open ? $('load-dialog') : document.body;
+  if (node.parentElement !== parent) parent.append(node);
+  node.textContent = message;
+  node.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => node.hidden = true, 5500);
+}
 function bytes(value) { if (!Number.isFinite(value) || value <= 0) return '—'; return `${(value / 2 ** 30).toFixed(1)} GiB`; }
 function transition() { return Boolean(status?.operation || status && ['loading', 'draining'].includes(status.state)); }
 async function api(path, options = {}) {
@@ -197,10 +297,17 @@ async function action(button, task) {
 }
 function navigate() {
   const next = location.hash.slice(1);
-  page = ['workspace', 'models', 'chat', 'benchmark', 'settings'].includes(next) ? next : 'workspace';
-  for (const name of ['workspace', 'models', 'chat', 'benchmark', 'settings']) $('page-' + name).hidden = name !== page;
+  const previous = page;
+  const taskId = /^tasks\/([\w-]+)$/.exec(next)?.[1] || null;
+  page = taskId || next === 'tasks-panel' ? 'tasks' : Object.hasOwn(pages, next) ? next : 'workspace';
+  for (const name of Object.keys(pages)) $('page-' + name).hidden = name !== page;
+  placeChatHistory();
   document.querySelectorAll('nav a').forEach(link => { link.classList.toggle('active', link.dataset.page === page); if (link.dataset.page === page) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
-  $('page-name').textContent = { workspace: t("Overview"), models: t("Models"), chat: t("Chat"), settings: t("Settings"), benchmark: t("Benchmark") }[page];
+  $('page-name').textContent = t(pages[page]);
+  const taskChanged = taskUI?.select(taskId);
+  const changedTaskPage = page !== previous && (page === 'tasks' || previous === 'tasks');
+  if (changedTaskPage || (page === 'tasks' && taskChanged && !taskId)) window.scrollTo(0, 0);
+  taskUI?.update(status, Boolean(status) && $('connection-banner').hidden, page);
   if (page === 'workspace') refreshLogs().catch(error => toast(error.message));
   if (page === 'settings') storageSpace();
   if (page === 'benchmark') benchmarkUI?.refresh().catch(error => toast(error.message));
@@ -209,20 +316,17 @@ function controls() {
   const online = !$('connection-banner').hidden ? false : Boolean(status);
   $('load-button').disabled = !online || submittingLoad;
   $('add-load-model').disabled = submittingLoad;
+  $('close-load-dialog').disabled = submittingLoad;
   for (const card of loadCards) card.node.inert = submittingLoad;
-  $('send-chat').disabled = !online || !chatModelReady() || Boolean(status?.benchmark) || Boolean(chatController);
-  $('chat-model').disabled = Boolean(chatController);
-  $('thinking-level').disabled = Boolean(chatController);
-  updateThinkingToggle();
+  syncChatControls();
   $('cancel-load').hidden = !transition() || status?.operation?.kind === 'unload';
   $('cancel-load').disabled = !online || status?.cancel_requested;
   $('retry-load').disabled = !online;
   $('retry-load').hidden = !status?.error || !status?.last_load;
-  renderSessions();
   document.querySelectorAll('[data-download]').forEach(button => button.disabled = !online || Boolean(status?.benchmark) || status?.download?.exit_code === null);
   document.querySelectorAll('[data-use]').forEach(button => button.disabled = !online);
   benchmarkUI?.update(online ? status : null);
-  taskUI?.update(status, online);
+  taskUI?.update(status, online, page);
 }
 function renderLoadError(next) {
   const banner = $('model-error');
@@ -262,23 +366,44 @@ function renderUpdate(update) {
 }
 function selectedModel() { return currentChatModel || status?.default_model || status?.model; }
 function selectedAlias() { return aliases.find(item => item.id === selectedModel()); }
-function chatModelReady() {
-  const name = selectedModel();
+function chatModelReady(name = selectedModel()) {
   return (status?.models || []).some(row => row.state === 'ready' && (row.id === name || row.aliases?.includes(name)))
-    || !status?.models?.length && status?.state === 'ready' && (!currentChatModel || currentChatModel === status.model);
+    || !status?.models?.length && status?.state === 'ready' && name === status.model;
+}
+function chatBlockReason() {
+  if (activeChats.has(sessionId)) return 'Generating…';
+  if (!status || !$('connection-banner').hidden) return 'Waiting for the local service…';
+  if (status.benchmark) return 'Inference is paused during a benchmark.';
+  if (status.state !== 'ready' || !chatModelReady()) return 'Select a loaded model to send messages.';
+  return '';
 }
 function syncChatControls() {
-  chatController = activeChats.get(sessionId)?.controller || null;
-  $('stop-chat').hidden = !chatController; $('send-chat').hidden = Boolean(chatController);
-  $('chat-status').textContent = chatController ? t('Generating…') : t('Enter to send');
+  const running = activeChats.has(sessionId), blocked = chatBlockReason();
+  $('stop-chat').hidden = !running;
+  $('send-chat').hidden = running;
+  $('send-chat').disabled = Boolean(blocked) || !$('chat-input').value.trim();
+  $('chat-model').disabled = running;
+  $('thinking-level').disabled = running || $('thinking-level').length < 2;
+  $('delete-chat').disabled = running;
+  $('export-chat').disabled = !conversation.length;
+  const statusText = t(blocked || 'Enter to send · Shift+Enter for a new line');
+  if ($('chat-status').textContent !== statusText) $('chat-status').textContent = statusText;
+  $('chat-status').classList.toggle('chat-shortcut', !blocked);
+  $('chat-empty-model').hidden = chatModelReady();
+  $('chat-prompts').hidden = !chatModelReady();
+  renderChatAction(blocked);
 }
 function renderChatModels() {
   const name = selectedModel();
-  const names = aliases.map(item => item.id);
-  if (name && !names.includes(name)) names.unshift(name);
-  $('chat-model').replaceChildren(...names.map(id => new Option(id + (aliases.some(item => item.id === id) ? '' : ` · ${t('Not loaded')}`), id)));
-  $('chat-model').value = name || '';
-  $('chat-model-label').textContent = name ? name + (chatModelReady() ? '' : ` · ${t('Reload this model to continue the conversation.')}`) : t('Load a model to start a conversation.');
+  const names = [...new Set([name, ...aliases.map(item => item.id),
+    ...(status?.models || []).filter(row => row.state === 'ready').map(row => row.id)].filter(Boolean))];
+  const options = names.map(id => [id, chatModelReady(id) ? id : `${id} · ${t('Not loaded')}`]);
+  if (!name) options.unshift(['', t(names.length ? 'Select a model' : 'None loaded')]);
+  const select = $('chat-model');
+  if (select.length !== options.length || options.some(([id, label], i) => select.options[i].value !== id || select.options[i].text !== label)) {
+    select.replaceChildren(...options.map(([id, label]) => new Option(label, id)));
+  }
+  if (select.value !== (name || '')) select.value = name || '';
 }
 function renderResidentModels(next) {
   const operation = next.operation;
@@ -313,7 +438,7 @@ function renderResidentModels(next) {
     card.dataset.modelId = row.id;
     const title = element('div', 'resident-model-title');
     title.append(element('strong', '', row.id), element('span', `pill ${row.state}`, stateLabels()[row.state] || t(row.state)));
-    card.append(title, element('p', 'model-device', `${(row.target || 'gpu').toUpperCase()}${next.default_model === row.id ? ` · ${t('Default model')}` : ''}`), element('p', 'field-hint model-source', row.source));
+    card.append(title, element('p', 'model-device', `${(row.target || 'gpu').toUpperCase()}${next.default_model === row.id ? ` · ${t('Default model')}` : ''}`));
     const runtime = element('dl', 'runtime-list model-runtime');
     for (const [label, value] of [['Inference process', row.pid || next.pid || '—'],
       ['Running / waiting', `${row.engine?.running ?? '—'} / ${row.engine?.waiting ?? '—'}`],
@@ -321,12 +446,12 @@ function renderResidentModels(next) {
       ['Scheduler wait', Number.isFinite(row.scheduling?.wait_seconds) ? `${row.scheduling.wait_seconds.toFixed(2)} s` : '—']]) {
       const detail = element('div'); detail.append(element('dt', '', t(label)), element('dd', '', String(value))); runtime.append(detail);
     }
-    card.append(runtime);
     const settings = element('details', 'effective-settings');
     settings.open = expanded.has(row.id);
     const effective = element('dl', 'runtime-list');
     renderEffectiveSettings(effective, row.runtime_config);
-    settings.append(element('summary', '', t('Effective inference settings')), effective);
+    settings.append(element('summary', '', t('Model details')), element('p', 'field-hint model-source', row.source),
+      runtime, element('h3', 'model-settings-title', t('Effective inference settings')), effective);
     card.append(settings);
     if (row.error) card.append(element('p', 'message-error', row.state === 'skipped' && row.blocked_by
       ? t('Not attempted: model {0} failed earlier in this batch. Fix the error, then retry loading.', row.blocked_by) : row.error));
@@ -363,9 +488,8 @@ function renderStatus(next) {
   $('connection-title').textContent = t("Daemon connected");
   $('connection-detail').textContent = location.host;
   $('engine-state').textContent = stateLabels()[next.state] || next.state;
-  $('engine-detail').textContent = { idle: t("Ready to load a model"), draining: t("Waiting for active requests"), loading: t("Reading weights and initializing"), ready: t("Accepting inference requests"), failed: t("See the error above") }[next.state] || '';
-  $('current-model').textContent = next.model || t("None loaded");
-  $('active-count').textContent = next.active_requests;
+  $('engine-state').dataset.state = next.state;
+  $('current-model').textContent = next.default_model || next.model || t("None loaded");
   $('storage-preview').textContent = (next.models_dirs || [next.models_dir]).join('\n');
   $('config-source').textContent = { 'command-line': t("Command line"), environment: t("Environment"), config: t("Saved configuration"), default: t("Default") }[next.models_dir_source];
   renderLoadError(next);
@@ -417,7 +541,11 @@ function renderStatus(next) {
   const refresh = next.state === 'ready' && (signature !== modelSignature || !aliases.length);
   modelSignature = signature;
   if (refresh) refreshAliases();
-  else if (next.state !== 'ready') { aliases = []; aliasRequest++; }
+  else if (next.state !== 'ready') {
+    const hadAliases = aliases.length > 0;
+    aliases = []; aliasRequest++;
+    if (hadAliases) updateThinkingLevels();
+  }
   const legacy = (next.models || []).filter(row => row.source === currentChatModel);
   if (legacy.length === 1 && legacy[0].id !== currentChatModel) { currentChatModel = legacy[0].id; saveConversation(); }
   renderChatModels();
@@ -438,19 +566,14 @@ async function refreshAliases() {
   } catch { if (request === aliasRequest) { aliases = []; updateThinkingLevels(); } }
 }
 function updateThinkingLevels() {
-  const profile = thinkingProfile(selectedAlias()?.thinking);
-  $('thinking-level').replaceChildren(...profile.options.map(([value, label]) => new Option(value.startsWith('effort:') ? label : t(label), value)));
-  $('thinking-level').value = profile.options.some(([value]) => value === preferredThinkingLevel) ? preferredThinkingLevel : '';
-  updateThinkingToggle();
-}
-function updateThinkingToggle() {
-  const capabilities = selectedAlias()?.thinking, level = $('thinking-level').value;
-  const button = $('toggle-thinking');
-  button.hidden = !capabilities?.switch && !capabilities?.required;
-  button.disabled = Boolean(chatController) || Boolean(capabilities?.required);
-  const label = thinkingProfile(capabilities).options.find(([value]) => value === level)?.[1] || 'Model default';
-  button.textContent = t('Thinking: {0}', t(label));
-  button.setAttribute('aria-pressed', capabilities?.required ? 'true' : level === '' ? 'mixed' : String(level !== 'off' && level !== 'effort:none'));
+  const capabilities = selectedAlias()?.thinking;
+  const {options} = thinkingProfile(capabilities);
+  const select = $('thinking-level');
+  select.replaceChildren(...options.map(([value, label]) =>
+    new Option(t('Thinking: {0}', value.startsWith('effort:') ? label : t(label)), value)));
+  select.value = options.some(([value]) => value === preferredThinkingLevel) ? preferredThinkingLevel : '';
+  select.hidden = options.length < 2 && !capabilities?.required;
+  select.disabled = activeChats.has(sessionId) || options.length < 2;
 }
 function renderChatStats() {
   const metrics = conversation.findLast(message => message.role === 'assistant' && message.metrics)?.metrics;
@@ -529,9 +652,11 @@ async function refreshCatalog(refresh, sourceChanged = false) {
     if (request !== catalogRequest) return;
     if (root !== JSON.stringify(status?.models_dirs || [status?.models_dir])) return;
     if (catalog.status === 'fulfilled') {
-      recipes = catalog.value.recipes; $('catalog-error').hidden = true;
+      recipes = catalog.value.recipes;
+      recipeTypes = catalog.value.recipe_types || {};
+      $('catalog-error').hidden = true;
       renderRecipeOptions();
-      renderRecipes(); loadCards.forEach(recipeDescription);
+      renderRecipes(); loadCards.forEach(renderLoadHints);
     } else {
       $('catalog-error').hidden = false; $('catalog-error').textContent = t("Catalog unavailable: {0}. You can still load a local checkpoint from Overview.", catalog.reason.message);
       if (!recipes.length) {
@@ -548,46 +673,78 @@ async function refreshCatalog(refresh, sourceChanged = false) {
     }
   }
 }
+function groupRecipes(rows) {
+  const groups = new Map(Object.entries(recipeTypes).map(([type, label]) => [type, {type, label, rows: []}]));
+  const other = {type: 'other', label: t('Other recipes'), rows: []};
+  for (const recipe of rows) (groups.get(recipe.type) || other).rows.push(recipe);
+  return [...groups.values(), other].filter(group => group.rows.length);
+}
 function renderRecipeOptions() {
+  const groups = groupRecipes(recipes);
   for (const card of loadCards) {
-    const select = card.fields['load-recipe'], selected = select.value;
+    const select = card.fields['load-recipe'], previous = select.value;
+    const selected = previous || card.pendingRecipe;
     select.replaceChildren(new Option(t("Choose a recipe\u2026"), ''));
-    for (const recipe of recipes) {
-      const option = new Option(`${recipe.id}${recipe.loadable ? t(" \u00b7 local") : ''}${recipe.status === 'coming soon' ? ` · ${t('Coming soon')}` : !recipe.servable ? t(" \u00b7 upgrade required") : ''}`, recipe.id);
-      option.classList.toggle('local', Boolean(recipe.loadable));
-      option.disabled = !recipe.servable; select.append(option);
+    for (const {type, label, rows} of groups) {
+      const group = document.createElement('optgroup');
+      group.label = label;
+      group.dataset.recipeType = type;
+      for (const recipe of rows) {
+        const option = new Option(`${recipe.id}${recipe.loadable ? t(" \u00b7 local") : ''}${recipe.status === 'coming soon' ? ` · ${t('Coming soon')}` : !recipe.servable ? t(" \u00b7 upgrade required") : ''}`, recipe.id);
+        option.classList.toggle('local', Boolean(recipe.loadable));
+        option.disabled = !recipe.servable;
+        group.append(option);
+      }
+      select.append(group);
     }
-    if (recipes.some(recipe => recipe.id === selected)) select.value = selected;
+    if (recipes.some(recipe => recipe.id === selected && recipe.servable)) {
+      select.value = selected;
+      card.pendingRecipe = '';
+    }
+    if (card.source === 'recipe' && select.value !== previous) restoreLoadSettings(card);
   }
 }
 function renderRecipes() {
   const search = $('model-search').value.toLowerCase();
-  const visible = recipes.filter(recipe => (!search || [recipe.id, recipe.model, recipe.precision].join(' ').toLowerCase().includes(search)) && (!$('installed-only').checked || recipe.loadable));
+  const visible = recipes.filter(recipe => (!search || [recipe.id, recipe.model, recipe.precision, recipe.type, recipeTypes[recipe.type]].join(' ').toLowerCase().includes(search)) && (!$('installed-only').checked || recipe.loadable));
   $('recipe-count').textContent = t("{0} recipes", visible.length);
-  $('recipe-list').replaceChildren();
-  for (const recipe of visible) {
-    const card = element('article', `recipe-card${recipe.loadable ? ' local' : ''}`);
-    const top = element('div', 'recipe-card-top');
-    const availability = element('span', `availability-badge ${recipe.loadable ? 'local' : recipe.exists ? 'partial' : 'remote'}`);
-    availability.append(element('span', 'availability-icon', recipe.loadable ? '✓' : recipe.exists ? '◐' : '↓'),
-      element('span', '', t(recipe.loadable ? 'Available locally' : recipe.exists ? 'Partial copy' : 'Not downloaded')));
-    top.append(element('span', 'pill', recipe.precision || t('Model')), availability);
-    card.append(top, element('h3', '', recipe.model || recipe.id), element('div', 'recipe-id', recipe.id));
-    if (!recipe.servable) card.append(element('span', 'pill', recipe.status === 'coming soon' ? t('Coming soon') : t('Requires {0}', recipe.requires)));
-    const footer = element('div', 'recipe-footer');
-    footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
-    const buttons = element('div', 'download-actions');
-    if (recipe.loadable && recipe.servable) {
-      const use = element('button', 'button secondary', t("Configure & load")); use.dataset.use = recipe.id;
-      use.addEventListener('click', () => configureModel('recipe', recipe.id)); buttons.append(use);
-    }
-    const download = element('button', `button ${recipe.loadable ? 'secondary' : 'primary'}`, recipe.loadable ? t("Update files") : t("Download"));
-    download.dataset.download = recipe.id;
-    download.addEventListener('click', () => action(download, async () => { renderStatus(await post('/daemon/pull', { recipe: recipe.id })); toast(t("Downloading {0}", recipe.id)); }));
-    buttons.append(download); footer.append(buttons); card.append(footer); $('recipe-list').append(card);
+  const list = $('recipe-list');
+  list.replaceChildren();
+  for (const {type, label, rows} of groupRecipes(visible)) {
+    const section = element('section', 'recipe-group');
+    section.dataset.recipeType = type;
+    const title = element('h2', 'recipe-group-title', label);
+    title.id = `recipe-group-${type}`;
+    section.setAttribute('aria-labelledby', title.id);
+    const grid = element('div', 'recipe-grid');
+    grid.append(...rows.map(recipeCard));
+    section.append(title, grid);
+    list.append(section);
   }
-  if (!visible.length) $('recipe-list').append(element('p', 'empty-state', t("No recipes match your filters.")));
+  if (!visible.length) list.append(element('p', 'empty-state', t("No recipes match your filters.")));
   controls();
+}
+function recipeCard(recipe) {
+  const card = element('article', `recipe-card${recipe.loadable ? ' local' : ''}`);
+  const top = element('div', 'recipe-card-top');
+  const availability = element('span', `availability-badge ${recipe.loadable ? 'local' : recipe.exists ? 'partial' : 'remote'}`);
+  availability.append(element('span', 'availability-icon', recipe.loadable ? '✓' : recipe.exists ? '◐' : '↓'),
+    element('span', '', t(recipe.loadable ? 'Available locally' : recipe.exists ? 'Partial copy' : 'Not downloaded')));
+  top.append(element('span', 'pill', recipe.precision || t('Model')), availability);
+  card.append(top, element('h3', '', recipe.model || recipe.id), element('div', 'recipe-id', recipe.id));
+  if (!recipe.servable) card.append(element('span', 'pill', recipe.status === 'coming soon' ? t('Coming soon') : t('Requires {0}', recipe.requires)));
+  const footer = element('div', 'recipe-footer');
+  footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
+  const buttons = element('div', 'download-actions');
+  if (recipe.loadable && recipe.servable) {
+    const use = element('button', 'button secondary', t("Configure & load")); use.dataset.use = recipe.id;
+    use.addEventListener('click', () => configureModel('recipe', recipe.id)); buttons.append(use);
+  }
+  const download = element('button', `button ${recipe.loadable ? 'secondary' : 'primary'}`, recipe.loadable ? t("Update files") : t("Download"));
+  download.dataset.download = recipe.id;
+  download.addEventListener('click', () => action(download, async () => { renderStatus(await post('/daemon/pull', { recipe: recipe.id })); toast(t("Downloading {0}", recipe.id)); }));
+  buttons.append(download); footer.append(buttons); card.append(footer);
+  return card;
 }
 function renderLocal() {
   $('nav-count').textContent = localModels.length;
@@ -612,18 +769,31 @@ function renderLocal() {
 }
 function renderLocalOptions() {
   for (const card of loadCards) {
-    const select = card.fields['local-model'], selected = select.value;
+    const select = card.fields['local-model'];
     select.replaceChildren(new Option(t("Choose a local model\u2026"), ''));
     for (const model of localModels) if (model.loadable !== false) select.append(new Option(model.name, model.path));
-    select.value = selected;
+    syncLocalModel(card);
   }
+}
+function syncLocalModel(card) {
+  const select = card.fields['local-model'], path = card.fields['load-path'].value.trim();
+  select.value = Array.from(select.options).some(option => option.value === path) ? path : '';
 }
 function chooseSource(card, next) {
   card.source = next; card.fields['recipe-input'].hidden = next !== 'recipe'; card.fields['path-input'].hidden = next !== 'path';
   card.node.querySelectorAll('[data-source]').forEach(button => { button.classList.toggle('selected', button.dataset.source === next); button.setAttribute('aria-pressed', String(button.dataset.source === next)); });
-  restoreLoadSettings(card);
 }
-function recipeDescription(card) { const recipe = recipes.find(r => r.id === card.fields['load-recipe'].value); card.fields['load-recipe'].classList.toggle('local-selected', Boolean(recipe?.loadable)); card.fields['recipe-description'].textContent = recipe ? `${recipe.loadable ? t("Local copy available.") : t("Download this recipe from Models before loading.")}` : ''; }
+function renderLoadHints(card) {
+  const fields = card.fields;
+  const recipe = recipes.find(row => row.id === fields['load-recipe'].value);
+  fields['load-recipe'].classList.toggle('local-selected', Boolean(recipe?.loadable));
+  fields['recipe-description'].textContent = recipe
+    ? t(recipe.loadable ? 'Local copy available.' : 'Download this recipe from Models before loading.') : '';
+  const context = card.source === 'recipe' ? recipe?.defaults?.max_model_len : null;
+  fields['context-length'].placeholder = Number.isSafeInteger(context) && context > 0
+    ? t('Recipe default · {0}', context % 1024 === 0 ? (context / 1024) + 'K' : context)
+    : t('Default');
+}
 async function storageSpace() {
   try { const data = await api('/daemon/directories'); $('disk-free').textContent = bytes(data.free_bytes); }
   catch { $('disk-free').textContent = t("Unavailable"); }
@@ -646,6 +816,16 @@ function openDirectory(target) {
   const value = target.startsWith('models-dir') ? storagePaths(field.value)[0] : field.value;
   $('directory-dialog').showModal(); browseDirectory(value || undefined);
 }
+function storeChatDrafts() {
+  try {
+    localStorage.setItem('snowllm.chat-drafts', JSON.stringify(Object.fromEntries(chatDrafts)));
+  } catch {}
+}
+function saveChatDraft(value) {
+  if (value) chatDrafts.set(sessionId, value);
+  else chatDrafts.delete(sessionId);
+  storeChatDrafts();
+}
 function saveConversation() {
   const item = {id: sessionId, title: conversation.find(message => message.role === 'user')?.content.slice(0, 48) || '',
     messages: conversation.slice(-100), model: currentChatModel, system: $('system-prompt').value,
@@ -653,92 +833,184 @@ function saveConversation() {
   const index = sessions.findIndex(session => session.id === sessionId);
   if (index >= 0) sessions[index] = item; else sessions.push(item);
   sessions = sessions.filter((item, index) => activeChats.has(item.id) || index >= sessions.length - 50);
+  const savedIds = new Set(sessions.map(session => session.id));
+  let draftsChanged = false;
+  for (const id of chatDrafts.keys()) {
+    if (!savedIds.has(id)) {
+      chatDrafts.delete(id);
+      draftsChanged = true;
+    }
+  }
+  if (draftsChanged) storeChatDrafts();
   try {
     localStorage.setItem('snowllm.conversation', JSON.stringify(item));
     localStorage.setItem('snowllm.sessions', JSON.stringify({current: sessionId, sessions}));
-  } catch { $('chat-status').textContent = t('Browser storage unavailable · this conversation is temporary'); }
+    $('chat-storage-warning').hidden = true;
+  } catch { $('chat-storage-warning').hidden = false; }
   renderSessions();
 }
-// Construct DOM nodes from model output, never HTML supplied by the model.
-function markdown(container, text) {
-  container.replaceChildren();
-  // Fences can carry a language label; close fences have no trailing newline requirement.
-  const blocks = text.split(/(```[^\n]*\n[\s\S]*?(?:```|$))/g);
-  for (const block of blocks) {
-    if (!block) continue;
-    if (block.startsWith('```')) { const pre = element('pre'); const code = element('code', '', block.replace(/^```[^\n]*\n/, '').replace(/```$/, '')); const copy = element('button', 'button secondary code-copy', t('Copy code')); copy.type = 'button'; copy.addEventListener('click', () => copyText(code.textContent)); pre.append(copy, code); container.append(pre); }
-    else {
-      for (const paragraph of block.split(/\n\s*\n/)) {
-        if (!paragraph.trim()) continue;
-        const heading = paragraph.match(/^#{1,6}\s+(.*)$/);
-        const node = element(heading ? 'h3' : 'p');
-        const pieces = (heading ? heading[1] : paragraph).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g);
-        for (const piece of pieces) {
-          if (piece.startsWith('`') && piece.endsWith('`')) node.append(element('code', '', piece.slice(1, -1)));
-          else if (piece.startsWith('**') && piece.endsWith('**')) node.append(element('strong', '', piece.slice(2, -2)));
-          else node.append(document.createTextNode(piece));
-        }
-        container.append(node);
-      }
+const chatOutcomeLabels = {
+  stopped: 'Generation stopped.',
+  interrupted: 'The connection closed before the reply finished.',
+  length: 'Output token limit reached.',
+  failed: 'Generation failed.',
+};
+function chatResultText(message) {
+  const label = Object.hasOwn(chatOutcomeLabels, message.outcome) ? t(chatOutcomeLabels[message.outcome]) : '';
+  return [label, message.error && t(message.error)].filter(Boolean).join(' ');
+}
+function messageNode(message, attempt = false) {
+  const root = element('article', `message ${message.role}`);
+  const role = element('div', message.role === 'user' ? 'sr-only' : 'message-role', message.role === 'user' ? t('YOU') : 'SnowLLM');
+  const reasoning = element('details');
+  reasoning.append(element('summary', '', t('Thinking')), element('div', 'reasoning-content'));
+  const content = element('div', 'message-content');
+  const result = element('div', 'message-result');
+  if (message.role === 'assistant') result.setAttribute('role', 'status');
+  const actions = element('div', 'message-actions');
+  root.append(role, reasoning, content, result, actions);
+  let renderedContent, renderedReasoning;
+  function update() {
+    if (renderedContent !== message.content) {
+      if (message.role === 'user') content.textContent = message.content;
+      else renderMarkdown(content, message.content, code => {
+        const copy = element('button', 'button secondary code-copy', t('Copy code'));
+        copy.type = 'button';
+        copy.addEventListener('click', () => copyText(code));
+        return copy;
+      });
+      renderedContent = message.content;
+    }
+    if (renderedReasoning !== (message.reasoning || '')) {
+      renderedReasoning = message.reasoning || '';
+      reasoning.hidden = !renderedReasoning;
+      reasoning.lastElementChild.textContent = renderedReasoning;
     }
   }
+  function renderResult() {
+    const status = chatResultText(message);
+    if (status) result.append(element('p', message.outcome === 'length' ? 'message-notice' : 'message-error', status));
+    if (message.stats) result.append(element('div', 'chat-token-line', message.stats));
+    if (message.role === 'assistant' && message.content) {
+      const copy = element('button', 'button secondary answer-copy', t('Copy answer'));
+      copy.type = 'button';
+      copy.addEventListener('click', () => copyText(message.content));
+      actions.prepend(copy);
+    }
+  }
+  function markAttempt() {
+    root.classList.add('retry-attempt');
+    role.textContent = t('Regeneration attempt');
+  }
+  update();
+  if (attempt) markAttempt();
+  return { root, update, renderResult, markAttempt };
 }
-function messageNode(message) {
-  const root = element('article', `message ${message.role}`);
-  root.append(element('div', 'message-role', message.role === 'user' ? t("YOU") : 'SNOWLLM'));
-  const reasoning = element('details'); reasoning.append(element('summary', '', t("Thinking")), element('div', 'reasoning-content', message.reasoning || '')); reasoning.hidden = !message.reasoning;
-  const content = element('div', 'message-content');
-  root.append(reasoning, content);
-  function update() { if (message.role === 'user') content.textContent = message.content; else markdown(content, message.content); reasoning.hidden = !message.reasoning; reasoning.lastElementChild.textContent = message.reasoning || ''; }
-  if (message.role === 'assistant') { const copy = element('button', 'button secondary answer-copy', t('Copy answer')); copy.addEventListener('click', () => copyText(message.content)); root.append(copy); }
-  if (message.error) root.append(element('p', 'message-error', message.error));
-  if (message.stats) root.append(element('div', 'chat-token-line', message.stats));
-  update(); return { root, update };
+function chatAtBottom(list) {
+  // scrollTop can be fractional while the height measurements are rounded.
+  return list.scrollHeight - list.clientHeight - list.scrollTop <= 1;
 }
 function renderConversation() {
+  const list = $('messages');
+  const active = activeChats.get(sessionId);
+  const nodes = conversation.map(message => {
+    const node = messageNode(message);
+    node.renderResult();
+    if (message.retry) {
+      const retry = messageNode(message.retry, true);
+      retry.renderResult();
+      node.root.append(retry.root);
+    }
+    return node.root;
+  });
+  if (active) nodes.push(active.node.root);
+  emptyChat.hidden = Boolean(nodes.length);
+  list.replaceChildren(emptyChat, ...nodes);
   renderChatStats();
-  if (!conversation.length) { $('messages').replaceChildren(emptyChat); return; }
-  $('messages').replaceChildren(); for (const message of conversation) $('messages').append(messageNode(message).root);
-  $('messages').scrollTop = $('messages').scrollHeight;
+  renderChatAction(chatBlockReason());
+  list.scrollTop = list.scrollHeight;
 }
 const emptyChat = $('chat-empty');
-async function sendMessage(event) {
-  event.preventDefault();
+const chatAction = $('regenerate-chat');
+function chatRetryIndex() {
+  if (conversation.at(-1)?.role === 'user') return conversation.length;
+  if (conversation.at(-1)?.role === 'assistant' && conversation.at(-2)?.role === 'user') return conversation.length - 1;
+  return -1;
+}
+function renderChatAction(blocked) {
+  const index = chatRetryIndex();
+  chatAction.hidden = activeChats.has(sessionId) || index < 0;
+  if (chatAction.hidden) return;
+  const previous = conversation[index];
+  const retry = !previous?.content || previous.retry || previous.error || (previous.outcome && previous.outcome !== 'length');
+  const label = t(retry ? 'Retry' : 'Regenerate');
+  if (chatAction.textContent !== label) chatAction.textContent = label;
+  chatAction.disabled = Boolean(blocked);
+  const last = $('messages').lastElementChild;
+  const actions = last.querySelector('.retry-attempt > .message-actions') || last.querySelector('.message-actions');
+  if (chatAction.parentElement !== actions) actions.append(chatAction);
+}
+async function sendMessage(retrying = false) {
+  if (chatBlockReason()) return;
+  const replyIndex = retrying ? chatRetryIndex() : conversation.length + 1;
   const text = $('chat-input').value.trim();
-  if (!text || chatController || !chatModelReady()) return;
+  if (replyIndex < 0 || (!retrying && !text)) return;
   currentChatModel = selectedModel();
   const runningSession = sessionId, runningConversation = conversation;
-  chatController = new AbortController(); const controller = chatController;
-  activeChats.set(runningSession, {controller, model: currentChatModel});
-  const user = { role: 'user', content: text };
-  conversation.push(user); $('chat-input').value = ''; saveConversation(); renderConversation();
+  const previous = conversation[replyIndex];
+  const controller = new AbortController();
   const assistant = { role: 'assistant', content: '', reasoning: '' };
-  const node = messageNode(assistant); $('messages').append(node.root); conversation.push(assistant); saveConversation();
-  const update = () => { node.update(); if (sessionId === runningSession && !node.root.isConnected) renderConversation(); };
-  $('stop-chat').hidden = false; $('send-chat').hidden = true; $('chat-status').textContent = t("Generating\u2026"); controls();
-  const started = performance.now(); let firstToken = null, usage = null;
-  const messages = conversation.slice(0, -1).map(({ role, content }) => ({ role, content }));
+  const node = messageNode(assistant), list = $('messages');
+  activeChats.set(runningSession, {controller, conversation: runningConversation, node});
+  if (!retrying) {
+    const user = { role: 'user', content: text };
+    conversation.push(user);
+    $('chat-input').value = '';
+    saveChatDraft('');
+    emptyChat.hidden = true;
+    list.append(messageNode(user).root);
+  }
+  list.append(node.root);
+  list.scrollTop = list.scrollHeight;
+  saveConversation();
+  syncChatControls();
+  if (!retrying) $('chat-input').focus({preventScroll: true});
+  const started = performance.now(); let firstToken = null, usage = null, finishReason = null;
+  const messages = conversation.slice(0, replyIndex).filter(message => message.role === 'user' || message.content)
+    .map(({ role, content }) => ({ role, content }));
   if ($('system-prompt').value.trim()) messages.unshift({ role: 'system', content: $('system-prompt').value.trim() });
   const payload = { model: currentChatModel, messages, stream: true, stream_options: { include_usage: true } };
   if ($('max-tokens').value) payload.max_tokens = Number($('max-tokens').value);
   if ($('temperature').value) payload.temperature = Number($('temperature').value);
+  let frame = null;
   try {
     Object.assign(payload, thinkingParameters($('thinking-level').value, selectedAlias()?.thinking));
     const response = await fetch('/daemon/inference/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
+    if (response.status === 499) { assistant.outcome = 'stopped'; return; }
     if (!response.ok) { let detail = t("Generation failed ({0})", response.status); try { const data = await response.json(); detail = data.detail || data.error?.message || detail; } catch {} throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail)); }
-    let framePending = false;
-    await readEvents(response.body, (chunk) => {
+    const completed = await readEvents(response.body, (chunk) => {
       if (chunk.error) throw new Error(chunk.error.message || t("Generation failed."));
-      const delta = chunk.choices?.[0]?.delta || {};
-      if (delta.content || delta.reasoning_content) { if (firstToken === null) firstToken = performance.now(); }
-      assistant.content += delta.content || ''; assistant.reasoning += delta.reasoning_content || '';
       if (chunk.usage) usage = chunk.usage;
-      if (!framePending) {
-        framePending = true;
-        requestAnimationFrame(() => { framePending = false; const atBottom = $('messages').scrollTop + $('messages').clientHeight >= $('messages').scrollHeight - 100; node.update(); if (atBottom && sessionId === runningSession) $('messages').scrollTop = $('messages').scrollHeight; });
+      const choice = chunk.choices?.[0], delta = choice?.delta || {};
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      if (!delta.content && !delta.reasoning_content) return;
+      if (firstToken === null) firstToken = performance.now();
+      assistant.content += delta.content || ''; assistant.reasoning += delta.reasoning_content || '';
+      if (frame === null) {
+        frame = requestAnimationFrame(() => {
+          frame = null;
+          const follow = node.root.isConnected && chatAtBottom(list);
+          node.update();
+          if (follow) list.scrollTop = list.scrollHeight;
+        });
       }
     });
-    update();
+    if (!completed) assistant.outcome = 'interrupted';
+    else if (finishReason === 'length') assistant.outcome = 'length';
+    else if (!assistant.content.trim()) {
+      assistant.outcome = 'failed';
+      assistant.error = 'The model returned no answer.';
+    }
     assistant.metrics = { ttft_seconds: firstToken === null ? null : (firstToken - started) / 1000 };
     if (usage) {
       const timing = usage.timings || {};
@@ -746,27 +1018,51 @@ async function sendMessage(event) {
         prefill_tok_s: timing.prefill_tok_s, decode_tok_s: timing.decode_tok_s });
       const rate = value => Number.isFinite(value) ? `${value.toFixed(1)} tok/s` : '—';
       assistant.stats = t("{0} output tokens \u00b7 {1} s \u00b7 Prefill {2} \u00b7 Decode {3}", usage.completion_tokens, ((performance.now() - started) / 1000).toFixed(1), rate(timing.prefill_tok_s), rate(timing.decode_tok_s));
-      node.root.append(element('div', 'chat-token-line', assistant.stats));
     }
-    if (sessionId === runningSession) renderChatStats();
   } catch (error) {
-    update(); const message = error.name === 'AbortError' ? t("Generation stopped.") : t(error.message);
-    assistant.error = message; node.root.append(element('p', 'message-error', message));
-    if (error.name !== 'AbortError') toast(message);
+    if (controller.signal.aborted) assistant.outcome = 'stopped';
+    else if (error instanceof TypeError) assistant.outcome = 'interrupted';
+    else {
+      assistant.outcome = 'failed';
+      if (error.message !== t('Generation failed.')) assistant.error = error.message;
+    }
   } finally {
-    if (!assistant.content && !assistant.reasoning) runningConversation.pop();
+    if (frame !== null) cancelAnimationFrame(frame);
+    const visible = sessionId === runningSession;
+    const follow = visible && chatAtBottom(list);
+    const stopFocused = visible && document.activeElement === $('stop-chat');
+    const keepPrevious = (previous?.content || previous?.reasoning) && assistant.outcome
+      && (assistant.outcome !== 'length' || !assistant.content.trim());
+    if (keepPrevious) previous.retry = assistant;
+    else runningConversation[replyIndex] = assistant;
+    if (visible && previous) {
+      const previousNode = node.root.previousElementSibling;
+      if (keepPrevious) {
+        previousNode.querySelector(':scope > .retry-attempt')?.remove();
+        node.markAttempt();
+        previousNode.append(node.root);
+      } else previousNode.remove();
+    }
+    node.update();
+    node.renderResult();
     activeChats.delete(runningSession);
     const saved = sessions.find(item => item.id === runningSession);
     if (saved) saved.messages = runningConversation.slice(-100);
-    if (sessionId === runningSession) { conversation = runningConversation; saveConversation(); renderConversation(); }
-    else { try { localStorage.setItem('snowllm.sessions', JSON.stringify({current: sessionId, sessions})); } catch {} }
-    syncChatControls(); controls(); refreshStatus().catch(() => {});
+    if (visible) { saveConversation(); renderChatStats(); }
+    else {
+      try { localStorage.setItem('snowllm.sessions', JSON.stringify({current: sessionId, sessions})); } catch {}
+      renderSessions();
+    }
+    syncChatControls();
+    if (follow) list.scrollTop = list.scrollHeight;
+    if (stopFocused) $('chat-input').focus({preventScroll: true});
+    refreshStatus().catch(() => {});
   }
 }
 async function copyApi(target = 'api-url') {
   if (!status?.inference_url) { toast(t("Wait for the local service connection before copying the API address.")); return; }
   const value = $(target).value;
-  try { await navigator.clipboard.writeText(value); toast(t("API address copied")); }
+  try { await writeClipboard(value); toast(t("API address copied")); }
   catch { toast(t("API address: {0}", value)); }
 }
 
@@ -775,20 +1071,19 @@ $('language').value = language();
 $('language').addEventListener('change', () => {
   setLanguage($('language').value);
   translatePage(); navigate(); updateThinkingLevels();
-  if (!chatController) renderConversation();
-  else {
-    document.querySelectorAll('.message-role').forEach(node => { if (node.closest('.user')) node.textContent = t('YOU'); });
-    document.querySelectorAll('.message details summary').forEach(node => node.textContent = t('Thinking'));
-  }
+  renderConversation(); renderSessions(); renderChatModels(); syncChatControls();
   if (status) renderStatus(status);
-  renderRecipeOptions(); renderRecipes(); renderLocal(); loadCards.forEach(recipeDescription); renderLoadCards();
-  $('chat-status').textContent = chatController ? t('Generating…') : t('Enter to send');
+  renderRecipeOptions(); renderRecipes(); renderLocal(); loadCards.forEach(renderLoadHints); renderLoadCards();
   refreshMetrics(); refreshLogs().catch(() => {});
 });
 $('api-address').textContent = t("Connecting\u2026"); $('api-url').value = '';
 $('copy-api').addEventListener('click', () => copyApi());
 document.querySelectorAll('[data-copy-api]').forEach(button => button.addEventListener('click', () => copyApi(button.dataset.copyApi)));
 window.addEventListener('hashchange', navigate);
+$('open-load-dialog').addEventListener('click', () => openModelLoader());
+$('open-load-from-chat').addEventListener('click', () => openModelLoader());
+$('close-load-dialog').addEventListener('click', () => $('load-dialog').close());
+$('load-dialog').addEventListener('cancel', event => { if (submittingLoad) event.preventDefault(); });
 $('add-load-model').addEventListener('click', () => { const card = addLoadCard(); card.fields['load-target'].focus(); });
 $('cancel-load').addEventListener('click', () => action($('cancel-load'), async () => { renderStatus(await post('/daemon/load/cancel')); toast(t('Load cancellation requested')); }));
 $('retry-load').addEventListener('click', () => action($('retry-load'), async () => {
@@ -796,7 +1091,8 @@ $('retry-load').addEventListener('click', () => action($('retry-load'), async ()
   const remaining = models?.filter(item => !(status.models || []).some(row => row.state === 'ready'
     && (item.id ? row.id === item.id : row.source === item.model && (!item.target || row.target === item.target))));
   if (remaining && !remaining.length) throw new Error(t('All listed models are already loaded.'));
-  renderStatus(await post('/daemon/models/load', remaining ? {models: remaining} : {model, options, id, target}));
+  await submitLoad(remaining ? {models: remaining} : {model, options, id, target});
+  toast(t('Load task submitted'));
 }));
 $('dismiss-load-advice').addEventListener('click', () => { $('load-advice').hidden = true; });
 $('model-search').addEventListener('input', renderRecipes); $('installed-only').addEventListener('change', renderRecipes);
@@ -805,7 +1101,7 @@ $('refresh-recipes').addEventListener('click', () => refreshCatalog(true));
 document.querySelectorAll('[data-catalog-source]').forEach(select => select.addEventListener('change', () => {
   bundleCatalog = select.value === 'bundle';
   document.querySelectorAll('[data-catalog-source]').forEach(control => { control.value = select.value; });
-  recipes = []; renderRecipeOptions(); renderRecipes(); loadCards.forEach(card => { recipeDescription(card); if (card.source === 'recipe') restoreLoadSettings(card); });
+  recipes = []; renderRecipeOptions(); renderRecipes(); loadCards.forEach(renderLoadHints);
   refreshCatalog(false, true);
 }));
 $('refresh-logs').addEventListener('click', () => action($('refresh-logs'), refreshLogs)); $('log-kind').addEventListener('change', () => refreshLogs().catch(error => toast(error.message)));
@@ -813,16 +1109,16 @@ $('expand-logs').addEventListener('click', () => resizeLogs(true));
 $('close-logs').addEventListener('click', () => resizeLogs(false));
 $('logs-dialog').addEventListener('cancel', event => { event.preventDefault(); resizeLogs(false); });
 $('adjust-load-settings').addEventListener('click', () => {
-  location.hash = 'workspace';
-  navigate();
   const card = loadCards.find(item => loadKey(item) === status?.last_load?.model) || loadCards[0];
   card.node.querySelector('.advanced').open = true;
-  card.fields['context-length'].scrollIntoView({ behavior: 'smooth', block: 'center' });
-  card.fields['context-length'].focus({ preventScroll: true });
+  openModelLoader(card.fields['context-length'].disabled ? card.fields['load-target'] : card.fields['context-length']);
 });
 $('load-error-logs').addEventListener('click', () => action($('load-error-logs'), () => showLogs('inference')));
-$('load-form').addEventListener('submit', (event) => {
-  event.preventDefault(); action($('load-button'), async () => {
+$('load-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if ($('load-button').disabled) return;
+  $('load-feedback').textContent = '';
+  try {
     const models = loadCards.map((card, index) => {
       try { return modelLoadRequest(card); }
       catch (error) { throw new Error(t('Model {0}: {1}', index + 1, error.message)); }
@@ -831,11 +1127,17 @@ $('load-form').addEventListener('submit', (event) => {
     if (new Set(ids).size !== ids.length) throw new Error(t('Each model needs a unique model ID.'));
     loadCards.forEach(card => saveLoadSettings(card, false));
     submittingLoad = true; controls();
-    try {
-      const result = await post('/daemon/models/load', {models}); renderStatus(result);
-      $('load-feedback').textContent = t('Load task submitted. Follow progress in Tasks.'); toast(t('Load task submitted'));
-    } finally { submittingLoad = false; }
-  });
+    await submitLoad({models});
+    loadCards.forEach(card => { card.restored = false; });
+    $('load-dialog').close();
+    if (!$('load-task-link').hidden) $('load-task-link').focus();
+    toast(t('Load task submitted'));
+  } catch (error) {
+    $('load-feedback').textContent = t(error.message);
+  } finally {
+    submittingLoad = false;
+    controls();
+  }
 });
 $('cancel-download').addEventListener('click', () => action($('cancel-download'), async () => { renderStatus(await post('/daemon/download/cancel')); toast(t("Download stopped. Partial files are kept for resuming.")); }));
 $('download-logs-button').addEventListener('click', () => action($('download-logs-button'), () => showLogs('download')));
@@ -849,6 +1151,7 @@ $('directory-form').addEventListener('submit', (event) => { event.preventDefault
 $('directory-up').addEventListener('click', () => browseDirectory(directoryData.parent));
 $('select-directory').addEventListener('click', () => {
   const field = $(directoryTarget === 'models-dir-add' ? 'models-dir' : directoryTarget);
+  $('directory-dialog').close();
   if (field) {
     if (directoryTarget.startsWith('models-dir')) {
       const paths = storagePaths(field.value);
@@ -858,48 +1161,72 @@ $('select-directory').addEventListener('click', () => {
     } else field.value = directoryData.path;
     field.focus(); field.dispatchEvent(new Event('change'));
   }
-  $('directory-dialog').close();
 });
-$('chat-form').addEventListener('submit', sendMessage);
+$('chat-form').addEventListener('submit', (event) => { event.preventDefault(); sendMessage(); });
+$('chat-input').addEventListener('input', () => { saveChatDraft($('chat-input').value); syncChatControls(); });
 $('chat-input').addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!$('send-chat').disabled) $('chat-form').requestSubmit(); } });
-$('stop-chat').addEventListener('click', () => chatController?.abort());
+$('stop-chat').addEventListener('click', () => activeChats.get(sessionId)?.controller.abort());
 $('new-chat').addEventListener('click', newSession);
-$('chat-session').addEventListener('change', () => { const next = $('chat-session').value; saveConversation(); selectSession(next); });
+chatHistoryMedia.addEventListener('change', placeChatHistory);
+$('open-chat-history').addEventListener('click', () => {
+  renderSessions();
+  $('chat-history-dialog').showModal();
+  $('chat-session').querySelector('[aria-current]')?.focus();
+});
+$('chat-session').addEventListener('click', (event) => {
+  const next = event.target.closest('button[data-session-id]')?.dataset.sessionId;
+  if (!next) return;
+  if ($('chat-history-dialog').open) $('chat-history-dialog').close();
+  if (next === sessionId) return;
+  saveConversation();
+  selectSession(next);
+});
 $('chat-model').addEventListener('change', () => { const next = $('chat-model').value; if (conversation.length) newSession(); currentChatModel = next; renderChatModels(); updateThinkingLevels(); saveConversation(); controls(); });
+$('open-chat-settings').addEventListener('click', () => $('chat-settings-dialog').showModal());
 $('delete-chat').addEventListener('click', () => {
-  if (chatController || !confirm(t('Delete this conversation?'))) return;
+  if (activeChats.has(sessionId) || !confirm(t('Delete this conversation?'))) return;
+  saveChatDraft('');
   sessions = sessions.filter(item => item.id !== sessionId);
   selectSession(sessions.at(-1)?.id);
 });
 $('export-chat').addEventListener('click', () => {
-  const text = conversation.map(message => `${message.role === 'user' ? 'User' : 'SnowLLM'}\n\n${message.reasoning ? `[Thinking]\n${message.reasoning}\n\n` : ''}${message.content}`).join('\n\n---\n\n');
+  const text = conversation.flatMap(message => message.retry ? [message, message.retry] : [message]).map(message => {
+    const role = message.role === 'user' ? 'User' : 'SnowLLM';
+    return [role, message.reasoning && `[Thinking]\n${message.reasoning}`, message.content, chatResultText(message)]
+      .filter(Boolean).join('\n\n');
+  }).join('\n\n---\n\n');
   const url = URL.createObjectURL(new Blob([text], {type: 'text/plain;charset=utf-8'}));
   const link = element('a'); link.href = url; link.download = `snowllm-chat-${new Date().toISOString().slice(0, 10)}.txt`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
-$('regenerate-chat').addEventListener('click', () => {
-  if (chatController || status?.state !== 'ready' || conversation.at(-1)?.role !== 'assistant' || conversation.at(-2)?.role !== 'user') return;
-  conversation.pop(); const user = conversation.pop(); $('chat-input').value = user.content; sendMessage({preventDefault() {}});
-});
+chatAction.addEventListener('click', () => sendMessage(true));
 $('temperature').addEventListener('change', saveConversation);
 $('max-tokens').addEventListener('change', saveConversation);
 $('system-prompt').addEventListener('change', saveConversation);
-$('thinking-level').addEventListener('change', () => { preferredThinkingLevel = $('thinking-level').value; updateThinkingToggle(); saveConversation(); });
-$('toggle-thinking').addEventListener('click', () => {
-  const level = $('thinking-level').value;
-  $('thinking-level').value = level && level !== 'off' && level !== 'effort:none' ? 'off' : 'on';
-  preferredThinkingLevel = $('thinking-level').value;
-  updateThinkingToggle(); saveConversation();
-});
-document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => { $('chat-input').value = t(button.dataset.prompt); $('chat-input').focus(); }));
+$('thinking-level').addEventListener('change', event => { preferredThinkingLevel = event.target.value; saveConversation(); });
+document.querySelectorAll('[data-prompt]').forEach(button => button.addEventListener('click', () => {
+  const text = t(button.dataset.prompt);
+  $('chat-input').value = text;
+  saveChatDraft(text);
+  syncChatControls();
+  $('chat-input').focus();
+}));
 if (sessions.some(item => item.id === sessionId)) selectSession(sessionId);
 else saveConversation();
 benchmarkUI = createBenchmarkUI({api, post, action, toast, getStatus: () => status, renderSettings: renderEffectiveSettings, refreshStatus});
-taskUI = createTaskUI({post, action, refreshStatus, onBenchmark: id => { benchmarkUI.select(id); location.hash = 'benchmark'; }});
-addLoadCard(); renderConversation(); updateThinkingLevels(); navigate();
+taskUI = createTaskUI({api, post, action, refreshStatus, onBenchmark: id => { benchmarkUI.select(id); location.hash = 'benchmark'; }});
+if (savedLoadSelection?.source === 'recipe' && savedLoadSelection.model.startsWith('b/')) {
+  bundleCatalog = true;
+  document.querySelectorAll('[data-catalog-source]').forEach(select => { select.value = 'bundle'; });
+}
+addLoadCard(savedLoadSelection); renderConversation(); updateThinkingLevels(); navigate();
 async function poll() {
   if (polling) return;
   polling = true;
-  try { await refreshStatus(); if (page === 'workspace') await Promise.allSettled([refreshLogs(), refreshMetrics()]); if (page === 'benchmark') await benchmarkUI.refresh(); }
+  try {
+    await refreshStatus();
+    if (page === 'workspace') await Promise.allSettled([refreshLogs(), refreshMetrics(), taskUI.refreshProgress()]);
+    if (page === 'benchmark') await benchmarkUI.refresh();
+  }
   catch { /* The connection banner communicates daemon availability. */ }
   finally { polling = false; }
 }

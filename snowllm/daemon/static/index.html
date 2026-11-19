@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">
   <meta name="color-scheme" content="light"><meta name="theme-color" content="#101820">
   <title>SnowLLM</title>
   <link rel="icon" href="/ui/logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/ui/style.css">
-  <script type="module" src="/ui/app.js"></script>
+  <link rel="stylesheet" href="/ui/style.css?v=7">
+  <script type="module" src="/ui/app.js?v=11"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -16,8 +16,12 @@
       <a href="#models" data-page="models"><span class="nav-icon">▦</span><span data-i18n="Models">Models</span><span id="nav-count" class="nav-count">—</span></a>
       <a href="#chat" data-page="chat"><span class="nav-icon">▤</span><span data-i18n="Chat">Chat</span></a>
       <a href="#benchmark" data-page="benchmark"><span class="nav-icon">◷</span><span data-i18n="Benchmark">Benchmark</span></a>
+      <a href="#tasks" data-page="tasks"><span class="nav-icon" aria-hidden="true">☷</span><span data-i18n="Tasks">Tasks</span><span id="nav-task-count" class="nav-count" hidden></span></a>
       <a href="#settings" data-page="settings"><span class="nav-icon">⚙</span><span data-i18n="Settings">Settings</span></a>
     </nav>
+    <section id="chat-history-rail" class="chat-history-rail" aria-labelledby="chat-history-rail-title" hidden>
+      <h2 id="chat-history-rail-title" data-i18n="Session history">Session history</h2>
+    </section>
     <div class="connection"><span id="connection-dot" class="dot"></span><div><strong id="connection-title"><span data-i18n="Connecting…">Connecting…</span></strong><span id="connection-detail"><span data-i18n="Local Web UI">Local Web UI</span></span></div></div>
   </aside>
   <main>
@@ -36,82 +40,184 @@
     <aside id="load-advice" class="banner" hidden><p data-i18n="Load all models together, or load larger models first. Growing a shared workspace rebuilds graphs on that target; GPU and NPU workspaces are independent.">Load all models together, or load larger models first. Growing a shared workspace rebuilds graphs on that target; GPU and NPU workspaces are independent.</p><a id="load-advice-link" class="text-link" target="_blank" rel="noopener" data-i18n="Model loading guide">Model loading guide</a><button id="dismiss-load-advice" class="button secondary" type="button" data-i18n="Dismiss">Dismiss</button></aside>
     <div id="bench-exclusive" class="banner" hidden><span data-i18n="Benchmark has exclusive use of inference. Model changes are queued.">Benchmark has exclusive use of inference. Model changes are queued.</span> <a href="#benchmark" data-i18n="View benchmark">View benchmark</a></div>
     <section id="page-workspace" class="page">
-      <div class="page-heading"><div><h1><span data-i18n="Overview">Overview</span></h1></div><div class="overview-actions"><a href="#tasks-panel" class="button secondary"><span data-i18n="Tasks">Tasks</span><span id="tasks-nav-count" class="pill" hidden></span></a><button id="refresh-state" class="button secondary"><span data-i18n="↻ Refresh">↻ Refresh</span></button></div></div>
-      <div class="stats-grid">
-        <div class="stat-card"><span><span data-i18n="Engine status">Engine status</span></span><strong id="engine-state"><span data-i18n="Connecting">Connecting</span></strong><small id="engine-detail"><span data-i18n="Waiting for the local service">Waiting for the local service</span></small></div>
-        <div class="stat-card"><span><span data-i18n="Default model">Default model</span></span><strong id="current-model" class="model-value"><span data-i18n="None loaded">None loaded</span></strong></div>
-        <div class="stat-card"><span><span data-i18n="Active requests">Active requests</span></span><strong id="active-count">—</strong></div>
-      </div>
+      <div class="page-heading"><h1 data-i18n="Overview">Overview</h1><div class="overview-actions"><button id="refresh-state" class="button secondary" data-i18n="↻ Refresh">↻ Refresh</button><button id="open-load-dialog" type="button" class="button primary" aria-haspopup="dialog" aria-controls="load-dialog" data-i18n="Load model">Load model</button></div></div>
+      <dl class="workspace-status">
+        <div><dt data-i18n="Engine status">Engine status</dt><dd id="engine-state" data-state="connecting" data-i18n="Connecting">Connecting</dd></div>
+        <div><dt data-i18n="Default model">Default model</dt><dd id="current-model" data-i18n="None loaded">None loaded</dd></div>
+        <div><dt data-i18n="Inference requests">Inference requests</dt><dd id="active-count">—</dd></div>
+      </dl>
       <div class="workspace-grid">
-        <article class="panel load-panel">
-          <div class="panel-heading load-panel-heading"><h2 data-i18n="Load models">Load models</h2><div class="load-catalog"><label for="load-catalog-source" data-i18n="Recipe source">Recipe source</label><select id="load-catalog-source" data-catalog-source><option value="server" data-i18n="snowllm.dev">snowllm.dev</option><option value="bundle" data-i18n="Bundled">Bundled</option></select></div></div>
-          <form id="load-form">
-            <div id="load-models"></div>
-            <div class="load-footer"><button id="add-load-model" type="button" class="button secondary" data-i18n="+ Add model">+ Add model</button><div class="load-submit"><span id="load-model-count" class="muted"></span><button id="load-button" class="button primary" type="submit" data-i18n="Load model">Load model</button></div></div>
-            <p id="load-feedback" class="field-hint" role="status"></p>
-          </form>
-          <template id="load-model-template"><section class="load-model-card">
-            <div class="load-model-heading"><h3 data-role="load-title"></h3><div class="load-model-tools"><label data-for="load-target" data-i18n="Execution target">Execution target</label><select data-field="load-target"><option value="gpu">GPU</option><option value="npu">NPU</option></select><button type="button" class="button secondary danger" data-field="remove-model" data-i18n="Remove">Remove</button></div></div>
-            <p data-field="npu-load-hint" class="field-hint" hidden data-i18n="NPU backend integration is pending; dedicated NPU weights are required.">NPU backend integration is pending; dedicated NPU weights are required.</p>
-            <div class="segmented" role="group" aria-label="Model source" data-i18n-aria-label="Model source"><button type="button" class="selected" data-source="recipe"><span data-i18n="Recipe">Recipe</span></button><button type="button" data-source="path"><span data-i18n="Local path">Local path</span></button></div>
-            <div data-field="recipe-input"><label data-for="load-recipe"><span data-i18n="Model recipe">Model recipe</span></label><select data-field="load-recipe"><option value="" data-i18n="Loading recipes…">Loading recipes…</option></select><p data-field="recipe-description" class="field-hint"></p></div>
-            <div data-field="path-input" hidden><label data-for="load-path"><span data-i18n="Checkpoint directory">Checkpoint directory</span></label><div class="input-action"><input data-field="load-path" placeholder="/path/to/model or C:\Models\Qwen"><button type="button" data-field="browse-model" class="button secondary"><span data-i18n="Browse">Browse</span></button></div><label data-for="local-model"><span data-i18n="Local model">Local model</span></label><select data-field="local-model"><option value="" data-i18n="Choose a local model…">Choose a local model…</option></select></div>
-            <details class="advanced">
-              <summary><span data-i18n="Inference settings">Inference settings</span><span data-i18n="Optional overrides">Optional overrides</span></summary>
-              <div class="load-advanced-fields">
-                <label data-for="load-id" data-i18n="Model ID (optional)">Model ID (optional)</label>
-                <input data-field="load-id" maxlength="256" placeholder="Defaults to the model name" data-i18n-placeholder="Defaults to the model name">
-                <div class="form-grid">
-                  <div><label data-for="context-length" data-i18n="Context length">Context length</label><input data-field="context-length" placeholder="Recipe default · otherwise 400K" data-i18n-placeholder="Recipe default · otherwise 400K"></div>
-                  <div><label data-for="gpu-budget" data-i18n="GPU memory limit">GPU memory limit</label><input data-field="gpu-budget" placeholder="Default · 0.9" data-i18n-placeholder="Default · 0.9"></div>
-                  <div><label data-for="spec-depth" data-i18n="MTP depth">MTP depth</label><input data-field="spec-depth" type="number" min="0" max="16" placeholder="Recipe default" data-i18n-placeholder="Recipe default"></div>
-                  <div><label data-for="kv-type" data-i18n="KV cache precision">KV cache precision</label><select data-field="kv-type"><option value="" data-i18n="Recipe default">Recipe default</option><option value="bf16">BF16</option><option value="int8">INT8</option></select></div>
-                </div>
-                <label data-for="extra-options" data-i18n="Additional options">Additional options</label>
-                <textarea data-field="extra-options" rows="2" placeholder='--device-map auto --dflash "/path/to/drafter"'></textarea>
-                <p class="field-hint" data-i18n="GPU memory limits and allocation mode are shared by models targeting GPU.">GPU memory limits and allocation mode are shared by models targeting GPU.</p>
-                <div class="load-preset-actions">
-                  <button data-field="save-load-settings" type="button" class="button secondary" data-i18n="Save load settings">Save load settings</button>
-                  <button data-field="reset-load-settings" type="button" class="button secondary" data-i18n="Reset load settings">Reset load settings</button>
-                  <button data-field="copy-load-command" type="button" class="button secondary" data-i18n="Copy CLI command">Copy CLI command</button>
-                </div>
-              </div>
-            </details>
-          </section></template>
+        <article class="panel workspace-task-panel">
+          <div class="panel-heading"><h2 data-i18n="Task activity">Task activity</h2><span id="overview-task-count" class="muted" hidden></span></div>
+          <p id="overview-tasks-empty" class="muted" data-i18n="No model operations or benchmarks">No model operations or benchmarks</p>
+          <div id="overview-current-task" class="workspace-current-task" hidden>
+            <div class="workspace-task-title"><a id="overview-current-link"></a><span id="overview-current-state" class="pill"></span></div>
+            <p id="overview-current-detail" class="muted" hidden></p>
+            <progress id="overview-task-progress" max="1" value="0" aria-label="Benchmark progress" data-i18n-aria-label="Benchmark progress" hidden></progress>
+          </div>
+          <div id="overview-queue" hidden><h3 data-i18n="Up next">Up next</h3><ol id="overview-queued-tasks"></ol></div>
+          <div class="workspace-task-footer">
+            <a class="text-link" href="#tasks" data-i18n="View all tasks →">View all tasks →</a>
+            <a id="load-task-link" class="text-link" href="#tasks" hidden data-i18n="View submitted load task →">View submitted load task →</a>
+          </div>
         </article>
-        <div class="side-stack">
-          <article class="panel runtime-panel resident-panel">
-            <div class="panel-heading"><h2 data-i18n="Runtime">Runtime</h2><span id="runtime-model-count" class="pill"></span></div>
+        <article class="panel runtime-panel resident-panel">
+          <div class="panel-heading"><h2 data-i18n="Resident models">Resident models</h2><span id="runtime-model-count" class="pill"></span></div>
+          <div id="resident-models"></div>
+          <div class="runtime-actions"><button id="cancel-load" class="button secondary" hidden data-i18n="Cancel loading">Cancel loading</button><button id="retry-load" class="button secondary" hidden data-i18n="Retry loading">Retry loading</button></div>
+          <label class="check-label runtime-force" hidden><input type="checkbox" id="force-switch"><span data-i18n="Interrupt this model’s requests when unloading">Interrupt this model’s requests when unloading</span></label>
+          <details class="workspace-runtime"><summary data-i18n="Runtime and storage">Runtime and storage</summary>
             <div id="execution-queues"></div><p id="model-operation" class="field-hint" role="status"></p>
-            <div id="resident-models"></div>
-            <div class="runtime-actions"><button id="cancel-load" class="button secondary" hidden data-i18n="Cancel loading">Cancel loading</button><button id="retry-load" class="button secondary" hidden data-i18n="Retry loading">Retry loading</button></div>
-            <label class="check-label runtime-force" hidden><input type="checkbox" id="force-switch"><span data-i18n="Interrupt this model’s requests when unloading">Interrupt this model’s requests when unloading</span></label>
             <div class="storage-card"><div class="storage-heading"><h3 data-i18n="Model storage">Model storage</h3><a href="#settings"><span data-i18n="Manage storage">Manage storage</span><span aria-hidden="true">→</span></a></div><p id="storage-preview" class="path-text">—</p></div>
-          </article>
-        </div>
+          </details>
+        </article>
       </div>
-      <article id="tasks-panel" class="panel tasks-panel">
-        <div class="panel-heading"><div><h2 data-i18n="Tasks">Tasks</h2><p data-i18n="Model operations and benchmarks run in order. Inference requests keep their concurrent scheduler.">Model operations and benchmarks run in order. Inference requests keep their concurrent scheduler.</p></div><span id="tasks-count" class="pill"></span></div>
-        <p id="tasks-empty" class="muted" data-i18n="No active tasks">No active tasks</p>
-        <div id="tasks-active"></div>
-        <details id="tasks-inference" class="task-group" hidden><summary><span data-i18n="Inference requests">Inference requests</span><span id="tasks-inference-summary" class="muted"></span></summary><div id="tasks-requests"></div></details>
-        <details id="tasks-recent" class="task-group" hidden><summary><span data-i18n="Recent tasks">Recent tasks</span><span id="tasks-history-count" class="pill"></span></summary><div id="tasks-history"></div></details>
-      </article>
       <article class="panel server-metrics-panel"><div class="panel-heading"><h2><span data-i18n="Server metrics">Server metrics</span></h2><a id="metrics-link" class="text-link" target="_blank" rel="noopener">/metrics ↗</a></div><dl class="runtime-list"><div><dt><span data-i18n="Running / waiting">Running / waiting</span></dt><dd id="metrics-requests">—</dd></div><div><dt><span data-i18n="Free KV blocks">Free KV blocks</span></dt><dd id="metrics-kv">—</dd></div><div><dt><span data-i18n="Cache hits / misses">Cache hits / misses</span></dt><dd id="metrics-cache">—</dd></div><div><dt><span data-i18n="Avg. prefill / decode">Avg. prefill / decode</span></dt><dd id="metrics-throughput">—</dd></div></dl><div id="gpu-metrics"><p class="muted">—</p></div></article>
       <article id="logs-panel" class="panel logs-panel"><div class="panel-heading"><div><h2 id="logs-title"><span data-i18n="Activity">Activity</span></h2></div><div class="log-controls"><label class="sr-only" for="log-kind"><span data-i18n="Log source">Log source</span></label><select id="log-kind"><option value="inference" data-i18n="Inference">Inference</option><option value="download" data-i18n="Download">Download</option></select><button id="refresh-logs" class="button secondary" aria-label="Refresh logs" data-i18n-aria-label="Refresh logs" title="Refresh logs" data-i18n-title="Refresh logs">↻</button><button id="expand-logs" class="button secondary" aria-haspopup="dialog" aria-controls="logs-dialog"><span aria-hidden="true">⛶</span> <span data-i18n="Fullscreen">Fullscreen</span></button><button id="close-logs" class="button secondary" aria-label="Exit fullscreen logs" data-i18n-aria-label="Exit fullscreen logs" hidden>×</button></div></div><pre id="logs" class="terminal" tabindex="0"><span data-i18n="No activity.">No activity.</span></pre></article>
     </section>
+    <section id="page-tasks" class="page" hidden>
+      <div class="page-heading"><h1 data-i18n="Tasks">Tasks</h1></div>
+      <p id="task-missing" class="banner" hidden data-i18n="This task is no longer in the task list.">This task is no longer in the task list.</p>
+      <article id="tasks-panel" class="panel tasks-panel">
+        <div class="panel-heading"><h2 data-i18n="Model and benchmark tasks">Model and benchmark tasks</h2><span id="tasks-count" class="muted" hidden></span></div>
+        <p id="tasks-empty" class="muted" data-i18n="No model operations or benchmarks">No model operations or benchmarks</p>
+        <div id="tasks-active"></div>
+      </article>
+      <details id="tasks-inference" class="panel task-group" hidden><summary><span data-i18n="Inference requests">Inference requests</span><span id="tasks-inference-summary" class="muted"></span></summary><div id="tasks-requests"></div></details>
+      <details id="tasks-recent" class="panel task-group" hidden><summary><span data-i18n="Recent tasks">Recent tasks</span><span id="tasks-history-count" class="pill"></span></summary><div id="tasks-history"></div></details>
+    </section>
+    <dialog id="load-dialog" class="load-panel" aria-labelledby="load-dialog-title">
+      <div class="panel-heading load-panel-heading"><h2 id="load-dialog-title" data-i18n="Load models">Load models</h2><button id="close-load-dialog" type="button" class="button secondary" autofocus data-i18n="Close">Close</button></div>
+      <form id="load-form">
+        <div class="load-catalog"><label for="load-catalog-source" data-i18n="Recipe source">Recipe source</label><select id="load-catalog-source" data-catalog-source><option value="server" data-i18n="snowllm.dev">snowllm.dev</option><option value="bundle" data-i18n="Bundled">Bundled</option></select></div>
+        <div id="load-models"></div>
+        <div class="load-footer"><button id="add-load-model" type="button" class="button secondary" data-i18n="+ Add model">+ Add model</button><div class="load-submit"><span id="load-model-count" class="muted"></span><button id="load-button" class="button primary" type="submit" data-i18n="Load model">Load model</button></div></div>
+        <p id="load-feedback" class="message-error" role="alert"></p>
+      </form>
+      <template id="load-model-template"><section class="load-model-card">
+        <div class="load-model-heading"><h3 data-role="load-title"></h3><div class="load-model-tools"><label data-for="load-target" data-i18n="Execution target">Execution target</label><select data-field="load-target"><option value="gpu">GPU</option><option value="npu">NPU</option></select><button type="button" class="button secondary danger" data-field="remove-model" data-i18n="Remove">Remove</button></div></div>
+        <p data-field="npu-load-hint" class="field-hint" hidden data-i18n="NPU backend integration is pending; dedicated NPU weights are required.">NPU backend integration is pending; dedicated NPU weights are required.</p>
+        <div class="segmented" role="group" aria-label="Model source" data-i18n-aria-label="Model source"><button type="button" class="selected" data-source="recipe"><span data-i18n="Recipe">Recipe</span></button><button type="button" data-source="path"><span data-i18n="Local path">Local path</span></button></div>
+        <div data-field="recipe-input"><label data-for="load-recipe"><span data-i18n="Model recipe">Model recipe</span></label><select data-field="load-recipe"><option value="" data-i18n="Loading recipes…">Loading recipes…</option></select><p data-field="recipe-description" class="field-hint"></p></div>
+        <div data-field="path-input" hidden><label data-for="load-path"><span data-i18n="Checkpoint directory">Checkpoint directory</span></label><div class="input-action"><input data-field="load-path" placeholder="/path/to/model or C:\Models\Qwen"><button type="button" data-field="browse-model" class="button secondary"><span data-i18n="Browse">Browse</span></button></div><label data-for="local-model"><span data-i18n="Local model">Local model</span></label><select data-field="local-model"><option value="" data-i18n="Choose a local model…">Choose a local model…</option></select></div>
+        <details class="advanced">
+          <summary><span data-i18n="Inference settings">Inference settings</span><span data-i18n="Optional overrides">Optional overrides</span></summary>
+          <div class="load-advanced-fields">
+            <label data-for="load-id" data-i18n="Model ID (optional)">Model ID (optional)</label>
+            <input data-field="load-id" maxlength="256" placeholder="Defaults to the model name" data-i18n-placeholder="Defaults to the model name">
+            <div class="form-grid">
+              <div><label data-for="context-length" data-i18n="Context length">Context length</label><input data-field="context-length"></div>
+              <div><label data-for="gpu-budget" data-i18n="GPU memory limit">GPU memory limit</label><input data-field="gpu-budget" placeholder="Default · 0.9" data-i18n-placeholder="Default · 0.9"></div>
+              <div><label data-for="spec-depth" data-i18n="MTP depth">MTP depth</label><input data-field="spec-depth" type="number" min="0" max="16" placeholder="Recipe default" data-i18n-placeholder="Recipe default"></div>
+              <div><label data-for="kv-type" data-i18n="KV cache precision">KV cache precision</label><select data-field="kv-type"><option value="" data-i18n="Recipe default">Recipe default</option><option value="bf16">BF16</option><option value="int8">INT8</option></select></div>
+            </div>
+            <label data-for="extra-options" data-i18n="Additional options">Additional options</label>
+            <textarea data-field="extra-options" rows="2" placeholder='--device-map auto --dflash "/path/to/drafter"'></textarea>
+            <p class="field-hint" data-i18n="GPU memory limits and allocation mode are shared by models targeting GPU.">GPU memory limits and allocation mode are shared by models targeting GPU.</p>
+            <div class="load-preset-actions">
+              <button data-field="save-load-settings" type="button" class="button secondary" data-i18n="Save load settings">Save load settings</button>
+              <button data-field="reset-load-settings" type="button" class="button secondary" data-i18n="Reset load settings">Reset load settings</button>
+              <button data-field="copy-load-command" type="button" class="button secondary" data-i18n="Copy CLI command">Copy CLI command</button>
+            </div>
+          </div>
+        </details>
+      </section></template>
+    </dialog>
     <section id="page-models" class="page" hidden>
       <div class="page-heading"><div><h1><span data-i18n="Models">Models</span></h1></div><button id="refresh-recipes" class="button secondary"><span data-i18n="↻ Refresh catalog">↻ Refresh catalog</span></button></div>
       <div class="catalog-source"><label for="catalog-source"><span data-i18n="Recipe source">Recipe source</span></label><select id="catalog-source" data-catalog-source><option value="server" data-i18n="snowllm.dev">snowllm.dev</option><option value="bundle" data-i18n="Bundled">Bundled</option></select></div>
       <article id="download-card" class="download-card" hidden><div><div class="eyebrow"><span data-i18n="DOWNLOAD">DOWNLOAD</span></div><h2 id="download-name">—</h2><p id="download-state">—</p><progress id="download-progress" max="100" aria-label="Download progress" data-i18n-aria-label="Download progress" hidden></progress><p id="download-progress-detail" hidden></p></div><div class="download-actions"><button id="download-logs-button" class="button secondary"><span data-i18n="View output">View output</span></button><button id="cancel-download" class="button secondary"><span data-i18n="Cancel download">Cancel download</span></button></div></article>
       <div class="library-tools"><label class="search-box"><span aria-hidden="true">⌕</span><input id="model-search" type="search" placeholder="Search models, recipes, or precision" data-i18n-placeholder="Search models, recipes, or precision" aria-label="Search models" data-i18n-aria-label="Search models"></label><label class="check-label"><input id="installed-only" type="checkbox"><span data-i18n="Available locally">Available locally</span></label><span id="recipe-count" class="muted">— recipes</span></div>
       <p id="catalog-error" class="banner error" hidden></p>
-      <div id="recipe-list" class="recipe-grid"><p class="empty-state"><span data-i18n="Loading model catalog…">Loading model catalog…</span></p></div>
+      <div id="recipe-list"><p class="empty-state"><span data-i18n="Loading model catalog…">Loading model catalog…</span></p></div>
       <article class="panel local-panel"><div class="panel-heading"><div><h2><span data-i18n="Local checkpoints">Local checkpoints</span></h2></div><a href="#settings" class="text-link"><span data-i18n="Change directory →">Change directory →</span></a></div><div id="local-list" class="local-list"><p class="muted"><span data-i18n="Scanning storage…">Scanning storage…</span></p></div></article>
     </section>
     <section id="page-chat" class="page chat-page" hidden>
-      <div class="page-heading"><div><h1><span data-i18n="Chat">Chat</span></h1><p id="chat-model-label"><span data-i18n="Load a model to start a conversation.">Load a model to start a conversation.</span></p></div><button id="new-chat" class="button secondary"><span data-i18n="＋ New chat">＋ New chat</span></button></div>
-      <div class="session-toolbar"><label for="chat-session" class="sr-only"><span data-i18n="Session history">Session history</span></label><select id="chat-session"></select><button id="export-chat" class="button secondary"><span data-i18n="Export conversation">Export conversation</span></button><button id="delete-chat" class="button secondary"><span data-i18n="Delete conversation">Delete conversation</span></button></div><div class="chat-layout"><div class="panel conversation"><div id="messages" class="messages" aria-live="polite"><div id="chat-empty" class="chat-empty"><img src="/ui/logo.svg" alt=""><div class="prompt-suggestions"><button data-prompt="Explain how speculative decoding works in simple terms."><span data-i18n="Explain speculative decoding ↗">Explain speculative decoding ↗</span></button><button data-prompt="Write a Python function that streams lines from a large log file."><span data-i18n="Write a Python function ↗">Write a Python function ↗</span></button></div></div></div><form id="chat-form" class="composer"><label class="sr-only" for="chat-input"><span data-i18n="Message">Message</span></label><textarea id="chat-input" rows="3" placeholder="Message your local model…" data-i18n-placeholder="Message your local model…" required></textarea><div class="composer-footer"><button id="toggle-thinking" type="button" class="button secondary thinking-toggle" aria-label="Thinking" data-i18n-aria-label="Thinking" aria-pressed="mixed" hidden></button><span id="chat-status"><span data-i18n="Enter to send">Enter to send</span></span><button id="regenerate-chat" type="button" class="button secondary" hidden><span data-i18n="Regenerate">Regenerate</span></button><button id="stop-chat" type="button" class="button secondary" hidden><span data-i18n="Stop">Stop</span></button><button id="send-chat" class="button primary" disabled><span data-i18n="Send ↑">Send ↑</span></button></div></form></div><aside class="panel chat-settings"><label for="chat-model" data-i18n="Chat model">Chat model</label><select id="chat-model"></select><h2><span data-i18n="Conversation settings">Conversation settings</span></h2><label for="system-prompt"><span data-i18n="System prompt">System prompt</span></label><textarea id="system-prompt" rows="5" placeholder="Optional instructions for your model" data-i18n-placeholder="Optional instructions for your model"></textarea><label for="temperature"><span data-i18n="Temperature">Temperature</span></label><input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="Model default" data-i18n-placeholder="Model default"><label for="max-tokens"><span data-i18n="Max output tokens">Max output tokens</span></label><input id="max-tokens" type="number" min="1" value="2048"><label for="thinking-level"><span data-i18n="Thinking level">Thinking level</span></label><select id="thinking-level"><option value="" data-i18n="Model default">Model default</option></select><dl class="runtime-list chat-response-stats"><div><dt data-i18n="Time to first token">Time to first token</dt><dd id="chat-ttft">—</dd></div><div><dt data-i18n="Last response tokens">Last response tokens</dt><dd id="chat-tokens">—</dd></div><div><dt data-i18n="Prefill throughput">Prefill throughput</dt><dd id="chat-prefill">—</dd></div><div><dt data-i18n="Decode throughput">Decode throughput</dt><dd id="chat-decode">—</dd></div></dl></aside></div>
+      <header class="chat-heading">
+        <div class="chat-heading-inner">
+          <h1 data-i18n="Chat">Chat</h1>
+          <div class="chat-model-control">
+            <label class="sr-only" for="chat-model" data-i18n="Chat model">Chat model</label>
+            <select id="chat-model"></select>
+          </div>
+          <div class="chat-tools">
+            <button id="open-chat-history" class="button chat-tool" aria-haspopup="dialog" data-i18n="History">History</button>
+            <button id="open-chat-settings" class="button chat-tool" aria-haspopup="dialog" aria-label="Conversation settings" data-i18n-aria-label="Conversation settings" data-i18n="Settings">Settings</button>
+            <button id="new-chat" class="button chat-new"><span aria-hidden="true">+</span><span data-i18n="New chat">New chat</span></button>
+          </div>
+        </div>
+      </header>
+      <div class="conversation">
+        <div id="messages" class="messages" role="region" aria-label="Conversation messages" data-i18n-aria-label="Conversation messages" tabindex="0">
+          <div id="chat-empty" class="chat-empty">
+            <div class="chat-brand-mark"><img src="/ui/logo.svg" alt=""></div>
+            <div id="chat-empty-model">
+              <h2 data-i18n="Load a model to start a conversation.">Load a model to start a conversation.</h2>
+              <button id="open-load-from-chat" type="button" class="button chat-new" aria-haspopup="dialog" aria-controls="load-dialog" data-i18n="Go to model loading">Go to model loading</button>
+            </div>
+            <div id="chat-prompts" hidden>
+              <h2 data-i18n="What would you like to ask?">What would you like to ask?</h2>
+              <div class="prompt-suggestions">
+                <button type="button" data-prompt="Explain how speculative decoding works in simple terms." data-i18n="Explain speculative decoding">Explain speculative decoding</button>
+                <button type="button" data-prompt="Write a Python function that streams lines from a large log file." data-i18n="Write a Python function">Write a Python function</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-shell">
+          <form id="chat-form" class="composer">
+            <label class="sr-only" for="chat-input" data-i18n="Message">Message</label>
+            <textarea id="chat-input" rows="2" placeholder="Message your local model…" data-i18n-placeholder="Message your local model…" required></textarea>
+            <div class="composer-footer">
+              <select id="thinking-level" class="thinking-select" aria-label="Thinking level" data-i18n-aria-label="Thinking level" hidden></select>
+              <div class="chat-status">
+                <span id="chat-status" role="status"></span>
+                <span id="chat-storage-warning" role="status" data-i18n="Browser storage unavailable · this conversation is temporary" hidden>Browser storage unavailable · this conversation is temporary</span>
+              </div>
+              <button id="stop-chat" type="button" class="button chat-stop" data-i18n="Stop" hidden>Stop</button>
+              <button id="send-chat" class="button chat-send" data-i18n="Send ↑" disabled>Send ↑</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <button id="regenerate-chat" type="button" class="button secondary answer-copy" hidden></button>
+      <dialog id="chat-history-dialog" class="chat-dialog" aria-labelledby="chat-history-title">
+        <div class="dialog-heading">
+          <h2 id="chat-history-title" data-i18n="Session history">Session history</h2>
+          <form method="dialog"><button class="button chat-tool" data-i18n="Close">Close</button></form>
+        </div>
+        <div id="chat-history-panel" class="chat-history-panel">
+          <div id="chat-session" class="chat-session-list"></div>
+          <div class="chat-history-actions">
+            <button id="export-chat" class="button chat-tool" aria-label="Export conversation" data-i18n-aria-label="Export conversation" data-i18n="Export">Export</button>
+            <button id="delete-chat" class="button chat-tool danger" aria-label="Delete conversation" data-i18n-aria-label="Delete conversation" data-i18n="Delete">Delete</button>
+          </div>
+        </div>
+      </dialog>
+      <dialog id="chat-settings-dialog" class="chat-dialog" aria-labelledby="chat-settings-title">
+        <div class="dialog-heading">
+          <h2 id="chat-settings-title" data-i18n="Conversation settings">Conversation settings</h2>
+          <form method="dialog"><button class="button chat-tool" data-i18n="Close">Close</button></form>
+        </div>
+        <label for="system-prompt" data-i18n="System prompt">System prompt</label>
+        <textarea id="system-prompt" rows="4" placeholder="Optional instructions for your model" data-i18n-placeholder="Optional instructions for your model"></textarea>
+        <div class="chat-sampling-fields">
+          <div>
+            <label for="temperature" data-i18n="Temperature">Temperature</label>
+            <input id="temperature" type="number" min="0" max="2" step="any" placeholder="Model default" data-i18n-placeholder="Model default">
+          </div>
+          <div>
+            <label for="max-tokens" data-i18n="Max output tokens">Max output tokens</label>
+            <input id="max-tokens" type="number" min="1" value="2048">
+          </div>
+        </div>
+        <dl class="runtime-list chat-response-stats">
+          <div><dt data-i18n="Time to first token">Time to first token</dt><dd id="chat-ttft">—</dd></div>
+          <div><dt data-i18n="Last response tokens">Last response tokens</dt><dd id="chat-tokens">—</dd></div>
+          <div><dt data-i18n="Prefill throughput">Prefill throughput</dt><dd id="chat-prefill">—</dd></div>
+          <div><dt data-i18n="Decode throughput">Decode throughput</dt><dd id="chat-decode">—</dd></div>
+        </dl>
+      </dialog>
     </section>
     <section id="page-benchmark" class="page" hidden>
       <div class="page-heading"><h1 data-i18n="Benchmark">Benchmark</h1><button id="bench-refresh" class="button secondary" data-i18n="↻ Refresh">↻ Refresh</button></div>
@@ -139,10 +245,27 @@
         <div class="panel-heading"><div><h2 id="bench-run-title"></h2><p id="bench-run-id" class="field-hint"></p></div><button id="bench-cancel" class="button secondary" data-i18n="Stop benchmark">Stop benchmark</button></div>
         <progress id="bench-progress" max="1" value="0" aria-label="Benchmark progress" data-i18n-aria-label="Benchmark progress"></progress><p id="bench-progress-text" class="field-hint" aria-live="polite"></p><p id="bench-elapsed" class="field-hint"></p>
         <p id="bench-run-error" class="banner error" hidden></p><p id="bench-comparison-warning" class="banner" hidden></p>
-        <label for="bench-metric" data-i18n="Chart metric">Chart metric</label><select id="bench-metric"><option value="decode_tok_s" data-i18n="Decode throughput">Decode throughput</option><option value="prefill_tok_s" data-i18n="Prefill throughput">Prefill throughput</option><option value="ttft_s" data-i18n="Time to first token">Time to first token</option></select>
-        <svg id="bench-chart" class="bench-chart" viewBox="0 0 720 240" role="img" aria-label="Throughput by input length" data-i18n-aria-label="Throughput by input length"></svg>
-        <p class="field-hint"><span class="bench-key bench-key-0" data-i18n="Selected run">Selected run</span> · <span class="bench-key bench-key-1" data-i18n="Comparison run">Comparison run</span></p>
-        <div class="bench-table-scroll"><table class="bench-table"><thead><tr><th data-i18n="Run">Run</th><th data-i18n="Input tokens">Input tokens</th><th data-i18n="Concurrency">Concurrency</th><th>Prefill tok/s</th><th>Decode tok/s</th><th>TTFT s</th><th>AL</th></tr></thead><tbody id="bench-results"></tbody></table></div>
+        <div class="bench-visualization">
+          <div class="bench-toolbar">
+            <div id="bench-phase" class="bench-options" role="group" aria-label="Phase" data-i18n-aria-label="Phase"><button type="button" data-value="decode" data-i18n="Decode" aria-pressed="true">Decode</button><button type="button" data-value="prefill" data-i18n="Prefill" aria-pressed="false">Prefill</button></div>
+            <div id="bench-metric" class="bench-options" role="group" aria-label="Metric" data-i18n-aria-label="Metric"></div>
+            <div id="bench-view" class="bench-options" role="group" aria-label="View" data-i18n-aria-label="View"><button type="button" data-value="chart" data-i18n="Chart" aria-pressed="true">Chart</button><button type="button" data-value="table" data-i18n="Table" aria-pressed="false">Table</button></div>
+          </div>
+          <h3 id="bench-metric-title"></h3><p id="bench-metric-note" class="bench-metric-note"></p>
+          <p id="bench-empty" class="muted" data-i18n="No measurements for this metric">No measurements for this metric</p>
+          <div id="bench-chart-panel" hidden>
+            <div id="bench-legend" class="bench-legend"></div>
+            <div class="bench-chart-wrap">
+              <svg id="bench-chart" class="bench-chart" role="group" tabindex="-1"></svg>
+              <div id="bench-chart-tooltip" class="bench-chart-tooltip" aria-hidden="true" hidden></div>
+            </div>
+            <p class="bench-axis-caption" data-i18n="Input context, tokens (linear scale, K = 1024)">Input context, tokens (linear scale, K = 1024)</p>
+          </div>
+          <div id="bench-metric-table" class="bench-table-scroll bench-metric-table" hidden></div>
+        </div>
+        <details class="bench-all-results" open><summary data-i18n="All measured results">All measured results</summary>
+          <div class="bench-table-scroll"><table class="bench-table"><thead><tr><th scope="col" data-i18n="Run">Run</th><th scope="col" data-i18n="Target input (tokens)">Target input (tokens)</th><th scope="col" data-i18n="Actual input (tokens)">Actual input (tokens)</th><th scope="col" data-i18n="Concurrency">Concurrency</th><th scope="col" data-i18n="decode tok/s">decode tok/s</th><th scope="col" data-i18n="step/s">step/s</th><th scope="col" data-i18n="ms/step">ms/step</th><th scope="col">AL</th><th scope="col" data-i18n="prefill tok/s">prefill tok/s</th><th scope="col" data-i18n="TTFT s">TTFT s</th></tr></thead><tbody id="bench-results"></tbody></table></div>
+        </details>
         <div class="runtime-actions"><a id="bench-export" class="button secondary" data-i18n="Export full record">Export full record</a><a id="bench-export-rows" class="button secondary" data-i18n="Export result JSON">Export result JSON</a></div>
         <details><summary data-i18n="Configuration snapshot">Configuration snapshot</summary><pre id="bench-snapshot" class="bench-output"></pre></details>
         <details><summary data-i18n="Output log">Output log</summary><pre id="bench-output" class="terminal bench-output"></pre></details>
@@ -152,8 +275,8 @@
       <div class="page-heading"><div><h1><span data-i18n="Settings">Settings</span></h1></div></div>
       <article class="panel settings-panel"><label for="language"><span data-i18n="Language">Language</span></label><select id="language"><option value="auto" data-i18n="Browser default">Browser default</option><option value="en">English</option><option value="zh_CN">简体中文</option></select></article>
       <article class="panel settings-panel"><div class="panel-heading"><div><h2><span data-i18n="Model storage">Model storage</span></h2></div></div><p class="field-hint"><span data-i18n="Configuration:">Configuration:</span><code id="config-file"></code></p><form id="storage-form"><label for="models-dir"><span data-i18n="Model directory">Model directory</span></label><div class="input-action"><textarea id="models-dir" rows="3" required placeholder="/path/to/models&#10;/path/to/archive"></textarea><button id="browse-storage" type="button" class="button secondary"><span data-i18n="Browse">Browse</span></button><button id="add-storage" type="button" class="button secondary"><span data-i18n="Add directory">Add directory</span></button></div><p class="field-hint"><span data-i18n="One directory per line. Downloads use the first; models are read from all directories.">One directory per line. Downloads use the first; models are read from all directories.</span></p><div id="storage-override" class="banner" hidden></div><div class="storage-summary"><div><span><span data-i18n="Available space">Available space</span></span><strong id="disk-free">—</strong></div><div><span><span data-i18n="Configuration source">Configuration source</span></span><strong id="config-source">—</strong></div></div><div class="settings-footer"><p><span data-i18n="Existing models are not moved.">Existing models are not moved.</span></p><button class="button primary" type="submit"><span data-i18n="Save directory">Save directory</span></button></div></form></article>
-      <article class="panel settings-panel"><h2><span data-i18n="Recipe catalogue">Recipe catalogue</span></h2><form id="recipes-settings-form"><label for="recipes-url"><span data-i18n="URL or JSON file">URL or JSON file</span></label><input id="recipes-url" placeholder="https://snowllm.dev/recipe-v2.json"><div id="recipes-override" class="banner" hidden></div><div class="settings-footer"><span></span><button class="button primary" type="submit"><span data-i18n="Save catalogue">Save catalogue</span></button></div></form></article>
-      <article class="panel settings-panel"><details><summary><span data-i18n="Developer settings">Developer settings</span></summary><form id="library-settings-form"><label for="library-path"><span data-i18n="Custom kernel library">Custom kernel library</span></label><input id="library-path" placeholder="Bundled kernels (default)" data-i18n-placeholder="Bundled kernels (default)"><div id="library-override" class="banner" hidden></div><div class="settings-footer"><span></span><button class="button primary" type="submit"><span data-i18n="Save library">Save library</span></button></div></form></details></article>
+      <article class="panel settings-panel"><h2><span data-i18n="Recipe catalogue">Recipe catalogue</span></h2><form id="recipes-settings-form"><label for="recipes-url"><span data-i18n="URL or JSON file">URL or JSON file</span></label><input id="recipes-url" placeholder="https://snowllm.dev/recipe-v2.json"><div id="recipes-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save catalogue">Save catalogue</span></button></div></form></article>
+      <article class="panel settings-panel"><details><summary><span data-i18n="Developer settings">Developer settings</span></summary><form id="library-settings-form"><label for="library-path"><span data-i18n="Custom kernel library">Custom kernel library</span></label><input id="library-path" placeholder="Bundled kernels (default)" data-i18n-placeholder="Bundled kernels (default)"><div id="library-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save library">Save library</span></button></div></form></details></article>
       <article class="panel settings-panel"><h2><span data-i18n="Local API">Local API</span></h2><label for="api-url">OpenAI Chat Completions</label><div class="input-action"><input id="api-url" aria-label="OpenAI Chat Completions base URL" readonly><button data-copy-api="api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/chat/completions</code></p><label for="responses-api-url">OpenAI Responses</label><div class="input-action"><input id="responses-api-url" aria-label="OpenAI Responses base URL" readonly><button data-copy-api="responses-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/responses</code></p><label for="anthropic-api-url">Anthropic Messages</label><div class="input-action"><input id="anthropic-api-url" aria-label="Anthropic Messages base URL" readonly><button data-copy-api="anthropic-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/messages</code></p></article>
     </section>
   </main>

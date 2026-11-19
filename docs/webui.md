@@ -28,8 +28,9 @@ snowllm unload
 
 ## Browser interface
 
+- **Overview:** check the engine, resident models, and current task. Open **Load model** to configure one or more models, then use **View submitted load task** to follow the operation.
 - **Models:** download recipes, keep multiple checkpoints loaded, choose a default model, save per-model load settings and manage storage. Downloads show progress and can resume after stopping. Each load card has **Copy CLI command** to copy a shell command for loading that model into the current Web UI service with its selected settings.
-- **Chat:** bind each browser-local session to a model, switch sessions while generation continues, stop one session independently, and use template-based thinking controls, saved sampling settings, copy, regenerate and export.
+- **Chat:** each browser-local session keeps its model, draft and sampling settings. Switch, export or delete conversations in the sidebar. In smaller windows, open **History** in the chat header. Replies keep generating when you switch sessions and can be stopped individually. Retry from the last message after a failure or interruption. Regeneration keeps the previous answer until a replacement finishes. Use the **Thinking** dropdown below the message input to choose a mode supported by the model. Open **Settings** in the chat header for sampling and response metrics.
 - **Language:** English and Simplified Chinese follow the browser language; select manually in Settings.
 
 Conversations and UI preferences stay in the current browser. The UI needs no external frontend service; model downloads need network access unless configured locally.
@@ -38,7 +39,7 @@ Deletion requires confirmation. Loaded models, their drafters and symlinks are p
 
 ## Monitoring
 
-The Overview task center shows inference requests, model loads/unloads, and benchmarks together, with queue state, waiting reasons, cancellation, and results. Inference requests are grouped by default and can be cancelled individually when expanded. Benchmark client requests go directly to the worker and are not duplicated in the task center. Task records contain model and execution metadata, without prompts or replies.
+Overview shows the current operation and the next three queued tasks. Open **Tasks** for the full model and benchmark queue, inference requests, and recent results. Each task row offers details such as waiting reasons or errors, plus cancellation when available. Expand **Inference requests** to inspect or cancel individual requests. Benchmark client requests go directly to the worker and are not duplicated in the task center. Task records contain model and execution metadata, without prompts or replies.
 
 Loads, unloads, and benchmarks execute in submission order; operations submitted while busy enter the queue. Inference retains its concurrent scheduler. Model operations drain affected requests, while a benchmark drains existing requests and reserves the entire inference service. New inference requests still receive HTTP 503 during a benchmark; model operations may queue behind it. Pending tasks can be cancelled, running loads and benchmarks clean up at safe boundaries, and an unload cannot be cancelled once started.
 
@@ -183,6 +184,8 @@ Select a loaded model on the **Benchmark** page and choose input lengths, output
 The task waits for existing requests, then reserves inference exclusively. New inference requests are blocked until cleanup finishes; model loads and unloads may queue in the task center. Refreshing or closing the browser does not stop the task. Stopping it terminates its client and requests, preserves completed samples and restores serving. Cancelling while waiting for existing requests leaves those requests running.
 
 History includes charts, comparison of two runs and JSON exports. Differences in configuration, incomplete runs and outdated records are shown explicitly. Full exports include settings, raw samples, model file metadata, the native library hash and logs. Result-only exports retain the existing benchmark row format. Records live in `benchmarks/<run_id>/` beside the daemon configuration file.
+
+The chart and table group decode tok/s, step/s, ms/step and AL under **Decode**, and prefill tok/s and TTFT under **Prefill**. Hover, tap, or focus an input length in the chart to see each run's value at that length.
 
 Decode throughput is the median of retained requests; TTFT and prefill use the first retained request. These HTTP client measurements include transport time and differ from the engine phase timings shown in chat.
 

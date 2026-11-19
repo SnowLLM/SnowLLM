@@ -237,6 +237,19 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.manager.task_snapshot()[-1]['id'], response.headers['X-SnowLLM-Task-ID'])
             self.assertEqual(self.manager.task_snapshot()[-1]['state'], 'completed')
 
+    async def test_webui_static_assets_require_cache_revalidation(self):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),
+                                     base_url="http://127.0.0.1") as client:
+            for path in ('/ui/app.js?v=2', '/ui/benchmark.js?v=2', '/ui/benchmark-results.js?v=2',
+                         '/ui/style.css?v=2', '/ui/locales/zh_CN.json'):
+                with self.subTest(path=path):
+                    response = await client.get(path)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.headers['cache-control'], 'no-cache')
+                    cached = await client.get(path, headers={'If-None-Match': response.headers['etag']})
+                    self.assertEqual(cached.status_code, 304)
+                    self.assertEqual(cached.headers['cache-control'], 'no-cache')
+
     async def test_bundle_catalogue_references_survive_download_and_load(self):
         from snowllm.hub import recipes
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(self.manager)),

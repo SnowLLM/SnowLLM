@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t } from './i18n.js';
 import { benchmarkCommand } from './commands.js';
+import { writeClipboard } from './clipboard.js';
+import { createBenchmarkResults } from './benchmark-results.js?v=2';
 
 export function parseLengths(value) {
   return value.split(',').map(item => {
@@ -29,7 +31,7 @@ export function comparisonDifferences(left, right) {
   for (const key of ['osl', 'reps', 'warm', 'thinking', 'conc', 'isl']) {
     if (JSON.stringify(left.config[key]) !== JSON.stringify(right.config[key])) differences.push(key);
   }
-  if (JSON.stringify(canonical(left.model.runtime_config)) !== JSON.stringify(canonical(right.model.runtime_config))) differences.push('Inference settings');
+  if (JSON.stringify(canonical(left.model?.runtime_config)) !== JSON.stringify(canonical(right.model?.runtime_config))) differences.push('Inference settings');
   const corpus = run => run.events.find(event => event.type === 'validated')?.corpus_sha256;
   if (!corpus(left) || corpus(left) !== corpus(right)) differences.push('Corpus');
   const client = run => run.provenance?.client_sha256;
@@ -39,14 +41,11 @@ export function comparisonDifferences(left, right) {
 
 export function createBenchmarkUI({ api, post, action, toast, getStatus, renderSettings, refreshStatus }) {
   const $ = id => document.getElementById(id);
-  const node = (tag, text = '', className = '') => {
-    const element = document.createElement(tag); element.textContent = text; element.className = className; return element;
-  };
   let selected = '', current = null, baseline = null, refreshing = false, revision = 0;
+  const renderResults = createBenchmarkResults();
   const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
   const stateLabel = state => t({queued: 'Queued', waiting: 'Waiting for active requests', running: 'Running', stopping: 'Stopping',
     cancelling: 'Cancelling', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted'}[state] || state);
-  const display = value => Number.isFinite(value) ? value.toFixed(2) : '—';
   function request() {
     return {model_id: $('bench-model').value, isl: parseLengths($('bench-isl').value),
       osl: Number($('bench-osl').value), conc: parseLengths($('bench-conc').value),
@@ -76,64 +75,9 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
     $('bench-no-model').hidden = Boolean(model);
     if (!selected && status?.benchmark) selected = status.benchmark.id;
   }
-  function table() {
-    const body = $('bench-results'); body.replaceChildren();
-    for (const [run, label] of [[current, t('Selected run')], [baseline, t('Comparison run')]]) {
-      for (const row of run?.rows || []) {
-        const tr = node('tr');
-        const al = row.accept_unit === 'AL' ? row.accept_mean : null;
-        for (const value of [label, row.isl_target, row.conc, display(row.prefill_tok_s), display(row.decode_tok_s), display(row.ttft_s), display(al)]) {
-          tr.append(node('td', String(value)));
-        }
-        body.append(tr);
-      }
-    }
-    $('bench-comparison-warning').hidden = !baseline;
-    if (baseline && current) {
-      const differences = comparisonDifferences(current, baseline);
-      $('bench-comparison-warning').textContent = differences.length
-        ? t('Configurations differ: {0}. Compare the raw measurements with these differences in mind.', differences.map(key => t(key)).join(', '))
-        : t('Recorded configurations and measurement methods match.');
-    }
-    chart();
-  }
-  function chart() {
-    const svg = $('bench-chart'); svg.replaceChildren();
-    const metric = $('bench-metric').value;
-    const values = [];
-    for (const [run, index] of [[current, 0], [baseline, 1]]) {
-      for (const row of run?.rows || []) {
-        if (Number.isFinite(row[metric])) values.push({x: row.isl_target, y: row[metric], index, conc: row.conc});
-      }
-    }
-    if (!values.length) return;
-    const maxX = Math.max(...values.map(point => point.x));
-    const maxY = Math.max(1, ...values.map(point => point.y));
-    const add = (tag, attrs, text) => {
-      const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-      for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
-      if (text !== undefined) el.textContent = text;
-      svg.append(el); return el;
-    };
-    add('path', {d: 'M65 15 V200 H700', class: 'bench-axis'});
-    add('text', {x: 5, y: 25}, display(maxY));
-    add('text', {x: 65, y: 223}, '0');
-    add('text', {x: 580, y: 223}, `${maxX} tokens`);
-    for (const key of new Set(values.map(point => `${point.index}:${point.conc}`))) {
-      const points = values.filter(point => `${point.index}:${point.conc}` === key).sort((a, b) => a.x - b.x);
-      const position = point => `${65 + point.x / maxX * 620},${200 - point.y / maxY * 180}`;
-      const className = `bench-series bench-series-${points[0].index}`;
-      add('polyline', {points: points.map(position).join(' '), class: className});
-      for (const point of points) {
-        const [cx, cy] = position(point).split(',');
-        const dot = add('circle', {cx, cy, r: 4, class: className});
-        const title = document.createElementNS(svg.namespaceURI, 'title');
-        title.textContent = `${point.x} tokens · concurrency ${point.conc} · ${display(point.y)}`; dot.append(title);
-      }
-    }
-  }
   function render() {
     $('bench-detail').hidden = !current;
+    renderResults(current, current && baseline);
     if (!current) return;
     $('bench-run-title').textContent = `${current.config.model_id} · ${stateLabel(current.state)}`;
     $('bench-run-id').textContent = `${current.id} · ${new Date(current.created_at).toLocaleString()}`;
@@ -154,7 +98,13 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
     $('bench-output').textContent = current.log || '';
     $('bench-snapshot').textContent = JSON.stringify({config: current.config, model: current.model, provenance: current.provenance,
       model_identity: current.model_identity, draft_identity: current.draft_identity}, null, 2);
-    table();
+    $('bench-comparison-warning').hidden = !baseline;
+    if (baseline && current) {
+      const differences = comparisonDifferences(current, baseline);
+      $('bench-comparison-warning').textContent = differences.length
+        ? t('Configurations differ: {0}. Compare the raw measurements with these differences in mind.', differences.map(key => t(key)).join(', '))
+        : t('Recorded configurations and measurement methods match.');
+    }
   }
   async function refresh() {
     if (refreshing) return;
@@ -187,11 +137,10 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
     await post(`/daemon/benchmarks/${selected}/cancel`); await refresh(); await refreshStatus();
   }));
   $('bench-copy').addEventListener('click', () => action($('bench-copy'), async () => {
-    await navigator.clipboard.writeText(benchmarkCommand(request(), location.href)); toast(t('CLI command copied'));
+    await writeClipboard(benchmarkCommand(request(), location.href)); toast(t('CLI command copied'));
   }));
   $('bench-history').addEventListener('change', () => { selected = $('bench-history').value; revision++; refresh().catch(error => toast(error.message)); });
   $('bench-baseline').addEventListener('change', () => { revision++; refresh().catch(error => toast(error.message)); });
-  $('bench-metric').addEventListener('change', chart);
   $('bench-refresh').addEventListener('click', () => action($('bench-refresh'), refresh));
   return {update, refresh, select(id) { selected = id; revision++; refresh().catch(error => toast(error.message)); }};
 }

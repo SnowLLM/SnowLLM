@@ -99,6 +99,8 @@ def create_app(manager: DaemonManager, *, admin_host="127.0.0.1", admin_key=None
             "base-uri 'none'; form-action 'self'")
         if request.url.path == "/" or request.url.path.startswith("/daemon"):
             response.headers["Cache-Control"] = "no-store"
+        elif request.url.path.startswith("/ui/"):
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.get("/", include_in_schema=False)
