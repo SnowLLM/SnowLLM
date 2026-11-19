@@ -24,7 +24,7 @@
     "max_num_seqs": 1,
     "dflash": "@model/dspark",
     "dflash_block": 9,
-    "max_model_len": 8192,
+    "max_model_len": 128000,
     "max_num_batched_tokens": 512
   },
   "note": "Downloads the target into the model directory and the Q8_0 DSpark draft into dspark/.",
