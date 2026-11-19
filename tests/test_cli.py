@@ -355,13 +355,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual((kw['max_gpu_mem_util'], kw['max_host_mem_gib']), (.95, 7))
         self.assertEqual(kw['host_offload'], 7040 << 20)
         self.assertFalse(kw['host_alloc'])
-        self.assertEqual((kw['enforce_eager'], kw['limit_mm_per_prompt']), (True, 1))
+        self.assertEqual((kw['enforce_eager'], kw['limit_mm_per_prompt']), (False, 1))
         self.assertEqual((kw['dflash_block'], kw['prefix_memory_ratio']), (8, 0))
         self.assertEqual(Path(kw['dflash']), Path(args[0]) / 'dspark')
         args, kw = self.launch_options(('--max-model-len', '8192', '--max-host-mem', '8GiB',
-                                        '--limit-mm-per-prompt', '2'), recipe)
+                                        '--limit-mm-per-prompt', '2', '--enforce-eager'), recipe)
         self.assertEqual(args[2], 8192)
         self.assertEqual((kw['max_host_mem_gib'], kw['limit_mm_per_prompt']), (8, 2))
+        self.assertTrue(kw['enforce_eager'])
 
     def test_startup_errors_show_the_cause_and_actionable_capacity_options(self):
         from snowllm.capacity import memory_shortage
