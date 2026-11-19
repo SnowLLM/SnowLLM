@@ -111,11 +111,35 @@ snowllm load --admin-port 9001 RECIPE --max-model-len 32k
 snowllm webui logs --admin-port 9001
 ```
 
-局域网推理可使用 `--host 0.0.0.0`，管理服务仍绑定回环地址。`--admin-host` 支持 `127.0.0.1`、`localhost` 和 `::1`。终端管理命令默认使用管理端口 8001，其 `--port` 仍是 `--admin-port` 的别名。启动守护进程时的 `--port` 始终表示推理端口。
+两个监听器默认绑定回环地址。局域网访问可指定网卡 IP，或使用 `0.0.0.0` 监听所有 IPv4 网卡。管理端对外开放且未配置管理 Key 时，启动会打印警告，管理接口允许免登录访问。终端管理命令默认使用端口 8001，其 `--port` 是 `--admin-port` 的别名。启动守护进程时，`--port` 表示推理端口。
+
+使用 `--enable-auth` 同时开启管理和推理认证。也可以用 `--enable-webui-auth` 或 `--enable-api-auth` 单独开启。
+
+```sh
+snowllm webui --config ./server.json --host 0.0.0.0 --admin-host 0.0.0.0 --enable-auth
+snowllm status --admin-api-key-file ./keys/admin.key
+```
+
+启用认证后，缺失或空的 Key 文件会自动写入随机 Key，后续启动会复用已有值。默认文件为配置文件旁的 `keys/inference.key` 和 `keys/admin.key`。通过 CLI 开关或 JSON 启用并从文件取值时，启动会显示文件路径。Web UI 启动时默认显示生效的 Key 明文，可用 `--no-show-keys` 隐藏。
+
+也可以指定已有的 Key 文件。要在自定义路径下初始化缺失或空的文件，在启动命令中加上 `--enable-auth`。
+
+```sh
+snowllm webui --host 0.0.0.0 --admin-host 0.0.0.0 \
+  --api-key-file ~/.config/snowllm/inference.key \
+  --admin-api-key-file ~/.config/snowllm/admin.key
+snowllm status --admin-host 192.168.1.10 --admin-api-key-file ~/.config/snowllm/admin.key
+```
+
+两个文件各存一条不同的 Key。取值顺序为显式 CLI 文件参数、对应的 Key 环境变量、JSON 中的文件路径、默认路径。请求 Key 的环境变量为 `SNOWLLM_API_KEY`，管理 Key 的环境变量为 `SNOWLLM_ADMIN_API_KEY`。OpenAI 兼容客户端用 Bearer token，Anthropic 兼容的 Messages 客户端也可以用 `x-api-key`。配置请求 Key 后，未鉴权的 `/health` 只返回就绪状态。直接运行 `snowllm PATH|RECIPE` 也可使用 `--enable-api-auth`。请求客户端 `snowllm bench context` 可用 Key 环境变量或文件。
+
+浏览器打开 `http://服务器IP:8001`。如果配置了管理 Key，在登录框输入用户名 `snowllm`，密码填管理 Key。管理命令（包括 `snowllm bench run` 和 `snowllm bench list`）支持 `--admin-api-key-file` 或 `SNOWLLM_ADMIN_API_KEY`。WebUI 聊天沿用管理端登录。
+
+需要 HTTPS 时，可以由反向代理终止 TLS。管理端保持监听回环地址，启动时向 SnowLLM 传入 `--admin-url https://snowllm.example.com`，并让代理保留公开的 `Host` 和 `Authorization` 请求头。CLI 可以用相同的 `--admin-url` 通过 HTTPS 访问。
 
 同一管理端口启动第二个守护进程时会报告已有实例。两个端口都必须可用，服务才开始监听。Ctrl+C 会停止服务及其拥有的推理、下载进程树；未完成的下载可以通过再次 pull 继续。
 
-浏览器在两个监听端口就绪后，或连接到已有实例时打开；`--no-browser` 可禁用。浏览器打开失败不影响服务运行，终端会输出 URL。管理服务仅绑定回环地址，并拒绝跨源请求。仍可直接使用 `snowllm PATH|RECIPE` 提供推理。
+浏览器在两个监听端口就绪后，或连接到已有实例时打开；`--no-browser` 可禁用。浏览器打开失败不影响服务运行，终端会输出 URL。管理服务拒绝跨源请求。
 
 ## 性能测试 {#benchmark}
 

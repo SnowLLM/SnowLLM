@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 
 from .manager import DaemonManager
+from ..auth import authorized, inference_auth_failure, is_loopback, unauthorized
 from ..targets import Target
 from ..loading import LoadBatch
 
@@ -67,20 +68,28 @@ def storage_bytes(path):
     return total
 
 
-def create_app(manager: DaemonManager):
+def create_app(manager: DaemonManager, *, admin_host="127.0.0.1", admin_key=None, admin_url=None):
     # The dual-server runner owns the shared manager's lifetime.
     app = FastAPI(title="SnowLLM management")
     assets = Path(__file__).parent / "static"
+    public_host = urlsplit(admin_url).netloc if admin_url else None
+    local_only = admin_key is None and is_loopback(admin_host.lower())
 
     @app.middleware("http")
-    async def local_management(request, call_next):
-        from fastapi.responses import JSONResponse
-        host = urlsplit("//" + request.headers.get("host", "")).hostname
-        if host not in ("127.0.0.1", "localhost", "::1", "testserver"):
-            return JSONResponse({"detail": "invalid local host"}, status_code=403)
+    async def management(request, call_next):
+        authority = request.headers.get("host", "").lower()
+        try:
+            host = urlsplit("//" + authority).hostname
+        except ValueError:
+            host = None
+        if not host or (local_only and authority != public_host and host != "testserver" and not is_loopback(host)):
+            return JSONResponse({"detail": "invalid management host"}, status_code=403)
         origin = request.headers.get("origin")
-        if (origin and origin != str(request.base_url).rstrip("/")) or request.headers.get("sec-fetch-site") == "cross-site":
+        expected_origin = admin_url if authority == public_host else str(request.base_url).rstrip("/")
+        if (origin and origin != expected_origin) or request.headers.get("sec-fetch-site") == "cross-site":
             return JSONResponse({"detail": "cross-origin requests are not allowed"}, status_code=403)
+        if not authorized(request.headers, admin_key, admin=True):
+            return unauthorized(admin=True)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
@@ -310,38 +319,41 @@ def create_app(manager: DaemonManager):
 
     @app.get("/daemon/metrics")
     async def metrics(request: Request):
-        return await forward(manager, "metrics", request)
+        return await forward(manager, "metrics", request, strip_credentials=admin_key is not None)
 
     @app.get("/daemon/inference/models")
     async def chat_models(request: Request):
-        return await forward(manager, "v1/models", request)
+        return await forward(manager, "v1/models", request, strip_credentials=admin_key is not None)
 
     @app.post("/daemon/inference/chat/completions")
     async def chat(request: Request):
-        return await forward(manager, "v1/chat/completions", request)
+        return await forward(manager, "v1/chat/completions", request, strip_credentials=admin_key is not None)
 
     @app.post("/daemon/profile/{action}")
     async def profile(action: str, request: Request):
         if action not in ("start", "stop"):
             raise HTTPException(404, "unknown profiling action")
-        return await forward(manager, action + "_profile", request)
+        return await forward(manager, action + "_profile", request, strip_credentials=admin_key is not None)
 
     return app
 
 
-def create_inference_app(manager: DaemonManager):
+def create_inference_app(manager: DaemonManager, *, api_key=None):
     app = FastAPI(title="SnowLLM inference", docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "DELETE", "PUT", "PATCH"])
     async def proxy(path: str, request: Request):
         if not (path.startswith("v1/") or path in ("health", "metrics")):
             raise HTTPException(404, "unknown inference endpoint")
-        return await forward(manager, path, request)
+        failure = inference_auth_failure(request, api_key, ready=manager.state == "ready")
+        if failure is not None:
+            return failure
+        return await forward(manager, path, request, strip_credentials=api_key is not None)
 
     return app
 
 
-async def forward(manager: DaemonManager, path: str, request: Request):
+async def forward(manager: DaemonManager, path: str, request: Request, *, strip_credentials=False):
     body = await request.body()
     if manager.benchmarks.busy and request.method != 'GET':
         raise HTTPException(503, 'a benchmark has exclusive use of inference')
@@ -400,8 +412,11 @@ async def forward(manager: DaemonManager, path: str, request: Request):
 
     watcher = asyncio.create_task(watch_disconnect()) if task else None
     try:
+        excluded = {"host", "connection", "content-length", "transfer-encoding"}
+        if strip_credentials:
+            excluded.update(("authorization", "x-api-key"))
         headers = {k: v for k, v in request.headers.items()
-                   if k.lower() not in ("host", "connection", "content-length", "transfer-encoding")}
+                   if k not in excluded}
         upstream = manager.client.build_request(request.method, backend + "/" + path,
                     params=request.query_params, headers=headers, content=body)
         sending = manager.client.send(upstream, stream=True)

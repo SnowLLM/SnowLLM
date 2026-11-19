@@ -17,6 +17,17 @@ Client base URLs:
 - **OpenAI** (Chat Completions or Responses): `http://127.0.0.1:8000/v1`
 - **Anthropic** (Messages): `http://127.0.0.1:8000`
 
+## Authentication
+
+When inference authentication is enabled, send `Authorization: Bearer <inference key>`
+with inference requests. Anthropic Messages and its token-counting endpoint also
+accept the inference key in `x-api-key`. An unauthenticated `GET /health` returns
+only readiness. When management authentication is enabled, send
+`Authorization: Bearer <management key>` to the management port.
+
+See the [Web UI service management guide](../webui#service-management) for setup
+flags, key files and HTTPS.
+
 ## First request
 
 Load a model first. Replace `model` with its ID from `GET /v1/models`.

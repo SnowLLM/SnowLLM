@@ -195,7 +195,7 @@ def check_flags() -> None:
                 if line.startswith("| `"):
                     named.extend(re.findall(r"--[a-z][a-z0-9-]*|[A-Z][A-Z0-9_]+", line.split("|")[1]))
     hay = "".join((ROOT / f).read_text(errors="replace")
-                  for f in ("snowllm/cli.py", "snowllm/daemon/cli.py",
+                  for f in ("snowllm/auth.py", "snowllm/cli.py", "snowllm/daemon/cli.py",
                             "snowllm/config.py", "snowllm/telemetry.py", "snowllm/updates.py",
                             "snowllm/hub/recipes.py", "snowllm/ops/_common.py", "install.sh"))
     for cell in named:

@@ -14,6 +14,8 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 | --- | --- | --- |
 | `PATH` | 未设置 | 模型目录或已下载的方案。 |
 | `--host` | `127.0.0.1` | API 监听地址。 |
+| `--api-key-file` | 未设置 | 存放推理 API Key 的文件，也可用环境变量 `SNOWLLM_API_KEY` 设置。 |
+| `--enable-api-auth` | 未设置 | 开启推理认证，按需初始化 Key 文件。对应的 JSON 字段是 `enable_api_auth`。 |
 | `--port` | `8000` | API 监听端口。 |
 | `--served-model-name` | 未设置 | `名称` 继承默认上下文倍率，`名称=倍率` 显式覆盖；可重复指定。 |
 | `--default-max-tokens` | 未设置 | 默认回复上限；未设置时使用剩余上下文。 |
@@ -162,7 +164,7 @@ snowllm bench cancel RUN_ID
 snowllm bench export RUN_ID --out result.json
 ```
 
-测试 WebUI 服务中已加载的模型。`--conc` 支持逗号分隔的并发档位，`--thinking` 支持 `auto|on|off`；`--detach` 后台运行，`--out` 在等待测试结束后导出标准结果行。`export --results-only` 仅导出结果行，否则导出完整记录。所有子命令均支持 `--admin-host` 和 `--admin-port`。默认配置、独占行为和指标口径见 [Web UI 性能测试](../webui#benchmark)。原有 `benchmarks/bench_context.py`、`run.sh` 和 `perf_sweep.sh` 入口继续可用。
+测试 WebUI 服务中已加载的模型。`--conc` 支持逗号分隔的并发档位，`--thinking` 支持 `auto|on|off`；`--detach` 后台运行，`--out` 在等待测试结束后导出标准结果行。`export --results-only` 仅导出结果行，否则导出完整记录。上述子命令支持 `--admin-host`、`--admin-port`、`--admin-url` 和 `--admin-api-key-file`。默认配置、独占行为和指标口径见 [Web UI 性能测试](../webui#benchmark)。原有 `benchmarks/bench_context.py`、`run.sh` 和 `perf_sweep.sh` 入口继续可用。
 
 直接测试普通推理服务或外部 HTTP 服务时，可使用安装包自带的标准客户端：
 

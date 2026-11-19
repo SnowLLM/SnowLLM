@@ -302,6 +302,56 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen[-1].headers["x-api-key"], "test-key")
             self.assertEqual(self.manager.active, 0)
 
+    async def test_request_and_management_keys_are_independent(self):
+        def upstream(request):
+            self.assertNotIn("authorization", request.headers)
+            self.assertNotIn("x-api-key", request.headers)
+            return httpx.Response(200, stream=httpx.ByteStream(b'{"upstream":true}'))
+
+        await self.manager.client.aclose()
+        self.manager.client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        self.manager.state, self.manager.backend = "ready", "http://127.0.0.1:12345"
+        inference = create_inference_app(self.manager, api_key="request-secret")
+        admin = create_app(self.manager, admin_key="admin-secret", admin_url="https://models.example")
+        request_key = {"Authorization": "Bearer request-secret"}
+        admin_key = {"Authorization": "Bearer admin-secret"}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=inference),
+                                     base_url="http://192.168.1.10:8000") as client:
+            self.assertEqual((await client.get("/health")).json(), {"status": "ok"})
+            self.assertEqual((await client.get("/health", headers=request_key)).json(), {"upstream": True})
+            self.assertEqual((await client.get("/metrics")).status_code, 401)
+            self.assertEqual((await client.get("/v1/models", headers=admin_key)).status_code, 401)
+            self.assertEqual((await client.get("/v1/models", headers=request_key)).status_code, 200)
+            self.assertEqual((await client.post("/v1/messages", headers={"x-api-key": "request-secret"})).status_code, 200)
+            self.assertEqual((await client.get("/daemon/status", headers=admin_key)).status_code, 404)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=admin),
+                                     base_url="http://models.example") as client:
+            challenge = await client.get("/")
+            self.assertEqual(challenge.status_code, 401)
+            self.assertTrue(challenge.headers["WWW-Authenticate"].startswith("Basic "))
+            self.assertEqual((await client.get("/", auth=("snowllm", "admin-secret"))).status_code, 200)
+            self.assertEqual((await client.get("/daemon/status", headers=request_key)).status_code, 401)
+            self.assertEqual((await client.get("/daemon/status", headers=admin_key)).status_code, 200)
+            self.assertEqual((await client.post("/daemon/inference/chat/completions",
+                headers={**admin_key, "Origin": "https://models.example"})).status_code, 200)
+            self.assertEqual((await client.post("/daemon/inference/chat/completions",
+                headers={**admin_key, "Origin": "https://other.example"})).status_code, 403)
+
+    async def test_unkeyed_management_honors_remote_bind_and_public_url(self):
+        cases = (
+            ({}, "http://192.168.1.10:8001", 403),
+            ({"admin_host": "0.0.0.0"}, "http://192.168.1.10:8001", 200),
+            ({"admin_url": "https://models.example"}, "http://models.example", 200),
+        )
+        for settings, url, expected in cases:
+            with self.subTest(settings=settings):
+                app = create_app(self.manager, **settings)
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=url) as client:
+                    self.assertEqual((await client.get("/")).status_code, expected)
+                    self.assertEqual((await client.get("/daemon/status")).status_code, expected)
+                    self.assertEqual((await client.get("/daemon/status",
+                        headers={"Origin": "https://other.example"})).status_code, 403)
+
     async def test_worker_uses_current_python_and_configured_environment(self):
         with patch("subprocess.Popen") as popen:
             self.manager.spawn(["x"], self.manager.log_path)

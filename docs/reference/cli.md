@@ -14,6 +14,8 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 | --- | --- | --- |
 | `PATH` | Unset | Checkpoint directory or downloaded recipe. |
 | `--host` | `127.0.0.1` | API listener address. |
+| `--api-key-file` | Unset | File containing the inference API key. The environment alternative is `SNOWLLM_API_KEY`. |
+| `--enable-api-auth` | Unset | Enable inference authentication and initialize its key file if needed. The JSON field is `enable_api_auth`. |
 | `--port` | `8000` | API listener port. |
 | `--served-model-name` | Unset | `NAME` inherits the default context factor; `NAME=FACTOR` overrides it. Repeatable. |
 | `--default-max-tokens` | Unset | Default reply limit; unset uses remaining context. |
@@ -170,7 +172,7 @@ snowllm bench cancel RUN_ID
 snowllm bench export RUN_ID --out result.json
 ```
 
-Tests models loaded in the Web UI service. `--conc` accepts comma-separated concurrency levels; `--thinking` accepts `auto|on|off`. `--detach` starts a background task; `run --out` exports standard result rows after waiting for completion. `export --results-only` exports rows instead of the full record. All subcommands accept `--admin-host` and `--admin-port`. See [Web UI benchmarks](../webui#benchmark) for defaults, exclusive execution and metrics. The existing `benchmarks/bench_context.py`, `run.sh` and `perf_sweep.sh` entries remain available.
+Tests models loaded in the Web UI service. `--conc` accepts comma-separated concurrency levels; `--thinking` accepts `auto|on|off`. `--detach` starts a background task; `run --out` exports standard result rows after waiting for completion. `export --results-only` exports rows instead of the full record. These subcommands accept `--admin-host`, `--admin-port`, `--admin-url` and `--admin-api-key-file`. See [Web UI benchmarks](../webui#benchmark) for defaults, exclusive execution and metrics. The existing `benchmarks/bench_context.py`, `run.sh` and `perf_sweep.sh` entries remain available.
 
 For an ordinary inference server or an external HTTP server, use the packaged standard client directly:
 

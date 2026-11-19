@@ -11,6 +11,7 @@ import uuid
 
 from .config import BenchmarkConfig
 from .provenance import model_identity, source_identity
+from ..auth import ADMIN_KEY_ENV, API_KEY_ENV
 
 TERMINAL = {'completed', 'cancelled', 'failed', 'interrupted'}
 
@@ -212,6 +213,8 @@ class BenchmarkJobs:
                        '--tokenizer', runtime['model_path'], '--out', str(path / 'results.json'),
                        '--events', str(path / 'events.jsonl'), *config.arguments()]
             env = dict(os.environ, PYTHONUNBUFFERED='1', SNOWLLM_BENCH_LEASE=self.current['id'])
+            env.pop(ADMIN_KEY_ENV, None)
+            env.pop(API_KEY_ENV, None)
             with (path / 'output.log').open('wb') as output:
                 self.process = subprocess.Popen(command, env=env, stdout=output,
                                                 stderr=subprocess.STDOUT, start_new_session=os.name != 'nt')

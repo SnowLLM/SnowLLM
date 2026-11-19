@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-export function modelLoadCommand(request, managementUrl) {
+function managementArgs(managementUrl) {
   const address = new URL(managementUrl);
-  const host = address.hostname.replace(/^\[|\]$/g, '');
-  const port = address.port || (address.protocol === 'https:' ? '443' : '80');
-  const args = ['snowllm', 'load', '--admin-host', host, '--admin-port', port];
+  if (address.protocol === 'https:') return ['--admin-url', address.origin];
+  return ['--admin-host', address.hostname.replace(/^\[|\]$/g, ''), '--admin-port', address.port || '80'];
+}
+
+export function modelLoadCommand(request, managementUrl) {
+  const args = ['snowllm', 'load', ...managementArgs(managementUrl)];
   if (request.id) args.push(`--id=${request.id}`);
   args.push(`${request.target}:${request.model}`);
   if (request.options.length) args.push('--', ...request.options);
@@ -11,9 +14,7 @@ export function modelLoadCommand(request, managementUrl) {
 }
 
 export function benchmarkCommand(request, managementUrl) {
-  const address = new URL(managementUrl);
-  const args = ['snowllm', 'bench', 'run', '--admin-host', address.hostname.replace(/^\[|\]$/g, ''),
-    '--admin-port', address.port || (address.protocol === 'https:' ? '443' : '80'), `--model-id=${request.model_id}`];
+  const args = ['snowllm', 'bench', 'run', ...managementArgs(managementUrl), `--model-id=${request.model_id}`];
   for (const key of ['isl', 'osl', 'conc', 'reps', 'warm', 'thinking']) {
     args.push(`--${key}`, Array.isArray(request[key]) ? request[key].join(',') : String(request[key]));
   }

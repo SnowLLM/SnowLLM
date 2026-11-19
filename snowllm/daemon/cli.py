@@ -7,19 +7,40 @@ import sys
 import webbrowser
 
 import httpx
-from ..config import default_config_path
+from ..auth import WEBUI_BASIC_USERNAME, auth_enabled, bearer_headers, read_key, startup_key
+from ..config import default_config_path, read_config
 
 
-def parser():
+class EnableAuth(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        namespace.enable_api_auth = True
+        namespace.enable_webui_auth = True
+
+
+def parser(*, startup_defaults=None):
     p = argparse.ArgumentParser(prog="snowllm", description="Local model management and Web UI")
     commands = p.add_subparsers(dest="command", required=True)
     daemon = commands.add_parser("webui",
                                  help="open the browser interface for models, chat, and settings")
     daemon.add_argument("--host", default="127.0.0.1", help="inference listener address")
     daemon.add_argument("--port", type=int, default=8000, help="inference listener port")
-    daemon.add_argument("--admin-host", choices=("127.0.0.1", "localhost", "::1"), default="127.0.0.1",
-                        help="local management listener address")
+    daemon.add_argument("--admin-host", default="127.0.0.1", help="management listener address")
     daemon.add_argument("--admin-port", type=int, default=8001, help="Web UI and management port")
+    daemon.add_argument("--api-key-file", type=Path,
+                        help="inference key file, defaults to keys/inference.key beside the config when enabled")
+    daemon.add_argument("--admin-api-key-file", type=Path,
+                        help="management key file, defaults to keys/admin.key beside the config when enabled")
+    daemon.add_argument("--enable-auth", nargs=0, action=EnableAuth, default=argparse.SUPPRESS,
+                        help="enable authentication on both listeners")
+    daemon.add_argument("--generate-keys", nargs=0, action=EnableAuth, default=argparse.SUPPRESS,
+                        help=argparse.SUPPRESS)
+    daemon.add_argument("--enable-api-auth", action=argparse.BooleanOptionalAction,
+                        help="enable inference authentication and initialize its key file if needed")
+    daemon.add_argument("--enable-webui-auth", action=argparse.BooleanOptionalAction,
+                        help="enable Web UI and management authentication and initialize its key file if needed")
+    daemon.add_argument("--show-keys", action=argparse.BooleanOptionalAction, default=True,
+                        help="print active API keys on startup (default: enabled)")
+    daemon.add_argument("--admin-url", type=parse_admin_url, help="public Web UI origin for a reverse proxy")
     daemon.add_argument("--config", type=Path,
                         default=default_config_path(), help="JSON configuration file")
     storage = daemon.add_mutually_exclusive_group()
@@ -27,22 +48,60 @@ def parser():
     storage.add_argument('--models-dirs', nargs='+', metavar='DIR',
                          help='ordered model roots; downloads use the first')
     daemon.add_argument("--load-timeout", type=float, default=600)
-    daemon.add_argument("--no-browser", action="store_true",
-                        help="do not open the Web UI in a browser")
+    browser = daemon.add_mutually_exclusive_group()
+    browser.add_argument("--no-browser", action="store_true", help="do not open the Web UI in a browser")
+    browser.add_argument("--browser", dest="no_browser", action="store_false", default=argparse.SUPPRESS,
+                         help="open the Web UI in a browser")
+    if startup_defaults:
+        daemon.set_defaults(**startup_defaults)
     sub = daemon.add_subparsers(dest="action")
     for name in ("status", "unload", "default", "logs", "config", "pull", "load"):
         action = sub.add_parser(name)
         action.add_argument("--admin-port", "--port", dest="admin_port", type=int, default=argparse.SUPPRESS,
                             help="management port (--port is a compatibility alias)")
-        action.add_argument("--admin-host", choices=("127.0.0.1", "localhost", "::1"), default=argparse.SUPPRESS)
+        management_client_arguments(action, nested=True)
         arguments(action, name)
     for name in ("status", "load", "unload", "default"):
         action = commands.add_parser(name)
         action.add_argument("--admin-port", "--port", dest="admin_port", type=int, default=8001,
                             help="management port (--port is a compatibility alias)")
-        action.add_argument("--admin-host", choices=("127.0.0.1", "localhost", "::1"), default="127.0.0.1")
+        management_client_arguments(action)
         arguments(action, name)
     return p
+
+
+def webui_defaults(parser, config):
+    fields = {
+        "host": (str,), "port": (int,), "admin_host": (str,), "admin_port": (int,),
+        "admin_url": (str, type(None)), "load_timeout": (int, float), "no_browser": (bool,),
+    }
+    defaults = {}
+    for name, allowed in fields.items():
+        if name in config:
+            value = config[name]
+            if type(value) not in allowed or isinstance(value, str) and not value.strip():
+                parser.error(f"invalid {name} in the configuration")
+            defaults[name] = value
+    return defaults
+
+
+def parse_admin_url(value):
+    try:
+        url = httpx.URL(value)
+        if (url.scheme in ("http", "https") and url.host and not url.userinfo
+                and url.raw_path == b"/" and not url.fragment):
+            return str(url).rstrip("/")
+    except httpx.InvalidURL:
+        pass
+    raise argparse.ArgumentTypeError("expected an HTTP(S) origin, such as https://snowllm.example.com")
+
+
+def management_client_arguments(parser, *, nested=False):
+    default = argparse.SUPPRESS if nested else None
+    parser.add_argument("--admin-host", default=argparse.SUPPRESS if nested else "127.0.0.1")
+    parser.add_argument("--admin-url", type=parse_admin_url, default=default, help="management HTTP(S) origin")
+    parser.add_argument("--admin-api-key-file", type=Path, default=default,
+                        help="management key file (or set SNOWLLM_ADMIN_API_KEY)")
 
 
 def arguments(p, name):
@@ -82,47 +141,85 @@ def main(argv):
     action = a.action if a.command == "webui" else a.command
     if options and action != "load":
         p.error("unrecognized arguments: " + " ".join(options))
+    if action is None:
+        try:
+            config_path = a.config.expanduser().resolve()
+            config = read_config(config_path)
+        except (OSError, ValueError, RuntimeError) as exc:
+            p.error(str(exc))
+        defaults = webui_defaults(p, config)
+        if defaults:
+            p = parser(startup_defaults=defaults)
+            a = p.parse_args(argv)
     if not 1 <= a.admin_port <= 65535:
         p.error("admin port must be between 1 and 65535")
-    from .server import local_url
-    admin_url = local_url(a.admin_host, a.admin_port)
+    from .server import local_url, validate_listener_keys
+    local_admin_url = local_url(a.admin_host, a.admin_port)
     if action is None:
         if not 1 <= a.port <= 65535:
             p.error("inference port must be between 1 and 65535")
         if a.port == a.admin_port:
             p.error("inference and management ports must be different")
-        if a.load_timeout <= 0:
-            p.error("load timeout must be positive")
-        # Probe before creating resources: a second daemon must not disturb the first.
+        if not 0 < a.load_timeout < float("inf"):
+            p.error("load timeout must be positive and finite")
+        api_auth = auth_enabled(p, a.enable_api_auth, config)
+        admin_auth = auth_enabled(p, a.enable_webui_auth, config, admin=True)
+        api_key, api_key_path = startup_key(p, a.api_key_file, config_path, config, enabled=api_auth)
+        admin_key, admin_key_path = startup_key(p, a.admin_api_key_file, config_path, config,
+                                               enabled=admin_auth, admin=True)
+        try:
+            validate_listener_keys(admin_key, api_key)
+        except ValueError as exc:
+            p.error(str(exc))
+        # Probe before creating the manager so a second daemon cannot disturb the first.
+        browser_url = a.admin_url or local_admin_url
         with httpx.Client(timeout=1, trust_env=False) as client:
             try:
-                response = client.get(admin_url + "/daemon/status")
+                response = client.get(local_admin_url + "/daemon/status", headers=bearer_headers(admin_key))
                 if response.is_success:
-                    print(f"SnowLLM Web UI already running at {admin_url}")
+                    print(f"SnowLLM Web UI already running at {local_admin_url}")
+                    if api_auth or admin_auth:
+                        print("Restart the service for changes to the authentication settings to take effect.")
                     print(json.dumps(response.json(), indent=2, ensure_ascii=False))
                     if not a.no_browser:
-                        open_browser(admin_url)
+                        open_browser(browser_url)
                     return 0
             except httpx.HTTPError:
                 pass
         from .server import serve
         from .manager import DaemonManager
         try:
-            manager = DaemonManager(a.config, a.load_timeout, a.models_dirs or a.models_dir)
+            manager = DaemonManager(config_path, a.load_timeout, a.models_dirs or a.models_dir)
         except (OSError, ValueError) as exc:
             print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
-        print(f"SnowLLM Web UI / management: {admin_url}", flush=True)
+        print(f"SnowLLM Web UI / management: {browser_url}", flush=True)
         print(f"SnowLLM inference API: {local_url(a.host, a.port)}/v1", flush=True)
+        if api_key_path:
+            print(f"Inference key file: {api_key_path}", flush=True)
+        if a.show_keys and api_key:
+            print(f"Inference API key: {api_key}", flush=True)
+        if admin_key_path:
+            print(f"Management key file: {admin_key_path}", flush=True)
+        if admin_key:
+            print(f"WebUI Basic Auth username: {WEBUI_BASIC_USERNAME}", flush=True)
+            if a.show_keys:
+                print(f"Management API key: {admin_key}", flush=True)
+        if a.show_keys and (api_key or admin_key):
+            print("Use --no-show-keys to hide API keys.", flush=True)
         print("Use snowllm load MODEL, snowllm status, snowllm unload MODEL_ID or --all; Ctrl+C stops all owned tasks.", flush=True)
         try:
             asyncio.run(serve(manager, host=a.host, port=a.port,
                               admin_host=a.admin_host, admin_port=a.admin_port,
+                              api_key=api_key, admin_key=admin_key, admin_url=a.admin_url,
                               browser=None if a.no_browser else open_browser))
         except (OSError, RuntimeError) as exc:
             print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
         return 0
+    if a.command == "webui" and (a.enable_api_auth is not None or a.enable_webui_auth is not None):
+        p.error("authentication switches apply only to Web UI startup")
+    admin_key = read_key(p, a.admin_api_key_file, admin=True)
     method, endpoint, payload, params = "GET", action, None, None
     if action == "load":
         method = "POST"
@@ -174,8 +271,8 @@ def main(argv):
     elif action == "logs":
         params = {"download": str(a.download).lower()}
     try:
-        with httpx.Client(timeout=10, trust_env=False) as client:
-            response = client.request(method, f"{admin_url}/daemon/{endpoint}",
+        with httpx.Client(timeout=10, trust_env=False, headers=bearer_headers(admin_key)) as client:
+            response = client.request(method, f"{a.admin_url or local_admin_url}/daemon/{endpoint}",
                                       json=payload, params=params)
             response.raise_for_status()
             result = response.json()

@@ -7,6 +7,8 @@ import time
 
 import httpx
 
+from ..auth import bearer_headers, read_key
+from ..daemon.cli import management_client_arguments
 from .config import BenchmarkConfig, sizes
 from .jobs import TERMINAL
 
@@ -17,7 +19,7 @@ def parser():
     sub.add_parser('context', add_help=False, help='run the standard HTTP client against an existing server')
     for name in ('run', 'list', 'show', 'cancel', 'export'):
         cmd = sub.add_parser(name)
-        cmd.add_argument('--admin-host', choices=('127.0.0.1', 'localhost', '::1'), default='127.0.0.1')
+        management_client_arguments(cmd)
         cmd.add_argument('--admin-port', type=int, default=8001)
         if name in ('show', 'cancel', 'export'):
             cmd.add_argument('run_id')
@@ -57,10 +59,11 @@ def main(argv=None):
         if a.detach and a.out:
             p.error('--out requires waiting for completion; remove --detach')
     from ..daemon.server import local_url
-    root = local_url(a.admin_host, a.admin_port) + '/daemon/benchmarks'
+    root = (a.admin_url or local_url(a.admin_host, a.admin_port)) + '/daemon/benchmarks'
+    headers = bearer_headers(read_key(p, a.admin_api_key_file, admin=True))
     run_id = None
     try:
-        with httpx.Client(timeout=30, trust_env=False) as client:
+        with httpx.Client(timeout=30, trust_env=False, headers=headers) as client:
             def request(method, url, **kwargs):
                 response = client.request(method, url, **kwargs)
                 response.raise_for_status()
@@ -102,7 +105,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         if run_id:
             try:
-                with httpx.Client(timeout=10, trust_env=False) as client:
+                with httpx.Client(timeout=10, trust_env=False, headers=headers) as client:
                     response = client.post(root + '/' + run_id + '/cancel')
                     response.raise_for_status()
                 print(f'Cancellation requested for {run_id}', file=sys.stderr)

@@ -398,6 +398,10 @@ def parser() -> argparse.ArgumentParser:
                    help='Execution device; NPU requires a dedicated backend and weights.')
     g.add_argument("--host", default="127.0.0.1", help="API listener address.")
     g.add_argument("--port", type=int, default=8000, help="API listener port.")
+    g.add_argument("--api-key-file", type=pathlib.Path,
+                   help="Inference key file, defaults to keys/inference.key beside the config when enabled.")
+    g.add_argument("--enable-api-auth", action=argparse.BooleanOptionalAction,
+                   help="Enable inference authentication and initialize its key file if needed.")
     g.add_argument("--served-model-name", action="append", metavar="NAME=FACTOR",
                    help='API model name and context factor; repeatable.')
     g.add_argument("--default-max-tokens", type=int, default=None, metavar="N",
@@ -543,6 +547,8 @@ def prepare(argv, *, managed=False):
         p.print_help()
         return
     a = p.parse_args(argv)
+    if managed and (a.api_key_file or a.enable_api_auth is not None):
+        p.error("inference authentication is configured on the Web UI listener, not on a loaded model")
     if a.target == 'npu':
         from .targets import NPU_UNAVAILABLE
         p.error(NPU_UNAVAILABLE)
@@ -698,7 +704,18 @@ def main() -> None:
         parser().print_help()
         return
     p, a, model, recipe = prepare(argv)
+    from .auth import auth_enabled, inference_auth_failure, startup_key
+    from .config import default_config_path, read_config
     from .errors import SnowLLMError
+    try:
+        config_path = default_config_path().expanduser().resolve()
+        config = read_config(config_path)
+    except (OSError, ValueError, RuntimeError) as exc:
+        p.error(str(exc))
+    enabled = auth_enabled(p, a.enable_api_auth, config)
+    api_key, api_key_path = startup_key(p, a.api_key_file, config_path, config, enabled=enabled)
+    if api_key_path:
+        print(f"Inference key file: {api_key_path}", flush=True)
 
     import uvicorn
     from .serve.api import app
@@ -720,6 +737,11 @@ def main() -> None:
             message += f' Help: {MEMORY_GUIDE_URL}'
         p.exit(2, f'snowllm: {message}\n')
     install(state)
+    if api_key is not None:
+        @app.middleware("http")
+        async def inference_auth(request, call_next):
+            failure = inference_auth_failure(request, api_key, ready=True)
+            return failure if failure is not None else await call_next(request)
     uvicorn.run(app, host=a.host, port=a.port, log_level="info")
 
 

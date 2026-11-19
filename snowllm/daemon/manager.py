@@ -13,6 +13,7 @@ import sys
 import uuid
 
 import httpx
+from ..auth import ADMIN_KEY_ENV, API_KEY_ENV
 from ..updates import Update
 from ..errors import is_capacity_error
 from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
@@ -200,6 +201,8 @@ class DaemonManager:
 
     def spawn(self, args, log):
         env = os.environ.copy()
+        env.pop(ADMIN_KEY_ENV, None)
+        env.pop(API_KEY_ENV, None)
         env["SNOWLLM_CONFIG"] = str(self.config_path)
         env["SNOWLLM_MODELS"] = self.models_dir
         env['SNOWLLM_MODEL_DIRS'] = json.dumps(self.models_dirs)

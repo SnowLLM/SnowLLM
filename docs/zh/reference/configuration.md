@@ -9,7 +9,7 @@
 | Linux | `~/.config/snowllm/config.json`，或 `$XDG_CONFIG_HOME/snowllm/config.json` |
 | Windows | `%APPDATA%/SnowLLM/config.json` |
 
-Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowllm/config.json`。通过 `SNOWLLM_CONFIG` 选择其他文件，守护进程也可使用 `snowllm webui --config PATH`。
+Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowllm/config.json`。守护进程依次使用 `snowllm webui --config PATH`、`SNOWLLM_CONFIG` 或系统默认路径选择配置文件。
 
 ```json
 {
@@ -20,6 +20,26 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 ```
 
 相对路径基于配置文件所在目录解析。支持 UTF-8 路径和 UTF-8 BOM。
+
+## WebUI 启动选项 {#webui-startup}
+
+同一个 JSON 文件也可以设置 WebUI 的监听地址、端口、超时和认证。显式写在命令行上的启动参数优先于 JSON。比如使用 `snowllm webui --config ./server.json --admin-port 9002` 可临时覆盖下面的管理端口。
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "admin_host": "0.0.0.0",
+  "admin_port": 9001,
+  "no_browser": true,
+  "enable_auth": true,
+  "admin_api_key_file": "secrets/admin.key"
+}
+```
+
+其他启动字段包括 `admin_url`、`load_timeout`、`enable_webui_auth`、`enable_api_auth` 和 `api_key_file`。JSON 中的单项认证开关优先于 `enable_auth`。命令行可以用 `--no-enable-webui-auth` 或 `--no-enable-api-auth` 临时关闭对应认证。`--browser` 可以覆盖 `no_browser: true`。
+
+认证开关省略时，显式提供的环境变量或 Key 文件仍会启用对应认证。启用开关后，如果选中的文件缺失或为空，SnowLLM 会生成 Key 并存入该文件。直接推理服务也读取 JSON 中的 `enable_api_auth`、`enable_auth` 和 `api_key_file`。详细取值顺序见 [WebUI 服务管理](../webui#service-management)。
 
 ## 多个模型目录 {#multiple-model-directories}
 
@@ -81,6 +101,8 @@ snowllm webui config --library-path ""
 | 变量 | 用途 |
 | --- | --- |
 | `SNOWLLM_CONFIG` | 配置文件。 |
+| `SNOWLLM_API_KEY` | 推理服务和 `snowllm bench context` 客户端使用的推理 Key。 |
+| `SNOWLLM_ADMIN_API_KEY` | WebUI 服务和管理命令使用的管理 Key。 |
 | `SNOWLLM_MODELS` | 模型根目录。 |
 | `SNOWLLM_MODEL_DIRS` | 有序 JSON 数组，例如 `'["/models/fast", "/models/archive"]'`。旧变量 `SNOWLLM_MODELS` 仍表示单个路径。 |
 | `SNOWLLM_RECIPES_URL` | 方案目录 URL 或本地 JSON 文件。 |

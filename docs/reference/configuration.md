@@ -9,7 +9,7 @@ The daemon creates its JSON configuration on first startup. The same file is rea
 | Linux | `~/.config/snowllm/config.json`, or `$XDG_CONFIG_HOME/snowllm/config.json` |
 | Windows | `%APPDATA%/SnowLLM/config.json` |
 
-Windows keeps an existing `~/.config/snowllm/config.json` until the new-location file exists. Select another file with `SNOWLLM_CONFIG`, or `snowllm webui --config PATH` for the daemon.
+Windows keeps an existing `~/.config/snowllm/config.json` until the new-location file exists. The daemon selects its configuration file in this order: `snowllm webui --config PATH`, `SNOWLLM_CONFIG`, then the system default.
 
 ```json
 {
@@ -20,6 +20,37 @@ Windows keeps an existing `~/.config/snowllm/config.json` until the new-location
 ```
 
 Relative paths resolve against the configuration directory. UTF-8 paths and a UTF-8 BOM are supported.
+
+## Web UI startup options {#webui-startup}
+
+The same JSON file can configure Web UI addresses, ports, timeout and
+authentication. Explicit startup flags take precedence. For example,
+`snowllm webui --config ./server.json --admin-port 9002` changes the management
+port for that run.
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "admin_host": "0.0.0.0",
+  "admin_port": 9001,
+  "no_browser": true,
+  "enable_auth": true,
+  "admin_api_key_file": "secrets/admin.key"
+}
+```
+
+Other startup fields include `admin_url`, `load_timeout`, `enable_webui_auth`,
+`enable_api_auth` and `api_key_file`. The individual JSON authentication
+settings take precedence over `enable_auth`. Use `--no-enable-webui-auth` or
+`--no-enable-api-auth` to disable authentication for that listener on a single
+run. The `--browser` flag overrides `no_browser: true`.
+
+With the authentication setting omitted, an explicit key file or key
+environment variable enables authentication on its listener. When enabled,
+SnowLLM initializes a missing or empty key file. Direct inference also reads
+`enable_api_auth`, `enable_auth` and `api_key_file` from JSON. See
+[Web UI service management](../webui#service-management) for key precedence.
 
 ## Multiple model directories
 
@@ -83,6 +114,8 @@ Changes apply to future loads and downloads. Files are not moved; a library chan
 | Variable | Purpose |
 | --- | --- |
 | `SNOWLLM_CONFIG` | Configuration file. |
+| `SNOWLLM_API_KEY` | Inference API key for the server and `snowllm bench context`. |
+| `SNOWLLM_ADMIN_API_KEY` | Management API key for the Web UI server and management CLI commands. |
 | `SNOWLLM_MODELS` | Model root. |
 | `SNOWLLM_MODEL_DIRS` | Ordered JSON array, for example `'["/models/fast", "/models/archive"]'`. The legacy `SNOWLLM_MODELS` value remains one path. |
 | `SNOWLLM_RECIPES_URL` | Catalogue URL or local JSON file. |

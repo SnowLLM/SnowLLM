@@ -2,6 +2,7 @@
 """Run the inference and management listeners with one shared supervisor."""
 import asyncio
 from contextlib import contextmanager
+import logging
 import signal
 import threading
 
@@ -9,12 +10,18 @@ import uvicorn
 
 from .api import create_app, create_inference_app
 from .logging import access_log_config
+from ..auth import is_loopback
 from ..updates import session as update_session
 
 
 def local_url(host, port):
     host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
     return f"http://{'[' + host + ']' if ':' in host else host}:{port}"
+
+
+def validate_listener_keys(admin_key, api_key):
+    if api_key and api_key == admin_key:
+        raise ValueError("inference and management API keys must be different")
 
 
 class Listener(uvicorn.Server):
@@ -28,13 +35,16 @@ class Listener(uvicorn.Server):
         pass
 
 
-async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
+async def serve(manager, *, host, port, admin_host, admin_port, api_key=None, admin_key=None,
+                admin_url=None, browser=None):
+    validate_listener_keys(admin_key, api_key)
     manager.inference_url = local_url(host, port)
     log_config = access_log_config()
     servers = [
-        Listener(uvicorn.Config(create_inference_app(manager), host=host, port=port,
+        Listener(uvicorn.Config(create_inference_app(manager, api_key=api_key), host=host, port=port,
                                log_level="info", log_config=log_config, timeout_graceful_shutdown=15)),
-        Listener(uvicorn.Config(create_app(manager), host=admin_host, port=admin_port,
+        Listener(uvicorn.Config(create_app(manager, admin_host=admin_host, admin_key=admin_key, admin_url=admin_url),
+                               host=admin_host, port=admin_port,
                                log_level="info", log_config=log_config, proxy_headers=False,
                                timeout_graceful_shutdown=15)),
     ]
@@ -51,6 +61,10 @@ async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
         # leave a partially started daemon or launch a browser.
         for server in servers:
             sockets.append(server.config.bind_socket())
+        if admin_key is None and (not is_loopback(admin_host.lower()) or admin_url):
+            logging.getLogger("uvicorn.error").warning(
+                "Web UI and management API exposed without auth. "
+                "Use --enable-auth (both listeners) or --enable-webui-auth (management only).")
         if threading.current_thread() is threading.main_thread():
             for sig in (signal.SIGINT, signal.SIGTERM):
                 old_handlers[sig] = signal.signal(sig, shutdown)
@@ -62,7 +76,7 @@ async def serve(manager, *, host, port, admin_host, admin_port, browser=None):
             await asyncio.sleep(.01)
         manager.start_telemetry()
         if browser:
-            threading.Thread(target=browser, args=(local_url(admin_host, admin_port),), daemon=True).start()
+            threading.Thread(target=browser, args=(admin_url or local_url(admin_host, admin_port),), daemon=True).start()
         async with update_session(manager.update):
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:

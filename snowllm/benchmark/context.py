@@ -106,8 +106,15 @@ def resolve_thinking(mode: str, capabilities: dict) -> bool | None:
     return mode == "on"
 
 
+def http_request(url, *, data=None, headers=None):
+    request = urllib.request.Request(url, data=data, headers=headers or {})
+    for name, value in _REQUEST_HEADERS.items():
+        request.add_unredirected_header(name, value)
+    return request
+
+
 def model_info(base_url: str, model: str) -> dict:
-    with urllib.request.urlopen(base_url.rstrip("/") + "/models", timeout=30) as response:
+    with urllib.request.urlopen(http_request(base_url.rstrip("/") + "/models"), timeout=30) as response:
         models = json.load(response)["data"]
     selected = next((item for item in models if item.get("id") == model), None)
     if selected is None:
@@ -129,7 +136,7 @@ def model_health(data: dict, model: str | None = None) -> dict:
 def server_runtime(base_url: str, model: str | None = None) -> dict:
     url = base_url.rstrip("/").removesuffix("/v1") + "/health"
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        with urllib.request.urlopen(http_request(url), timeout=10) as response:
             runtime = model_health(json.load(response), model).get("runtime_config") or {}
             return {k: v for k, v in runtime.items()
                     if k not in ("model_path", "dflash_path", "profile_dir")}
@@ -209,7 +216,7 @@ def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False
         "stream_options": {"include_usage": True},
         **_thinking_options(thinking),
     }).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json", **_REQUEST_HEADERS})
+    req = http_request(url, data=body, headers={"Content-Type": "application/json"})
     t0 = time.perf_counter()
     first = None
     out = 0
@@ -282,8 +289,8 @@ def edge() -> int | None:
 
 def draft_accept_len(base_url: str, model: str | None = None) -> tuple[int, int] | None:
     try:
-        with urllib.request.urlopen(base_url.rstrip("/").removesuffix("/v1") + "/health",
-                                    timeout=3) as r:
+        url = base_url.rstrip("/").removesuffix("/v1") + "/health"
+        with urllib.request.urlopen(http_request(url), timeout=3) as r:
             a = model_health(json.load(r), model)["accounting"]
         return a["decode_tokens"], a["decode_rows"]
     except Exception:
@@ -353,6 +360,7 @@ def accept_stat(result: dict, health_before: tuple[int, int] | None,
 def parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
+    ap.add_argument("--api-key-file", type=pathlib.Path, help="inference key file (or set SNOWLLM_API_KEY)")
     ap.add_argument("--model", default="DeepSeek-V4-Flash-0731")
     ap.add_argument("--isl", default="1024,32768",
                     help="comma list of exact input lengths, including the chat template")
@@ -516,11 +524,14 @@ def run(a, emit=lambda event: None):
 
 
 def main(argv=None, *, prog=None) -> None:
+    from snowllm.auth import bearer_headers, read_key
+
     ap = parser()
     if prog:
         ap.prog = prog
     a = ap.parse_args(argv)
     _REQUEST_HEADERS.clear()
+    _REQUEST_HEADERS.update(bearer_headers(read_key(ap, a.api_key_file)))
     token = os.environ.get("SNOWLLM_BENCH_LEASE")
     if token:
         _REQUEST_HEADERS["X-SnowLLM-Benchmark"] = token

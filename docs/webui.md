@@ -117,19 +117,64 @@ snowllm load --admin-port 9001 RECIPE --max-model-len 32k
 snowllm webui logs --admin-port 9001
 ```
 
-For LAN inference, use `--host 0.0.0.0`; management remains on loopback.
-`--admin-host` supports `127.0.0.1`, `localhost`, and `::1`. Terminal management
-commands default to management port 8001; their `--port` option remains an alias
-for `--admin-port`. The daemon startup command's `--port` always means inference.
+Both listeners default to loopback. For LAN access, pass the addresses to bind
+or use `0.0.0.0` for all IPv4 interfaces. If management is exposed outside
+loopback with no key, startup logs a warning and allows unauthenticated access.
+Terminal management commands default to port 8001,
+and their `--port` option is an alias for `--admin-port`. At daemon startup,
+`--port` selects the inference listener.
+
+Use `--enable-auth` to enable authentication on both listeners. Use
+`--enable-webui-auth` or `--enable-api-auth` to enable it on just one.
+
+```sh
+snowllm webui --config ./server.json --host 0.0.0.0 --admin-host 0.0.0.0 --enable-auth
+snowllm status --admin-api-key-file ./keys/admin.key
+```
+
+When authentication is enabled, SnowLLM generates a key if the selected file is
+missing or empty, and reuses the key on later starts. The defaults are
+`keys/inference.key` and `keys/admin.key` beside the configuration file.
+When you enable authentication with a flag or JSON setting, startup prints the
+path of each key file it uses. Web UI startup also prints the active keys in
+plain text by default. Use `--no-show-keys` to hide the key values.
+
+You can also supply existing key files. Add `--enable-auth` to initialize those paths if the files are missing or empty.
+
+```sh
+snowllm webui --host 0.0.0.0 --admin-host 0.0.0.0 \
+  --api-key-file ~/.config/snowllm/inference.key \
+  --admin-api-key-file ~/.config/snowllm/admin.key
+snowllm status --admin-host 192.168.1.10 --admin-api-key-file ~/.config/snowllm/admin.key
+```
+
+Use a different key in each file. SnowLLM checks an explicit CLI file argument,
+the key environment variable, the JSON file setting, and the default path in
+that order. The environment variables are `SNOWLLM_API_KEY` for inference and
+`SNOWLLM_ADMIN_API_KEY` for management. OpenAI-compatible clients send the
+inference key as a Bearer token. Anthropic-compatible Messages clients may use
+`x-api-key`. When a key is set, unauthenticated `/health` requests return only
+readiness. Direct `snowllm PATH|RECIPE` serving also supports
+`--enable-api-auth`. The `snowllm bench context` client accepts a key through
+the environment variable or a file.
+
+Open `http://SERVER_IP:8001`. If you configured a management key, enter username
+`snowllm` and use the key as the password. Management commands, including
+`snowllm bench run` and `snowllm bench list`, accept `--admin-api-key-file` or
+`SNOWLLM_ADMIN_API_KEY`. The Web UI uses the management login for chat.
+
+For HTTPS, put SnowLLM behind a TLS-terminating reverse proxy. Keep the back-end
+management listener on loopback, pass `--admin-url https://snowllm.example.com`
+to SnowLLM, and have the proxy preserve the public `Host` and `Authorization`
+headers. CLI clients can use the same `--admin-url` to connect over HTTPS.
 
 Starting a second daemon on the same management port reports the existing instance.
 Both ports must be available before either listener starts serving. Ctrl+C
 stops the service and its owned inference/download process trees; partial downloads
 can be resumed with another pull. The browser opens after both listeners are
 ready, or when connecting to an existing daemon, unless `--no-browser` is given.
-If opening the browser fails, the service continues and prints the URL. Management
-binds only to loopback and rejects cross-origin requests. Direct `snowllm PATH|RECIPE`
-serving remains available.
+If opening the browser fails, the service continues and prints the URL. The
+management listener rejects cross-origin requests.
 
 ## Benchmark {#benchmark}
 

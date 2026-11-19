@@ -3,16 +3,118 @@
 from pathlib import Path
 import contextlib
 import io
+import json
+import os
 import shlex
 import subprocess
 import sys
 import unittest
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 
 class CLITests(unittest.TestCase):
+    def test_webui_generates_missing_keys_and_reuses_them_on_request(self):
+        import httpx
+        from snowllm.daemon import cli
+        env = {name: value for name, value in os.environ.items()
+               if name not in ("SNOWLLM_API_KEY", "SNOWLLM_ADMIN_API_KEY")}
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ", env, clear=True), \
+             patch.object(cli.httpx, "Client") as client, \
+             patch("snowllm.daemon.manager.DaemonManager"), \
+             patch("snowllm.daemon.server.serve", new_callable=AsyncMock) as serve, \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            client.return_value.__enter__.return_value.get.return_value = httpx.Response(503)
+            args = ["webui", "--no-browser", "--config", str(Path(folder) / "config.json")]
+            self.assertEqual(cli.main([*args, "--enable-auth"]), 0)
+            inf = Path(folder) / "keys" / "inference.key"
+            admin = Path(folder) / "keys" / "admin.key"
+            inference_key, management_key = (path.read_text().strip() for path in (inf, admin))
+            self.assertIn(f"Inference API key: {inference_key}\n", output.getvalue())
+            self.assertIn(f"WebUI Basic Auth username: snowllm\nManagement API key: {management_key}\n",
+                          output.getvalue())
+            self.assertIn("Use --no-show-keys to hide API keys.\n", output.getvalue())
+            self.assertNotEqual(inference_key, management_key)
+            if os.name == "posix":
+                self.assertEqual(inf.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(admin.stat().st_mode & 0o777, 0o600)
+            with patch.dict("os.environ", {"SNOWLLM_API_KEY": "custom-inference"}):
+                self.assertEqual(cli.main([*args, "--enable-auth", "--show-keys"]), 0)
+            self.assertIn("Inference API key: custom-inference\n", output.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as hidden:
+                self.assertEqual(cli.main([*args, "--enable-auth", "--no-show-keys"]), 0)
+            self.assertIn(f"Inference key file: {inf}\n", hidden.getvalue())
+            self.assertIn(f"Management key file: {admin}\n", hidden.getvalue())
+            self.assertIn("WebUI Basic Auth username: snowllm\n", hidden.getvalue())
+            self.assertNotIn(inference_key, hidden.getvalue())
+            self.assertNotIn(management_key, hidden.getvalue())
+            self.assertNotIn("--no-show-keys", hidden.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()) as unauthenticated:
+                self.assertEqual(cli.main(args), 0)
+            self.assertNotIn("WebUI Basic Auth username:", unauthenticated.getvalue())
+            self.assertNotIn("--no-show-keys", unauthenticated.getvalue())
+            calls = [call.kwargs for call in serve.await_args_list]
+            self.assertEqual([call["api_key"] for call in calls], [inference_key, "custom-inference", inference_key, None])
+            self.assertEqual([call["admin_key"] for call in calls], [management_key] * 3 + [None])
+
+    def test_webui_config_supplies_startup_options_and_key_paths(self):
+        import httpx
+        from snowllm.daemon import cli
+        env = {key: value for key, value in os.environ.items() if key != "SNOWLLM_ADMIN_API_KEY"}
+        env["SNOWLLM_API_KEY"] = "inference-from-environment"
+        with tempfile.TemporaryDirectory() as tmp, patch.dict("os.environ", env, clear=True), \
+             patch.object(cli.httpx, "Client") as client, patch("snowllm.daemon.manager.DaemonManager") as manager, \
+             patch("snowllm.daemon.server.serve", new_callable=AsyncMock) as serve, \
+             contextlib.redirect_stdout(io.StringIO()):
+            client.return_value.__enter__.return_value.get.return_value = httpx.Response(503)
+            folder = Path(tmp)
+            config = folder / "site.json"
+            config.write_text(json.dumps({
+                "host": "0.0.0.0", "port": 9000, "admin_host": "::", "admin_port": 9001,
+                "admin_url": "https://models.example:443", "load_timeout": 42, "no_browser": True,
+                "enable_auth": True, "enable_api_auth": False,
+                "api_key_file": "auth/inference.key", "admin_api_key_file": "auth/admin.key",
+            }))
+            admin_file = folder / "auth" / "admin.key"
+            admin_file.parent.mkdir()
+            admin_file.write_text(" \n")
+            args = ["webui", "--config", str(config)]
+            self.assertEqual(cli.main([*args, "--admin-port", "9002"]), 0)
+            management_key = admin_file.read_text().strip()
+            self.assertTrue(management_key)
+            self.assertEqual(manager.call_args.args, (config.resolve(), 42, None))
+            self.assertEqual(serve.await_args.kwargs, {
+                "host": "0.0.0.0", "port": 9000, "admin_host": "::", "admin_port": 9002,
+                "admin_url": "https://models.example", "api_key": None, "admin_key": management_key,
+                "browser": None,
+            })
+            configured_api_file = folder / "auth" / "inference.key"
+            self.assertEqual(cli.main([*args, "--enable-api-auth", "--no-enable-webui-auth", "--browser"]), 0)
+            latest = serve.await_args.kwargs
+            self.assertEqual(latest["api_key"], env["SNOWLLM_API_KEY"])
+            self.assertIsNone(latest["admin_key"])
+            self.assertIs(latest["browser"], cli.open_browser)
+            self.assertFalse(configured_api_file.exists())
+            with patch.dict("os.environ"):
+                del os.environ["SNOWLLM_API_KEY"]
+                self.assertEqual(cli.main([*args, "--enable-api-auth"]), 0)
+            self.assertEqual(serve.await_args.kwargs["api_key"], configured_api_file.read_text().strip())
+            override = folder / "explicit.key"
+            self.assertEqual(cli.main([*args, "--enable-auth", "--api-key-file", str(override)]), 0)
+            self.assertEqual(serve.await_args.kwargs["api_key"], override.read_text().strip())
+            self.assertEqual(serve.await_args.kwargs["admin_key"], management_key)
+
+    def test_webui_rejects_identical_request_and_management_keys(self):
+        from snowllm.daemon import cli
+        env = {"SNOWLLM_API_KEY": "shared", "SNOWLLM_ADMIN_API_KEY": "shared"}
+        with patch.dict("os.environ", env), patch.object(cli.httpx, "Client") as client, \
+             contextlib.redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit) as error:
+            cli.main(["webui", "--admin-host", "0.0.0.0", "--no-browser"])
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("must be different", stderr.getvalue())
+        client.assert_not_called()
+
     def test_model_management_cli_routes_selection_force_and_service_address(self):
         from snowllm.daemon import cli
         import httpx

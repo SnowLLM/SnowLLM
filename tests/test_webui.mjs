@@ -15,6 +15,8 @@ test('copied load command preserves the recipe, target, ID, service address and 
     'snowllm load --admin-host 127.0.0.1 --admin-port 9001 --id=main gpu:b/example -- --max-model-len 32k');
   assert.equal(modelLoadCommand({model: '/models/example', target: 'npu', id: null, options: []}, 'http://[::1]:8001/'),
     'snowllm load --admin-host ::1 --admin-port 8001 npu:/models/example');
+  assert.equal(modelLoadCommand({model: 'b/example', target: 'gpu', options: []}, 'https://models.example/#workspace'),
+    'snowllm load --admin-url https://models.example gpu:b/example');
 });
 
 test('copied load commands preserve shell metacharacters as literal arguments', () => {

@@ -18,6 +18,12 @@
 - **OpenAI**（Chat Completions / Responses）：`http://127.0.0.1:8000/v1`
 - **Anthropic**（Messages）：`http://127.0.0.1:8000`
 
+## 认证 {#authentication}
+
+启用推理认证后，推理请求需携带 `Authorization: Bearer <推理 Key>`。Anthropic Messages 和对应的 token 计数接口也接受 `x-api-key` 中的推理 Key。未认证的 `GET /health` 只返回就绪状态。启用管理认证后，发往管理端口的请求使用 `Authorization: Bearer <管理 Key>`。
+
+启动选项、Key 文件和 HTTPS 配置见 [WebUI 服务管理](../webui#service-management)。
+
 ## 第一个请求 {#first-request}
 
 先加载模型，再将 `model` 替换为 `GET /v1/models` 返回的模型 ID。
