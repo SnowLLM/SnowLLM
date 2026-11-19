@@ -1,6 +1,17 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23.dev4 — 2026-11-19
+
+- Add independent API keys for inference and WebUI management, JSON startup settings and HTTPS reverse proxy support. WebUI startup shows the Basic Auth username.
+  推理和 WebUI 管理可分别配置 API 密钥，支持 JSON 启动配置和 HTTPS 反向代理。WebUI 启动时会提示 Basic Auth 用户名。
+- Update the WebUI model loading workspace, chat history and retry controls, Markdown rendering, task views and benchmark comparisons. Keep daemon logs scoped to the current session.
+  更新 WebUI 的模型加载界面、聊天记录和重试、Markdown 渲染、任务视图及 benchmark 对比。守护进程日志只显示本次会话的记录。
+- Group and rank recipes in the WebUI and website, and set both LFM2.5 DSpark recipes to a 128,000-token context by default.
+  在 WebUI 和网站对模型配方分组和排序，两套 LFM2.5 DSpark 配方默认使用 128,000 token 上下文。
+- Show thinking effort levels supported by each model's chat template.
+  根据各模型的聊天模板显示支持的思考强度。
+
 ## 0.3.23.dev3 — 2026-11-18
 
 - Improve attention performance in paged decode, QSA prefill and vision encoding with SnowLLM-Kernels 0.3.17.dev3.
