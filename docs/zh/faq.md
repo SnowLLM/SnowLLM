@@ -4,14 +4,14 @@
 
 SnowLLM 只验证过方案目录列出的模型与量化配置。自定义微调模型需保留受支持模型的架构与大小，并使用兼容权重格式。不支持的架构需要修改代码。
 
-例如，[Occamy-1.0](https://huggingface.co/Accio-Lab/occamy-1.0) 基于 Qwen3.6-35B-A3B，针对办公协作、多步工具使用和编程任务微调。作者提供的 Q4_K_M GGUF 已验证可在 SnowLLM 中生成文本。下载后直接用目录启动：
+例如，[Occamy-1.0](https://huggingface.co/Accio-Lab/occamy-1.0) 基于 Qwen3.6-35B-A3B，针对办公协作、多步工具使用和编程任务微调。SnowLLM 可以直接加载作者提供的 Q4_K_M GGUF，且已验证能正常生成文本。可用以下命令下载并启动：
 
 ```sh
 hf download Accio-Lab/occamy-1.0-GGUF occamy-1.0-Q4_K_M.gguf --local-dir ~/models/Occamy-1.0-Q4_K_M
 snowllm ~/models/Occamy-1.0-Q4_K_M --num-spec 0
 ```
 
-同名量化格式仍可能存在细节差异。例如 Occamy 的 FP8 版本使用 FP32 缩放张量，而当前加载器要求 BF16 缩放张量，因此不能直接加载这个 FP8 版本。
+Occamy 的 FP8 版本使用 FP32 缩放张量。SnowLLM 的 FP8 加载器目前要求 BF16 缩放张量，因此无法直接加载该版本。
 
 ## 2. 我的机器能运行多大模型？如何分配 GPU 内存？ {#_2-how-large-a-model-can-my-machine-run-how-should-i-allocate-gpu-memory}
 

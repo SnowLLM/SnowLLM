@@ -4,14 +4,14 @@
 
 SnowLLM has only been validated with the models and quantization configurations listed in its recipes. A custom fine-tuned model must retain the architecture and size of a supported model and use a compatible weight format. Unsupported architectures require code changes.
 
-For example, [Occamy-1.0](https://huggingface.co/Accio-Lab/occamy-1.0) is based on Qwen3.6-35B-A3B and fine-tuned for office collaboration, multi-step tool use, and coding tasks. Text generation with the author's Q4_K_M GGUF has been verified in SnowLLM. Download it and start SnowLLM with its directory:
+For example, [Occamy-1.0](https://huggingface.co/Accio-Lab/occamy-1.0) is based on Qwen3.6-35B-A3B and fine-tuned for office collaboration, multi-step tool use, and coding tasks. SnowLLM can load the author's Q4_K_M GGUF directly, and text generation has been verified with this file. To download and run it:
 
 ```sh
 hf download Accio-Lab/occamy-1.0-GGUF occamy-1.0-Q4_K_M.gguf --local-dir ~/models/Occamy-1.0-Q4_K_M
 snowllm ~/models/Occamy-1.0-Q4_K_M --num-spec 0
 ```
 
-Quantization formats with the same name can still differ in their details. For example, Occamy's FP8 version uses FP32 scale tensors, while the current loader requires BF16 scales, so this FP8 version cannot be loaded directly.
+Occamy's FP8 version uses FP32 scale tensors. SnowLLM's FP8 loader currently requires BF16 scale tensors, so it cannot load this version directly.
 
 ## 2. How large a model can my machine run? How should I allocate GPU memory?
 
