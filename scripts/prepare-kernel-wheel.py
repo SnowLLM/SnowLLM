@@ -36,7 +36,8 @@ def prepare(public_wheel, kernel_dist, stage, root):
                          f'{kernel_dist}, found {len(candidates)}; '
                          'set SNOWLLM_KERNELS_DIST to the verified release directory')
     tree = ast.parse((root / 'snowllm/_capi.py').read_text())
-    abi, = [ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign)
+    abi, = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant) and type(node.value.value) is int
             and any(isinstance(target, ast.Name) and target.id == 'ABI_VERSION'
                     for target in node.targets)]
     checker = root.parent / 'SnowLLM-Kernels/scripts/check-wheel.py'

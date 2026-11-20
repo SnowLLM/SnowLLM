@@ -27,7 +27,7 @@ class KernelWheelSelectionTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.root = self.base / 'SnowLLM'
         (self.root / 'snowllm').mkdir(parents=True)
-        (self.root / 'snowllm/_capi.py').write_text('ABI_VERSION = 7\n')
+        (self.root / 'snowllm/_capi.py').write_text('ABI_VERSION = 7\nABI_VERSION = _check_abi()\n')
         checker = self.base / 'SnowLLM-Kernels/scripts/check-wheel.py'
         checker.parent.mkdir(parents=True)
         checker.write_text('')
