@@ -292,6 +292,9 @@ class DaemonManager:
                                            all_models=payload['all_models'])
                     if self.error:
                         raise RuntimeError(self.error)
+                    if kind == 'load' and self.shared_worker and len(self.models) == 1:
+                        ready, = self.models
+                        job['loaded'] = {model: {'id': ready['id'], 'instance': ready['instance']}}
                     return
                 if kind == 'load':
                     self.last_load = ({'models': payload['models']} if 'models' in payload else
@@ -302,7 +305,9 @@ class DaemonManager:
                     return
                 self.operation = dict(kind=kind, model=model, target=target or 'gpu', stage='queued')
                 try:
-                    await self._model_operation(kind, payload)
+                    loaded = await self._model_operation(kind, payload)
+                    if kind == 'load':
+                        job['loaded'] = loaded or {}
                 finally:
                     if job['cancel_requested']:
                         self.error = None
@@ -587,7 +592,8 @@ class DaemonManager:
                 raise
             if not response.is_success:
                 raise ValueError(response.json().get('detail', 'model operation failed'))
-            self.accept_snapshot(response.json())
+            result = response.json()
+            self.accept_snapshot(result)
             if not any(row.get('runtime_config') for row in self.models):
                 await self.stop_process(self.process)
                 self.process = self.backend = None
@@ -597,6 +603,7 @@ class DaemonManager:
                 self.state = 'idle'
             if self.error:
                 raise RuntimeError(self.error)
+            return result.get('loaded')
         except asyncio.CancelledError:
             raise
         except Exception as exc:

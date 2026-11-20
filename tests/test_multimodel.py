@@ -212,6 +212,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()['models'][0]['target'], 'npu')
             self.assertEqual(response.json()['default_model'], 'n')
+            self.assertEqual(response.json()['loaded']['n'],
+                             {'id': 'n', 'instance': self.registry.records['n'].instance})
             response = await client.post('/worker/load', json={
                 'model': 'b', 'target': 'npu', 'options': ['--target', 'gpu']})
             self.assertEqual(response.status_code, 409)
@@ -294,6 +296,15 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         await self.registry.unload('a')
         self.assertEqual(self.disposed, ['a'])
         self.assertEqual(self.registry.default, 'b')
+
+    async def test_batch_returns_the_registered_instance_for_each_source(self):
+        self.install_npu(lambda source, options, model_id, *, scheduler: state(model_id or 'served', scheduler))
+        result = await self.registry.load_many([dict(model='b/recipe', target='npu'),
+                                               dict(model='other', id='explicit')])
+        self.assertEqual(result['loaded'], {
+            'b/recipe': {'id': 'served', 'instance': self.registry.records['served'].instance},
+            'explicit': {'id': 'explicit', 'instance': self.registry.records['explicit'].instance},
+        })
 
     async def test_removing_default_does_not_retarget_model_less_requests(self):
         await self.registry.load('a', [])

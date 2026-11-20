@@ -26,6 +26,7 @@ class SelectModel(BaseModel):
 
 
 class BenchmarkReservation(SelectModel):
+    instance: str | None = None
     model_id: str = Field(min_length=1, max_length=256)
 
 
@@ -52,7 +53,7 @@ def configure(app, registry):
     @app.post('/worker/benchmark/reserve')
     async def reserve_benchmark(body: BenchmarkReservation):
         try:
-            return lease.reserve(body.id, body.model_id)
+            return lease.reserve(body.id, body.model_id, body.instance)
         except (ValueError, RuntimeError, LookupError) as exc:
             raise HTTPException(409, str(exc)) from exc
 

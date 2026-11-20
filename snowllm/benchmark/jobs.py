@@ -102,10 +102,10 @@ class BenchmarkJobs:
         if not self.manager.shared_worker or not self.manager.backend:
             raise ValueError('load a model in the Web UI service before benchmarking')
         row = next((row for row in self.manager.models if row['id'] == config.model_id), None)
+        if expected_instance and (not row or row.get('instance') != expected_instance):
+            raise ValueError('the queued benchmark refers to a model instance that is no longer loaded')
         if not row or row['state'] != 'ready':
             raise ValueError('the selected model is not ready')
-        if expected_instance and row.get('instance') != expected_instance:
-            raise ValueError('the queued benchmark refers to a model instance that is no longer loaded')
         runtime = row.get('runtime_config') or {}
         if max(config.isl) + config.osl > runtime.get('max_model_len', 0):
             raise ValueError(f'input + output needs {max(config.isl) + config.osl} tokens; '
@@ -148,10 +148,21 @@ class BenchmarkJobs:
                 self.current = record
                 self.cancel_requested = False
                 try:
-                    if dependency and dependency['state'] != 'completed':
-                        raise ValueError('the required model load task did not complete successfully')
+                    instance = expected_instance
+                    if dependency:
+                        if dependency['state'] != 'completed':
+                            message = f'the required model load {dependency["state"]}'
+                            if dependency.get('error'):
+                                message += f': {dependency["error"]}'
+                            raise ValueError(message)
+                        loaded = dependency.get('loaded', {}).get(config.model_id)
+                        if not loaded or not loaded.get('instance'):
+                            raise ValueError('the required model load did not report the requested instance')
+                        config.model_id, instance = loaded['id'], loaded['instance']
+                        record['config'] = config.model_dump()
+                        self.manager.jobs.update(run_id, model=config.model_id)
                     await self.manager.refresh()
-                    record['model'] = self.validate(config, expected_instance)
+                    record['model'] = self.validate(config, instance)
                     if self.manager.download and self.manager.download.poll() is None:
                         raise ValueError('stop the model download before benchmarking')
                     record['state'] = 'waiting'
@@ -187,7 +198,8 @@ class BenchmarkJobs:
         path = self.path(self.current['id'])
         reserved = False
         try:
-            await self.worker(backend, 'reserve', model_id=config.model_id)
+            await self.worker(backend, 'reserve', model_id=config.model_id,
+                              instance=self.current['model'].get('instance'))
             reserved = True
             while True:
                 if self.cancel_requested:

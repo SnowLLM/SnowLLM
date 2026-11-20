@@ -279,7 +279,9 @@ class ModelRegistry:
                     cancelled = True
             if cancelled:
                 raise asyncio.CancelledError
-        return self.snapshot()
+        return {**self.snapshot(), 'loaded': {
+            item['id'] or item['model']: {'id': record.id, 'instance': record.instance}
+            for item, record in zip(entries, created)}}
 
     async def _load_one(self, item, sources):
         source, options, model_id, target = (item[key] for key in ('model', 'options', 'id', 'target'))

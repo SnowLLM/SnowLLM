@@ -123,6 +123,10 @@ class LeaseTests(unittest.IsolatedAsyncioTestCase):
             return {'ok': True}
 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://worker') as client:
+            stale = await client.post('/worker/benchmark/reserve',
+                                      json={'id': 'run', 'model_id': 'main', 'instance': 'previous'})
+            self.assertEqual(stale.status_code, 409)
+            self.assertIsNone(app.state.benchmark.owner)
             response = await client.post('/worker/benchmark/reserve', json={'id':'run', 'model_id':'main'})
             self.assertEqual(response.status_code, 200)
             self.assertEqual((await client.get('/worker/status')).status_code, 200)
@@ -180,6 +184,8 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     def spawn_client(self, command, **kwargs):
+        if command[:3] != [sys.executable, '-m', 'snowllm.benchmark.context']:
+            return self.real_popen(command, **kwargs)
         output = Path(command[command.index('--out')+1])
         events = Path(command[command.index('--events')+1])
         self.assertNotIn('withgpu', command)
@@ -192,7 +198,7 @@ time.sleep({self.delay})
 '''
         return self.real_popen([sys.executable, '-c', code], **kwargs)
 
-    async def start(self, delay=0):
+    async def start(self, delay=0, model_id='main'):
         self.delay = delay
         self.real_popen = subprocess.Popen
         self.spawner = patch('snowllm.benchmark.jobs.subprocess.Popen', side_effect=self.spawn_client)
@@ -201,7 +207,7 @@ time.sleep({self.delay})
         self.addCleanup(identity.stop)
         self.spawner.start()
         self.addCleanup(self.spawner.stop)
-        return await self.api.post('/daemon/benchmarks', json=dict(model_id='main', isl=[1024]))
+        return await self.api.post('/daemon/benchmarks', json=dict(model_id=model_id, isl=[1024]))
 
     async def test_task_runs_survives_new_client_and_exports_standard_rows(self):
         response = await self.start()
@@ -252,6 +258,50 @@ time.sleep({self.delay})
             await asyncio.wait_for(self.manager.jobs.runner, 10)
         self.assertEqual(self.manager.jobs.records[loading['task_id']]['state'], 'completed')
         self.assertEqual(self.manager.benchmarks.detail(response.json()['id'])['state'], 'completed')
+
+    async def queued_load(self, model_id, instance='fixed', error=None):
+        source = 'b/recipe'
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def operation(kind, payload):
+            entered.set()
+            await release.wait()
+            if error:
+                raise error
+            return {model_id or source: {'id': 'main', 'instance': instance}}
+
+        with patch.object(self.manager, '_model_operation', side_effect=operation):
+            load = await self.manager.add_model(source, [], model_id)
+            await entered.wait()
+            response = await self.start(model_id=model_id or source)
+            run_id = response.json()['id']
+            self.assertEqual(self.manager.jobs.records[run_id]['depends_on'], [load['task_id']])
+            release.set()
+            await asyncio.wait_for(self.manager.jobs.runner, 10)
+        return self.manager.benchmarks.detail(run_id)
+
+    async def test_queued_recipe_resolves_default_served_id(self):
+        run = await self.queued_load(None)
+        self.assertEqual((run['state'], run['config']['model_id']), ('completed', 'main'), run.get('error'))
+
+    async def test_queued_explicit_id(self):
+        run = await self.queued_load('main')
+        self.assertEqual(run['state'], 'completed', run.get('error'))
+
+    async def test_queued_instance_replaced(self):
+        run = await self.queued_load(None, instance='removed')
+        self.assertEqual(run['state'], 'failed')
+        self.assertIn('no longer loaded', run['error'])
+
+    async def test_queued_load_failure_includes_worker_reason(self):
+        run = await self.queued_load(None, error=ValueError('checkpoint missing'))
+        self.assertEqual(run['state'], 'failed')
+        self.assertIn('checkpoint missing', run['error'])
+
+    async def test_queued_load_cancelled(self):
+        run = await self.queued_load(None, error=asyncio.CancelledError())
+        self.assertEqual(run['state'], 'failed')
+        self.assertIn('load cancelled', run['error'])
 
     async def test_unload_submitted_during_benchmark_runs_after_cleanup(self):
         benchmark = await self.start(delay=.05)
