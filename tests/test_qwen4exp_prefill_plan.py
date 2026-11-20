@@ -1,10 +1,13 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
 
 from snowllm import _capi, ops
+from snowllm.engine import Engine, Request, SamplingParams
 from snowllm.engine.inputs import synthetic_batch
+from snowllm.engine.prefix_cache import LinearResidue, PrefixCache, PrefixStore
 from snowllm.engine.qwen4exp_runner import Qwen4ExpRunner
 from snowllm.engine.qwen_runner import QwenRunner
 
@@ -59,6 +62,56 @@ class Qwen4ExpPrefillPlanTest(unittest.TestCase):
         with patch.object(QwenRunner, '_probe_batch', return_value=sentinel) as base:
             self.assertIs(self.runner._probe_batch(12, False), sentinel)
         base.assert_called_once_with(12, False)
+
+    def test_prefetch_tracks_loaded_ple_layers(self):
+        self.runner.ple_mods = []
+        self.assertFalse(self.runner.prefetch_ple)
+        self.runner.ple_mods.append(object())
+        self.assertTrue(self.runner.prefetch_ple)
+
+
+class PleChunkOrderTest(unittest.TestCase):
+    def setUp(self):
+        self.engine = Engine.__new__(Engine)
+        self.engine.prefill_chunk = 8192
+        self.engine.runner = SimpleNamespace(prefetch_ple=True)
+        residue = LinearResidue([(0, SimpleNamespace(state=(), ckpt=()))])
+        self.engine.cache = PrefixCache(PrefixStore(SimpleNamespace(align=16), residue, 8))
+
+    def chunks(self, length, cached=0, system_end=0):
+        r = Request([0] * length, SamplingParams(), num_prefilled=cached, cached_tokens=cached)
+        chunks = []
+        predicted = None
+        while r.num_prefilled < length:
+            hi, next_hi = self.engine._prefill_ends(r, system_end)
+            self.assertGreater(hi, r.num_prefilled)
+            if predicted is not None:
+                self.assertEqual(hi, predicted)
+            chunks.append(hi - r.num_prefilled)
+            predicted = next_hi if next_hi > hi else None
+            r.num_prefilled = hi
+        return chunks
+
+    def test_only_move_a_remainder_that_preserves_two_chunks(self):
+        for length, expected in [(8000, [8000]), (8196, [8192, 4]), (8224, [8192, 32]),
+                                 (8256, [8192, 64]), (8320, [128, 8192]),
+                                 (8704, [512, 8192]), (8736, [8192, 544]),
+                                 (16384, [8192, 8192]), (16448, [8192, 8192, 64])]:
+            with self.subTest(length=length):
+                self.assertEqual(self.chunks(length), expected)
+
+    def test_respects_cached_prefix_and_system_checkpoint(self):
+        self.assertEqual(self.chunks(9216, cached=512), [512, 8192])
+        self.assertEqual(self.chunks(8704, system_end=1024), [1024, 7680])
+        self.assertEqual(self.chunks(9000, system_end=1024), [1024, 7968, 8])
+        self.assertEqual(self.chunks(8464, cached=32), [480, 7952])
+
+    def test_without_prefix_cache_or_prefetch(self):
+        self.engine.cache = None
+        self.assertEqual(self.chunks(8224), [8192, 32])
+        self.assertEqual(self.chunks(8736), [544, 8192])
+        self.engine.runner.prefetch_ple = False
+        self.assertEqual(self.chunks(8704), [8192, 512])
 
 
 if __name__ == '__main__':

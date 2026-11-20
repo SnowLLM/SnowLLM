@@ -49,6 +49,7 @@ class BaseRunner:
     host_messages = True
     text_only = False
     defer_model_end = False
+    prefetch_ple = False
     inputs = None
 
     max_num_seqs: int

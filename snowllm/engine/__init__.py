@@ -27,6 +27,8 @@ from .qwen_runner import QwenRunner
 from .sampler import Sampler
 from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, SpecDecoder
 
+MIN_PLE_FIRST_CHUNK = 128
+
 if TYPE_CHECKING:
     from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
@@ -862,17 +864,35 @@ class Engine:
         end = max(0, r.system_prefix_len - store.lookahead)
         return end // store.pages.align * store.pages.align
 
+    def _prefill_ends(self, r: Request, system_end: int) -> tuple[int, int]:
+        def chunk_end(lo: int, hi: int) -> int:
+            if lo < system_end < hi:
+                hi = system_end
+            if self.cache is not None and r.embeds is None:
+                hi = self.cache.store.prefill_end(lo, hi)
+                aligned = hi // self.cache.pages.align * self.cache.pages.align
+                if aligned > lo:
+                    hi = aligned
+            return hi
+
+        lo = r.num_prefilled
+        end = r.prefill_len
+        size = self.prefill_chunk
+        hi = chunk_end(lo, min(lo + size, end))
+        if hi == end or not self.runner.prefetch_ple:
+            return hi, hi
+
+        # Front-load the remainder only if both chunks survive checkpoint alignment intact.
+        split = end - size
+        if lo == r.cached_tokens and MIN_PLE_FIRST_CHUNK <= split - lo < size:
+            if chunk_end(lo, split) == split and chunk_end(split, end) == end:
+                return split, end
+        return hi, chunk_end(hi, min(hi + size, end))
+
     def _prefill_chunk(self, r: Request) -> None:
         lo = r.num_prefilled
-        hi = min(lo + self.prefill_chunk, r.prefill_len)
         system_end = self._system_cache_end(r)
-        if lo < system_end < hi:
-            hi = system_end
-        if self.cache is not None and r.embeds is None:
-            hi = self.cache.store.prefill_end(lo, hi)
-            aligned = hi // self.cache.pages.align * self.cache.pages.align
-            if aligned > lo:
-                hi = aligned
+        hi, next_hi = self._prefill_ends(r, system_end)
         marks, idx = [], []
         latest_end = 0
         backed = self.dflash is None or self._reserve_draft(r, hi - lo)
@@ -899,6 +919,9 @@ class Engine:
             pairs.sort()
             marks, idx = [p[0] for p in pairs], [p[1] for p in pairs]
         b = self._prefill([(r, lo, hi)])
+        if next_hi > hi:
+            src = r.prefill_src
+            b.ple_lookahead = (src[hi:next_hi], src[max(0, hi - self.runner.prev_context):hi])
         if marks:
             self.cache.store.residue.arm(b, marks, idx, lo)
         M = b.input_ids.numel()

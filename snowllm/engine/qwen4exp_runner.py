@@ -70,6 +70,10 @@ class Qwen4ExpRunner(QwenRunner):
     trunk_streams: torch.Tensor | None = None
     mtp_streams: torch.Tensor | None = None
 
+    @property
+    def prefetch_ple(self) -> bool:
+        return bool(self.ple_mods)
+
     def _alloc_hidden(self, rows: int) -> None:
         self.x = torch.empty(0, self.geo.hidden, dtype=torch.bfloat16, device="cuda")
         _,prefill_bytes,gather_bytes = self._ple_layout(rows,True)
@@ -186,16 +190,6 @@ class Qwen4ExpRunner(QwenRunner):
         if not b.is_prefill:
             return self.ple_going[:n]
         return b.has_state if b.has_state is not None else self.ple_fresh[:n]
-
-    def prefill_batch(self, spans, slots):
-        b = super().prefill_batch(spans, slots)
-        if self.ple_mods and len(spans) == 1:
-            request, _, end = spans[0]
-            if end < request.prefill_len:
-                src = request.prefill_src
-                b.ple_lookahead = (src[end:end + self.max_prefill_tokens],
-                                   src[max(0, end - self.prev_context):end])
-        return b
 
     def forward(self, batch):
         stream = self.ple_table.file_stream if self.ple_table is not None else None
