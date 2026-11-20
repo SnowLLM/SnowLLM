@@ -506,7 +506,17 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
         mod.validate_config(cfg)
         want = layers if layers is not None else range(cfg["num_hidden_layers"])
         unspecified = object()
-        def build(dmap: "DeviceMap | None" = None, *, cache_experts=moe_cache_experts,
+        from .gguf.sequential import WeightReads
+        from .. import ops
+        reads = WeightReads()
+
+        def build(dmap=None, **options):
+            if enabled() or disk_offload or moe_cache_experts or (dmap and dmap.host_bytes):
+                return materialize(dmap, **options)
+            with reads.loading(ops.drying() is not None):
+                return materialize(dmap, **options)
+
+        def materialize(dmap: "DeviceMap | None" = None, *, cache_experts=moe_cache_experts,
                   cache_mode=moe_cache_mode, offload=unspecified) -> "TargetModel":
             offload = disk_offload if offload is unspecified else offload
             reads_raw = getattr(mod, "load_gguf_weights", None)
@@ -548,7 +558,6 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
             total, sizes, by = placement.measure_weights(
                 (lambda dm: build(dm, cache_experts=1, cache_mode='all', offload=None))
                 if moe_cache_experts or disk_offload else build)
-        from .. import ops
         moe_plan = None
         if moe_cache_experts or disk_offload:
             with ops.dry_load():

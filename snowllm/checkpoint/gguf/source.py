@@ -11,6 +11,7 @@ from ..._capi import SnowLLMError, check, lib
 from ..._platform import release_device_cache
 from ..reader import FileReader, note_bytes
 from . import GGUF, part_number
+from .sequential import _ACTIVE
 from .files import SIDECARS, models_in, gguf_dir, find_gguf
 from . import qwen4exp as qwen4exp_names
 from .dequant import dequantize, fp8_32x32, supported, supported_names
@@ -92,6 +93,10 @@ class GGUFReader(FileReader):
     def raw(self, name: str, out: torch.Tensor | None = None) -> torch.Tensor:
         t = self.gguf[name]
         dry = ops.drying()
+        reads = _ACTIVE.get()
+        key = self.path, name
+        if dry is not None and reads is not None and reads.recording:
+            reads.requests.append((key, tuple(self.gguf.ranges(name))))
         if dry is not None and out is None:
             return dry.meta((t.nbytes,), torch.uint8)
         if out is None:
@@ -102,6 +107,9 @@ class GGUFReader(FileReader):
         else:
             buf = out
         if dry is not None:
+            return buf
+        if reads is not None and reads.copy(key, buf):
+            note_bytes(t.nbytes)
             return buf
         dest = 0
         for path, offset, size in self.gguf.ranges(name):
