@@ -291,7 +291,8 @@ class ManagerQueueTests(unittest.IsolatedAsyncioTestCase):
                 execute.assert_not_awaited()
         self.assertEqual(self.manager.benchmarks.detail(benchmark['id'])['state'], 'failed')
         self.assertEqual(self.manager.jobs.records[benchmark['id']]['state'], 'failed')
-        self.assertIn('required model load task', self.manager.benchmarks.detail(benchmark['id'])['error'])
+        self.assertEqual(self.manager.benchmarks.detail(benchmark['id'])['error'],
+                         'the required model load failed: weights are missing')
 
     async def test_cancel_queued_benchmark_updates_saved_record_and_is_local_only(self):
         entered, release = asyncio.Event(), asyncio.Event()
