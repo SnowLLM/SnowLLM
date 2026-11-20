@@ -15,6 +15,7 @@ SnowLLM is fast with:
 
 ## Recent News
 
+- **2026-11-20** — **SnowLLM 0.3.23 stable**: faster prefill for Qwen3.8-Flash-Next and Qwen3.5 MoE, plus WebUI benchmarking and improvements to chat and the dashboard. [Release notes](https://github.com/SnowLLM/SnowLLM/releases/tag/v0.3.23).
 - **2026-11-10** — **SnowLLM 0.3.22 stable**: multi-model serving, MinerU document parsing, improved Flash-Next compatibility, and a refreshed Web UI with thinking controls, response throughput, fullscreen logs and copyable loading commands. [Release notes](https://github.com/SnowLLM/SnowLLM/releases/tag/v0.3.22).
 - **2026-10-29** — **MiniCPM-V 4.7 on Ryzen 9 7940HS (RDNA 3)**: 132K context capacity on a 32 GiB Windows machine. [Benchmarks](https://snowllm.dev/docs/development/benchmarks#radeon-780m).
 - **2026-10-26** — **DeepSeek V4.1 Flash support**, including embedded DSpark decoding.

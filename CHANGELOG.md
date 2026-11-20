@@ -1,6 +1,32 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23 — 2026-11-20
+
+Substantially improve prefill performance for Qwen3.8-Flash-Next and Qwen3.5 MoE models. Add built-in benchmarking to the WebUI and improve the chat interface and dashboard.
+大幅提升 Qwen3.8-Flash-Next 和 Qwen3.5 MoE 模型的 Prefill 性能。WebUI 新增 benchmark 功能，并改进聊天界面和仪表盘的显示。
+
+- Queue model loads, unloads and benchmarks, with progress and cancellation for supported tasks. A benchmark can wait for a model load, then test the exact instance that load created. If the load fails, the benchmark reports the underlying error.
+  模型加载、卸载和 benchmark 进入同一任务队列，可查看进度，并在允许时取消任务。排队的 benchmark 可以等待模型加载完成，并测试该任务创建的模型实例。加载失败时会显示具体原因。
+- Bundle the standard PG-19 HTTP benchmark client and corpus in the wheel. Run benchmarks from the WebUI or CLI, compare runs in the WebUI, and export results as JSON. A running benchmark reserves the inference service until it finishes or is cancelled.
+  Python wheel 内置标准 PG-19 HTTP benchmark 客户端和语料，可通过 WebUI 或 CLI 运行，在 WebUI 中对比结果并导出 JSON。Benchmark 运行期间独占推理服务，结束或取消后恢复服务。
+- Configure independent API keys for inference and WebUI management. The WebUI accepts JSON startup settings and supports an HTTPS reverse proxy. For browser Basic Auth, use `snowllm` as the username and the management key as the password. Use `--no-show-keys` to suppress key values at startup.
+  推理和 WebUI 管理支持独立的 API 密钥。WebUI 支持 JSON 启动配置及 HTTPS 反向代理。浏览器 Basic Auth 的用户名为 `snowllm`，密码为管理密钥。可用 `--no-show-keys` 隐藏启动时显示的密钥值。
+- Refresh the WebUI model loading workspace and chat history, improve retry and Markdown rendering, and show the thinking levels supported by each model's chat template. Daemon logs show the current session.
+  更新 WebUI 的模型加载界面和聊天记录，改进重试和 Markdown 渲染，并按模型聊天模板显示支持的思考强度。守护进程日志聚焦当前会话。
+- Optimize Qwen3.8-Flash-Next prefill and MTP. On supported paths, prefetch the next chunk's PLE rows while the GPU processes the current chunk. Support PLE rows spanning GGUF shards, reuse attention metadata across layers in QSA prefill and paged decode, and reuse vision attention metadata across blocks.
+  优化 Qwen3.8-Flash-Next 的 prefill 和 MTP。在支持的路径上，GPU 处理当前分块时预读下一块的 PLE 行。支持跨 GGUF 分片的 PLE 行，在 QSA prefill 和分页解码中跨层复用注意力元数据，并在视觉注意力模块中跨块复用元数据。
+- Load GPU-resident GGUF weights through bounded sequential read windows and overlap file reads with GPU copies. Improve expert weight loading and enable optimized QSA on supported Windows GPUs.
+  通过有界顺序读取窗口加载常驻 GPU 的 GGUF 权重，让文件读取与 GPU 拷贝重叠。改进专家权重加载，并在受支持的 Windows GPU 上启用优化的 QSA 路径。
+- Group and rank recipes in the WebUI and website. Add the Qwen3.8-Flash-Next UD3.1 IQ4_XS recipe with MTP, raise both LFM2.5 DSpark recipes to a default of 128,000 tokens, and enable graph execution in the 32 GiB MiniCPM-V 4.7 recipe.
+  在 WebUI 和网站对模型配方分组和排序。新增带 MTP 的 Qwen3.8-Flash-Next UD3.1 IQ4_XS 配方，将两套 LFM2.5 DSpark 配方的默认上下文提高到 128,000 token，并在 32 GiB MiniCPM-V 4.7 配方中启用图执行。
+- Add opt-in HTTP controls for starting and stopping inference profiling and save compressed trace archives. Inspect tokenizers and checkpoint metadata without importing the GPU runtime.
+  新增按需启用的 HTTP 推理 profiling 启停接口，保存压缩后的 trace 归档。检查 tokenizer 和 checkpoint 元数据时可跳过 GPU 运行时导入。
+- Update standard HTTP benchmark comparisons for Flash-Next UD3.1 Q3 and IQ4 with and without MTP against llama.cpp b12479. Refresh the Radeon 780M results for LFM2.5 and for MiniCPM-V 4.7 with graph and eager execution.
+  更新 Flash-Next UD3.1 Q3、IQ4 在有 MTP 和无 MTP 时与 llama.cpp b12479 的标准 HTTP benchmark 对比，并更新 Radeon 780M 上的 LFM2.5 结果及 MiniCPM-V 4.7 图执行与 eager 对比。
+- Pin SnowLLM-Kernels to `0.3.17.dev4` and require HTTPX `>=0.27,<1`.
+  SnowLLM-Kernels 固定为 `0.3.17.dev4`，HTTPX 版本要求为 `>=0.27,<1`。
+
 ## 0.3.23.dev5 — 2026-11-20
 
 - Overlap Qwen3.8-Flash-Next PLE table reads with prefill. For two-chunk prompts, schedule an eligible remainder of at least 128 tokens first when both chunks fit the cache boundaries. Support PLE rows spanning GGUF shards and use mapped reads on Windows.
