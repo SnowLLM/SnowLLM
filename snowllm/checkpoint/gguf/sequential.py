@@ -12,8 +12,8 @@ from ...capacity import host_room
 
 
 _ACTIVE = ContextVar('gguf_weight_reads', default=None)
-ALIGN = 4096
-WINDOW = 64 << 20
+ALIGN = 4096  # Align file offsets, read lengths and buffer addresses to 4 KiB for direct I/O.
+WINDOW = 64 << 20  # Two 64 MiB windows cap pinned read-ahead at 128 MiB plus alignment padding.
 
 
 @dataclass
