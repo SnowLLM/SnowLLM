@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.23.dev5 — 2026-11-20
+
+- Overlap Qwen3.8-Flash-Next PLE table reads with prefill. For two-chunk prompts, schedule an eligible remainder of at least 128 tokens first when both chunks fit the cache boundaries. Support PLE rows spanning GGUF shards and use mapped reads on Windows.
+  Qwen3.8-Flash-Next 的 PLE 表预读可与 prefill 重叠。两块请求的余块达到 128 个 token 且两块均满足缓存边界时，优先执行余块。支持跨 GGUF 分片的 PLE 行，并在 Windows 上使用内存映射读取。
+- Load GPU-resident GGUF weights through bounded sequential read windows and improve expert weight loading. SnowLLM-Kernels 0.3.17.dev4 includes the PLE read gate for Linux and Windows and enables the optimized QSA path on supported Windows GPUs.
+  通过有界顺序读取窗口加载常驻 GPU 的 GGUF 权重，并优化专家权重加载。SnowLLM-Kernels 0.3.17.dev4 为 Linux 和 Windows 提供 PLE 读取同步组件，并在受支持的 Windows GPU 上启用优化的 QSA 路径。
+- Bind queued WebUI benchmarks to the model instance created by their load task and report the underlying error when loading fails.
+  WebUI 排队的 benchmark 会绑定到加载任务实际创建的模型实例，并在加载失败时显示具体原因。
+
 ## 0.3.23.dev4 — 2026-11-19
 
 - Add independent API keys for inference and WebUI management, JSON startup settings and HTTPS reverse proxy support. WebUI startup shows the Basic Auth username.
