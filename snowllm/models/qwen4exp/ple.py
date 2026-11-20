@@ -6,10 +6,10 @@ import torch
 
 from ...checkpoint.gguf import GGUF
 from ...checkpoint.gguf.dequant import dequantize
-from ...checkpoint.reader import RowTable
 from ...engine.host_io import MappedBuffer
 from ...errors import SnowLLMError
 from ..geometry import Qwen4ExpGeometry
+from .ple_io import open_ple_rows
 
 PLE_TABLE = "per_layer_token_embd.weight"
 
@@ -59,8 +59,7 @@ class PleTable:
         self.quant = t.quant.name
         self.row_bytes = t.nbytes // t.rows
         self.rows = t.rows
-        self.reader = RowTable(gguf.file_of(PLE_TABLE), self.rows,
-                               (gguf.file_offset(PLE_TABLE),), (self.row_bytes,))
+        self.reader = open_ple_rows(gguf, PLE_TABLE, self.rows, self.row_bytes)
         self._staging = MappedBuffer(torch.uint8)
         self._copied = torch.cuda.Event()
 
