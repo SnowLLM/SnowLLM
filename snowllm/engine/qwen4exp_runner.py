@@ -182,6 +182,16 @@ class Qwen4ExpRunner(QwenRunner):
             return self.ple_going[:n]
         return b.has_state if b.has_state is not None else self.ple_fresh[:n]
 
+    def prefill_batch(self, spans, slots):
+        b = super().prefill_batch(spans, slots)
+        if self.ple_mods and len(spans) == 1:
+            request, _, end = spans[0]
+            if end < request.prefill_len:
+                src = request.prefill_src
+                b.ple_lookahead = (src[end:end + self.max_prefill_tokens],
+                                   src[max(0, end - self.prev_context):end])
+        return b
+
     def _prepare_batch(self, b: Batch):
         self._feed_ple(b)
         return super()._prepare_batch(b)
@@ -205,13 +215,16 @@ class Qwen4ExpRunner(QwenRunner):
                     continue
                 past = None if b.prev_ids is None else np.asarray(b.prev_ids[i], dtype=np.int64)
                 rows=ngram_rows(np.asarray(ids[lo:hi],dtype=np.int64),past,self.geo)
-                if prepared_bytes:
-                    self._gather(rows,lo,hi,len(ids))
-                else:self._gather(rows,lo,hi)
+                raw = self.ple_table.take_prefetched(rows) if b.is_prefill else None
+                self._gather(rows, lo, hi, len(ids) if prepared_bytes else 0, raw)
+            if b.ple_lookahead is not None:
+                self.ple_table.prefetch(*b.ple_lookahead)
 
-    def _gather(self, rows: np.ndarray, lo: int, hi: int, prepared_rows: int = 0) -> None:
+    def _gather(self, rows: np.ndarray, lo: int, hi: int, prepared_rows: int = 0,
+                raw: np.ndarray | None = None) -> None:
         for at in range(0, hi - lo, GATHER_CHUNK):
             n = min(GATHER_CHUNK, hi - lo - at)
+            data = raw[at:at+n] if raw is not None else None
             if prepared_rows:
                 destination=self.ple_emb.view(torch.uint8).view(-1)[:ops.ple_prepared_bytes(prepared_rows)]
                 offset=lo+at
@@ -219,13 +232,13 @@ class Qwen4ExpRunner(QwenRunner):
                 begin=offset*self.geo.ple_embed_dim*2
                 if packed_bytes and offset%32==0 and begin+packed_bytes<=destination.nbytes:
                     packed=self.ple_gather_buffer[:packed_bytes]
-                    self.ple_table.gather(rows[at:at+n],packed_out=packed)
+                    self.ple_table.gather(rows[at:at+n],packed_out=packed, raw=data)
                     destination[begin:begin+packed_bytes].copy_(packed)
                 else:
-                    source=self.ple_table.gather(rows[at:at+n],dtype=torch.float32)
+                    source=self.ple_table.gather(rows[at:at+n],dtype=torch.float32, raw=data)
                     ops.ple_pack_fp32(source,destination,offset,prepared_rows)
             else:
-                ops.copy_rows(self.ple_emb[lo+at:lo+at+n],self.ple_table.gather(rows[at:at+n]))
+                ops.copy_rows(self.ple_emb[lo+at:lo+at+n],self.ple_table.gather(rows[at:at+n], raw=data))
 
     def _probe_batch(self, rows: int, prefill: bool) -> Batch:
         if not prefill:

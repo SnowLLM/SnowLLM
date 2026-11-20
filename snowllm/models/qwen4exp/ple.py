@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import torch
 
@@ -59,11 +61,15 @@ class PleTable:
         self.quant = t.quant.name
         self.row_bytes = t.nbytes // t.rows
         self.rows = t.rows
+        self._pool = self._pending = None
         self.reader = open_ple_rows(gguf, PLE_TABLE, self.rows, self.row_bytes)
         self._staging = MappedBuffer(torch.uint8)
         self._copied = torch.cuda.Event()
 
     def close(self) -> None:
+        if getattr(self, '_pool', None) is not None:
+            self._pool.shutdown(wait=True, cancel_futures=True)
+            self._pool = self._pending = None
         if getattr(self, '_copied', None) is not None:
             self._copied.synchronize()
         if getattr(self, 'reader', None) is not None:
@@ -73,8 +79,30 @@ class PleTable:
     def __del__(self) -> None:
         self.close()
 
+    def prefetch(self, tokens, history):
+        if self._pending is not None and not self._pending[1].done():
+            return
+        rows = ngram_rows(tokens, history, self.geo)
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ple-read")
+        self._pending = rows, self._pool.submit(self.reader.read, rows.reshape(-1))
+
+    def take_prefetched(self, rows):
+        if self._pending is None:
+            return None
+        planned, future = self._pending
+        if rows.shape != planned.shape or not np.array_equal(planned, rows):
+            return None
+        self._pending = None
+        try:
+            data = future.result()
+        except (OSError, MemoryError, SnowLLMError):
+            # The regular gather can retry with its smaller, caller-owned staging buffer.
+            return None
+        return np.frombuffer(data, dtype=np.uint8).reshape(len(rows), -1)
+
     def gather(self, rows: np.ndarray, device: str = "cuda", dtype: torch.dtype = torch.bfloat16,
-               *, packed_out: torch.Tensor | None = None) -> torch.Tensor:
+               *, packed_out: torch.Tensor | None = None, raw: np.ndarray | None = None) -> torch.Tensor:
         if self._staging is None:
             raise SnowLLMError('PLE table is closed')
         idx = np.asarray(rows, dtype=np.int64)
@@ -85,7 +113,11 @@ class PleTable:
         n = flat.size * self.row_bytes
         self._copied.synchronize()
         self._staging.reserve(n, exact=True)
-        self.reader.read(flat, self._staging.host[:n].numpy())
+        target = self._staging.host[:n].numpy()
+        if raw is None:
+            self.reader.read(flat, target)
+        else:
+            np.copyto(target, raw.reshape(-1))
         q = self._staging.host[:n].to(device, non_blocking=True)
         self._copied.record()
         w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32)

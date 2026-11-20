@@ -4,12 +4,14 @@ import ctypes
 import mmap
 import tempfile
 import unittest
+from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
 
 from snowllm.models.qwen4exp import ple_io
+from snowllm.models.qwen4exp.ple import PleTable
 
 
 class PleRowIOTests(unittest.TestCase):
@@ -68,3 +70,17 @@ class PleRowIOTests(unittest.TestCase):
                     self.assertEqual(bytes(reader.read(ids)), data[ids].tobytes())
                 finally:
                     reader.close()
+
+    def test_mismatched_lookahead_and_failed_background_read(self):
+        table = PleTable.__new__(PleTable)
+        rows = np.array([[2, 0], [2, 1]], dtype=np.int64)
+        future = Future()
+        table._pending = rows, future
+        future.set_result(b'abcd')
+        self.assertIsNone(table.take_prefetched(rows[::-1]))
+        self.assertEqual(table.take_prefetched(rows).tobytes(), b'abcd')
+        future = Future()
+        future.set_exception(MemoryError())
+        table._pending = rows, future
+        self.assertIsNone(table.take_prefetched(rows))
+        self.assertIsNone(table._pending)
