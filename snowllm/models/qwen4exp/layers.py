@@ -113,6 +113,9 @@ class Ple(nn.Module):
     def forward(self, ctx: ForwardContext, streams: torch.Tensor) -> None:
         a, M, E, n_hc = ctx.arena, streams.shape[0], self.hidden, self.n_hc
         b, C = ctx.batch, n_hc * E
+        if b.ple_ready is not None:
+            torch.cuda.current_stream().wait_event(b.ple_ready)
+            b.ple_ready = None
         with a.frame():
             prepared = getattr(ctx,'ple_prepared',None)
             emb = prepared if prepared is not None else ctx.ple_emb[:M]

@@ -56,8 +56,9 @@ class QwenResources(ResourceSet):
             + [(r, ('kv', 'kv_scale', 'cache'))])
         self.checkpoints = self.add(self.allocate_checkpoints,
             [(a, ('ckpt',)) for _, a in r.linear_mods + r.conv_mods] + [(a, ('ckpt',)) for a in r.ple_mods])
+        table = getattr(r.model, 'ple_table', None)
         self.outputs = self.add(self.allocate_outputs, [(r, ('x', 'taps', 'draft_taps', 'ple_emb', 'ple_gather_buffer',
-            'trunk_streams', 'mtp_streams'))])
+            'trunk_streams', 'mtp_streams'))] + ([(table, ('file_stream',))] if table is not None else []))
         self.statics = self.add(self.allocate_statics, [(r, ('logits', 'draft_logits', 'mtp_h',
             'd_mscale', 'decode_ws', 'decode_plan')), (r.model.lm_head, ('scratch','arena'))])
         self.messages = self.add(self.allocate_messages, [(r, ('d_ids', 'd_slot', 'd_seq', 'd_bt',
@@ -157,6 +158,8 @@ class QwenResources(ResourceSet):
 
     def allocate_outputs(self, slabs, rows):
         self.r._alloc_activations(rows)
+        table = getattr(self.r.model, 'ple_table', None)
+        return table.file_stream if table is not None else None
 
     def allocate_statics(self, slabs):
         r, g = self.r, self.r.geo

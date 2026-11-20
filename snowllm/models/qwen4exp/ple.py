@@ -57,6 +57,7 @@ class PleTable:
         reach = max(o + v for o, v in zip(geo.ngram_offsets, geo.ngram_vocab_sizes))
         if reach > t.rows:
             raise ValueError(f"the head offsets reach row {reach} of a {t.rows}-row table")
+        self.file_stream = None
         self.geo = geo
         self.quant = t.quant.name
         self.row_bytes = t.nbytes // t.rows
@@ -67,6 +68,9 @@ class PleTable:
         self._copied = torch.cuda.Event()
 
     def close(self) -> None:
+        if getattr(self, 'file_stream', None) is not None:
+            self.file_stream.close()
+            self.file_stream = None
         if getattr(self, '_pool', None) is not None:
             self._pool.shutdown(wait=True, cancel_futures=True)
             self._pool = self._pending = None
@@ -102,7 +106,7 @@ class PleTable:
         return np.frombuffer(data, dtype=np.uint8).reshape(len(rows), -1)
 
     def gather(self, rows: np.ndarray, device: str = "cuda", dtype: torch.dtype = torch.bfloat16,
-               *, packed_out: torch.Tensor | None = None, raw: np.ndarray | None = None) -> torch.Tensor:
+               *, packed_out: torch.Tensor | None = None, raw: np.ndarray | torch.Tensor | None = None) -> torch.Tensor:
         if self._staging is None:
             raise SnowLLMError('PLE table is closed')
         idx = np.asarray(rows, dtype=np.int64)
@@ -110,17 +114,23 @@ class PleTable:
         flat = idx.reshape(-1)
         if flat.min() < 0 or flat.max() >= self.rows:
             raise ValueError(f"row {flat.min()}..{flat.max()} is outside {self.rows}")
-        n = flat.size * self.row_bytes
-        self._copied.synchronize()
-        self._staging.reserve(n, exact=True)
-        target = self._staging.host[:n].numpy()
-        if raw is None:
-            self.reader.read(flat, target)
+        values = None
+        if isinstance(raw, torch.Tensor):
+            q = raw.reshape(-1)
+            values = self.file_stream.values
         else:
-            np.copyto(target, raw.reshape(-1))
-        q = self._staging.host[:n].to(device, non_blocking=True)
-        self._copied.record()
-        w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32)
+            n = flat.size * self.row_bytes
+            self._copied.synchronize()
+            self._staging.reserve(n, exact=True)
+            target = self._staging.host[:n].numpy()
+            if raw is None:
+                self.reader.read(flat, target)
+            else:
+                np.copyto(target, raw.reshape(-1))
+            q = self._staging.host[:n].to(device, non_blocking=True)
+            self._copied.record()
+        w = dequantize(q, self.quant, flat.size * self.geo.ple_head_dim, torch.float32,
+                       iq4_values=values)
         result = w.reshape(t, heads * self.geo.ple_head_dim)
         if packed_out is not None:
             if dtype != torch.bfloat16:

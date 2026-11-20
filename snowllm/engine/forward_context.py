@@ -72,6 +72,7 @@ class Batch:
     host_ids: list[int] | None = None
     host_seq_lens: list[int] | None = None
     host_cu_seqlens: list[int] | None = None
+    ple_ready: torch.cuda.Event | None = None
     ple_lookahead: tuple[list[int], list[int]] | None = None
     carry_source_offset: int = 0
     plans: dict | None = None

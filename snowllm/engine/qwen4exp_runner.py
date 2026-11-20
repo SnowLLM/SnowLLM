@@ -8,6 +8,7 @@ from .. import ops
 from .._capi import lib
 from ..models.qwen4exp.layers import Ple
 from ..models.qwen4exp.ple import ngram_rows
+from ..models.qwen4exp.ple_stream import PleReadStream
 from ..trace import span
 from .forward_context import (
     PLAN_DECODE,
@@ -79,6 +80,10 @@ class Qwen4ExpRunner(QwenRunner):
         if self.model.mtp is not None:
             self._alloc_streams(rows)
         self.ple_gather_buffer = torch.empty(gather_bytes,dtype=torch.uint8,device='cuda')
+
+        if self.ple_table is not None:
+            self.ple_table.file_stream = PleReadStream.create(self.ple_table, rows)
+        self._ple_read = None
 
     def _alloc_mtp_hidden(self) -> None:
         self.mtp_h = torch.zeros(self.max_num_seqs, self.geo.hc_count, self.geo.hidden,
@@ -192,6 +197,20 @@ class Qwen4ExpRunner(QwenRunner):
                                    src[max(0, end - self.prev_context):end])
         return b
 
+    def forward(self, batch):
+        stream = self.ple_table.file_stream if self.ple_table is not None else None
+        if stream is not None and stream.error is not None:
+            raise ops.SnowLLMError('previous PLE read failed') from stream.error
+        try:
+            return super().forward(batch)
+        finally:
+            slot, self._ple_read = self._ple_read, None
+            if slot is not None:
+                if batch.ple_ready is not None:
+                    torch.cuda.current_stream().wait_event(batch.ple_ready)
+                    batch.ple_ready = None
+                stream.release(slot)
+
     def _prepare_batch(self, b: Batch):
         self._feed_ple(b)
         return super()._prepare_batch(b)
@@ -215,13 +234,28 @@ class Qwen4ExpRunner(QwenRunner):
                     continue
                 past = None if b.prev_ids is None else np.asarray(b.prev_ids[i], dtype=np.int64)
                 rows=ngram_rows(np.asarray(ids[lo:hi],dtype=np.int64),past,self.geo)
+                stream = self.ple_table.file_stream
+                if stream is not None and b.is_prefill and len(cu) == 2:
+                    slot = self._ple_read = stream.take(rows)
+                    main = torch.cuda.current_stream()
+                    with torch.cuda.stream(stream.stream):
+                        # A previous forward can still be reading the shared packed embedding.
+                        stream.stream.wait_stream(main)
+                        try:
+                            self._gather(rows, lo, hi, len(ids) if prepared_bytes else 0,
+                                         slot.device[:hi-lo])
+                        finally:
+                            b.ple_ready = stream.stream.record_event()
+                    if b.ple_lookahead is not None:
+                        stream.prefetch(ngram_rows(*b.ple_lookahead, self.geo))
+                    return
                 raw = self.ple_table.take_prefetched(rows) if b.is_prefill else None
                 self._gather(rows, lo, hi, len(ids) if prepared_bytes else 0, raw)
             if b.ple_lookahead is not None:
                 self.ple_table.prefetch(*b.ple_lookahead)
 
     def _gather(self, rows: np.ndarray, lo: int, hi: int, prepared_rows: int = 0,
-                raw: np.ndarray | None = None) -> None:
+                raw: np.ndarray | torch.Tensor | None = None) -> None:
         for at in range(0, hi - lo, GATHER_CHUNK):
             n = min(GATHER_CHUNK, hi - lo - at)
             data = raw[at:at+n] if raw is not None else None

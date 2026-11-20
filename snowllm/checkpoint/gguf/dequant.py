@@ -181,11 +181,12 @@ def _mxfp4(b: torch.Tensor) -> torch.Tensor:
 _IQ4_KVALUES = (-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113)
 
 
-def _iq4_nl(b: torch.Tensor) -> torch.Tensor:
+def _iq4_nl(b: torch.Tensor, kv=None) -> torch.Tensor:
     nb, dev = b.shape[0], b.device
     d = _f16(b, 0)
     q = b[:, 2:18].int()
-    kv = torch.tensor(_IQ4_KVALUES, dtype=torch.float32, device=dev)
+    if kv is None:
+        kv = torch.tensor(_IQ4_KVALUES, dtype=torch.float32, device=dev)
     out = torch.empty(nb, 32, dtype=torch.float32, device=dev)
     out[:, :16] = kv[(q & 0xF).long()]
     out[:, 16:] = kv[((q >> 4) & 0xF).long()]
@@ -301,7 +302,7 @@ def supported_names() -> list[str]:
 
 
 def dequantize(raw: torch.Tensor, quant_name: str, numel: int,
-               dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
+               dtype: torch.dtype = torch.bfloat16, *, iq4_values=None) -> torch.Tensor:
     if quant_name in DENSE:
         return raw.view(DENSE[quant_name]).to(dtype)
     try:
@@ -318,6 +319,8 @@ def dequantize(raw: torch.Tensor, quant_name: str, numel: int,
     if nb == 0:
         return out
     blocks = raw.view(nb, stride)
+    if quant_name == 'IQ4_NL' and iq4_values is not None:
+        unpack = partial(unpack, kv=iq4_values)
     if quant_name in GRID_SHAPE:
         unpack = partial(unpack, table=grid(quant_name, raw.device))
     if quant_name in ("IQ2_XXS", "IQ3_XXS", "IQ2_XS"):
