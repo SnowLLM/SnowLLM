@@ -115,17 +115,27 @@ class HistoryPages:
 
 
 class WindowPages(BlockPages):
-    def __init__(self, alloc, block_size, window):
+    def __init__(self, alloc, block_size, window, sink_blocks=0):
         super().__init__(alloc, block_size)
         self.window = window
+        self.sink_blocks = sink_blocks
+
+    def _table(self, first, pages):
+        lead = min(first, self.sink_blocks)
+        return pages[:lead] + [-1] * (first - lead) + pages[lead:]
 
     def prefix(self, blocks, n_tokens):
         first = max(0, n_tokens - self.window) // self.align
         last = n_tokens // self.align
         offset, pages = blocks if isinstance(blocks, tuple) else (0, blocks)
-        if first < offset or last > offset + len(pages):
+        held_sinks = min(offset, self.sink_blocks)
+        gap = offset - held_sinks
+        if gap and first < offset and last > held_sinks:
             return None
-        selected = pages[first-offset:last-offset]
+        if last > len(pages) + gap:
+            return None
+        skip = gap if first >= offset else 0
+        selected = pages[:min(first, self.sink_blocks)] + pages[first-skip:last-skip]
         return (first, selected) if all(b >= 0 for b in selected) else None
 
     def retain(self, blocks):
@@ -138,14 +148,14 @@ class WindowPages(BlockPages):
     def own(self, alloc, blocks, fresh, r):
         first, pages = blocks
         r.draft_start = first
-        return [-1] * first + self.alloc.retain(pages)
+        return self._table(first, self.alloc.retain(pages))
 
 
 class WithDraft:
     def __init__(self, inner: Pages, alloc: "BlockAllocator",
-                 block_size: int, window: int = 0) -> None:
+                 block_size: int, window: int = 0, sink_blocks: int = 0) -> None:
         self.inner = inner
-        self.draft = WindowPages(alloc, block_size, window) if window else BlockPages(alloc, block_size)
+        self.draft = WindowPages(alloc, block_size, window, sink_blocks) if window else BlockPages(alloc, block_size)
         self.align = math.lcm(inner.align, block_size)
         self.is_ring = inner.is_ring
 

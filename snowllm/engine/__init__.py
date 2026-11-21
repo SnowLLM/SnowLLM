@@ -328,6 +328,7 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         kv_int8=bool(kv.get("kv_int8")), gpu_memory_utilization=1.0, reserve_bytes=resident,
         load_peak_bytes=int(kv.get("reserve") or 0) if "draft_resident" in kv else 0,
         tap_layers=tuple(kv.get("taps") or ()), draft_geo=kv.get("draft_geo"),
+        mtp_window=kv.get("mtp_window", 0), mtp_sinks=kv.get("mtp_sinks", 64),
         prefix_memory_ratio=float(kv.get("prefix_ratio") or 0.0), plan_activations=True,
         draft_workspace=kv.get("draft_workspace"), context_capacity=capacity)
     loading = 0 if kv.get("loaded_weight_bytes") is not None else max(0, load_peak - available)
@@ -399,6 +400,7 @@ class Engine:
                              tap_layers=(self.dflash_geo.tap_layers if dflash_path
                                          else ()),
                              draft_geo=self.dflash_geo,
+                             mtp_window=mtp_window, mtp_sinks=mtp_sinks,
                              draft_workspace=draft_plan.workspace,
                              prefix_memory_ratio=prefix_memory_ratio,
                              plan_activations=plan_activations, context_capacity=capacity)
@@ -426,7 +428,7 @@ class Engine:
                                                  dflash_p_min, dspark_adaptive)
             elif dflash_path:
                 self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len,
-                                                dflash_p_min, dspark_adaptive)
+                                                dflash_p_min, dspark_adaptive, mtp_window, mtp_sinks)
             if self.dflash is not None:
                 model._placement_host_reserve = 0
                 self.runner.load_peak_bytes = 0
@@ -569,7 +571,8 @@ class Engine:
                              block=block, p_min=p_min, adaptive=adaptive)
 
     def _build_dflash(self, path: str, block: int, max_model_len: int,
-                      p_min: float = 0.0, adaptive: bool = False) -> DFlashDecoder:
+                      p_min: float = 0.0, adaptive: bool = False, window: int = 0,
+                      sinks: int = 64) -> DFlashDecoder:
         from ..models.qwen3_5 import dflash_draft
         from .block_manager import BlockAllocator
 
@@ -595,7 +598,7 @@ class Engine:
         self._draft_pool.bindings = ((draft, ('pools',)),)
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
-                             block=block,
+                             block=block, window=window, sinks=sinks,
                              max_blocks_per_seq=per_seq, p_min=p_min, adaptive=adaptive)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,

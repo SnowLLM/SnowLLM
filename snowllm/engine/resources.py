@@ -121,6 +121,15 @@ def draft_cache_window(geo):
     return 0
 
 
+def draft_cache_policy(geo, window, sinks, block_size, context):
+    if window and getattr(geo, 'dspark', False) and not geo.num_sliding_layers:
+        sink_blocks = ops.kv_blocks_for(sinks, block_size)
+        if sink_blocks + ops.kv_blocks_for(window, block_size) >= ops.kv_blocks_for(context, block_size):
+            return 0, 0
+        return window, sink_blocks
+    return draft_cache_window(geo), 0
+
+
 def allocate_draft_pool(geo, blocks, block_size, slabs):
     from ..models.geometry import DSparkGeometry
     if isinstance(geo, DSparkGeometry):

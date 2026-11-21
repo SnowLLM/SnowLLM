@@ -10,7 +10,7 @@ from snowllm import ops
 from snowllm.engine.block_manager import BlockAllocator, TableMirror
 from snowllm.engine.prefix_cache import WindowPages
 from snowllm.engine.request import Request, SamplingParams
-from snowllm.engine.resources import draft_pool_bytes
+from snowllm.engine.resources import draft_cache_policy, draft_pool_bytes
 from snowllm.engine.runner import BaseRunner
 from snowllm.engine.spec_decode import DFlashDecoder
 
@@ -24,6 +24,48 @@ class DraftWindowTests(unittest.TestCase):
         decoder.scheduler, decoder.sampling = Mock(), None
         decoder.confidence = {}
         return decoder
+
+    def test_minicpm_dspark_attention_matches_dense_at_128k(self):
+        draft = ops.dflash
+        geo = SimpleNamespace(hidden=2048, num_layers=5, num_heads=8, num_kv_heads=2,
+                              head_size=256, intermediate=6144, num_taps=5)
+        draft.select(geo)
+        decoder = self.decoder()
+        decoder.block, decoder.sinks = 8, 64
+        page, length = 16, 131075
+        blocks = (length + page - 1) // page
+        device = 'cuda'
+        rng = torch.Generator(device=device).manual_seed(913)
+        table = torch.randperm(blocks, device=device, generator=rng, dtype=torch.int32)[None]
+        ends = torch.tensor([length], dtype=torch.int32, device=device)
+        positions = torch.arange(length, dtype=torch.int32, device=device)
+        slots = ops.resolve_slots(table, torch.zeros_like(positions), positions, page)
+        def inputs(shape):
+            return torch.randn(shape, device=device, dtype=torch.bfloat16, generator=rng)
+        k, v = (inputs((length, 2, 256)) for _ in range(2))
+        q = inputs((8, 8, 256))
+        pools = [torch.empty(blocks * page * 2 * 256, device=device, dtype=k.dtype)
+                 for _ in range(2)]
+        draft.reshape_and_cache(k.flatten(1), v.flatten(1), *pools, slots, page)
+        partitions = draft.paged_attn_num_slots(1)
+        scratch = torch.empty(draft.paged_attn_workspace_size(partitions, 8),
+                              dtype=torch.uint8, device=device)
+        for decoder.window in (0, 2048):
+            tables, lens = decoder._window(table, ends)
+            start = (blocks - decoder.window // page) * page
+            visible = positions if decoder.window == 0 else torch.cat((positions[:64], positions[start:]))
+            self.assertEqual(lens.item(), visible.numel())
+            out = torch.empty_like(q)
+            plan = draft.paged_attn_plan(lens, partitions, page)
+            draft.paged_attn(q, lens, *pools, out, tables, plan, partitions, scratch,
+                             256**-.5, 8, page)
+            for head in range(2):
+                rows = slice(4*head, 4*head + 4)
+                query = q[:, rows].float().reshape(-1, 256)
+                scores = (query @ k[visible.long(), head].float().T) * 256**-.5
+                expected = scores.softmax(-1) @ v[visible.long(), head].float()
+                torch.testing.assert_close(out[:, rows].float(), expected.view(8, 4, 256),
+                                           atol=4e-4, rtol=.01)
 
     def test_window_growth_releases_only_unreferenced_history(self):
         decoder = self.decoder()
@@ -59,6 +101,31 @@ class DraftWindowTests(unittest.TestCase):
         self.assertEqual(decoder.blocks.ref, refs)
         pages.release(cached)
         decoder.release(r)
+
+    def test_sink_and_tail_survive_prefill_prefix_restore_and_decode(self):
+        decoder = self.decoder(13)
+        decoder.cache_window, decoder.sink_blocks = 33, 2
+        pages = WindowPages(decoder.blocks, 16, decoder.cache_window, decoder.sink_blocks)
+        r = Request([0]*512, SamplingParams())
+        for lo in range(0, 320, 64):
+            r.num_prefilled = lo
+            self.assertTrue(decoder.grow(r, 64))
+            if not lo:
+                sinks = r.draft_blocks[:2]
+            self.assertEqual(r.draft_blocks[:2], sinks)
+        cached = pages.retain(pages.prefix(r.draft_blocks, 320))
+        self.assertEqual(cached[1], sinks + r.draft_blocks[17:20])
+        self.assertEqual(pages.prefix(cached, 32), (0, sinks))
+        self.assertIsNone(pages.prefix(cached, 48))
+        decoder.release(r)
+        branch = Request([0]*320, SamplingParams(), num_prefilled=320, out=[0])
+        branch.draft_blocks = pages.own(decoder.blocks, cached, [], branch)
+        self.assertEqual(branch.draft_blocks, sinks + [-1]*15 + cached[1][2:])
+        self.assertTrue(decoder.grow(branch, 4))
+        pages.release(cached)
+        self.assertTrue(all(decoder.blocks.ref[b] == 1 for b in sinks))
+        decoder.release(branch)
+        self.assertFalse(any(decoder.blocks.ref))
 
     def test_decode_reservation_is_not_capped_by_prefill_chunk(self):
         decoder = self.decoder()
@@ -121,6 +188,7 @@ class DraftWindowTests(unittest.TestCase):
         r.max_num_seqs, r.max_prefill_tokens = 4, 8192
         for context in (409600, 819200):
             r.ctx_cap = context
+            r.draft_window, r.draft_sink_blocks = draft_cache_policy(r.draft_geo, 0, 64, 16, context)
             base = r._draft_pool_blocks(context//16)
             self.assertEqual(base, 4*130+512)
             checkpoint = r._draft_checkpoint_bytes()
@@ -129,7 +197,13 @@ class DraftWindowTests(unittest.TestCase):
                 self.assertEqual(draft_pool_bytes(r.draft_geo, total, 16),
                     draft_pool_bytes(r.draft_geo, base, 16) + slots*checkpoint)
         r.draft_geo.num_sliding_layers = 4
+        r.draft_window, r.draft_sink_blocks = draft_cache_policy(r.draft_geo, 0, 64, 16, context)
         self.assertGreaterEqual(r._draft_pool_blocks(context//16), context//16)
+        r.draft_geo.dspark, r.draft_geo.num_sliding_layers = True, 0
+        r.draft_window, r.draft_sink_blocks = draft_cache_policy(r.draft_geo, 2048, 17, 16, context)
+        self.assertEqual((r.draft_window, r.draft_sink_blocks), (2048, 2))
+        self.assertEqual(r._draft_pool_blocks(context//16, prefix_slots=8), 4*132+512+8*130)
+        self.assertEqual(draft_cache_policy(r.draft_geo, 2048, 17, 16, 2080), (0, 0))
 
 
 if __name__ == '__main__':

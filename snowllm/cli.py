@@ -469,7 +469,7 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--batch-prefill", action="store_true",
                    help='Batch fresh prompts; requires --num-spec 0, may change output.')
     g.add_argument("--mtp-window", type=int, default=0, metavar="W",
-                   help='Recent tokens visible to MTP; 0 uses full context.')
+                   help='Recent tokens visible to MTP or a full-attention Qwen DSpark draft (0 uses full context).')
     g.add_argument("--mtp-sinks", type=int, default=64, metavar="N",
                    help='Leading tokens retained with --mtp-window.')
 

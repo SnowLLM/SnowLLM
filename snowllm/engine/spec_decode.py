@@ -16,7 +16,6 @@ from .request import Request
 from .host_io import HostArena
 from .dflash_sampling import DFlashSampling
 from .dspark_schedule import PrefixScheduler
-from .resources import draft_cache_window
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
@@ -32,6 +31,7 @@ def context_len(r: Request) -> int:
 class DSparkScheduling:
     windowed = False
     cache_window = 0
+    sink_blocks = 0
 
     def rows_needed(self, rows: int) -> int:
         return rows
@@ -47,11 +47,12 @@ class DSparkScheduling:
             planned_rows = rows if r.prefilled else min(rows, self.runner.max_prefill_tokens)
             end = ops.kv_blocks_for(position + planned_rows + self.block, page)
             extra = max(0, end - len(r.draft_blocks))
-            released = r.draft_blocks[r.draft_start:start]
+            drop_from = max(self.sink_blocks, r.draft_start)
+            released = r.draft_blocks[drop_from:start]
             if extra > len(self.blocks.free) + sum(self.blocks.ref[b] == 1 for b in released):
                 return False
             self.blocks.release(released)
-            r.draft_blocks[r.draft_start:start] = [-1] * len(released)
+            r.draft_blocks[drop_from:start] = [-1] * len(released)
             r.draft_start = start
             if extra:
                 r.draft_blocks.extend(self.blocks.alloc(extra))
@@ -61,6 +62,7 @@ class DSparkScheduling:
         return self.blocks.ensure(r.draft_blocks, need)
 
     def release(self, r: Request) -> None:
+        self.blocks.release(r.draft_blocks[:min(self.sink_blocks, r.draft_start)])
         self.blocks.release(r.draft_blocks[r.draft_start:])
         r.draft_blocks = []
         r.draft_start = 0
@@ -433,12 +435,14 @@ class SpecDecoder:
 
 
 class DFlashDecoder(DSparkScheduling):
+    _window = SpecDecoder._window
     _ngram_context = SpecDecoder._ngram_context
 
     def __init__(self, runner: "QwenRunner", sampler: "Sampler", slots: StateSlots,
                  draft: "DFlashDraft", draft_blocks: BlockAllocator, tables: TableMirror,
                  stage: Staging, *, block: int, max_blocks_per_seq: int,
-                 p_min: float = 0.0, adaptive: bool = False) -> None:
+                 p_min: float = 0.0, adaptive: bool = False,
+                 window: int = 0, sinks: int = 64) -> None:
         self.runner = runner
         self.blocks = draft_blocks
         self.sampler = sampler
@@ -449,8 +453,14 @@ class DFlashDecoder(DSparkScheduling):
         self.max_blocks_per_seq = max_blocks_per_seq
         H = runner.model.geo.hidden
         self.geo = draft.geo
-        self.cache_window = draft_cache_window(self.geo)
+        self.cache_window, self.sink_blocks = runner.draft_window, runner.draft_sink_blocks
         self.dspark = self.geo.dspark
+        self.window, self.sinks = window, sinks
+        if window and self.dspark:
+            if self.geo.num_sliding_layers:
+                raise SnowLLMError("--mtp-window requires a DSpark draft with full-attention layers")
+            if window < block + runner.block_size - 1 or sinks < 0:
+                raise SnowLLMError("DSpark needs a recent window covering its block plus page alignment and nonnegative sinks")
         self.p_min = p_min if self.dspark else 0.0
         self.init_adaptive(adaptive, p_min, self.dspark and "conf_weight" in draft.w)
         self.width = block + int(self.dspark)
@@ -653,9 +663,10 @@ class DFlashDecoder(DSparkScheduling):
         ops.copy_rows(lengths, self.d_len[:B])
         lengths.sub_(1)
         getattr(self.runner.model,"model",self.runner.model).embed_tokens(ids, self.noise[:M])
-        hidden = self.draft.forward(self.noise[:M], pos,
-            ops.resolve_slots(self.d_bt[:B], seq, cache_pos, self.runner.block_size),
-            self.d_bt[:B], lengths)
+        # Write at absolute positions even when the proposal attends to a shorter KV view.
+        slots = ops.resolve_slots(self.d_bt[:B], seq, cache_pos, self.runner.block_size)
+        tables, visible = self._window(self.d_bt[:B], lengths)
+        hidden = self.draft.forward(self.noise[:M], pos, slots, tables, visible)
         logits = self.runner.model.lm_head(hidden, self.runner.draft_logits[:M])
         anchor = torch.empty(B, dtype=torch.int64, device="cuda")
         ops.copy_rows(anchor, self.d_i64[W:2*W].view(B, width)[:, 0])

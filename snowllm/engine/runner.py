@@ -21,7 +21,7 @@ from ..trace import span
 from .host_io import SchedulerInputs
 from .graphs import CapturedGraph, GraphBudget, GraphInputs, capture_graph
 from .inputs import prefill_batch
-from .resources import DraftWorkspace, ProbeGroup, plan_activations
+from .resources import DraftWorkspace, ProbeGroup, draft_cache_policy, plan_activations
 from .forward_context import (
     Batch,
     DecodeShape,
@@ -60,7 +60,7 @@ class BaseRunner:
                  kv_int8=False, block_size=None, gpu_memory_utilization=DEFAULT_GPU_UTIL,
                  reserve_bytes=0, tap_layers=(), draft_geo=None, prefix_memory_ratio=0.,
                  plan_activations=True, load_peak_bytes=0, draft_workspace: DraftWorkspace | None = None,
-                 context_capacity=None):
+                 context_capacity=None, mtp_window=0, mtp_sinks=64):
         self._check_seqs(max_num_seqs)
         if num_spec < 0:
             raise SnowLLMError('num_spec must be nonnegative')
@@ -82,6 +82,8 @@ class BaseRunner:
         self.load_peak_bytes = int(load_peak_bytes)
         self.prefix_memory_ratio, self.prefix_slots = prefix_memory_ratio, 0
         self.tap_layers, self.draft_geo = tuple(tap_layers), draft_geo
+        self.draft_window, self.draft_sink_blocks = draft_cache_policy(
+            draft_geo, mtp_window, mtp_sinks, self.block_size, self.ctx_cap)
         self.draft_workspace = draft_workspace
         self.num_taps = len(self.tap_layers)
         self._want_blocks = None if num_kv_blocks is None else int(num_kv_blocks)
@@ -192,8 +194,7 @@ class BaseRunner:
         from .prefix_cache import PrefixStore, WithDraft
         pages = self.prefix_pages(alloc)
         if draft is not None:
-            from .resources import draft_cache_window
-            pages = WithDraft(pages, draft, self.block_size, draft_cache_window(self.draft_geo))
+            pages = WithDraft(pages, draft, self.block_size, self.draft_window, self.draft_sink_blocks)
         return PrefixStore(pages, self.prefix_residue(), self.prefix_slots, lookahead=lookahead)
 
     def prefix_pages(self, alloc: "BlockAllocator") -> "Pages":
@@ -291,23 +292,19 @@ class BaseRunner:
         if self.draft_geo is None:
             return 0
         width = self.num_spec if isinstance(self.draft_geo, DSparkGeometry) else self.T
-        from .resources import draft_cache_window
-        window = draft_cache_window(self.draft_geo)
-        if window:
-            window = min(window, self.ctx_cap)
-            each = ops.kv_blocks_for(window + self.T + width + self.block_size - 1, self.block_size)
+        if self.draft_window:
+            history = min(self.draft_window + self.draft_sink_blocks * self.block_size, self.ctx_cap)
+            each = ops.kv_blocks_for(history + self.T + width + self.block_size - 1, self.block_size)
             active = self.max_num_seqs * each + ops.kv_blocks_for(self.max_prefill_tokens, self.block_size)
-            return active + prefix_slots * ops.kv_blocks_for(window, self.block_size)
+            return active + prefix_slots * ops.kv_blocks_for(history, self.block_size)
         return max(blocks, ops.kv_blocks_for(self.ctx_cap+width, self.block_size))
 
     def _draft_checkpoint_bytes(self):
-        from .resources import draft_cache_window, draft_pool_bytes
-        window = draft_cache_window(self.draft_geo)
-        if not window:
+        from .resources import draft_pool_bytes
+        if not self.draft_window:
             return 0
         blocks = self._draft_pool_blocks(0)
-        extra = ops.kv_blocks_for(min(window, self.ctx_cap), self.block_size)
-        return (draft_pool_bytes(self.draft_geo, blocks + extra, self.block_size)
+        return (draft_pool_bytes(self.draft_geo, self._draft_pool_blocks(0, prefix_slots=1), self.block_size)
                 - draft_pool_bytes(self.draft_geo, blocks, self.block_size))
 
     def _prepare_pools(self):
