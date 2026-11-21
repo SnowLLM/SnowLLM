@@ -24,6 +24,8 @@ class Lfm2Runner(QwenRunner):
         ctx=super()._ctx(batch,plan_key)
         if batch.varlen_decode:
             ctx.plan_key=(*ctx.plan_key,"varlen")
+        elif self.draft_geo is not None and not batch.is_prefill and not batch.roll_forward:
+            ctx.plan_key=(*ctx.plan_key,"single_token")
         return ctx
 
     def _activation_cases(self, chunk, decode):
@@ -35,4 +37,9 @@ class Lfm2Runner(QwenRunner):
             batch.roll_forward=True
             yield ActivationProbe(self._ctx(batch).plan_key,decode,
                 lambda:self._forward_eager(batch),
+                lifetimes='uses' if self.plan_activations else 'references')
+            from .inputs import synthetic_batch
+            single = synthetic_batch([1] * self.max_num_seqs, self.max_blocks_per_seq, cu_seqlens=None)
+            yield ActivationProbe(self._ctx(single).plan_key, self.max_num_seqs,
+                lambda: self._forward_eager(single),
                 lifetimes='uses' if self.plan_activations else 'references')
