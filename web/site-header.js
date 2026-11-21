@@ -1,4 +1,5 @@
 import { t, getLanguage, setLanguage, onLanguageChange, applyTranslations, rememberLanguage } from './i18n.js'
+import { githubBadgeMarkup, setupGithubBadges } from './github-badges.js?v=github-issues-1'
 const pages = [['home', '/'], ['benchmark', '/benchmark/'], ['recipe', '/recipe/'], ['docs', '/docs/'], ['status', '/status/']]
 
 export function headerMarkup(current = '/', locale = getLanguage()) {
@@ -10,7 +11,7 @@ export function headerMarkup(current = '/', locale = getLanguage()) {
       const url = key === 'docs' && locale === 'zh_cn' ? '/docs/zh/' : path
       return `<a target="_self" href="${url}" data-i18n="nav.${key}"${path === current ? ' aria-current="page"' : ''}>${text('nav.' + key)}</a>`
     }).join('')}</nav>
-    <div class="snow-header-tools"><a href="https://github.com/SnowLLM/SnowLLM">GitHub ↗</a>
+    <div class="snow-header-tools">${githubBadgeMarkup('stars', locale, { compact: true })}
       <select class="snow-language" aria-label="${text('language.label')}" data-i18n-aria-label="language.label"><option value="en"${locale === 'en' ? ' selected' : ''}>English</option><option value="zh_cn"${locale === 'zh_cn' ? ' selected' : ''}>简体中文</option></select>
       <button type="button" class="snow-theme" aria-label="${text('theme.toDark')}"><span aria-hidden="true">◐</span><span class="snow-theme-label">${text('theme.dark')}</span></button>
     </div>
@@ -46,6 +47,7 @@ export function setupHeader(node, options = {}) {
   media.addEventListener('change', refresh)
   const stop = onLanguageChange(refresh)
   applyTranslations(node)
+  setupGithubBadges(node)
   refresh()
   return { refresh, dispose() { stop(); button.removeEventListener('click', toggle); select.removeEventListener('change', changeLanguage); media.removeEventListener('change', refresh) } }
 }

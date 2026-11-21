@@ -856,7 +856,8 @@
     .page-intro { padding-top: 2.5rem; }
   }
 
-  .home .lede { margin-top: clamp(2rem, 5vw, 3.75rem); }
+  .home .lede { margin-top: clamp(2rem, 5vw, 3.75rem); margin-bottom: 1rem; }
+  .home-community { margin-bottom: clamp(1.25rem, 3vw, 2rem); }
 
   .home-models { margin-top: 2.75rem; }
   .home-models h2 { font-size: var(--fs-rail); margin: 0 0 1rem; }

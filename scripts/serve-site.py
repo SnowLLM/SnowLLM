@@ -14,9 +14,14 @@ ROOT = Path(__file__).resolve().parent.parent
 class SiteHandler(SimpleHTTPRequestHandler):
     def send_head(self):
         api = getattr(self.server, 'status_api_base', None)
-        if api and urlsplit(self.path).path in ('/status/', '/status/index.html'):
-            page = (ROOT / 'web/status/index.html').read_text().replace(
-                'data-api-base="https://status.snowllm.dev"', f'data-api-base="{escape(api, quote=True)}"')
+        source = Path(self.translate_path(self.path))
+        if source.is_dir() and urlsplit(self.path).path.endswith('/'):
+            source /= 'index.html'
+        if api and source.suffix == '.html' and source.is_file():
+            origin = escape(api.rstrip('/'), quote=True)
+            page = source.read_text(encoding='utf-8').replace(
+                '<head>', f'<head>\n<meta name="snowllm-status-api" content="{origin}">', 1).replace(
+                'data-api-base="https://status.snowllm.dev"', f'data-api-base="{origin}"')
             body = page.encode()
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')

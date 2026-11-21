@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="/typography.css">
 <link rel="stylesheet" href="/palette.css">
 <link rel="stylesheet" href="/site.css">
-<link rel="stylesheet" href="/site-header.css">
+<link rel="stylesheet" href="/site-header.css?v=github-issues-1">
 <link rel="stylesheet" href="/status/status.css?v=stats-clean-1">
 <script>
 try {
@@ -79,7 +79,13 @@ try {
     <p class="usage-disclosure"><span data-i18n="status.foot">Community-reported counts; not independently verified.</span> <a href="/docs/reference/telemetry"><span data-i18n="status.privacy">Usage statistics</span> ↗</a></p>
   </div>
 </main>
-<footer class="foot"><span>SnowLLM</span><a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a><a href="https://github.com/SnowLLM/SnowLLM">github.com/SnowLLM/SnowLLM</a></footer>
+<footer class="foot">
+  <span>SnowLLM</span>
+  <div class="github-community" data-github-community>
+    <a href="https://github.com/SnowLLM/SnowLLM/discussions" data-i18n="footer.discuss">Questions and hardware reports</a>
+    <a href="https://github.com/SnowLLM/SnowLLM">GitHub</a>
+  </div>
+</footer>
 </div>
 <div id="usage-tooltip" class="usage-tooltip" role="tooltip" hidden>
   <p class="tooltip-date"></p>
@@ -90,6 +96,6 @@ try {
   </dl>
   <p class="tooltip-partial" data-i18n="status.partial" hidden>Current period</p>
 </div>
-<script type="module" src="/site-shell.js?v=stats-clean-1"></script>
+<script type="module" src="/site-shell.js?v=github-issues-1"></script>
 </body>
 </html>

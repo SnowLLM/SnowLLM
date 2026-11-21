@@ -21,6 +21,36 @@
 .snow-navigation a[aria-current]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--header-accent); }
 .snow-header a:hover, .snow-header button:hover { color: var(--header-accent); }
 .snow-header-tools { margin-left: auto; display: flex; align-items: center; gap: 1.25rem; white-space: nowrap; color: var(--header-muted); }
+.github-community { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.github-community .github-badge, .snow-header .github-badge {
+  display: inline-flex; align-items: center; gap: .375rem; min-height: 2rem; box-sizing: border-box;
+  padding: .25rem .5rem; border: 1px solid var(--hair, var(--snow-hair)); border-radius: .35rem;
+  color: var(--muted, var(--snow-muted)); font: 500 .8125rem/1.25 var(--sans); text-decoration: none;
+}
+.github-badge svg { flex: 0 0 auto; }
+.github-badge-open_issues svg { color: light-dark(#1a763b, #68cf85); }
+.github-badge-closed_issues svg { color: light-dark(#7344b8, #c4a1ff); }
+.github-badge-stars svg { color: light-dark(#886010, #efc466); }
+.github-badge-count { color: var(--ink, var(--snow-ink)); font-variant-numeric: tabular-nums; }
+.github-community .github-badge:hover, .snow-header .github-badge:hover {
+  color: var(--accent, var(--snow-accent)); border-color: currentColor;
+}
+.github-issues {
+  display: inline-flex; align-items: stretch; white-space: nowrap;
+  border: 1px solid var(--hair, var(--snow-hair)); border-radius: .35rem;
+}
+.github-issues-label {
+  display: inline-flex; align-items: center; padding-inline: .625rem;
+  color: var(--ink, var(--snow-ink)); font: 600 .8125rem/1.25 var(--sans);
+}
+.github-issues .github-badge {
+  min-height: calc(2rem - 2px); border: 0; border-inline-start: 1px solid var(--hair, var(--snow-hair)); border-radius: 0;
+}
+.github-issues .github-badge:hover { background: var(--accent-soft); border-color: var(--hair, var(--snow-hair)); }
+.github-issues .github-badge:focus-visible { outline: 2px solid var(--accent, var(--snow-accent)); outline-offset: -2px; }
+.github-badge-compact .github-badge-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 .snow-theme { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--header-line); border-radius: 3px; padding: 5px 9px; color: inherit; background: transparent; font: inherit; cursor: pointer; }
 .snow-header :focus-visible { outline: 2px solid var(--header-accent); outline-offset: 5px; }
 html { scroll-padding-top: calc(var(--site-header-height) + 24px); }
@@ -31,12 +61,9 @@ html { scroll-padding-top: calc(var(--site-header-height) + 24px); }
   .snow-header-tools { gap: 14px; font-size: .875rem; }
   .snow-navigation { font-size: .875rem; order: 3; width: 100%; height: 48px; gap: 0; justify-content: space-between; }
 }
-@media (max-width: 360px) { .snow-header-tools > a { display: none; } }
-
 .snow-language { max-width: 7rem; padding: 5px 3px; font: inherit; font-size: 1rem; color: inherit; border: 1px solid var(--header-line); border-radius: 3px; background: var(--header-bg); cursor: pointer; }
 @media (max-width: 960px) {
   .snow-header-tools { gap: 8px; }
-  .snow-header-tools > a { display: none; }
 }
 @media (min-width: 961px) and (max-width: 1000px) {
   .snow-header-inner { gap: 1.25rem; }
@@ -44,9 +71,12 @@ html { scroll-padding-top: calc(var(--site-header-height) + 24px); }
   .snow-header-tools { gap: .65rem; }
 }
 
+@media (max-width: 480px) { .snow-theme-label { display: none; } }
 @media (max-width: 380px) {
+  .snow-header-inner { padding-inline: .75rem; }
   .snow-header .snow-brand { font-size: 1.0625rem; gap: 7px; }
   .snow-brand img { width: 1.5rem; height: 1.5rem; flex-basis: 1.5rem; }
-  .snow-theme-label { display: none; }
-  .snow-language { max-width: 6rem; }
+  .snow-header-tools { gap: .375rem; }
+  .snow-header .github-badge, .snow-theme { padding-inline: .375rem; }
+  .snow-language { max-width: 5rem; font-size: .875rem; }
 }

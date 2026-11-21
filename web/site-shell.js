@@ -1,5 +1,6 @@
 import { initI18n, applyTranslations, rememberLanguage } from './i18n.js'
-import { headerMarkup, setupHeader } from './site-header.js'
+import { headerMarkup, setupHeader } from './site-header.js?v=github-issues-1'
+import { githubCommunityMarkup, setupGithubBadges } from './github-badges.js?v=github-issues-1'
 const current = location.pathname.startsWith('/benchmark/') ? '/benchmark/'
   : location.pathname.startsWith('/recipe/') ? '/recipe/'
   : location.pathname.startsWith('/status/') ? '/status/' : '/'
@@ -15,6 +16,10 @@ if (theme === 'light' || theme === 'dark') {
 const host = document.getElementById('site-header')
 host.innerHTML = headerMarkup(current)
 setupHeader(host)
+for (const community of document.querySelectorAll('[data-github-community]')) {
+  community.innerHTML = githubCommunityMarkup({ stars: current !== '/' })
+  setupGithubBadges(community)
+}
 applyTranslations()
 if (current === '/') await import('./install-ui.js?v=home-models-1')
 else if (current === '/status/') await import('./status/status.js?v=stats-clean-1')
