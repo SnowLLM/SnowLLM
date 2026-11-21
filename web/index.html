@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title data-i18n="home.title">SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)</title>
-<meta name="description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<title data-i18n="home.title">SnowLLM | Optimized Local LLM Inference for AMD Ryzen APUs</title>
+<meta name="description" data-i18n-content="home.description" content="Optimized local LLM inference on AMD Ryzen APUs with tuned HIP kernels and speculative decoding. See benchmarks on Radeon 8060S and Radeon 780M.">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/typography.css">
 <link rel="stylesheet" href="/palette.css">
@@ -15,18 +15,18 @@
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="SnowLLM">
-<meta property="og:title" data-i18n-content="home.title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta property="og:description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<meta property="og:title" data-i18n-content="home.title" content="SnowLLM | Optimized Local LLM Inference for AMD Ryzen APUs">
+<meta property="og:description" data-i18n-content="home.description" content="Optimized local LLM inference on AMD Ryzen APUs with tuned HIP kernels and speculative decoding. See benchmarks on Radeon 8060S and Radeon 780M.">
 <meta property="og:url" content="https://snowllm.dev/">
 <meta property="og:image" content="https://snowllm.dev/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="SnowLLM — local LLM inference on Ryzen AI Max.">
+<meta property="og:image:alt" content="SnowLLM logo.">
 <meta property="og:locale" content="en_US">
 
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" data-i18n-content="home.title" content="SnowLLM — LLM inference on Ryzen AI Max+ 395 (Strix Halo)">
-<meta name="twitter:description" data-i18n-content="home.description" content="Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.">
+<meta name="twitter:title" data-i18n-content="home.title" content="SnowLLM | Optimized Local LLM Inference for AMD Ryzen APUs">
+<meta name="twitter:description" data-i18n-content="home.description" content="Optimized local LLM inference on AMD Ryzen APUs with tuned HIP kernels and speculative decoding. See benchmarks on Radeon 8060S and Radeon 780M.">
 <meta name="twitter:image" content="https://snowllm.dev/og.png">
 
 <script type="application/ld+json">
@@ -35,7 +35,7 @@
   "@type": "SoftwareApplication",
   "name": "SnowLLM",
   "url": "https://snowllm.dev/",
-  "description": "Fast local LLM inference on the AMD Ryzen AI Max+ 395 (Strix Halo, gfx1151). Hand-tuned HIP kernels, compatible APIs, and benchmarks across supported models.",
+  "description": "Optimized local LLM inference on AMD Ryzen APUs with tuned HIP kernels and speculative decoding. See benchmarks on Radeon 8060S and Radeon 780M.",
   "applicationCategory": "DeveloperApplication",
   "applicationSubCategory": "LLM inference server",
   "operatingSystem": "Linux x86_64, Windows 11",
@@ -48,7 +48,7 @@
 }
 </script>
 
-<link rel="stylesheet" href="/site.css?v=install-channels-1">
+<link rel="stylesheet" href="/site.css?v=home-models-1">
 <link rel="stylesheet" href="/site-header.css">
 <script>
 (function () {
@@ -66,9 +66,7 @@
 
   <main class="main" id="top">
 
-  <p class="eyebrow home-eyebrow" data-i18n="home.eyebrow">Local inference / Ryzen AI Max</p>
-  <h1 class="lede" data-i18n-html="home.headline">Local LLM inference, hand-tuned for one chip. <em>The Ryzen AI Max+ 395.</em></h1>
-
+  <h1 class="lede" data-i18n="home.headline">Local LLM inference, tuned for AMD Ryzen APUs</h1>
 
   <div class="install" id="install">
     <div class="selector" id="panel-install">
@@ -137,23 +135,88 @@
       </div>
     </div>
 
-    <p class="note" id="channel-note" aria-live="polite" data-i18n="install.stable">Stable is recommended for everyday use.</p>
+    <p class="note" id="channel-note" aria-live="polite" hidden></p>
     <p class="note" id="target-note" data-i18n-html="install.targets">Official testing covers Ryzen AI Max+ 395 / Ryzen 9 7940HS only. If you run into problems, please <a href="https://github.com/SnowLLM/SnowLLM/issues">open an issue ↗</a>.</p>
     <p class="note" id="install-note" aria-live="polite" hidden></p>
   </div>
 
-  <div class="destinations">
-    <a class="destination" href="/benchmark/"><span class="eyebrow" data-i18n="home.measure">01 / Measure</span><strong data-i18n="home.benchmarkLink">Benchmark ↗</strong><span data-i18n="home.benchmarkDesc">Explore results by model, engine and context length.</span></a>
-    <a class="destination" href="/recipe/"><span class="eyebrow" data-i18n="home.choose">02 / Choose</span><strong data-i18n="home.recipeLink">Recipe ↗</strong><span data-i18n="home.recipeDesc">Find your model and the configuration to run it.</span></a>
-    <a class="destination" href="/docs/"><span class="eyebrow" data-i18n="home.build">03 / Build</span><strong data-i18n="home.docsLink">Docs ↗</strong><span data-i18n="home.docsDesc">Installation, integrations and the full reference.</span></a>
-  </div>
+  <section class="home-models" aria-labelledby="home-models-heading">
+    <h2 id="home-models-heading" data-i18n="home.modelsHeading">Recommended models by system memory</h2>
+    <ul class="home-model-list">
+      <li>
+        <p class="home-model-memory">128 GiB</p>
+        <div>
+          <h3>Qwen3.8-Flash-Next</h3>
+          <p class="note" data-i18n="home.flashRun">UD3.1 UD-IQ4_XS · 32K input · MTP k=2</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <span><strong>1,941.4</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>49.67</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks" data-i18n="home.radeon8060sTest">Radeon 8060S benchmark</a>
+        </div>
+      </li>
+      <li>
+        <p class="home-model-memory">64 GiB</p>
+        <div>
+          <h3>MiniCPM-V 4.7 35B-A3B</h3>
+          <p class="note" data-i18n="home.maxMiniRun">Q4_K_M · 8K input · adaptive DSpark block 8</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <span><strong>4,323.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>63.69</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks" data-i18n="home.radeon8060sTest">Radeon 8060S benchmark</a>
+        </div>
+      </li>
+      <li>
+        <p class="home-model-memory">32 GiB</p>
+        <div>
+          <h3>MiniCPM-V 4.7 35B-A3B</h3>
+          <p class="note" data-i18n="home.radeonMiniRun">mix_q3gud_im · 8K input · DSpark block 8</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <span><strong>1,100.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>21.63</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks-780m-heading" data-i18n="home.radeon780mTest">Radeon 780M benchmark</a>
+        </div>
+      </li>
+      <li>
+        <p class="home-model-memory">16 GiB</p>
+        <div>
+          <h3>LFM2.5-8B-A1B</h3>
+          <p class="note" data-i18n="home.lfmRun">Q4_K_M · 8K input · DSpark block 9</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <span><strong>1,269.4</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>43.38</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks-780m-heading" data-i18n="home.radeon780mTest">Radeon 780M benchmark</a>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <nav class="home-links" aria-label="Resources" data-i18n-aria-label="home.resources">
+    <a href="/benchmark/" data-i18n="home.benchmarkLink">Benchmark</a>
+    <a href="/recipe/" data-i18n="home.recipeLink">Recipes</a>
+    <a href="/docs/" data-i18n="home.docsLink">Docs</a>
+  </nav>
 
   <div class="rail solo"><b data-i18n="home.demo">Demo</b></div>
   <figure class="clip">
     <video src="https://github.com/user-attachments/assets/fa191709-bca4-4caa-a5ed-9a0ef290a76b"
            controls playsinline preload="metadata"></video>
-    <figcaption><span data-i18n-html="home.demoCaption"><strong>2.4× faster than llama.cpp</strong> on nginx log triage through <a href="https://pi.dev">Pi</a>.</span>
-      <span class="fine" data-i18n-html="home.demoDetail">Same Ryzen AI Max+ 395, same <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B UD-Q4_K_XL</a>, one engine at a time.</span></figcaption>
+    <figcaption>
+      <span data-i18n-html="home.demoCaption"><strong>2.4× faster than llama.cpp</strong> on nginx log triage through <a href="https://pi.dev">Pi</a>.</span>
+      <span class="fine"><span data-i18n-html="home.demoDetail">Same Ryzen AI Max+ 395, same <a href="https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF">Qwen3.6-35B-A3B UD-Q4_K_XL</a>, one engine at a time.</span>
+        · <time datetime="2026-10" data-i18n="home.demoDate">October 2026</time> <span data-i18n="home.demoDateLabel">demo</span></span>
+    </figcaption>
   </figure>
 
   <section class="band" id="webui">
@@ -179,8 +242,8 @@
   <section class="band" id="run">
     <div class="rail"><b data-i18n="home.run">Run</b></div>
     <div>
-      <pre class="block">snowllm pull qwen3.8-flash-next-q3-k-xl
-snowllm qwen3.8-flash-next-q3-k-xl</pre>
+      <pre class="block">snowllm pull qwen3.8-flash-next-iq4-xs-ud3.1
+snowllm qwen3.8-flash-next-iq4-xs-ud3.1</pre>
       <p data-i18n-html="home.runDesc">Choose a model that fits your memory. <a href="/docs/getting-started/quick-start">Quick start ↗</a> · <a href="/docs/reference/models">Supported models ↗</a> · <a href="/docs/faq#_1-how-do-i-run-a-custom-fine-tuned-model">Custom models (FAQ) ↗</a></p>
     </div>
   </section>
@@ -197,6 +260,6 @@ snowllm qwen3.8-flash-next-q3-k-xl</pre>
 </div>
 
 
-<script type="module" src="/site-shell.js?v=install-channels-1"></script>
+<script type="module" src="/site-shell.js?v=home-models-1"></script>
 </body>
 </html>

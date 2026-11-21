@@ -852,19 +852,34 @@
   .page-intro p { color: var(--muted); }
   .eyebrow { color: var(--faint); font: var(--fs-label)/var(--lh-ui) var(--sans); letter-spacing: .08em; text-transform: uppercase; }
   .section-link { display: inline-block; margin-top: .8rem; color: var(--accent); }
-  .destinations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--hair); margin: 3rem 0; }
-  .destination { padding: 1.7rem 1.5rem 1.7rem 0; text-decoration: none; border-bottom: 1px solid var(--hair); }
-  .destination + .destination { padding-left: 1.5rem; border-left: 1px solid var(--hair); }
-  .destination strong { display: block; font-size: 1.5rem; color: var(--ink); margin: .7rem 0; }
-  .destination span { color: var(--muted); font-size: 1rem; }
-  .destination:hover strong { color: var(--accent); }
   @media (max-width: 640px) {
-    .destinations { grid-template-columns: 1fr; }
-    .destination + .destination { padding-left: 0; border-left: 0; }
     .page-intro { padding-top: 2.5rem; }
   }
 
-  .home-eyebrow { margin-top: 3rem; margin-bottom: 1rem; }
+  .home .lede { margin-top: clamp(2rem, 5vw, 3.75rem); }
+
+  .home-models { margin-top: 2.75rem; }
+  .home-models h2 { font-size: var(--fs-rail); margin: 0 0 1rem; }
+  .home-model-list { list-style: none; border-block: 1px solid var(--hair); margin: 0; padding: 0; }
+  .home-model-list li {
+    display: grid;
+    grid-template-columns: minmax(5rem, .55fr) minmax(0, 1.35fr) minmax(0, 1.75fr);
+    align-items: baseline;
+    gap: .4rem clamp(.75rem, 2.5vw, 2rem);
+    padding: 1rem 0;
+  }
+  .home-model-list li + li { border-top: 1px solid var(--hair); }
+  .home-model-list h3 { font-size: var(--fs-h3); margin: 0 0 .25rem; }
+  .home-model-list p { margin: 0; }
+  .home-model-memory { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .home-model-rates { display: flex; flex-wrap: wrap; gap: 0 .8rem; font-variant-numeric: tabular-nums; }
+  .home-model-list a { font-size: var(--fs-note); }
+  @media (max-width: 680px) {
+    .home-model-list li { grid-template-columns: 4.5rem minmax(0, 1fr); }
+    .home-model-list li > :last-child { grid-column: 2; }
+  }
+  .home-links { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin-top: 1.15rem; }
+  .home-links a { font-weight: 600; }
 
   .foot { max-width: var(--content-width); margin-inline: auto; }
 

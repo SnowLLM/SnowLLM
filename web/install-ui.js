@@ -87,8 +87,7 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
       : TORCH_LINE.replace("device-gfx1151", "device-" + choice.gpu) + SNOWLLM_LINE + packageSpec;
     copyBtn.disabled = missing || blocked;
     channelNoteEl.textContent = missing ? t("install.noChannelRelease", { channel: dev ? "Dev" : "Stable" })
-      : dev ? "" : t("install.stable");
-    if (releaseState === "error") channelNoteEl.textContent += " " + t("install.versionError");
+      : releaseState === "error" ? t("install.versionError") : "";
     channelNoteEl.hidden = blocked || !channelNoteEl.textContent;
     noteEl.hidden = choice.os === "linux";
     noteEl.innerHTML = choice.os === "wsl2" ? t("install.wsl")
