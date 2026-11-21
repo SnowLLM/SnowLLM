@@ -91,6 +91,8 @@ class BenchmarkPageTests(unittest.TestCase):
             if s["key"] in ("minicpm_mix_q3_dspark8_graph_gfx1103_20261118",
                             "minicpm_mix_q3_dspark8_eager_gfx1103_20261118"):
                 lengths = [1024, 8192]
+            elif s["key"] == "minicpm-780m-gpu-first-standard":
+                lengths = [8192, 131072]
             elif s["model"] == "LFM2.5-8B-A1B Q4_K_M":
                 lengths = [1024, 8192, 32768, 127744]
             else:

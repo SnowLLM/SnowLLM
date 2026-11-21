@@ -12,6 +12,7 @@ PAGE = ROOT / "web" / "benchmark" / "index.html"
 START = "<!-- BEGIN GENERATED BENCHMARK DATA -->"
 END = "<!-- END GENERATED BENCHMARK DATA -->"
 GFX1103_LABELS = {
+    "minicpm-780m-gpu-first-standard",
     "lfm2_5_8b_a1b_q4_k_m_dspark9_gfx1103_http",
     "minicpm_mix_q3_dspark8_graph_gfx1103_20261118",
     "minicpm_mix_q3_dspark8_eager_gfx1103_20261118",
