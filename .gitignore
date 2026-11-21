@@ -58,5 +58,6 @@ __pycache__/
 /.output/
 
 /web/docs/
+/web/sitemap.xml
 
 /status_server/

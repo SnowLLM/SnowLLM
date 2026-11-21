@@ -4,6 +4,8 @@ import pathlib
 import re
 import runpy
 import sys
+import xml.etree.ElementTree as ET
+from urllib.parse import unquote, urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INSTALL = (ROOT / "install.sh").read_text()
@@ -206,6 +208,33 @@ def check_flags() -> None:
                 problems.append(f"web/index.html documents ${token}, which nothing reads")
 
 
+def check_sitemap() -> None:
+    web = ROOT / "web"
+    domain = (web / "CNAME").read_text().strip()
+    sitemap = ET.parse(web / "sitemap.xml")
+    locations = [node.text for node in sitemap.findall("{*}url/{*}loc")]
+    pages = set()
+    for location in locations:
+        url = urlsplit(location)
+        path = unquote(url.path)
+        if url.scheme != "https" or url.netloc != domain or url.query or url.fragment:
+            problems.append(f"unexpected sitemap URL: {location}")
+            continue
+        if path.endswith("/index.html") or (path.startswith("/docs/") and path.endswith((".html", "/index"))):
+            problems.append(f"expected a canonical page URL: {location}")
+        page = web / path.lstrip("/")
+        if path.endswith("/"):
+            page /= "index.html"
+        elif path.startswith("/docs/"):
+            page = page.parent / (page.name + ".html")
+        if page in pages:
+            problems.append(f"duplicate sitemap page: {location}")
+        pages.add(page)
+    published = {page for page in web.rglob("*.html") if page.name != "404.html"}
+    for page in sorted(pages ^ published):
+        problems.append(f"sitemap and published pages disagree on {page.relative_to(web)}")
+
+
 def check_locales() -> None:
     catalogues = {}
     for locale in ("en", "zh_cn"):
@@ -242,6 +271,7 @@ check_benchmark_view()
 check_flags()
 check_benchmarks_json()
 check_catalogue()
+check_sitemap()
 check_locales()
 
 for p in problems:

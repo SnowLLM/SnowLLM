@@ -12,11 +12,13 @@ on:
       - benchmarks/runs/*.json
       - benchmarks/runs/*.json.outdated
       - install.sh
+      - CHANGELOG.md
       - README.md
       - pyproject.toml
       - snowllm/hub/recipes.py
       - snowllm/config.py
       - snowllm/_version.py
+      - scripts/build-sitemap.py
       - scripts/check-site.py
       - scripts/build-recipes.py
       - scripts/check-recipe-clients.py
@@ -40,6 +42,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
@@ -50,10 +54,10 @@ jobs:
           node-version: "24"
           cache: npm
 
-      - name: Build documentation
+      - name: Build the site and sitemap
         run: |
           npm ci
-          npm run docs:build
+          npm run site:build
 
       - name: Every recipe is well formed
         run: scripts/build-recipes.py --check
@@ -61,12 +65,8 @@ jobs:
       - name: Recipe compatibility with published clients
         run: |
           python -m unittest discover -s tests -p test_recipe_compatibility.py
-          python scripts/build-recipes.py
           python -m pip download --no-deps --only-binary=:all: -d "$RUNNER_TEMP/recipe-clients" "snowllm==0.3.13"
           python scripts/check-recipe-clients.py "$RUNNER_TEMP/recipe-clients"
-
-      - name: Assemble the benchmark data the page draws
-        run: scripts/build-benchmarks.py
 
       - name: Benchmark HTML preserves every measurement
         run: python -m unittest discover -s tests -p test_benchmark_page.py
@@ -80,6 +80,14 @@ jobs:
       - name: Install channels select published releases
         run: node --test tests/test_install_ui.mjs
 
+      - uses: actions/configure-pages@v6
+        if: github.event_name != 'pull_request'
+
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
+        with:
+          path: web
+
   publish:
     needs: check
     if: github.event_name != 'pull_request'
@@ -91,55 +99,5 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Build documentation
-        run: |
-          npm ci
-          npm run docs:build
-
-      - name: Include documentation in the published site
-        run: cp -r docs/.vitepress/dist web/docs
-
-      - name: Date the sitemap from the last change to the site
-        run: |
-          stamp=$(git log -1 --format=%cs -- web)
-          [ -n "$stamp" ] || {
-              echo "::error::no commit touches web/, so the sitemap cannot be dated" >&2
-              exit 1
-          }
-          python - "$stamp" <<'PY'
-          import pathlib, re, sys
-          p = pathlib.Path("web/sitemap.xml")
-          s = p.read_text()
-          out, n = re.subn(r"<lastmod>[^<]*</lastmod>", f"<lastmod>{sys.argv[1]}</lastmod>", s)
-          if n != 1:
-              sys.exit(f"::error::expected one <lastmod> in web/sitemap.xml, found {n}")
-          p.write_text(out)
-          print(f"sitemap lastmod = {sys.argv[1]}")
-          PY
-
-      - name: Serve the installer the site tells people to pipe
-        run: cp install.sh web/install.sh
-
-      - name: Assemble the catalogue `snowllm pull` reads
-        run: scripts/build-recipes.py
-
-      - name: Assemble the benchmark data the page draws
-        run: scripts/build-benchmarks.py
-
-      - uses: actions/configure-pages@v6
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: web
-
       - id: deploy
         uses: actions/deploy-pages@v5
