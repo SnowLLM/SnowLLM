@@ -69,6 +69,10 @@ COMPARISONS = [
 
 
 ARMS = {
+    "minicpm-kv-standard":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B Q4_K_M", "DSpark block 8, 2K draft window, HTTP (2026-11-21)"),
+    "minicpm-780m-gpu-first-standard":
+        ("SnowLLM", "MiniCPM-V 4.7 35B-A3B mix_q3gud_im", "DSpark block 8, 2K draft window, auto offload, HTTP (2026-11-21)"),
     "qwen3_8_flash_next_q3_k_xl_no_mtp_ud3_1_b12479_20261117_llama":
         ("llama.cpp", "Qwen3.8-Flash-Next UD3.1 UD-Q3_K_XL", "None, b12479, F16 KV, HTTP", 0),
     "qwen3_8_flash_next_iq4_xs_no_mtp_ud3_1_b12479_20261117_llama":

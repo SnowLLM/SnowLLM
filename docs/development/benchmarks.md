@@ -32,6 +32,8 @@ When llama.cpp reports only an acceptance fraction, the chart estimates AL as `1
 
 ### MiniCPM-V 4.7 35B-A3B
 
+On November 21, the 32 GiB Ryzen 9 7940HS ran the mixed Q3 recipe with a 2,048-token draft window, 64 sink tokens, BF16 KV and automatic weight placement. The PG-19 client ran on the Ryzen AI Max+ 395. At 128K input, prefill reached 473.3 tok/s and decode reached 38.6 tok/s with AL 3.73. One of four outputs contained a repeating passage. On the 395, the Q4_K_M recipe reached 1,883.0 tok/s prefill and 74.9 tok/s decode at 128K with AL 2.68. At 220K, two of four outputs contained a repeating passage.
+
 The November 18 retest on the 32 GiB Ryzen 9 7940HS system uses `mix_q3gud_im`, SnowLLM 0.3.21 and kernels 0.3.13. Both runs use DSpark block 8, BF16 KV, a 135,168-token context, 4,096-token prefill chunks and disabled prefix caching. At 1K and 8K, decode reaches 28.08 and 21.63 tok/s with graphs and 27.50 and 21.18 tok/s in eager mode. [Graph samples](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_graph_gfx1103_20261118_snowllm.json) · [Eager samples](https://github.com/SnowLLM/SnowLLM/blob/main/benchmarks/runs/minicpm_v4_7_35b_a3b_mix_q3gud_im_dspark8_eager_gfx1103_20261118_snowllm.json)
 
 The October 29 SnowLLM eager and llama.cpp runs are shown as separate series, with inputs at 1K, 8K, 32K and 120K. They use the older HTTP timing method. The chart takes llama.cpp AL from the retained requests’ server logs and estimates step time from AL and decode rate.
