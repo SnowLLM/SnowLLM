@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.24 — 2026-11-21
+
+- MiniCPM-V 4.7 DSpark recipes retain the first 64 tokens and use a 2,048-token recent draft attention window. The draft KV pool recycles older pages and preserves pages still held by prefix checkpoints. The 32 GiB Windows recipe now places weights automatically with a 94% GPU memory budget.
+  MiniCPM-V 4.7 DSpark 配方保留开头 64 个 token，草稿注意力使用最近 2,048 个 token 的窗口。草稿 KV 池回收更早的页面，并保留前缀检查点仍引用的页面。32 GiB Windows 配方使用 94% 的显存预算，自动分配权重。
+- Fix LFM2.5 single-token decoding when a full DSpark verification block no longer fits at the context limit.
+  修复 LFM2.5 接近上下文上限时，剩余空间不足一个 DSpark 验证块的单 token 解码。
+- At 128K input on PG-19, MiniCPM decoded at 38.6 tok/s on Ryzen 9 7940HS (mixed Q3, AL 3.73) and 74.9 tok/s on Ryzen AI Max+ 395 (Q4_K_M, AL 2.68). One of four 7940HS outputs contained a repeating passage.
+  PG-19 输入为 128K 时，MiniCPM 在 Ryzen 9 7940HS 上的解码速度为 38.6 tok/s（混合 Q3，AL 3.73），在 Ryzen AI Max+ 395 上为 74.9 tok/s（Q4_K_M，AL 2.68）。7940HS 的四次输出中有一次出现重复片段。
+
 ## 0.3.23 — 2026-11-20
 
 Substantially improve prefill performance for Qwen3.8-Flash-Next and Qwen3.5 MoE models. Add built-in benchmarking to the WebUI and improve the chat interface and dashboard.
