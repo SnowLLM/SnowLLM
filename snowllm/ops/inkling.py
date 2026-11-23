@@ -10,7 +10,14 @@ from .operation import operator
 @operator
 def expert_linear(x, weight, scales, ids, prefill=False):
     tokens, groups, k = x.shape
-    experts, n, stored_k = weight.shape
+    tiled = weight.ndim == 5
+    if tiled:
+        experts, row_tiles, blocks, groups_per_block, panel_bytes = weight.shape
+        if scales is None or (groups_per_block, panel_bytes) != (4, 144):
+            raise SnowLLMError("invalid Inkling NVFP4 panel layout")
+        n, stored_k = row_tiles * 16, blocks * 36
+    else:
+        experts, n, stored_k = weight.shape
     _chk(x, "Inkling expert inputs", torch.bfloat16)
     _chk(ids, "Inkling routed expert ids", torch.int32, tokens, ids.shape[-1])
     topk = ids.shape[1]
@@ -28,11 +35,13 @@ def expert_linear(x, weight, scales, ids, prefill=False):
     if x.is_meta:
         return out
     name = "snowllm_inkling_expert_prefill" if prefill else "snowllm_inkling_expert_linear"
+    if tiled:
+        name = "snowllm_inkling_expert_tiled"
     kernel = getattr(lib, name, None)
     if kernel is None:
         raise SnowLLMError(f"Inkling experts require a SnowLLM-Kernels build with {name}")
     check(kernel(_p(x), _p(weight), _p(scales), _p(ids), _p(out),
-          tokens, groups, topk, experts, n, k, _stream()), "inkling_expert_linear")
+          tokens, groups, topk, experts, n, k, *((int(prefill),) if tiled else ()), _stream()), name)
     return out
 
 

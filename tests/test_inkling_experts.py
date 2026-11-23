@@ -15,8 +15,12 @@ def dense_expert(projection, expert):
     weight = projection.weight[expert].cpu()
     if projection.scale is None:
         return weight.float()
-    n = weight.shape[0]
-    blocks = weight.reshape(-1, 36)
+    row_tiles, k_blocks, _, _ = weight.shape
+    n = row_tiles * 16
+    raw = torch.empty(row_tiles, 16, k_blocks, 36, dtype=torch.uint8)
+    raw[..., :4] = weight[..., :16].permute(0, 3, 1, 2)
+    raw[..., 4:] = weight[..., 16:].reshape(row_tiles, k_blocks, 4, 16, 8).permute(0, 3, 1, 2, 4).flatten(3)
+    blocks = raw.reshape(-1, 36)
     scales = blocks[:, :4].contiguous().view(torch.float8_e4m3fn).float()
     packed = blocks[:, 4:].reshape(-1, 4, 8)
     codes = torch.cat((packed & 15, packed >> 4), dim=-1)
