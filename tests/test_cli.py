@@ -547,6 +547,11 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['num_spec'], 7)
         self.assertTrue(kw['mtp_prompt_lookup'])
 
+    def test_mtp_tool_draft_reaches_model_build(self):
+        _, kw = self.launch_options(('--num-spec', '7', '--mtp-tool-draft'))
+        self.assertEqual(kw['num_spec'], 7)
+        self.assertTrue(kw['mtp_tool_draft'])
+
     def test_budgets_do_not_change_context_or_chunk(self):
         args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-batched-tokens', '512',
                                         '--max-gpu-mem', '.4', '--max-host-mem', '.5'))

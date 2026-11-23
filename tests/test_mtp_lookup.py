@@ -158,6 +158,7 @@ class MtpLookupTests(unittest.TestCase):
         spec = Qwen4ExpSpecDecoder.__new__(Qwen4ExpSpecDecoder)
         spec.runner = SimpleNamespace(geo=SimpleNamespace(vocab_size=256))
         spec.verify_hist = [0] * 8
+        spec.tool_states = weakref.WeakKeyDictionary()
         spec.lookups = weakref.WeakKeyDictionary()
         spec.adaptive = Mock()
         spec.adaptive.select.side_effect = lambda batch, k, cap: min(4, cap)
@@ -210,6 +211,134 @@ class MtpLookupTests(unittest.TestCase):
         spec.lookups = None
         spec.release_lookup(r)
 
+    def test_tool_source_uses_committed_tokens_and_recovers_native_depth(self):
+        for temperature, with_lookup in ((0, True), (.7, False), (.7, True)):
+            with self.subTest(temperature=temperature, with_lookup=with_lookup):
+                spec = object.__new__(Qwen4ExpSpecDecoder)
+                spec.adaptive = Mock()
+                spec.num_spec = 7
+                spec.verify_hist = [0] * 8
+                spec.tool_states = weakref.WeakKeyDictionary()
+                spec.lookups = {} if with_lookup else None
+                spec.runner = SimpleNamespace(mtp_h=['selected'], geo=SimpleNamespace(vocab_size=256))
+                spec.propose_first = Mock()
+                fmt = Mock()
+                parser = fmt.new_state.return_value
+                parser.propose.side_effect = [[11,12,13,14,15], [21,22,23], []]
+                r = Request([1,2], SamplingParams(temperature=temperature, max_new_tokens=30),
+                            out=[10], drafts=[11], tool_draft=fmt)
+                lookup = Mock(suffix=None, guard=None)
+                if with_lookup:
+                    spec.lookups[r] = lookup
+
+                def verify(decoder, batch, width, limit):
+                    counts = Mock()
+                    counts.tolist.return_value = [len(committed)]
+                    depth, got = decoder._propose_verified(batch, None, None, None, width-1, None,
+                                                           counts, None, None, limit)
+                    self.assertEqual((depth,got), (1,[len(committed)]))
+                    r.out.extend(committed)
+                    r.drafts = [40]
+
+                with (patch.object(SpecDecoder, 'verify_step', verify),
+                      patch.object(SpecDecoder, 'propose_rest') as restore):
+                    spec.propose_rest([r], ['prefill'], 2)
+                    self.assertEqual(r.drafts, [11,12,13,14,15])
+                    restore.assert_not_called()
+                    committed = [11,90]
+                    spec.verify_step([r], 6, 7)
+                    self.assertEqual(r.drafts, [21,22,23])
+                    lookup.propose.assert_not_called()
+                    committed = [21,22,23,91]
+                    spec.verify_step([r], 4, 7)
+                self.assertEqual([call.args[0] for call in parser.advance.call_args_list],
+                                 [[10],[11,90],[21,22,23,91]])
+                self.assertEqual(spec.tool_stats(r), dict(rounds=2, proposed=8, verified=8, accepted=4))
+                self.assertEqual(spec.verify_hist[5], 1)
+                self.assertEqual(spec.verify_hist[3], 1)
+                self.assertEqual([c.args[-1] for c in spec.propose_first.call_args_list], [1,1])
+                restore.assert_called_once_with([r], ['selected'], 2)
+                self.assertEqual(lookup.propose.call_count, int(with_lookup))
+                spec.adaptive.observe.assert_not_called()
+
+    def test_longer_native_and_tie_keep_original_drafts(self):
+        spec = object.__new__(Qwen4ExpSpecDecoder)
+        spec.tool_states = weakref.WeakKeyDictionary()
+        fmt = Mock()
+        for formatted in ([8, 9], [8, 9, 10, 11]):
+            with self.subTest(formatted=formatted):
+                native = [1, 2, 3, 4]
+                fmt.new_state.return_value.propose.return_value = formatted
+                r = Request([0], SamplingParams(), out=[10], drafts=native, tool_draft=fmt)
+                self.assertFalse(spec._offer_tool_draft(r, 7))
+                self.assertIs(r.drafts, native)
+                self.assertEqual(spec.tool_stats(r)['proposed'], 0)
+
+    def test_matching_format_prefix_keeps_native_history_separate(self):
+        spec = object.__new__(Qwen4ExpSpecDecoder)
+        spec.tool_states = weakref.WeakKeyDictionary()
+        spec.lookups = None
+        spec.verify_hist = [0] * 8
+        spec.propose_first = Mock()
+        spec.adaptive = Mock()
+        fmt = Mock()
+        fmt.new_state.return_value.propose.return_value = [11, 12, 13, 14, 15, 16]
+        r = Request([0], SamplingParams(), out=[10], drafts=[11, 12, 13, 14], tool_draft=fmt)
+        self.assertTrue(spec._offer_tool_draft(r, 7))
+        accepted = Mock()
+        accepted.tolist.return_value = [7]
+        spec._propose_verified([r], None, None, None, 6, None, accepted, None, None, 7)
+        self.assertEqual(spec.tool_stats(r)['accepted'], 6)
+        spec.adaptive.observe.assert_not_called()
+
+    def test_tool_exit_limits_last_native_width_to_available_budget(self):
+        spec = object.__new__(Qwen4ExpSpecDecoder)
+        spec.tool_states = weakref.WeakKeyDictionary()
+        spec.lookups = None
+        spec.runner = SimpleNamespace(mtp_h=['selected'])
+        for max_output, cap, restored in ((20, 7, 4), (20, 3, 3), (10, 7, 2), (9, 7, None)):
+            with self.subTest(max_output=max_output, cap=cap):
+                fmt = Mock()
+                fmt.new_state.return_value.propose.side_effect = [list(range(1, 8)), []]
+                r = Request([20], SamplingParams(max_new_tokens=max_output),
+                            out=[0], drafts=[1, 2, 3, 4], tool_draft=fmt)
+                self.assertTrue(spec._offer_tool_draft(r, 7))
+
+                def verified(decoder, batch, width, limit):
+                    r.out.extend([1, 2, 3, 4, 5, 90])
+                    r.drafts = [91]
+
+                with (patch.object(SpecDecoder, 'verify_step', verified),
+                      patch.object(SpecDecoder, 'propose_rest') as restore):
+                    spec.verify_step([r], 8, cap)
+                if restored is None:
+                    restore.assert_not_called()
+                else:
+                    restore.assert_called_once_with([r], ['selected'], restored)
+
+    def test_tool_source_truncated_when_batch_joins(self):
+        spec = object.__new__(Qwen4ExpSpecDecoder)
+        spec.adaptive = Mock()
+        spec.adaptive.select.return_value = 2
+        spec.num_spec = 7
+        spec.verify_hist = [0] * 8
+        spec.tool_states = weakref.WeakKeyDictionary()
+        spec.lookups = None
+        spec.propose_first = Mock()
+        fmt = Mock()
+        fmt.new_state.return_value.propose.return_value = [10,11,12,13,14,15,16]
+        r = Request([1], SamplingParams(max_new_tokens=99), out=[4], drafts=[10], tool_draft=fmt)
+        other = Request([2], SamplingParams(max_new_tokens=99), out=[3], drafts=[1,2])
+        spec.propose_rest([r], None, 2)
+        counts = Mock()
+        counts.tolist.return_value = [2,1]
+        result = spec._propose_verified([r,other], None,None,None,2,None,counts,None,None,7)
+        self.assertEqual(result, (2,[2,1]))
+        self.assertEqual(spec.tool_stats(r), dict(rounds=1, proposed=7, verified=2, accepted=1))
+        spec.adaptive.observe.assert_called_once_with([other], 2, [1])
+        r.drafts = r.drafts.copy()
+        spec._propose_verified([r,other], None,None,None,2,None,counts,None,None,7)
+        self.assertEqual(spec.tool_stats(r)['rounds'], 1)
 
 
 if __name__ == '__main__':

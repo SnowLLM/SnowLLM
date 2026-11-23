@@ -325,7 +325,9 @@ class SpecDecoder:
         if len(r.out) + k + 1 >= r.params.max_new_tokens:
             return True
         drafts = r.drafts[:k]
-        return any(self.sampler.is_stop(r, t) for t in drafts)
+        fmt = r.tool_draft
+        return ((fmt is not None and (r.last == fmt.closing or fmt.closing in drafts))
+                or any(self.sampler.is_stop(r, t) for t in drafts))
 
     def _ends_request(self, r, tokens):
         remaining = r.params.max_new_tokens - len(r.out)

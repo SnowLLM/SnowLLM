@@ -14,6 +14,7 @@ from jinja2 import TemplateError
 
 from ..engine import Request, SamplingParams
 from ..engine.mtp_lookup import tool_lookup_passages
+from ..engine.mtp_tool import MtpToolFormat
 from ..models import multimodal
 from . import tool_parser
 from .protocol import Common, CompletionRequest
@@ -410,6 +411,10 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
         passages = tool_lookup_passages(msgs, st.tokenizer)
         if passages:
             mm['lookup_passages'] = passages
+    if tools and getattr(engine, 'mtp_tool_draft', False):
+        fmt = MtpToolFormat.from_tools(st.tokenizer, tools, engine.stop_token_ids)
+        if fmt is not None:
+            mm['tool_draft'] = fmt
     return prompt, mm or None
 
 

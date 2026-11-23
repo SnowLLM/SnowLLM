@@ -37,6 +37,8 @@ class SpecTerminalTests(unittest.TestCase):
         # The target may stop at an accepted draft, a correction, or a bonus token.
         cases = [
             ([8, 9, 10], [8, 9], 8, {9}, (), None, 3, [8, 9], 'stop', False),
+            ([8, 7, 10], [8, 9], 8, set(), (7,), 8, 2, [8, 7], 'stop', False),
+            ([8, 9, 7], [8, 9], 8, {7}, (), 1, 3, [8, 9, 7], 'stop', False),
             ([8, 9, 7], [8, 9], 8, {7}, (), None, 3, [8, 9, 7], 'stop', True),
             ([8, 9, 10], [8, 9], 3, set(), (), None, 3, [8, 9], 'length', False),
             ([6, 9, 10], [8, 9], 3, {9}, (), None, 1, [6], None, True),
@@ -69,11 +71,13 @@ class SpecTerminalTests(unittest.TestCase):
                     decoder.propose_first = Mock(side_effect=lambda *args: decoder.d_drafts.fill_(6))
                     decoder.accept_hist = []
                     decoder.verify_hist = [0] * 3
-                    decoder.lookups = None
+                    decoder.tool_states, decoder.lookups = {}, None
                     decoder.adaptive = Mock()
                     decoder.adaptive.select.return_value = 2
                     req = Request([0], SamplingParams(max_new_tokens=cap, stop_token_ids=stops),
                                   out=[1], blocks=[0], drafts=drafts.copy())
+                    if closing is not None:
+                        req.tool_draft = Mock(closing=closing)
                     with (patch.object(ops, 'copy_rows', lambda dest, src: dest.copy_(src)),
                           patch.object(ops, 'spec_accept', side_effect=lambda *a, out: out.fill_(accepted))):
                         SpecDecoder.verify_step(decoder, [req], 3, limit)

@@ -13,6 +13,29 @@ from .mtp_lookup import MtpLookup
 from .spec_decode import SpecDecoder
 
 
+class _ToolDraft:
+    def __init__(self, fmt):
+        self.parser = fmt.new_state()
+        self.scanned = 0
+        self.suffix = None
+        self.native_depth = 2
+        self.rounds = self.proposed = self.verified = self.accepted = 0
+
+    def propose(self, request, limit):
+        self.parser.advance(request.out[self.scanned:])
+        self.scanned = len(request.out)
+        draft = self.parser.propose(limit)
+        native = request.drafts
+        if len(draft) < 2 or len(draft) <= len(native):
+            self.suffix = None
+            return False
+        if len(native) >= 2:
+            self.native_depth = len(native)
+        self.suffix = request.drafts = draft
+        self.proposed += len(draft)
+        return True
+
+
 class MtpDepth:
     def __init__(self):
         self.samples = weakref.WeakKeyDictionary()
@@ -138,6 +161,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         super().__init__(runner, sampler, slots, tables, stage, **kwargs)
         self.adaptive = MtpDepth() if adaptive or prompt_lookup else None
         self.lookups = weakref.WeakKeyDictionary() if prompt_lookup else None
+        self.tool_states = weakref.WeakKeyDictionary()
         self.verify_hist = [0] * (self.num_spec + 1)
         self.indexer = getattr(runner.model.mtp.layer.attn, 'indexer', None)
         first_scratch = runner.dummy_slot + 1
@@ -223,23 +247,50 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         if self.lookups is not None:
             self.lookups.pop(request, None)
 
+    def tool_stats(self, request):
+        state = self.tool_states.get(request)
+        return {name: getattr(state, name, 0) for name in ('rounds', 'proposed', 'verified', 'accepted')}
+
+    def _offer_tool_draft(self, request, cap):
+        limit = min(7, cap, request.params.max_new_tokens - len(request.out) - 1)
+        if limit < 2:
+            return False
+        state = self.tool_states.get(request)
+        if state is None:
+            state = self.tool_states[request] = _ToolDraft(request.tool_draft)
+        return state.propose(request, limit)
+
+    def propose_rest(self, batch, h, k):
+        if (self.adaptive is not None and len(batch) == 1 and batch[0].tool_draft is not None
+                and self._offer_tool_draft(batch[0], self.num_spec)):
+            return
+        super().propose_rest(batch, h, k)
+
     def verify_step(self, batch, T, draft_limit=None):
         request = batch[0]
-        if draft_limit is None or self.lookups is None:
+        tool = len(batch) == 1 and request.tool_draft is not None
+        if draft_limit is None or (not tool and self.lookups is None):
             return super().verify_step(batch, T, draft_limit)
         lookup = self.lookups.get(request) if self.lookups is not None else None
         used_suffix = T > 1 and lookup is not None and lookup.suffix is request.drafts
+        state = self.tool_states.get(request)
+        used_tool = T > 1 and state is not None and state.suffix is request.drafts
         super().verify_step(batch, T, draft_limit)
         if len(batch) > 1 or request.done:
             for row in batch:
                 self.release_lookup(row)
             return
         limit = min(draft_limit, request.params.max_new_tokens - len(request.out) - 1)
+        if tool and self._offer_tool_draft(request, limit):
+            return
         if self.lookups is not None:
             if lookup is None and limit >= 3:
                 lookup = self.lookups[request] = MtpLookup(request, self.runner.geo.vocab_size)
             if lookup is not None:
                 lookup.propose(request, limit, used_suffix)
+        if used_tool and limit >= 2 and len(request.drafts) == 1:
+            # The committed MTP head already produced the first native token and its hidden state.
+            super().propose_rest(batch, self.runner.mtp_h[:1], min(state.native_depth, limit))
 
     def _propose_verified(self, batch, pos, cu, total, k, tv, nacc, seq, states, draft_limit,
                           *, terminal=False):
@@ -251,8 +302,12 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
             return k, nacc.tolist()
         greedy_single = len(batch) == 1 and batch[0].params.temperature <= 0
         sources = {}
-        if k and self.lookups:
+        if k and (self.tool_states or self.lookups):
             for request in batch:
+                state = self.tool_states.get(request)
+                if state is not None and state.suffix is request.drafts:
+                    sources[request] = state
+                    continue
                 source = self.lookups.get(request) if self.lookups else None
                 if source and (source.suffix is request.drafts or source.guard is request.drafts):
                     sources[request] = source
@@ -278,7 +333,11 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         if sources:
             for request, count in zip(batch, acc):
                 source = sources.get(request)
-                if source is None:
+                if isinstance(source, _ToolDraft):
+                    source.rounds += 1
+                    source.verified += k
+                    source.accepted += count - 1
+                elif source is None:
                     self.adaptive.observe([request], k, [count])
         else:
             self.adaptive.observe(batch, k, acc)

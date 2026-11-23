@@ -85,6 +85,7 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--num-spec` / `--num-speculative-tokens` | `2` | MTP draft tokens per step, or the cap with `--mtp-adaptive`. Use `0` to disable MTP. |
 | `--mtp-adaptive` | Off | Adjust native Qwen3.8-Flash-Next MTP depth during decoding. Set the cap with `--num-spec` (2–7). |
 | `--mtp-prompt-lookup` | Off | Reuse matching prompt text and tool results as target-verified drafts with MTP, DFlash or DSpark. Enables adaptive MTP on Flash-Next with native MTP. |
+| `--mtp-tool-draft` | Off | Enable adaptive Flash-Next MTP and draft tool-call markup from the supplied tool definitions during single-request decoding. |
 | `--dflash` | Unset | DFlash or DSpark draft checkpoint; replaces MTP and shares the memory budget. |
 | `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). DSpark enforces its checkpoint minimum. |
 | `--dflash-adaptive` | Off | Adjust how many tokens the target verifies from each DFlash or DFlash2 block, based on recent acceptance. |

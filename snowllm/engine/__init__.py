@@ -31,6 +31,7 @@ from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, Sp
 MIN_PLE_FIRST_CHUNK = 128
 
 if TYPE_CHECKING:
+    from .mtp_tool import MtpToolFormat
     from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
     from ..models.glm5_next.layers import Glm5NextForConditionalGeneration
@@ -370,17 +371,19 @@ class Engine:
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
                  draft_plan: DraftPlan | None = None, defer_capture: bool = False,
                  mtp_adaptive: bool = False,
-                 mtp_prompt_lookup: bool = False,
+                 mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
                  dflash_adaptive: bool = False) -> None:
         flash_next_mtp = isinstance(model.geo, Qwen4ExpGeometry) and not dflash_path
-        mtp_adaptive = mtp_adaptive or (mtp_prompt_lookup and flash_next_mtp)
+        mtp_adaptive = mtp_adaptive or mtp_tool_draft or (mtp_prompt_lookup and flash_next_mtp)
         if mtp_adaptive and (not flash_next_mtp or model.mtp is None or not 2 <= num_spec <= 7):
-            option = '--mtp-prompt-lookup' if mtp_prompt_lookup else '--mtp-adaptive'
+            option = ('--mtp-tool-draft' if mtp_tool_draft else
+                      '--mtp-prompt-lookup' if mtp_prompt_lookup and flash_next_mtp else '--mtp-adaptive')
             raise ValueError(f'{option} requires a Flash-Next MTP head and --num-spec 2–7')
         if mtp_prompt_lookup and not dflash_path and (num_spec < 1 or model.mtp is None):
             raise ValueError('--mtp-prompt-lookup requires native MTP, DFlash or DSpark')
         self.mtp_adaptive = mtp_adaptive
         self.mtp_prompt_lookup = mtp_prompt_lookup
+        self.mtp_tool_draft = mtp_tool_draft
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
@@ -626,7 +629,7 @@ class Engine:
             rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
             embed_rows: list[int] | None = None, queue: bool = True,
-            system_prefix_len: int = 0,
+            system_prefix_len: int = 0, tool_draft: "MtpToolFormat | None" = None,
             lookup_passages: tuple[list[int], ...] = ()) -> Request:
         p = params or SamplingParams()
         rope_factor = self.default_rope_factor if rope_factor is None else rope_factor
@@ -636,9 +639,11 @@ class Engine:
                                f"(factor {rope_factor}, max_model_len {self.max_model_len})")
         if not 0 <= system_prefix_len <= len(prompt):
             raise ValueError('system_prefix_len must be within the prompt')
+        if tool_draft is not None and not self.mtp_tool_draft:
+            raise ValueError('tool_draft requires mtp_tool_draft=True')
         r = Request(prompt=list(prompt), params=p, rope_factor=rope_factor, mrope=mrope,
                     pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []),
-                    system_prefix_len=system_prefix_len,
+                    system_prefix_len=system_prefix_len, tool_draft=tool_draft,
                     lookup_passages=lookup_passages)
         if queue:
             self.waiting.append(r)
