@@ -43,7 +43,7 @@ class SpecTerminalTests(unittest.TestCase):
             ([8, 9, 10], [8, 9], 8, set(), (), None, 3, [8, 9, 10], None, True),
         ]
         for tokens, drafts, cap, eos, stops, closing, accepted, output, reason, propose in cases:
-            for kind, limit in ((SpecDecoder, None), (Qwen4ExpSpecDecoder, None)):
+            for kind, limit in ((SpecDecoder, None), (Qwen4ExpSpecDecoder, None), (Qwen4ExpSpecDecoder, 2)):
                 with self.subTest(kind=kind, tokens=tokens, cap=cap, eos=eos, stops=stops):
                     decoder = object.__new__(kind)
                     decoder.runner = Mock(block_size=16, prev_context=0)
@@ -85,6 +85,8 @@ class SpecTerminalTests(unittest.TestCase):
                     self.assertEqual(req.drafts, [6, 6] if reason is None else [])
                     if kind is Qwen4ExpSpecDecoder:
                         self.assertEqual(decoder.verify_hist[2], 1)
+                    if limit:
+                        decoder.adaptive.observe.assert_called_once_with([req], 2, [accepted])
 
     def test_ragged_draft_uses_live_taps_and_compact_block_table(self):
         for kind in (DFlashDecoder, DSparkDecoder):

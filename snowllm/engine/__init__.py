@@ -368,7 +368,12 @@ class Engine:
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
                  draft_plan: DraftPlan | None = None, defer_capture: bool = False,
+                 mtp_adaptive: bool = False,
                  dflash_adaptive: bool = False) -> None:
+        flash_next_mtp = isinstance(model.geo, Qwen4ExpGeometry) and not dflash_path
+        if mtp_adaptive and (not flash_next_mtp or model.mtp is None or not 2 <= num_spec <= 7):
+            raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and --num-spec 2–7')
+        self.mtp_adaptive = mtp_adaptive
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
@@ -441,7 +446,8 @@ class Engine:
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
-                            num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks)
+                            num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks,
+                            **({'adaptive': True} if mtp_adaptive else {}))
                 if self.num_spec else None)
 
             self.waiting: deque[Request] = deque()
@@ -971,9 +977,10 @@ class Engine:
             logits, hid = self.spec.propose_after_prefill(r, b, lo, hi, M, r.out[-1])
             r.drafts = self.sampler.greedy_list(logits)
             r.n_accepted = 1
-            if (self.num_spec > 1 and r.num_cached + self.num_spec <= self.max_model_len
-                    and self.blocks.grow(r, self.num_spec)):
-                self.spec.propose_rest([r], hid, self.num_spec)
+            depth = min(2, self.num_spec) if self.mtp_adaptive else self.num_spec
+            if (depth > 1 and r.num_cached + depth <= self.max_model_len
+                    and self.blocks.grow(r, depth)):
+                self.spec.propose_rest([r], hid, depth)
         publish()
         self._retire_finished()
 
@@ -1010,7 +1017,19 @@ class Engine:
         self._retire_finished()
 
     def _decode_or_verify(self, n: int) -> tuple[int, int]:
-        if isinstance(self.spec, DSparkScheduling) and self.spec.adaptive and n <= SPEC_MAX_STEP_ROWS:
+        draft_limit = None
+        if self.mtp_adaptive:
+            while True:
+                batch = [r for r in self.running if r.prefilled]
+                if not batch:
+                    return 0, 0
+                capacity = self.max_model_len - max(r.num_cached for r in batch)
+                width = max(1, self.spec.verify_rows(len(batch)))
+                T = min(width, capacity, 1 + min(len(r.drafts) for r in batch))
+                draft_limit = min(width - 1, capacity - T + 1)
+                if self._decodable_batch(T + max(0, draft_limit - 1)) == batch:
+                    break
+        elif isinstance(self.spec, DSparkScheduling) and self.spec.adaptive and n <= SPEC_MAX_STEP_ROWS:
             while True:
                 batch = [r for r in self.running if r.prefilled]
                 if not batch:
@@ -1029,7 +1048,10 @@ class Engine:
             if T:
                 batch = self._decodable_batch(self.spec.rows_needed(T))
         if T:
-            self.spec.verify_step(batch, T)
+            if draft_limit is None:
+                self.spec.verify_step(batch, T)
+            else:
+                self.spec.verify_step(batch, T, draft_limit)
             self.runner.commit(batch)
             emitted, rows = sum(r.n_accepted for r in batch), len(batch)
         else:

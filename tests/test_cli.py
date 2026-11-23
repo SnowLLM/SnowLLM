@@ -531,6 +531,17 @@ class CLITests(unittest.TestCase):
         self.assertTrue(kw['dflash_adaptive'])
         self.assertFalse(kw['dspark_adaptive'])
 
+    def test_legacy_positional_dflash_arguments(self):
+        from inspect import signature
+        from snowllm import cli
+        from snowllm.engine import Engine
+        for method, key in ((cli.build, 'dflash'), (Engine.__init__, 'dflash_path')):
+            bound = signature(method).bind_partial(*([None] * 12), 'draft.gguf', 8)
+            bound.apply_defaults()
+            self.assertEqual(bound.arguments[key], 'draft.gguf')
+            self.assertEqual(bound.arguments['dflash_block'], 8)
+            self.assertFalse(bound.arguments['mtp_adaptive'])
+
     def test_budgets_do_not_change_context_or_chunk(self):
         args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-batched-tokens', '512',
                                         '--max-gpu-mem', '.4', '--max-host-mem', '.5'))
