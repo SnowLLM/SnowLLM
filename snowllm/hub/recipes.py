@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from collections.abc import Callable
 from typing import TextIO
 
@@ -35,8 +36,9 @@ DEFAULT_CONTEXT = DEFAULT_CONTEXT_TARGET
 DEFAULT_SLOTS = DEFAULT_MAX_NUM_SEQS
 SCHEMA = 2
 MANIFEST = "snowllm-recipe.json"
-SETTABLE = ("num_spec", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
-            "dflash", "dflash_block", "dspark_adaptive", "kv_cache_dtype", "max_gpu_mem_util", "max_gpu_mem_gib", "max_host_mem_util", "max_host_mem_gib", "max_disk_mem_gib",
+_PROFILE_DIR = ".snowllm-recipes"
+SETTABLE = ("num_spec", "mtp_adaptive", "mtp_prompt_lookup", "mtp_tool_draft", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
+            "dflash", "dflash_block", "dflash_adaptive", "dspark_adaptive", "kv_cache_dtype", "max_gpu_mem_util", "max_gpu_mem_gib", "max_host_mem_util", "max_host_mem_gib", "max_disk_mem_gib",
             "prefix_memory_ratio", "mtp_window", "mtp_sinks", "moe_cache_experts", "moe_cache_mode",
             "offload_ratio", "host_offload", "host_alloc", "enforce_eager", "limit_mm_per_prompt")
 TIMEOUT = 30.0
@@ -235,14 +237,17 @@ def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
     out, seen = [], set()
     for directory in models_roots(root):
         for d in sorted(directory.glob("*")):
-            try:
-                raw = json.loads((d / MANIFEST).read_text())
-                recipe = Recipe({**raw, "dir": d.name})
-            except (OSError, ValueError, SnowLLMError):
-                continue
-            if recipe.id not in seen:
-                out.append(recipe)
-                seen.add(recipe.id)
+            profiles = {}
+            for receipt in (d / MANIFEST, *sorted((d / _PROFILE_DIR).glob("*.json"))):
+                try:
+                    raw = json.loads(receipt.read_text(encoding="utf-8"))
+                    recipe = Recipe({**raw, "dir": d.name})
+                except (OSError, ValueError, SnowLLMError):
+                    continue
+                if recipe.id not in seen:
+                    profiles[recipe.id] = recipe
+            out.extend(profiles.values())
+            seen.update(profiles)
     return out
 
 
@@ -402,16 +407,24 @@ def resolve(recipe: Recipe, dest: pathlib.Path) -> list[Blob]:
     return sorted(blobs, key=lambda b: (b.size > (1 << 20), str(b.dest)))
 
 
+def _profile_receipt(recipe: Recipe, dest: pathlib.Path) -> pathlib.Path:
+    key = hashlib.sha256(recipe.id.encode()).hexdigest()
+    return dest / _PROFILE_DIR / (key + ".json")
+
+
 def manifest(recipe: Recipe, dest: pathlib.Path) -> dict | None:
-    try:
-        got = json.loads((dest / MANIFEST).read_text())
-    except (OSError, ValueError):
-        return None
-    return got if got.get("id") == recipe.id else None
+    for path in (_profile_receipt(recipe, dest), dest / MANIFEST):
+        try:
+            got = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if got.get("id") == recipe.id:
+            return got
+    return None
 
 
 def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> None:
-    (dest / MANIFEST).write_text(json.dumps({
+    receipt = {
         "id": recipe.id,
         "serve_as": recipe.serve_as,
         "model": recipe.model,
@@ -427,7 +440,29 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "bytes": sum(b.size for b in blobs),
         "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
                   for b in blobs],
-    }, indent=2) + "\n")
+    }
+    adaptive = recipe.defaults.get("mtp_adaptive")
+    primary = dest / MANIFEST
+    path = primary
+    if adaptive:
+        path = _profile_receipt(recipe, dest)
+        path.parent.mkdir(exist_ok=True)
+    encoded = json.dumps(receipt, indent=2) + "\n"
+    temporary = path.with_name(f".{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(encoded, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    if not adaptive:
+        return
+
+    # The adaptive profile shares its weights directory with a fixed-depth installation.
+    try:
+        with primary.open("x", encoding="utf-8") as stream:
+            stream.write(encoded)
+    except FileExistsError:
+        pass
 
 
 def source_digest(recipe):
@@ -502,7 +537,7 @@ def _on_disk_files(dest: pathlib.Path) -> list[pathlib.Path]:
         return []
     part = (PART_SUFFIX, PART_SUFFIX + ".json")
     return [p for p in dest.rglob("*")
-            if p.is_file() and str(p.relative_to(dest)) != MANIFEST
+            if p.is_file() and p.relative_to(dest).parts[0] not in (MANIFEST, _PROFILE_DIR)
             and not p.name.endswith(part)]
 
 

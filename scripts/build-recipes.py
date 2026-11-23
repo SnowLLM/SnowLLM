@@ -95,6 +95,9 @@ def load(path: pathlib.Path) -> dict | None:
         if k not in SETTABLE:
             complain(path, f"sets {k!r} in defaults, which is not a recipe's to set. "
                            f"One of: {', '.join(SETTABLE)}")
+        elif k in ("mtp_adaptive", "mtp_prompt_lookup", "mtp_tool_draft", "dflash_adaptive") and (
+                parts(str(r.get("requires") or "0")) < parts("0.3.25")):
+            complain(path, f"{k!r} requires SnowLLM 0.3.25 or newer")
     if not problems[before:]:
         for client in CLIENT_DEFAULTS:
             try:
@@ -207,7 +210,7 @@ def spec_of(r: dict, path: pathlib.Path | None = None) -> str:
     if k == 0:
         return settle("none")
     if k:
-        return settle(f"MTP k={k}")
+        return settle(f"MTP adaptive k≤{k}" if d.get("mtp_adaptive") else f"MTP k={k}")
     if not declared and path:
         complain(path, "leaves num_spec unset -- --num-spec defaults to 2, so it has to say "
                        "with \"spec\" whether that is MTP or plain decoding")

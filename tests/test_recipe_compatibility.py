@@ -170,6 +170,15 @@ class RecipeCompatibilityTests(unittest.TestCase):
             with patch.object(builder, 'problems', []):
                 self.assertIsNone(builder.load(path))
                 self.assertTrue(any('newer than 0.3.13' in text for text in builder.problems))
+        for option in ('mtp_adaptive', 'mtp_prompt_lookup', 'mtp_tool_draft', 'dflash_adaptive'):
+            with self.subTest(option=option), self.assertRaisesRegex(ValueError, 'newer than 0.3.13'):
+                builder.for_client([{**raw, 'defaults': {option: True}}], '0.3.13')
+            with self.subTest(option=option), tempfile.TemporaryDirectory(dir=ROOT) as folder:
+                path = Path(folder) / 'example.json'
+                path.write_text(json.dumps({**raw, 'requires': '0.3.24', 'defaults': {option: True}}))
+                with patch.object(builder, 'problems', []):
+                    self.assertIsNone(builder.load(path))
+                    self.assertTrue(any('requires SnowLLM 0.3.25' in text for text in builder.problems))
         raw['requires'] = '0.3.14'
         self.assertEqual(builder.for_client([raw], '0.3.13'), [])
 
