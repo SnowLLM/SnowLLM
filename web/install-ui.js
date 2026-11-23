@@ -1,5 +1,5 @@
 import { t, onLanguageChange, applyTranslations } from "./i18n.js"
-import { latestReleases, supportsTarget } from "./install-releases.js"
+import { installReleases, supportsTarget } from "./install-releases.js?v=stable-picker-1"
 
   var TORCH_LINE = '<span class="p">$</span>python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ '
     + '"torch[device-gfx1151]==2.12.0+rocm7.14.0" "torchvision==0.27.0+rocm7.14.0"\n';
@@ -10,7 +10,7 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
     .filter(Boolean).join(" ");
   var choice = { os: /Windows|Win32|Win64/i.test(platform) ? "windows" : "linux",
     channel: "stable", how: "script", gpu: "gfx1151", apu: "ryzen-ai-max" };
-  var releases = { stable: null, dev: null };
+  var releases = { stable: [], dev: null };
   var releaseState = "loading";
   var cmdEl = document.getElementById("install-cmd");
   var noteEl = document.getElementById("install-note");
@@ -18,6 +18,8 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
   var copyBtn = document.querySelector('[data-copy="panel-install"]');
   var targetEl = document.getElementById("install-target");
   var params = new URLSearchParams(location.search);
+  var stableEl = document.getElementById("stable-version");
+  choice.version = params.get("version");
   var apus = Array.from(targetEl.options);
   var axes = { channel: ["stable", "dev"], os: ["linux", "windows", "wsl2"], how: ["script", "pip"],
     gpu: apus.map(function (option) { return option.dataset.target; }) };
@@ -38,14 +40,26 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
     url.searchParams.set("how", choice.how);
     url.searchParams.set("target", choice.gpu);
     url.searchParams.set("apu", choice.apu);
+    if (choice.channel === "stable" && choice.version) url.searchParams.set("version", choice.version);
+    else url.searchParams.delete("version");
     history.replaceState(null, "", url);
   }
 
   function renderInstall() {
+    var stable = releases.stable[0]?.version;
+    if (releaseState === "ready") {
+      for (const option of stableEl.options) option.disabled = !supportsTarget(option.value, choice.gpu);
+      if (choice.version && !releases.stable.some(release =>
+        release.version === choice.version && supportsTarget(release.version, choice.gpu))) choice.version = null;
+      stable = choice.version || stable;
+      stableEl.value = stable || "";
+    }
+    var channelVersions = { stable: stable, dev: releases.dev };
     var channelButtons = Array.from(document.querySelectorAll('.opts[data-axis="channel"] .opt'));
     channelButtons.forEach(function (button) {
       button.hidden = button.dataset.value === "dev" && releaseState === "ready" && !releases.dev;
-      button.disabled = button.hidden || !supportsTarget(releases[button.dataset.value], choice.gpu);
+      button.disabled = button.hidden || !supportsTarget(channelVersions[button.dataset.value], choice.gpu)
+        || (releaseState === "ready" && !channelVersions[button.dataset.value]);
     });
     if (releaseState === "ready" && !releases.dev && choice.channel === "dev") choice.channel = "stable";
     var available = channelButtons.find(function (button) { return !button.disabled; });
@@ -54,19 +68,22 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
     }) && available) {
       choice.channel = available.dataset.value;
     }
-    var blocked = !supportsTarget(releases[choice.channel], choice.gpu);
+    var pendingPin = choice.channel === "stable" && choice.version && releaseState !== "ready";
+    var blocked = !supportsTarget(channelVersions[choice.channel], choice.gpu);
     var scriptBtn = document.querySelector('.opts[data-axis="how"] .opt[data-value="script"]');
     var windows = choice.os === "windows";
     var dev = choice.channel === "dev";
     scriptBtn.disabled = windows || blocked;
     if (windows && choice.how === "script") choice.how = "pip";
 
-    ["stable", "dev"].forEach(function (channel) {
-      var versionEl = document.getElementById(channel + "-version");
-      versionEl.removeAttribute("data-i18n");
-      versionEl.textContent = releases[channel] ? "(" + releases[channel] + ")" : t(releaseState === "loading"
-        ? "common.loading" : releaseState === "error" ? "install.versionUnavailable" : "install.noRelease");
-    });
+    var versionStatus = t(releaseState === "loading" ? "common.loading"
+      : releaseState === "error" ? "install.versionUnavailable" : "install.noRelease");
+    document.getElementById("stable-version-row").hidden = dev;
+    stableEl.disabled = !stable || blocked;
+    if (!releases.stable.length) stableEl.options[0].textContent = versionStatus;
+    var devEl = document.getElementById("dev-version");
+    devEl.removeAttribute("data-i18n");
+    devEl.textContent = releases.dev ? "(" + releases.dev + ")" : versionStatus;
 
     document.querySelectorAll(".opts[data-axis]").forEach(function (group) {
       var axis = group.dataset.axis;
@@ -78,17 +95,18 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
     targetEl.value = choice.apu;
     var scriptArgs = [];
     if (dev) scriptArgs.push("--channel dev");
+    else if (stable) scriptArgs.push("--version " + stable);
     if (choice.gpu !== "gfx1151") scriptArgs.push("--target " + choice.gpu);
     var curl = CURL_LINE + (scriptArgs.length ? " -s -- " + scriptArgs.join(" ") : "");
     var packageSpec = dev ? "--pre snowllm"
-      : releases.stable ? '"snowllm==' + releases.stable + '"' : "snowllm";
-    var missing = releaseState === "ready" && !releases[choice.channel];
-    cmdEl.innerHTML = missing || blocked ? "" : choice.how === "script" ? curl
+      : stable ? '"snowllm==' + stable + '"' : "snowllm";
+    var missing = releaseState === "ready" && !channelVersions[choice.channel];
+    cmdEl.innerHTML = missing || blocked || pendingPin ? "" : choice.how === "script" ? curl
       : TORCH_LINE.replace("device-gfx1151", "device-" + choice.gpu) + SNOWLLM_LINE + packageSpec;
-    copyBtn.disabled = missing || blocked;
+    copyBtn.disabled = Boolean(missing || blocked || pendingPin);
     channelNoteEl.textContent = missing ? t("install.noChannelRelease", { channel: dev ? "Dev" : "Stable" })
-      : releaseState === "error" ? t("install.versionError") : "";
-    channelNoteEl.hidden = blocked || !channelNoteEl.textContent;
+      : releaseState === "error" ? t(pendingPin ? "install.selectedVersionError" : "install.versionError") : "";
+    channelNoteEl.hidden = !channelNoteEl.textContent;
     noteEl.hidden = choice.os === "linux";
     noteEl.innerHTML = choice.os === "wsl2" ? t("install.wsl")
       : windows ? t("install.windows") : "";
@@ -102,6 +120,12 @@ import { latestReleases, supportsTarget } from "./install-releases.js"
       if (cmdEl) renderInstall();
       saveChoice();
     });
+  });
+
+  stableEl.addEventListener("change", function () {
+    choice.version = stableEl.value;
+    renderInstall();
+    saveChoice();
   });
 
   targetEl.addEventListener("change", function () {
@@ -137,15 +161,20 @@ async function loadReleases() {
   try {
     const response = await fetch("https://pypi.org/pypi/snowllm/json", { signal: controller.signal })
     if (!response.ok) throw new Error("Cannot load PyPI releases")
-    releases = latestReleases(await response.json())
+    releases = installReleases(await response.json())
+    if (releases.stable.length) {
+      stableEl.replaceChildren(...releases.stable.map(({ version, date }) =>
+        new Option(date ? version + " · " + date : version, version)))
+    }
     releaseState = "ready"
   } catch {
     releaseState = "error"
   } finally {
     clearTimeout(timeout)
     const previousChannel = choice.channel
+    const previousVersion = choice.version
     renderInstall()
-    if (choice.channel !== previousChannel) saveChoice()
+    if (choice.channel !== previousChannel || choice.version !== previousVersion) saveChoice()
   }
 }
 

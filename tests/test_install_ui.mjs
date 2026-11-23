@@ -4,7 +4,11 @@ import test from 'node:test'
 import vm from 'node:vm'
 
 const source = await readFile(new URL('../web/install-releases.js', import.meta.url), 'utf8')
-const { latestReleases, supportsTarget } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))
+const { installReleases, supportsTarget } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'))
+const latestReleases = data => {
+  const { stable, dev } = installReleases(data)
+  return { stable: stable[0]?.version ?? null, dev }
+}
 const wheel = { filename: 'snowllm-0.3.9-py3-none-any.whl', yanked: false }
 const report = versions => ({ releases: Object.fromEntries(versions.map(version => [version, [wheel]])) })
 
@@ -57,6 +61,16 @@ test('unpublished, yanked, prerelease and incompatible artifacts are excluded', 
   assert.equal(latestReleases(data).stable, '0.3.13')
 })
 
+test('stable versions are sorted numerically and show the installable wheel upload date', () => {
+  const data = report(['0.3.9', '0.3.10.post1', '0.3.10.dev2', '0.3.10'])
+  data.releases['0.3.10'] = [
+    { ...wheel, yanked: true, upload_time: '2026-01-01T00:00:00' },
+    { ...wheel, upload_time_iso_8601: '2026-11-21T23:30:00.000Z' },
+  ]
+  assert.deepEqual(installReleases(data).stable.map(({ version, date }) => [version, date]),
+    [['0.3.10.post1', ''], ['0.3.10', '2026-11-21'], ['0.3.9', '']])
+})
+
 test('missing channels remain empty and invalid metadata fails visibly', () => {
   assert.deepEqual(latestReleases(report(['0.3.9'])), { stable: '0.3.9', dev: null })
   assert.deepEqual(latestReleases(report(['0.3.9.dev1'])), { stable: null, dev: '0.3.9.dev1' })
@@ -75,6 +89,7 @@ test('the install selector hides superseded dev and switches its commands to sta
   }
   for (const [versions, target, expected] of [
     [['0.3.19.dev4', '0.3.19'], 'gfx1151', 'stable'],
+    [['0.3.9', '0.3.24'], 'gfx1151', 'stable'],
     [['0.3.19.dev4', '0.3.20'], 'gfx1103', 'stable'],
     [['0.3.18.dev1', '0.3.18'], 'gfx1103', 'stable'],
     [['0.3.19', '0.3.20.dev1'], 'gfx1151', 'dev'],
@@ -85,8 +100,9 @@ test('the install selector hides superseded dev and switches its commands to sta
     const versionsById = Object.fromEntries(['stable', 'dev'].map(channel => [
       channel + '-version', { removeAttribute() {} },
     ]))
+    versionsById['stable-version-row'] = {}
     const context = vm.createContext({
-      releases: latestReleases(report(versions)), releaseState: 'ready', supportsTarget,
+      releases: installReleases(report(versions)), releaseState: 'ready', supportsTarget,
       choice: { channel: 'dev', os: 'linux', how: 'pip', gpu: target, apu: 'ryzen-ai-max' },
       document: {
         querySelectorAll(selector) {
@@ -97,12 +113,14 @@ test('the install selector hides superseded dev and switches its commands to sta
         querySelector() { return script },
         getElementById(id) { return versionsById[id] },
       },
+      stableEl: { options: versions.map(value => ({ value })) },
       cmdEl: {}, noteEl: {}, channelNoteEl: {}, copyBtn: {}, targetEl: {},
       TORCH_LINE: '', SNOWLLM_LINE: 'python -m pip install --upgrade ', CURL_LINE: 'curl | sh',
       t: key => key, applyTranslations() {},
     })
     vm.runInContext(render + '\nrenderInstall()', context)
     assert.equal(context.choice.channel, expected, versions.join(', '))
+    assert.equal(versionsById['stable-version-row'].hidden, expected === 'dev')
     assert.equal(channels[1].hidden, expected !== 'dev')
     if (target === 'gfx1103' && versions.includes('0.3.18')) {
       assert.equal(context.cmdEl.innerHTML, '')
@@ -111,6 +129,19 @@ test('the install selector hides superseded dev and switches its commands to sta
       assert.equal(channels[0]['aria-pressed'], 'true')
       assert.match(context.cmdEl.innerHTML, /snowllm==/)
       assert.doesNotMatch(context.cmdEl.innerHTML, /--pre/)
+      if (versions.includes('0.3.9')) {
+        context.choice.version = '0.3.9'
+        vm.runInContext('renderInstall()', context)
+        assert.equal(context.cmdEl.innerHTML, 'python -m pip install --upgrade "snowllm==0.3.9"')
+        context.choice.how = 'script'
+        vm.runInContext('renderInstall()', context)
+        assert.equal(context.cmdEl.innerHTML, 'curl | sh -s -- --version 0.3.9')
+        context.choice.gpu = 'gfx1103'
+        vm.runInContext('renderInstall()', context)
+        assert.equal(context.stableEl.value, '0.3.24')
+        assert.equal(context.stableEl.options.find(option => option.value === '0.3.9').disabled, true)
+        assert.equal(context.cmdEl.innerHTML, 'curl | sh -s -- --version 0.3.24 --target gfx1103')
+      }
     } else {
       assert.equal(channels[1]['aria-pressed'], 'true')
       assert.match(context.cmdEl.innerHTML, /--pre snowllm/)

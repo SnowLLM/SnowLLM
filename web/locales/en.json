@@ -59,6 +59,8 @@
   "home.webuiDesc": "Download models, chat and monitor inference in your browser. <a href=\"/docs/webui\">Web UI guide ↗</a>",
   "install.wslLabel": "WSL2 (not recommended)",
   "install.build": "Build",
+  "install.version": "Version",
+  "install.selectedVersionError": "Could not load the selected release from PyPI.",
   "install.versionUnavailable": "Version unavailable",
   "install.noRelease": "Not released",
   "install.noChannelRelease": "No {channel} release is currently available on PyPI.",

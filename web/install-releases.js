@@ -16,24 +16,22 @@ export function supportsTarget(version, target) {
   return rank !== null && compareRanks(rank, [0, 3, 19, 0, 2]) >= 0
 }
 
-export function latestReleases(report) {
+export function installReleases(report) {
   if (!report?.releases || typeof report.releases !== 'object' || Array.isArray(report.releases)) {
     throw new Error('Invalid PyPI release metadata')
   }
-  const releases = { stable: null, dev: null }
-  const ranks = {}
+  const releases = []
   for (const [version, files] of Object.entries(report.releases)) {
     const rank = versionRank(version)
-    if (!rank || !Array.isArray(files) || !files.some(file =>
-      file && !file.yanked && file.filename?.endsWith('-py3-none-any.whl'))) continue
-    const channel = rank[3] === 0 ? 'dev' : 'stable'
-    if (!releases[channel] || compareRanks(rank, ranks[channel]) > 0) {
-      releases[channel] = version
-      ranks[channel] = rank
-    }
+    if (!rank || !Array.isArray(files)) continue
+    const wheel = files.find(file => file && !file.yanked && file.filename?.endsWith('-py3-none-any.whl'))
+    if (!wheel) continue
+    const date = (wheel.upload_time_iso_8601 || wheel.upload_time || '').slice(0, 10)
+    releases.push({ version, date, rank })
   }
-  if (releases.dev && releases.stable && compareRanks(ranks.dev, ranks.stable) <= 0) {
-    releases.dev = null
+  releases.sort((a, b) => compareRanks(b.rank, a.rank))
+  return {
+    stable: releases.filter(release => release.rank[3] !== 0),
+    dev: releases[0]?.rank[3] === 0 ? releases[0].version : null,
   }
-  return releases
 }

@@ -21,7 +21,7 @@ for (const community of document.querySelectorAll('[data-github-community]')) {
   setupGithubBadges(community)
 }
 applyTranslations()
-if (current === '/') await import('./install-ui.js?v=home-models-1')
+if (current === '/') await import('./install-ui.js?v=stable-picker-1')
 else if (current === '/status/') await import('./status/status.js?v=stats-clean-1')
 else if (current === '/benchmark/') await import('./site.js?v=benchmark-unified-1')
 else await import('./site.js?v=recipe-types-1')

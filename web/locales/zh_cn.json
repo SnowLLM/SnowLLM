@@ -59,6 +59,8 @@
   "home.webuiDesc": "在浏览器中下载模型、聊天并监控推理状态。<a href=\"/docs/webui\">Web UI 指南 ↗</a>",
   "install.wslLabel": "WSL2 (不推荐)",
   "install.build": "版本",
+  "install.version": "版本",
+  "install.selectedVersionError": "无法从 PyPI 读取所选版本。",
   "install.versionUnavailable": "版本信息暂不可用",
   "install.noRelease": "尚未发布",
   "install.noChannelRelease": "PyPI 上暂无 {channel} 版本。",

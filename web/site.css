@@ -235,6 +235,7 @@
   }
 
   .axis { display: contents; }
+  .axis[hidden] { display: none; }
 
   .axis-label {
     display: flex;
