@@ -60,6 +60,28 @@ class InklingExpertsTest(unittest.TestCase):
             torch.testing.assert_close(decoded, ref, rtol=1e-5, atol=2e-5)
 
     @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")
+    def test_grouped_bf16_prefill(self):
+        from snowllm.ops.inkling import bf16_expert_plan
+
+        with GGUFReader(pathlib.Path(os.environ["SNOWLLM_INKLING_GGUF"])) as reader:
+            moe = InklingMoE(reader, config(reader.gguf), 20)
+        generator = torch.Generator(device="cuda").manual_seed(31)
+        for rows in (769, 2049):
+            with self.subTest(rows=rows):
+                ids = torch.randint(128, (rows, 8), device="cuda", dtype=torch.int32, generator=generator)
+                ids[:17] = 0
+                ids[-1, :2] = -1
+                ids[-1, 2] = 128
+                plan = bf16_expert_plan(ids, 128, 2304, 1152, True)
+                self.assertIsNotNone(plan)
+                self.assertIsNone(bf16_expert_plan(ids, 128, 2304, 1152, False))
+                for proj, groups, k in ((moe.gate_up, 1, 2304), (moe.down, 8, 1152)):
+                    x = torch.randn(rows, groups, k, device="cuda", dtype=torch.bfloat16, generator=generator)
+                    expected = proj(x, ids, True)
+                    actual = proj(x, ids, True, plan)
+                    self.assertTrue(torch.equal(actual, expected))
+
+    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")
     def test_real_experts(self):
         self.addCleanup(torch.set_num_threads, torch.get_num_threads())
         torch.set_num_threads(2)
