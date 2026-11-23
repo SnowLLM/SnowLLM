@@ -229,6 +229,7 @@ class Qwen4ExpMtpGraphTests(unittest.TestCase):
             cls.state = build(model_path=model, max_num_seqs=4, max_model_len=409600,
                 num_kv_blocks=None, default_max_tokens=32, seed=73, profile_dir=None,
                 num_spec=cls.k, mtp_adaptive=cls.adaptive, prefill_chunk=8192, prefix_memory_ratio=.08,
+                mtp_prompt_lookup=os.environ.get('SNOWLLM_TEST_MTP_PROMPT_LOOKUP') == '1',
                 exact_stats=True, max_gpu_mem_util=.9)
         cls.engine = cls.state.engine.engine
         cls.prompts = []

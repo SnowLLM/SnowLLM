@@ -13,6 +13,7 @@ from fastapi import Request as HTTPRequest
 from jinja2 import TemplateError
 
 from ..engine import Request, SamplingParams
+from ..engine.mtp_lookup import tool_lookup_passages
 from ..models import multimodal
 from . import tool_parser
 from .protocol import Common, CompletionRequest
@@ -394,15 +395,22 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
     if not images:
         prompt = chat_prompt(msgs, kwargs, tools)
         system_len = _system_prefix_length(msgs, kwargs, tools, prompt)
-        return prompt, {'system_prefix_len': system_len} if system_len else None
-    if st.processor is None:
-        raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
-                                 "images")
-    try:
-        mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return mm.pop("prompt"), mm
+        mm = {'system_prefix_len': system_len} if system_len else {}
+    else:
+        if st.processor is None:
+            raise HTTPException(400, "this checkpoint carries no vision tower, so it cannot take "
+                                     "images")
+        try:
+            mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        prompt = mm.pop("prompt")
+    engine = getattr(st.engine, 'engine', None)
+    if getattr(engine, 'mtp_prompt_lookup', False):
+        passages = tool_lookup_passages(msgs, st.tokenizer)
+        if passages:
+            mm['lookup_passages'] = passages
+    return prompt, mm or None
 
 
 def check_unsupported(req: Common) -> None:

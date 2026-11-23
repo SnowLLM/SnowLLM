@@ -69,6 +69,7 @@ class SpecTerminalTests(unittest.TestCase):
                     decoder.propose_first = Mock(side_effect=lambda *args: decoder.d_drafts.fill_(6))
                     decoder.accept_hist = []
                     decoder.verify_hist = [0] * 3
+                    decoder.lookups = None
                     decoder.adaptive = Mock()
                     decoder.adaptive.select.return_value = 2
                     req = Request([0], SamplingParams(max_new_tokens=cap, stop_token_ids=stops),

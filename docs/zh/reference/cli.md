@@ -82,6 +82,7 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | --- | --- | --- |
 | `--num-spec` / `--num-speculative-tokens` | `2` | 每步 MTP 草稿 token 数，启用 `--mtp-adaptive` 后表示上限。设为 `0` 可禁用 MTP。 |
 | `--mtp-adaptive` | 关闭 | 根据验证结果调整 Qwen3.8-Flash-Next 的原生 MTP 草稿长度。`--num-spec` 设置上限（2–7）。 |
+| `--mtp-prompt-lookup` | 关闭 | MTP、DFlash 和 DSpark 可从当前请求的提示词或工具结果中查找草稿，由目标模型验证。使用 Flash-Next 原生 MTP 时会启用自适应长度。 |
 | `--dflash` | 未设置 | DFlash 或 DSpark 草稿模型目录；替代 MTP 并共享内存预算。 |
 | `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置且限制最小值。 |
 | `--dflash-adaptive` | 关闭 | 根据近期接受率调整 DFlash 或 DFlash2 每个草稿块的验证长度。 |

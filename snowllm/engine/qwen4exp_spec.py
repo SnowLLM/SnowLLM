@@ -9,6 +9,7 @@ from .. import ops
 from .forward_context import Batch
 from .graphs import GraphCase, GraphInputs
 from .inputs import i32
+from .mtp_lookup import MtpLookup
 from .spec_decode import SpecDecoder
 
 
@@ -132,10 +133,11 @@ class MtpDepth:
 
 
 class Qwen4ExpSpecDecoder(SpecDecoder):
-    def __init__(self, runner, sampler, slots, tables, stage, *, adaptive=False,
+    def __init__(self, runner, sampler, slots, tables, stage, *, adaptive=False, prompt_lookup=False,
                  **kwargs):
         super().__init__(runner, sampler, slots, tables, stage, **kwargs)
-        self.adaptive = MtpDepth() if adaptive else None
+        self.adaptive = MtpDepth() if adaptive or prompt_lookup else None
+        self.lookups = weakref.WeakKeyDictionary() if prompt_lookup else None
         self.verify_hist = [0] * (self.num_spec + 1)
         self.indexer = getattr(runner.model.mtp.layer.attn, 'indexer', None)
         first_scratch = runner.dummy_slot + 1
@@ -217,6 +219,28 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
             return tuple(range(1, max(1, self.verify_rows(n)) + 1))
         return super().step_rows(n)
 
+    def release_lookup(self, request):
+        if self.lookups is not None:
+            self.lookups.pop(request, None)
+
+    def verify_step(self, batch, T, draft_limit=None):
+        request = batch[0]
+        if draft_limit is None or self.lookups is None:
+            return super().verify_step(batch, T, draft_limit)
+        lookup = self.lookups.get(request) if self.lookups is not None else None
+        used_suffix = T > 1 and lookup is not None and lookup.suffix is request.drafts
+        super().verify_step(batch, T, draft_limit)
+        if len(batch) > 1 or request.done:
+            for row in batch:
+                self.release_lookup(row)
+            return
+        limit = min(draft_limit, request.params.max_new_tokens - len(request.out) - 1)
+        if self.lookups is not None:
+            if lookup is None and limit >= 3:
+                lookup = self.lookups[request] = MtpLookup(request, self.runner.geo.vocab_size)
+            if lookup is not None:
+                lookup.propose(request, limit, used_suffix)
+
     def _propose_verified(self, batch, pos, cu, total, k, tv, nacc, seq, states, draft_limit,
                           *, terminal=False):
         self.verify_hist[k] += len(batch)
@@ -226,16 +250,38 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
             self.propose_first(batch, pos, cu, total, k, tv, nacc, seq, states, k)
             return k, nacc.tolist()
         greedy_single = len(batch) == 1 and batch[0].params.temperature <= 0
+        sources = {}
+        if k and self.lookups:
+            for request in batch:
+                source = self.lookups.get(request) if self.lookups else None
+                if source and (source.suffix is request.drafts or source.guard is request.drafts):
+                    sources[request] = source
+                    if greedy_single:
+                        self.adaptive.samples.pop(request, None)
         if terminal:
             draft_k, acc = 0, nacc.tolist()
-        elif greedy_single and draft_limit > 2:
+        elif greedy_single and draft_limit > 2 and not sources:
             draft_k, acc = self._guarded_proposals(batch, pos, cu, total, k, tv, nacc, seq, states,
                                                    draft_limit)
         else:
-            draft_k = self.adaptive.select(batch, k, draft_limit)
+            if sources and len(batch) == 1 and sources[batch[0]].suffix is batch[0].drafts:
+                draft_k = min(1, draft_limit)
+            elif greedy_single and sources:
+                # Resume at K=2 after the single-token guard left by the final lookup.
+                draft_k = min(2, draft_limit)
+            else:
+                previous = (min(sources[r].native_depth if r in sources else k for r in batch)
+                            if sources else k)
+                draft_k = self.adaptive.select(batch, previous, draft_limit)
             self.propose_first(batch, pos, cu, total, k, tv, nacc, seq, states, draft_k)
             acc = nacc.tolist()
-        self.adaptive.observe(batch, k, acc)
+        if sources:
+            for request, count in zip(batch, acc):
+                source = sources.get(request)
+                if source is None:
+                    self.adaptive.observe([request], k, [count])
+        else:
+            self.adaptive.observe(batch, k, acc)
         return draft_k, acc
 
     @staticmethod

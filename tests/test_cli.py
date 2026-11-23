@@ -542,6 +542,11 @@ class CLITests(unittest.TestCase):
             self.assertEqual(bound.arguments['dflash_block'], 8)
             self.assertFalse(bound.arguments['mtp_adaptive'])
 
+    def test_mtp_prompt_lookup_reaches_model_build(self):
+        _, kw = self.launch_options(('--num-spec', '7', '--mtp-prompt-lookup'))
+        self.assertEqual(kw['num_spec'], 7)
+        self.assertTrue(kw['mtp_prompt_lookup'])
+
     def test_budgets_do_not_change_context_or_chunk(self):
         args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-batched-tokens', '512',
                                         '--max-gpu-mem', '.4', '--max-host-mem', '.5'))

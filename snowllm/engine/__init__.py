@@ -14,6 +14,7 @@ from .._platform import gpu_mem_info, release_device_cache
 from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
 from .block_manager import BlockAllocator, StateSlots
+from .mtp_lookup import MtpLookup
 from .forward_context import Batch, plain_decode_shapes
 from .prefix_cache import CKPT_EVERY, Entry, PrefixCache, thin
 from .request import Request, SamplingParams
@@ -369,11 +370,17 @@ class Engine:
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
                  draft_plan: DraftPlan | None = None, defer_capture: bool = False,
                  mtp_adaptive: bool = False,
+                 mtp_prompt_lookup: bool = False,
                  dflash_adaptive: bool = False) -> None:
         flash_next_mtp = isinstance(model.geo, Qwen4ExpGeometry) and not dflash_path
+        mtp_adaptive = mtp_adaptive or (mtp_prompt_lookup and flash_next_mtp)
         if mtp_adaptive and (not flash_next_mtp or model.mtp is None or not 2 <= num_spec <= 7):
-            raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and --num-spec 2–7')
+            option = '--mtp-prompt-lookup' if mtp_prompt_lookup else '--mtp-adaptive'
+            raise ValueError(f'{option} requires a Flash-Next MTP head and --num-spec 2–7')
+        if mtp_prompt_lookup and not dflash_path and (num_spec < 1 or model.mtp is None):
+            raise ValueError('--mtp-prompt-lookup requires native MTP, DFlash or DSpark')
         self.mtp_adaptive = mtp_adaptive
+        self.mtp_prompt_lookup = mtp_prompt_lookup
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
@@ -447,8 +454,10 @@ class Engine:
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
                             num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks,
-                            **({'adaptive': True} if mtp_adaptive else {}))
+                            **({'adaptive': True, 'prompt_lookup': mtp_prompt_lookup} if mtp_adaptive else {}))
                 if self.num_spec else None)
+            if mtp_prompt_lookup:
+                self._prompt_lookups = self.spec.lookups if mtp_adaptive else {}
 
             self.waiting: deque[Request] = deque()
             self.running: list[Request] = []
@@ -617,7 +626,8 @@ class Engine:
             rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
             embed_rows: list[int] | None = None, queue: bool = True,
-            system_prefix_len: int = 0) -> Request:
+            system_prefix_len: int = 0,
+            lookup_passages: tuple[list[int], ...] = ()) -> Request:
         p = params or SamplingParams()
         rope_factor = self.default_rope_factor if rope_factor is None else rope_factor
         cap = min(self.max_model_len, int(rope_factor * self._rope_orig_max))
@@ -628,7 +638,8 @@ class Engine:
             raise ValueError('system_prefix_len must be within the prompt')
         r = Request(prompt=list(prompt), params=p, rope_factor=rope_factor, mrope=mrope,
                     pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []),
-                    system_prefix_len=system_prefix_len)
+                    system_prefix_len=system_prefix_len,
+                    lookup_passages=lookup_passages)
         if queue:
             self.waiting.append(r)
         return r
@@ -781,6 +792,8 @@ class Engine:
             self.blocks.release(r.blocks)
             if self.dflash:
                 self.dflash.release(r)
+            if self.mtp_prompt_lookup:
+                self._prompt_lookups.pop(r, None)
             self.runner.release(r.slot)
             self.slots.give_back(r)
             self.running.remove(r)
@@ -828,6 +841,8 @@ class Engine:
         self.blocks.release(r.blocks)
         if self.dflash:
             self.dflash.release(r)
+        if self.mtp_prompt_lookup:
+            self._prompt_lookups.pop(r, None)
         self.runner.release(r.slot)
         self.slots.give_back(r)
         r.blocks = []
@@ -1048,6 +1063,8 @@ class Engine:
             if T:
                 batch = self._decodable_batch(self.spec.rows_needed(T))
         if T:
+            if self.mtp_prompt_lookup and not self.mtp_adaptive:
+                self._apply_prompt_lookup(batch, T)
             if draft_limit is None:
                 self.spec.verify_step(batch, T)
             else:
@@ -1058,6 +1075,19 @@ class Engine:
             emitted = rows = self._decode()
         self._retire_finished()
         return emitted, rows
+
+    def _apply_prompt_lookup(self, batch: list[Request], widths: int | list[int]) -> None:
+        sampling = getattr(self.dflash, 'sampling', None)
+        if isinstance(widths, int):
+            widths = [widths] * len(batch)
+        for request, rows in zip(batch, widths):
+            k = rows - 1
+            if k < 2 or len(request.drafts) < 2 or len(request.out) + 1 >= request.params.max_new_tokens:
+                continue
+            lookup = self._prompt_lookups.get(request)
+            if lookup is None:
+                lookup = self._prompt_lookups[request] = MtpLookup(request, self.runner.geo.vocab_size)
+            lookup.overlay(request, k, sampling)
 
     def _decode(self) -> int:
         batch = self._decodable_batch(1)

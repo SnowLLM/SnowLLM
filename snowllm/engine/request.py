@@ -72,6 +72,7 @@ class Request:
     pos_delta: int = 0
     embeds: torch.Tensor | None = None
     embed_rows: list[int] = field(default_factory=list)
+    lookup_passages: tuple[list[int], ...] = field(default=(), repr=False)
 
     @property
     def prefill_len(self) -> int:
