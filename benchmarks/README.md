@@ -51,6 +51,8 @@ arguments and defaults; `run.sh` and `perf_sweep.sh` continue to use that same c
 The source corpus stays at `benchmarks/data/pg19_context_bench.txt` and is bundled
 in the installed package during builds. `SNOWLLM_BENCH_CORPUS` still overrides it.
 
+Use `--workload file-edit` with `bench_context.py` or `perf_sweep.sh` to measure a single-turn rename in `metrics.py` at the requested input length.
+
 For models already loaded in a Web UI service, use
 `snowllm bench run --model-id MODEL_ID --isl 1k,8k` or the Benchmark page.
 Managed tasks reuse the GPU worker's existing withgpu lock. Do not wrap the

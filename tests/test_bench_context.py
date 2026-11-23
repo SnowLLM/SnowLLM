@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 
-from snowllm.benchmark import context as bench
+from snowllm.benchmark import context as bench, file_edit
 
 
 class ConcurrentInitializationTests(unittest.TestCase):
@@ -25,11 +25,15 @@ class ConcurrentInitializationTests(unittest.TestCase):
             return dict(ttft_s=1., decode_tok_s=2., total_s=3., isl=8192, osl=256,
                         timings=None, loop_period=.5, text_tail='done')
 
-        with patch.object(bench, '_tokenized_corpus', side_effect=prepare), \
-                patch.object(bench, 'one_at', side_effect=request):
-            result = bench.one_rep('url', 'model', 8192, 0, 256, False, 'local', 4)
-        self.assertEqual(len(result['lanes']), 4)
-        self.assertEqual(result['decode_tok_s'], 8.)
+        for workload, module, load, send in (
+                ('pg19', bench, '_tokenized_corpus', 'one_at'),
+                ('file-edit', file_edit, 'repository_tokens', 'request_at')):
+            initialized.clear()
+            with self.subTest(workload=workload), patch.object(module, load, side_effect=prepare), \
+                    patch.object(module, send, side_effect=request):
+                result = bench.one_rep('url', 'model', 8192, 0, 256, False, 'local', 4, workload=workload)
+                self.assertEqual(len(result['lanes']), 4)
+                self.assertEqual(result['decode_tok_s'], 8.)
 
 
 class Tokenizer:
@@ -72,6 +76,17 @@ class InputLengthTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'below'):
             bench.prompt_of(minimum - 1, 0, 'model')
         self.assertEqual(bench.prompt_of(minimum, 0, 'model'), '')
+
+    def test_file_edit_fits_empty_excerpt_and_skipped_token_lengths(self):
+        minimum = bench._chat_tokens(self.tokenizer, file_edit.messages(''), False)
+        self.tokenizer.decode = lambda ids: 'a' * (len(ids) + len(ids) % 2)
+        with patch.object(file_edit, 'repository_tokens', return_value=[1, 2, 3]):
+            for isl in (minimum, minimum + 45):
+                with self.subTest(isl=isl), patch.object(bench, 'stream_chat', return_value={'isl': isl}) as send:
+                    file_edit.request_at('url', 'model', isl, 0, 128, False, 'local')
+                    prompt = send.call_args.args[2]
+                    self.assertEqual(bench._chat_tokens(self.tokenizer, prompt, False), isl)
+                    self.assertIn(file_edit.FILE, prompt[0]['content'])
 
     def test_server_usage_mismatch_rejects_the_measurement(self):
         with patch.object(bench, 'one', return_value={'isl': 8211}) as send:
@@ -155,6 +170,14 @@ class StreamMeasurementTests(unittest.TestCase):
         ]
         data = ''.join('data: '+json.dumps(e, ensure_ascii=False)+'\n\n' for e in events)
         return io.BytesIO((data+('data: [DONE]\n\n' if done else '')).encode())
+
+    def test_proofread_capture_scores_only_the_visible_answer(self):
+        messages = [{'role': 'user', 'content': 'Return the corrected paragraph.'}]
+        with patch.object(bench.urllib.request, 'urlopen', return_value=self.wire()) as send:
+            result = bench.stream_chat('http://local', 'model', messages, 16, capture_output=True)
+        self.assertEqual(json.loads(send.call_args.args[0].data)['messages'], messages)
+        self.assertEqual(result['output'], '中文答案')
+        self.assertEqual(result['osl'], 9)
 
     def test_throughput_counts_usage_tokens_instead_of_stream_chunks(self):
         for thinking in (True, False, None):

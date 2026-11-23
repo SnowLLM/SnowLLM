@@ -153,8 +153,12 @@ def check_platform(expected: str, runtime: dict) -> None:
 
 def _prompt_tokens(tok: "PreTrainedTokenizerBase", text: str,
                    thinking: bool | None = False) -> int:
+    return _chat_tokens(tok, _messages(text), thinking)
+
+
+def _chat_tokens(tok, messages, thinking):
     encoded = tok.apply_chat_template(
-        _messages(text), add_generation_prompt=True, tokenize=True, return_dict=True,
+        messages, add_generation_prompt=True, tokenize=True, return_dict=True,
         tools=None, **_thinking_options(thinking))
     ids = encoded["input_ids"]
     return len(ids[0]) if ids and isinstance(ids[0], list) else len(ids)
@@ -163,7 +167,13 @@ def _prompt_tokens(tok: "PreTrainedTokenizerBase", text: str,
 def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
               lane: int = 0, thinking: bool | None = False) -> str:
     tok = _tokenizer(tokenizer)
-    minimum = _prompt_tokens(tok, "", thinking)
+    return _fit_excerpt(target_tokens,
+                        lambda n: _passage_of(n, rep, tokenizer, warm, lane, target_tokens),
+                        lambda text: _prompt_tokens(tok, text, thinking))
+
+
+def _fit_excerpt(target_tokens, excerpt, count):
+    minimum = count("")
     if target_tokens < minimum:
         raise ValueError(f"input length {target_tokens} is below the {minimum} tokens needed "
                          "for the chat template and instruction")
@@ -174,8 +184,8 @@ def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
         if budget in seen:
             break
         seen.add(budget)
-        text = _passage_of(budget, rep, tokenizer, warm, lane, target_tokens)
-        actual = _prompt_tokens(tok, text, thinking)
+        text = excerpt(budget)
+        actual = count(text)
         if actual == target_tokens:
             return text
         if actual > target_tokens and (over is None or actual < over[0]):
@@ -185,14 +195,14 @@ def prompt_of(target_tokens: int, rep: int, tokenizer: str, warm: bool = False,
     if over is not None:
         for cut in range(1, min(128, len(over[1])) + 1):
             text = over[1][:-cut]
-            if _prompt_tokens(tok, text, thinking) == target_tokens:
+            if count(text) == target_tokens:
                 return text
         for cut in range(1, min(128, len(over[1])) + 1):
             text = over[1][cut:]
-            if _prompt_tokens(tok, text, thinking) == target_tokens:
+            if count(text) == target_tokens:
                 return text
     raise ValueError(f"cannot construct an exact {target_tokens}-token chat prompt "
-                     f"for rep {rep}, lane {lane}; last length was {actual}")
+                     f"last length was {actual}")
 
 
 def loop_period(text: str, min_reps: int = 3, min_span: int = 24, max_period: int = 400) -> int:
@@ -209,9 +219,14 @@ def loop_period(text: str, min_reps: int = 3, min_span: int = 24, max_period: in
 
 
 def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False) -> dict:
+    return stream_chat(url, model, _messages(text), osl, thinking)
+
+
+def stream_chat(url: str, model: str, messages: list[dict], osl: int,
+                thinking: bool | None = False, *, capture_output: bool = False) -> dict:
     body = json.dumps({
         "model": model,
-        "messages": _messages(text),
+        "messages": messages,
         "max_tokens": osl, "temperature": 0.0, "stream": True,
         "stream_options": {"include_usage": True},
         **_thinking_options(thinking),
@@ -221,6 +236,7 @@ def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False
     first = None
     out = 0
     got: list[str] = []
+    visible: list[str] = []
     usage = None
     timings = None
     finish_reason = None
@@ -251,6 +267,8 @@ def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False
             if first is None:
                 first = time.perf_counter()
             got.append(delta.get("content") or delta.get("reasoning_content"))
+            if capture_output and delta.get("content"):
+                visible.append(delta["content"])
             out += 1
     end = time.perf_counter()
     if first is None:
@@ -275,6 +293,7 @@ def one(url: str, model: str, text: str, osl: int, thinking: bool | None = False
         "timings": timings,
         "loop_period": loop_period("".join(got)),
         "text_tail": "".join(got)[-160:],
+        **({"output": "".join(visible)} if capture_output else {}),
     }
 
 
@@ -308,16 +327,22 @@ def one_at(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
 
 
 def one_rep(url: str, model: str, isl: int, rep: int, osl: int, warm: bool,
-           tokenizer: str, conc: int, thinking: bool | None = False) -> dict:
+           tokenizer: str, conc: int, thinking: bool | None = False, workload: str = "pg19") -> dict:
+    request_at = one_at
+    if workload == "file-edit":
+        from .file_edit import repository_tokens, request_at
+        if conc > 1:
+            repository_tokens(tokenizer)
     if conc == 1:
-        return one_at(url, model, isl, rep, osl, warm, tokenizer, thinking=thinking)
-    _tokenized_corpus(tokenizer)
+        return request_at(url, model, isl, rep, osl, warm, tokenizer, thinking=thinking)
+    if workload == "pg19":
+        _tokenized_corpus(tokenizer)
     out: list = [None] * conc
     err: list = []
 
     def lane(i: int) -> None:
         try:
-            out[i] = one_at(url, model, isl, rep, osl, warm, tokenizer, lane=i, thinking=thinking)
+            out[i] = request_at(url, model, isl, rep, osl, warm, tokenizer, lane=i, thinking=thinking)
         except BaseException as e:                                                # noqa: BLE001
             err.append(e)
 
@@ -370,6 +395,7 @@ def parser():
     ap.add_argument("--conc", default="1", help="comma list of concurrencies; each request "
                                                 "gets its own slice of the padding corpus, and "
                                                 "a rung above 1 is labelled <label>_c<conc>")
+    ap.add_argument("--workload", choices=("pg19", "file-edit"), default="pg19")
     ap.add_argument("--label", default="", help="which configuration these rows describe")
     ap.add_argument("--version", default="", help="the serving engine's own version string")
     ap.add_argument("--commit", default="", help="the source revision these rows were served from")
@@ -407,14 +433,19 @@ def run(a, emit=lambda event: None):
     url = a.base_url.rstrip("/") + "/chat/completions"
     print(f"  using local tokenizer {a.tokenizer!r} for exact prompt lengths", flush=True)
     rows = []
-    corpus_sha256 = hashlib.sha256(_CORPUS_PATH.read_bytes()).hexdigest()
+    workload = getattr(a, "workload", "pg19")
+    if workload == "file-edit":
+        from .file_edit import messages, source
+        corpus_sha256 = hashlib.sha256(messages(source())[0]["content"].encode()).hexdigest()
+    else:
+        corpus_sha256 = hashlib.sha256(_CORPUS_PATH.read_bytes()).hexdigest()
 
     def save() -> None:
         out = pathlib.Path(a.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         old = json.loads(out.read_text()) if out.exists() else []
-        mine = {(r["label"], r["isl_target"]) for r in rows}
-        old = [r for r in old if (r.get("label"), r.get("isl_target")) not in mine]
+        mine = {(r["label"], r["isl_target"], workload) for r in rows}
+        old = [r for r in old if (r.get("label"), r.get("isl_target"), r.get("workload", "pg19")) not in mine]
         temporary = out.with_suffix(out.suffix + ".tmp")
         temporary.write_text(json.dumps(old + rows, indent=1) + "\n")
         temporary.replace(out)
@@ -432,7 +463,7 @@ def run(a, emit=lambda event: None):
                           repetition=i + 1 if is_warm else i - a.warm + 1,
                           completed=completed, total=total))
                 h0 = draft_accept_len(a.base_url, a.model)
-                r = one_rep(url, a.model, isl, i, a.osl, is_warm, a.tokenizer, conc, thinking=thinking)
+                r = one_rep(url, a.model, isl, i, a.osl, is_warm, a.tokenizer, conc, thinking=thinking, workload=workload)
                 h1 = draft_accept_len(a.base_url, a.model)
                 completed += 1
                 emit(dict(type="sample", isl=isl, conc=conc, warm=is_warm,
@@ -453,6 +484,7 @@ def run(a, emit=lambda event: None):
             accept_stdev = st.stdev(accepts) if len(accepts) > 1 else None
             row = {
                 "label": a.label if conc == 1 else f"{a.label}_c{conc}",
+                "workload": workload,
                 "isl_target": isl,
                 "input_length_mode": "chat_template_exact",
                 "isl": got[0]["isl"],
