@@ -11,7 +11,6 @@ from ..models.qwen4exp.ple import ngram_rows
 from ..models.qwen4exp.ple_stream import PleReadStream
 from ..trace import span
 from .forward_context import (
-    PLAN_DECODE,
     PLAN_MAIN,
     PLAN_MTP,
     PLAN_MTP_DECODE,
@@ -162,7 +161,7 @@ class Qwen4ExpRunner(QwenRunner):
         if draft and mtp_tail.enabled(self.model.mtp,b,M,self.kv_int8):
             plan_key = mtp_tail.PLAN
         if not b.is_prefill:
-            plan_key = PLAN_MTP_DECODE if draft else PLAN_DECODE
+            plan_key = PLAN_MTP_DECODE if draft else self._decode_plan_key(b)
         # Prefill already carries its ragged offsets in Batch. Equal-width row
         # maps are decode metadata; M // B is not a prefill sequence length.
         rows_of, cu = (None, None) if b.is_prefill else self._qsa_shape(b)

@@ -2,16 +2,46 @@
 import contextlib
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
 import _harness
 from snowllm import ops
+from snowllm.engine.inputs import synthetic_batch
 from snowllm.engine.qwen_runner import QwenRunner
 from snowllm.engine.resources import ActivationProbe, ActivationReservation, ProbeGroup, plan_activations
 
 
 class ActivationWorkspaceTests(unittest.TestCase):
+    def test_dspark_short_and_ragged_blocks_use_the_unprepared_plan(self):
+        runner = QwenRunner.__new__(QwenRunner)
+        runner.model = SimpleNamespace(mtp=None)
+        runner._plan_short_drafts = runner.plan_activations = True
+        runner._forward_eager = lambda batch: batch
+
+        def batch(widths, prefill=False):
+            return synthetic_batch(widths, 1, is_prefill=prefill, chunk_decode=True,
+                                   tensor=lambda _, values, dtype: torch.tensor(values, dtype=dtype))
+
+        runner._probe_batch = lambda rows, prefill: batch([rows // 2] * 2, prefill)
+        with patch.object(ops, 'paged_attention_uses_prepared',
+                          side_effect=lambda b, width, varlen: width > 4 and not varlen):
+            plans = {}
+            for probe in runner._activation_cases(32, 18):
+                planned = probe.run()
+                if not planned.is_prefill:
+                    self.assertEqual(probe.key, runner._decode_plan_key(planned))
+                    plans[planned.varlen_decode] = probe.key
+            self.assertNotEqual(plans[True], plans[False])
+            self.assertEqual(runner._decode_plan_key(batch([1])), plans[True])
+            self.assertEqual(runner._decode_plan_key(batch([9])), plans[False])
+            ragged = batch([3, 9])
+            ragged.varlen_decode = True
+            self.assertEqual(runner._decode_plan_key(ragged), plans[True])
+            runner._plan_short_drafts = False
+            self.assertEqual(runner._decode_plan_key(batch([1])), plans[False])
+
     def check_workspace(self, retain, planned, graph, post_bytes):
         arena = ops.Arena()
         external = torch.empty(256, dtype=torch.bfloat16, device='cuda')

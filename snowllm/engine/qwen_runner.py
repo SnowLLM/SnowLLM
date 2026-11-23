@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     from .prefix_cache import Residue
 
 
+_UNPREPARED_DECODE = (*PLAN_DECODE, "unprepared")
+
+
 class QwenRunner(GraphRunner):
     tunable_rope = True
     defer_model_end = True
@@ -40,6 +43,8 @@ class QwenRunner(GraphRunner):
         self.tap_at = {layer:j for j,layer in enumerate(self.tap_layers)}
         self.drafting = self.model.mtp is not None or bool(self.tap_layers)
         self.roll_forward = bool(self.tap_layers)
+        self._plan_short_drafts = self.roll_forward and ops.paged_attention_uses_prepared(
+            self.max_num_seqs, self.num_spec + 1, False)
         if self.num_spec and not self.drafting:
             raise SnowLLMError('num_spec > 0 needs an MTP head or a draft checkpoint')
         self.slots_per_request = 1 if self.roll_forward else self.num_spec+1
@@ -94,7 +99,7 @@ class QwenRunner(GraphRunner):
     def _ctx(self, b: Batch, plan_key: tuple = PLAN_MAIN) -> ForwardContext:
         M = b.input_ids.numel()
         if not b.is_prefill:
-            plan_key = PLAN_MTP_DECODE if plan_key is PLAN_MTP else PLAN_DECODE
+            plan_key = PLAN_MTP_DECODE if plan_key is PLAN_MTP else self._decode_plan_key(b)
         return ForwardContext(
             batch=b, M=M, eps=self.model.eps,
             path=ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE,
@@ -107,6 +112,12 @@ class QwenRunner(GraphRunner):
             x=self.x[:M],
             taps=self.taps[:M] if self.taps is not None else None,
         )
+
+    def _decode_plan_key(self, batch):
+        if self._plan_short_drafts and not ops.paged_attention_uses_prepared(
+                batch.batch_size, batch.tokens_per_req, batch.varlen_attn):
+            return _UNPREPARED_DECODE
+        return PLAN_DECODE
 
     def _act_statics(self, rows: int) -> int:
         return self.resources.outputs.bytes_for(max(rows, self.decode_rows))
@@ -144,8 +155,11 @@ class QwenRunner(GraphRunner):
         modes = [(PLAN_MAIN, chunk, True, False), (PLAN_DECODE, decode, False, False)]
         if self.model.mtp is not None:
             modes += [(PLAN_MTP_DECODE, decode, False, True), (PLAN_MTP, chunk, True, True)]
+        if self._plan_short_drafts:
+            modes.append((_UNPREPARED_DECODE, decode, False, False))
         for key, rows, prefill, draft in modes:
             batch = self._probe_batch(rows, prefill)
+            batch.varlen_decode = key is _UNPREPARED_DECODE
             def walk():
                 return (self.mtp_draft(self._mtp_input(rows), batch.input_ids, batch) if draft
                         else self._forward_eager(batch))
