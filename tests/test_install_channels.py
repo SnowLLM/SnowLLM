@@ -119,6 +119,20 @@ class InstallerChannelTests(unittest.TestCase):
                 self.assertEqual(self.version(), expected)
                 self.assertEqual(self.version("snowllm-kernels"), "1.0.0")
 
+    def test_explicit_stable_release_can_downgrade_without_falling_back(self):
+        self.make_wheel("snowllm", "0.3.17", "snowllm-kernels==1.0.0")
+        versions = ("0.3.18", "0.3.19.dev2", "0.4.0.dev1")
+        self.write_index("snowllm", ("0.3.17", *versions))
+        self.addCleanup(self.write_index, "snowllm", versions)
+        self.assertEqual(self.install("--channel", "dev").returncode, 0)
+        result = self.install("--version", "0.3.17")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.version(), "0.3.17")
+        for args in (("--version", "0.3.16"), ("--version", "0.3.17", "--target", "gfx1103"),
+                     ("--version", "0.3.17", "--channel", "dev")):
+            self.assertNotEqual(self.install(*args).returncode, 0)
+            self.assertEqual(self.version(), "0.3.17")
+
     def test_stable_filters_globally_enabled_prereleases(self):
         self.assertEqual(self.install("--channel", "dev").returncode, 0)
         result = self.install("--channel", "stable", PIP_PRE="1")

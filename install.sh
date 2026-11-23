@@ -4,6 +4,7 @@
 # Options:
 #   --target GFX       APU target (default: gfx1151)
 #   --channel CHANNEL stable or dev (default: stable)
+#   --version VERSION install a specific stable release
 #   --uninstall        remove SnowLLM
 #   --help
 #
@@ -22,6 +23,7 @@ ROCM_INDEX="https://repo.amd.com/rocm/whl-multi-arch/"
 GFX_TARGET=110501
 TARGET=gfx1151
 CHANNEL=stable
+RELEASE_VERSION=
 NEED_GIB=15
 
 SNOWLLM_HOME="${SNOWLLM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/snowllm}"
@@ -41,6 +43,7 @@ Install SnowLLM into $VENV and link it into $BIN_DIR.
     --uninstall    remove both
     --target GFX   gfx1103, gfx1150, gfx1151, gfx1152 or gfx1153 (default: gfx1151)
     --channel NAME stable or dev (default: stable)
+    --version VER  exact stable SnowLLM version (default: latest)
     --help         this
 
 Env: SNOWLLM_HOME SNOWLLM_BIN_DIR SNOWLLM_PYTHON
@@ -186,7 +189,7 @@ install_snowllm() {
         pip_install --upgrade --pre snowllm
         return
     fi
-    stable=$("$VENV/bin/python" - <<'PY'
+    stable=$("$VENV/bin/python" - "$RELEASE_VERSION" "$TARGET" <<'PY'
 import re
 import subprocess
 import sys
@@ -208,9 +211,17 @@ for text in match[1].split(",") if match else ():
         versions.append(version)
 if not versions:
     sys.exit("No stable SnowLLM release is available from the configured package index.")
-print(max(versions))
+if sys.argv[1]:
+    selected = Version(sys.argv[1])
+    if selected not in versions:
+        sys.exit(f"SnowLLM {selected} is unavailable from the configured package index.")
+    if sys.argv[2] != "gfx1151" and selected < Version("0.3.19"):
+        sys.exit(f"SnowLLM {selected} does not support target {sys.argv[2]}.")
+    print(selected)
+else:
+    print(max(versions))
 PY
-    ) || die "could not resolve the latest stable SnowLLM release."
+    ) || die "could not resolve the ${RELEASE_VERSION:-latest stable} SnowLLM release."
     pip_install --upgrade "snowllm==$stable"
 }
 
@@ -225,6 +236,13 @@ while [ "$#" -gt 0 ]; do
                 stable|dev) ;;
                 *) die "unsupported channel: $CHANNEL (expected stable or dev)." ;;
             esac
+            shift ;;
+        --version)
+            [ "$#" -ge 2 ] || die "--version requires a stable release number."
+            case "$2" in ''|*[!0-9.post]*) die "invalid stable version: $2" ;; esac
+            printf '%s\n' "$2" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.post[0-9]+)?$' ||
+                die "invalid stable version: $2"
+            RELEASE_VERSION=$2
             shift ;;
         --target)
             [ "$#" -ge 2 ] || die "--target requires a gfx target."
@@ -242,6 +260,8 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
+
+[ -z "$RELEASE_VERSION" ] || [ "$CHANNEL" = stable ] || die "--version requires the stable channel."
 
 TORCH=$(printf '%s' "$TORCH" | sed "s/device-gfx1151/device-$TARGET/")
 
