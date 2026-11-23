@@ -10,7 +10,7 @@ from ..._platform import gpu_mem_info
 from ...checkpoint.gguf.inkling2 import config
 from ...checkpoint.gguf.source import GGUFReader
 from ...errors import SnowLLMError
-from ...ops.inkling import attention, residual_mix
+from ...ops.inkling import attention, loop_control, residual_mix
 from .experts import InklingMoE
 
 
@@ -95,13 +95,11 @@ class InklingLayer:
         weight = self.weights[name]
         return F.linear(x.to(weight.dtype), weight)
 
-    def control(self, x, msg, name):
-        eps = self.cfg["rms_norm_eps"]
-        z = torch.cat((rms(x, eps), rms(msg, eps)), dim=-1)
-        z = self.linear(z, f"loop_{name}_ctrl_down")
-        forget = self.linear(z, f"loop_{name}_ctrl_forget").float().tanh_()
-        gain = self.linear(z, f"loop_{name}_ctrl_gain").float().tanh_()
-        return x.float() * (1 - forget) + msg.float() * gain
+    def control(self, x, msg, name, prefill):
+        stem = f"loop_{name}_ctrl_"
+        w = self.weights
+        return loop_control(x, msg, w[stem + "down"], w[stem + "forget"], w[stem + "gain"],
+                            self.cfg["rms_norm_eps"], prefill)
 
     def attend(self, inputs, state, table, position, sequences, indices, plan):
         cfg, w = self.cfg, self.weights
@@ -137,7 +135,7 @@ class InklingLayer:
         messages = None
         if bank is not None:
             messages = mix(bank[:-1], bank[-1], w["loop_msg_query"], eps, prefill).unbind(1)
-            inputs = tuple(self.control(v, m, n) for v, m, n in zip(inputs, messages, ("q", "k", "v")))
+            inputs = tuple(self.control(v, m, n, prefill) for v, m, n in zip(inputs, messages, ("q", "k", "v")))
         norms = ("attn_norm",) * 3 if self.local else tuple(f"attn_{n}_inp_norm" for n in ("q", "k", "v"))
         inputs = tuple(rms(v, eps, w[n]).bfloat16() for v, n in zip(inputs, norms))
         y = self.attend(inputs, state, table, position, sequences, indices, plan).float()
@@ -147,7 +145,7 @@ class InklingLayer:
             y.add_(x)
         z = mix(blocks, y, w["ffn_res_query"], eps, prefill).squeeze(1)
         if messages is not None:
-            z = self.control(z, messages[3], "ffn")
+            z = self.control(z, messages[3], "ffn", prefill)
         z = self.moe(rms(z, eps, w["ffn_norm"]).bfloat16(), prefill)
         return (y + convolve(z, state.history[3], w["ffn_post_conv"], plan=plan)).bfloat16()
 
