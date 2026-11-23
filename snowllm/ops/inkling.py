@@ -8,6 +8,27 @@ from .operation import operator
 
 
 @operator
+def residual_mix(states, queries, eps, prefill):
+    rows, count, width = states.shape
+    heads = queries.size(0)
+    if states.dtype not in (torch.float32, torch.bfloat16) or states.device != queries.device:
+        raise SnowLLMError("Inkling residual mixing requires colocated FP32 or BF16 states")
+    _chk(states, "Inkling residual states", states.dtype)
+    _chk(queries, "Inkling residual queries", torch.float32, heads, width)
+    size = lib.snowllm_inkling_mix_workspace_floats(rows, count, heads, prefill)
+    if not size:
+        values = torch.nn.functional.rms_norm(states.float(), (width,), eps=eps)
+        scores = torch.nn.functional.linear(values, queries).transpose(1, 2)
+        return torch.bmm((scores * width**-.5).softmax(-1), values)
+    coefficients = empty(size, dtype=torch.float32, device=states.device)
+    out = empty(rows, heads, width, dtype=torch.float32, device=states.device)
+    if not states.is_meta:
+        check(lib.snowllm_inkling_mix(_p(states), _p(queries), _p(coefficients), _p(out),
+              rows, count, heads, width, int(states.dtype == torch.bfloat16), eps, _stream()), "inkling_mix")
+    return out
+
+
+@operator
 def expert_linear(x, weight, scales, ids, prefill=False):
     tokens, groups, k = x.shape
     tiled = weight.ndim == 5
