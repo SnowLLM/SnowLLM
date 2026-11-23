@@ -6,6 +6,7 @@ import json
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, TypeVar
 
 from fastapi import HTTPException
@@ -185,8 +186,9 @@ async def _run(prompt: list[int], req: Common,
     eng = serving().engine
     tok = serving().tokenizer
     at = stops(req)
-    channels = (getattr(serving().model, "chat_channels", None)
+    channels = (getattr(getattr(serving(), "model", None), "chat_channels", None)
                 if not isinstance(req, CompletionRequest) else None)
+    decode = partial(tok.decode, skip_special_tokens=True) if req.skip_special_tokens else tok.decode
     committed = ""
     in_thinking = False
 
@@ -200,7 +202,7 @@ async def _run(prompt: list[int], req: Common,
         if t in stop_ids:
             continue
         if channels and t in channels:
-            committed += tok.decode(out, skip_special_tokens=req.skip_special_tokens)
+            committed += decode(out)
             out.clear()
             channel = channels[t]
             if channel == "thinking" and not in_thinking:
@@ -210,7 +212,7 @@ async def _run(prompt: list[int], req: Common,
             in_thinking = channel == "thinking"
         else:
             out.append(t)
-        text = committed + tok.decode(out, skip_special_tokens=req.skip_special_tokens)
+        text = committed + decode(out)
         if text.endswith("�"):
             continue
         cut, hit = _cut(text, at)
@@ -232,7 +234,7 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                    types: dict | None, mm: dict | None = None) -> AsyncIterator[object]:
     split = ReasoningSplitter(reasoning, detect_open=not isinstance(req, CompletionRequest)
                               and (serving().think_open_id is not None or
-                                   getattr(serving().model, "chat_channels", None)))
+                                   getattr(getattr(serving(), "model", None), "chat_channels", None)))
     tp = tool_parser.StreamingToolParser(types) if types is not None else None
     idx = 0
     r: Request | None = None

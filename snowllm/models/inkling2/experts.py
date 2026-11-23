@@ -27,8 +27,8 @@ class ExpertProjection:
             return cls(rd.tensor(tensor.name, torch.bfloat16), None)
         raise SnowLLMError(f"{tensor.name}: unsupported Inkling expert format {tensor.quant.name}")
 
-    def __call__(self, x, ids):
-        return expert_linear(x, self.weight, self.scale, ids)
+    def __call__(self, x, ids, prefill=False):
+        return expert_linear(x, self.weight, self.scale, ids, prefill)
 
 
 class InklingMoE:
@@ -44,9 +44,9 @@ class InklingMoE:
         self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden)
         self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter)
 
-    def __call__(self, x):
+    def __call__(self, x, prefill=False):
         from ...ops.inkling import combine, route, softcapped_swiglu
         ids, weights = route(x, self.router, self.bias, self.topk, self.scale)
-        gate_up = self.gate_up(x[:, None, :], ids)
+        gate_up = self.gate_up(x[:, None, :], ids, prefill)
         activated = softcapped_swiglu(gate_up, self.gate_cap, self.up_cap)
-        return combine(self.down(activated, ids), weights)
+        return combine(self.down(activated, ids, prefill), weights)
