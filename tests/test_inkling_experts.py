@@ -30,6 +30,35 @@ def dense_expert(projection, expert):
 
 
 class InklingExpertsTest(unittest.TestCase):
+    def test_decode_routing_and_residuals(self):
+        from snowllm.ops.inkling import combine, residual_mix, route, softcapped_swiglu
+
+        gen = torch.Generator(device="cuda").manual_seed(311)
+        def random(*shape):
+            return torch.randn(shape, device="cuda", generator=gen)
+
+        x = random(2, 256).bfloat16()
+        router = random(128, 256) * .05
+        for bias in (None, random(128) * .125):
+            selected, weights = route(x, router, bias, 8, 1.25)
+            scores = (x.float() @ router.T).sigmoid()
+            ids = (scores if bias is None else scores + bias).topk(8).indices
+            expected = scores.gather(1, ids)
+            torch.testing.assert_close(selected, ids.int())
+            torch.testing.assert_close(weights, expected / expected.sum(1, keepdim=True) * 1.25)
+        gate_up = random(2, 8, 128).bfloat16()
+        gate, up = gate_up.float().chunk(2, dim=-1)
+        values = softcapped_swiglu(gate_up, 4., 25.)
+        expected = ((gate/4.).tanh()*4.*gate.sigmoid() * ((up/25.).tanh()*25.)).bfloat16()
+        torch.testing.assert_close(values, expected)
+        torch.testing.assert_close(combine(values, weights), (values.float()*weights[..., None]).sum(1).bfloat16())
+        for count, dtype in ((4, torch.bfloat16), (33, torch.float32)):
+            states = random(2, count, 128).to(dtype)
+            q = random(3, 128)
+            decoded = residual_mix(states, q, 1e-5, False)
+            ref = residual_mix(states, q, 1e-5, True)
+            torch.testing.assert_close(decoded, ref, rtol=1e-5, atol=2e-5)
+
     @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")
     def test_real_experts(self):
         self.addCleanup(torch.set_num_threads, torch.get_num_threads())

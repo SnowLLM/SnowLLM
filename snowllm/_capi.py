@@ -764,6 +764,14 @@ if hasattr(lib, "snowllm_lfm2_qkv_project"):
     _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
                   ("snowllm_lfm2_qkv_project", c_int, [P,P,c_int,P,c_int64,S])))
 
+if hasattr(lib, "snowllm_inkling_small_router"):
+    _SIGS.extend([
+        ("snowllm_inkling_small_router", c_int, [c_int]*3),
+        ("snowllm_inkling_router_scores", c_int, [P]*5 + [c_int]*3 + [S]),
+        ("snowllm_inkling_router_gather", c_int, [P]*4 + [c_int]*3 + [c_float, S]),
+        ("snowllm_inkling_capped_swiglu", c_int, [P]*2 + [c_int]*2 + [c_float]*2 + [S]),
+        ("snowllm_inkling_combine_experts", c_int, [P]*3 + [c_int]*3 + [S]),
+    ])
 if hasattr(lib, "snowllm_inkling_controller_supported"):
     _SIGS.extend([
         ("snowllm_inkling_controller_supported", c_int, [c_int]*3),

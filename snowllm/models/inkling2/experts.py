@@ -58,7 +58,7 @@ class InklingMoE:
 
     def __call__(self, x, prefill=False):
         from ...ops.inkling import combine, route, softcapped_swiglu
-        ids, weights = route(x, self.router, self.bias, self.topk, self.scale)
+        ids, weights = route(x, self.router, self.bias, self.topk, self.scale, prefill)
         gate_up = self.gate_up(x[:, None, :], ids, prefill)
-        activated = softcapped_swiglu(gate_up, self.gate_cap, self.up_cap)
-        return combine(self.down(activated, ids, prefill), weights)
+        activated = softcapped_swiglu(gate_up, self.gate_cap, self.up_cap, prefill)
+        return combine(self.down(activated, ids, prefill), weights, prefill)
