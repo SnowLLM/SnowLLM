@@ -29,7 +29,7 @@ os.environ.setdefault("ROCSHMEM_DEBUG_LEVEL", "NONE")
 __all__ = ["SnowLLMError", "build_geometry", "draft_count", "draft_name", "draft_shape", "lib",
            "select_draft", "select_geometry", "geometry_id", "geometry_name", "synchronize",
            "assert_single_hip_runtime", "GEO_QWEN36_35B_A3B", "GEO_QWEN36_27B",
-           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH", "GEO_LFM25_8B_A1B", "GEO_MINERU_12B"]
+           "GEO_DEEPSEEK_V4_FLASH", "GEO_QWEN38_FLASH_NEXT", "GEO_GLM53_FLASH", "GEO_DEEPSEEK_V41_FLASH", "GEO_LFM25_8B_A1B", "GEO_MINERU_12B", "GEO_INKLING2_MINI"]
 
 GEO_QWEN36_35B_A3B = 0
 GEO_QWEN36_27B = 1
@@ -39,6 +39,7 @@ GEO_GLM53_FLASH = 4
 GEO_DEEPSEEK_V41_FLASH = 5
 GEO_LFM25_8B_A1B = 6
 GEO_MINERU_12B = 7
+GEO_INKLING2_MINI = 8
 
 
 class BuildGeometry(ctypes.Structure):
@@ -98,7 +99,7 @@ def select_geometry(geo: int) -> None:
             + ", ".join(f"{i} ({geometry_name(i)})"
                         for i in (GEO_QWEN36_35B_A3B, GEO_QWEN36_27B,
                                   GEO_DEEPSEEK_V4_FLASH, GEO_QWEN38_FLASH_NEXT, GEO_GLM53_FLASH,
-                                  GEO_DEEPSEEK_V41_FLASH, GEO_LFM25_8B_A1B, GEO_MINERU_12B)
+                                  GEO_DEEPSEEK_V41_FLASH, GEO_LFM25_8B_A1B, GEO_MINERU_12B, GEO_INKLING2_MINI)
                         if geometry_name(i))
         )
 
@@ -763,6 +764,12 @@ if hasattr(lib, "snowllm_lfm2_qkv_project"):
     _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
                   ("snowllm_lfm2_qkv_project", c_int, [P,P,c_int,P,c_int64,S])))
 
+if hasattr(lib, "snowllm_inkling_conv"):
+    _SIGS.append(("snowllm_inkling_conv", c_int, [P]*9 + [c_int]*4 + [c_int64]*2 + [S]))
+if hasattr(lib, "snowllm_inkling_attention"):
+    _SIGS.append(("snowllm_inkling_attention", c_int, [P]*9 + [c_int]*9 + [S]))
+if hasattr(lib, "snowllm_inkling_expert_linear"):
+    _SIGS.append(("snowllm_inkling_expert_linear", c_int, [P]*5 + [c_int]*6 + [S]))
 if hasattr(lib, "snowllm_lfm2_short_conv"):
     _SIGS.extend((("snowllm_lfm2_short_conv", c_int, [P]*10+[c_int64]*5+[S]),
                   ("snowllm_lfm2_rope", c_int, [P]*3+[c_int64]*2+[S])))

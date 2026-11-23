@@ -342,10 +342,11 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
              f"{blocks} KV blocks = {tokens} tokens ({tokens // max_num_seqs} per slot at full "
              f"concurrency)")
     act = getattr(engine.runner, "act_bytes", 0)
+    act_kind = "allocated up front" if engine.runner.arena is not None else "planned peak"
     _log(f"{max_num_seqs} slots, {where}, "
          f"{engine.runner.kv_bytes / (1 << 30):.1f} GiB of KV in all, "
          f"prefill chunk {engine.prefill_chunk}"
-         f"{f' ({act / (1 << 30):.1f} GiB of activations, allocated up front)' if act else ''}, "
+         f"{f' ({act / (1 << 30):.1f} GiB of activations, {act_kind})' if act else ''}, "
          f"ctx/request {engine.max_model_len}, shared capacity {engine.kv_capacity_tokens}, stop {eos}")
     if engine.dflash is not None:
         pool = engine.dflash.blocks

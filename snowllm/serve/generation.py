@@ -185,6 +185,10 @@ async def _run(prompt: list[int], req: Common,
     eng = serving().engine
     tok = serving().tokenizer
     at = stops(req)
+    channels = (getattr(serving().model, "chat_channels", None)
+                if not isinstance(req, CompletionRequest) else None)
+    committed = ""
+    in_thinking = False
 
     r = eng.submit(prompt, params(req, max_new(req, len(prompt))),
                    rope_factor=resolve_alias(req.model)[1].factor, **(mm or {}))
@@ -195,8 +199,18 @@ async def _run(prompt: list[int], req: Common,
     async for t in eng.stream(r):
         if t in stop_ids:
             continue
-        out.append(t)
-        text = tok.decode(out, skip_special_tokens=True) if req.skip_special_tokens else tok.decode(out)
+        if channels and t in channels:
+            committed += tok.decode(out, skip_special_tokens=req.skip_special_tokens)
+            out.clear()
+            channel = channels[t]
+            if channel == "thinking" and not in_thinking:
+                committed += THINK_OPEN
+            elif in_thinking and channel in ("end", "text"):
+                committed += THINK_CLOSE
+            in_thinking = channel == "thinking"
+        else:
+            out.append(t)
+        text = committed + tok.decode(out, skip_special_tokens=req.skip_special_tokens)
         if text.endswith("�"):
             continue
         cut, hit = _cut(text, at)
@@ -217,7 +231,8 @@ async def _run(prompt: list[int], req: Common,
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                    types: dict | None, mm: dict | None = None) -> AsyncIterator[object]:
     split = ReasoningSplitter(reasoning, detect_open=not isinstance(req, CompletionRequest)
-                              and serving().think_open_id is not None)
+                              and (serving().think_open_id is not None or
+                                   getattr(serving().model, "chat_channels", None)))
     tp = tool_parser.StreamingToolParser(types) if types is not None else None
     idx = 0
     r: Request | None = None
