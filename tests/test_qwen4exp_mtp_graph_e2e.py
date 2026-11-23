@@ -9,6 +9,7 @@ import torch
 from snowllm.benchmark import context as bc
 from snowllm.cli import build
 from snowllm.engine import SamplingParams
+from snowllm.engine.spec_decode import SpecDecoder
 
 
 @unittest.skipUnless(os.environ.get('SNOWLLM_QWEN38_FLASH_NEXT_MTP_MODEL'),
@@ -44,14 +45,12 @@ class Qwen4ExpMtpGraphTests(unittest.TestCase):
         records, arms = [], []
         original = spec.propose_first
 
-        def record(batch, pos, cu, total, width, tokens, accepted, seq):
+        def record(batch, pos, cu, total, width, tokens, accepted, seq, states, draft_k):
             kept = accepted.tolist()
-            original(batch, pos, cu, total, width, tokens, accepted, seq)
-            # Rejected first-pass rows have slot=-1 and no defined output contract.
-            valid = ([i * (width + 1) + j for i, n in enumerate(kept) for j in range(n)]
-                     if width == 1 else list(range(len(batch))))
-            records.append((kept, spec.d_drafts[:len(batch), :width].cpu().tolist(),
-                self.digest(engine.runner.mtp_streams[valid]),
+            original(batch, pos, cu, total, width, tokens, accepted, seq, states, draft_k)
+            valid = slice(len(batch))
+            records.append((kept, spec.d_drafts[:len(batch), :draft_k].cpu().tolist(),
+                self.digest(engine.runner.mtp_streams[valid]) if draft_k > 1 else None,
                 self.digest(engine.runner.draft_logits[valid])))
 
         rng = engine.sampler.rng.get_state()
@@ -97,6 +96,34 @@ class Qwen4ExpMtpGraphTests(unittest.TestCase):
                   if key[0] != 'mtp-proposals'}
         with patch.object(self.engine.runner, 'graphs', graphs):
             self.compare(1, False, graph_available=False)
+
+    def test_selected_draft_matches_full_rows(self):
+        engine = self.engine
+        spec = engine.spec
+        def run(count, propose):
+            while engine.cache.evict():
+                pass
+            spec.accept_hist = []
+            selected_states = []
+            requests = [engine.add(ids, SamplingParams(temperature=0, max_new_tokens=32))
+                        for ids in self.prompts[:count]]
+
+            def record(batch, source, rows):
+                hidden = propose(batch, source, rows)
+                if batch.tokens_per_req > 2:
+                    selected_states.append(self.digest(hidden))
+                return hidden
+
+            with patch.object(spec, '_first_proposal', record):
+                engine.run()
+            self.assertTrue(selected_states)
+            return [r.out for r in requests], list(spec.accept_hist), selected_states
+
+        with patch.object(spec, 'use_graphs', False):
+            for count in (1, 2):
+                with self.subTest(batch=count):
+                    self.assertEqual(run(count, SpecDecoder._first_proposal.__get__(spec)),
+                                     run(count, spec._first_proposal))
 
 
 if __name__ == '__main__':

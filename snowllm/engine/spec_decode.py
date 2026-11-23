@@ -393,15 +393,22 @@ class SpecDecoder:
             cu_seqlens=cu, total_q_blocks=total_q_blocks,
             chunk_decode=True,
         )
-        logits, hid = self.runner.mtp_draft(self.runner.last_hidden, ids_next, mb)
-        ops.gather_rows(self._draft_tokens(logits),rows,out=self.d_drafts[:B,0])
+        h = self._first_proposal(mb, self.runner.last_hidden, rows)
         if k > 1:
             self._scratch = self._draft_states(batch)
-            self._propose_rest_dev(
-                B, ops.gather_rows(hid,rows,out=self.runner.mtp_h[:B]), k, nacc)
+            self._propose_rest_dev(B, h, k, nacc)
 
-    def _propose_rest_dev(self, B: int, h: torch.Tensor, k: int, nacc: torch.Tensor) -> None:
-        for j in range(1,k):
+    def _first_proposal(self, batch: Batch, source: torch.Tensor,
+                        selected: torch.Tensor) -> torch.Tensor | None:
+        B = batch.batch_size
+        logits, hidden = self.runner.mtp_draft(source, batch.input_ids, batch)
+        ops.gather_rows(self._draft_tokens(logits), selected, out=self.d_drafts[:B, 0])
+        if batch.tokens_per_req > 2:
+            return ops.gather_rows(hidden, selected, out=self.runner.mtp_h[:B])
+
+    def _propose_rest_dev(self, B: int, h: torch.Tensor, k: int, nacc: torch.Tensor,
+                          *, start: int = 1) -> None:
+        for j in range(start, k):
             pos,slots,bt,seq_lens=self._step_metadata(B,nacc,j)
             ids=self.d_step_ids[:B]
             ops.copy_rows(ids,self.d_drafts[:B,j-1])

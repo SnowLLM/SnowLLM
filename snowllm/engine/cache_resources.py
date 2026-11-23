@@ -115,7 +115,7 @@ class QwenResources(ResourceSet):
             return RequestState([t for _, a in r.linear_mods + r.conv_mods for t in a.state]
                                 + [a.state for a in r.ple_mods])
         for a in self.indexers:
-            count = rows + (a in self.draft_modules)
+            count = rows + (1 + r.max_num_seqs if a in self.draft_modules else 0)
             a.carry = tensor(slabs, (count, g.index_ratio - 1, g.index_head_dim), torch.bfloat16)
             a.carry_pos = tensor(slabs, (count, g.index_ratio - 1, 3), torch.int64)
         width = ops.qsa_decode_rows(r.decode_rows)

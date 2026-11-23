@@ -12,6 +12,7 @@ from snowllm.engine.forward_context import QsaStep
 from snowllm._capi import lib
 
 PLAN = ('mtp-tail',)
+HEAD_PLAN = ('mtp-decode-selected-head',)
 _planning = False
 
 
@@ -96,8 +97,7 @@ def tail_prefill(model, ctx, streams):
         layer.mlp(tail_ctx, mixed, tail_ctx.blk)
         inject = post_lo[:, layer.mlp_hc.lowrank:layer.mlp_hc.lowrank + H]
         layer.combine(tail_ctx, tail_streams, tail_ctx.blk, inject, layer.next_norm)
-        ops.copy_rows(streams, tail_streams, dst_index=last)
-        return streams, model.head_fold(tail_ctx, tail_streams, tail_ctx.take_xn())
+        return tail_streams, model.head_fold(tail_ctx, tail_streams, tail_ctx.take_xn())
     finally:
         try:
             if projection_live:

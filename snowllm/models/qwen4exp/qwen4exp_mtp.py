@@ -62,6 +62,6 @@ class Qwen4ExpMTP(nn.Module):
                 folded = a.new(b.last_row.numel(), n_hc, E)
                 ops.gather_rows(streams,b.last_row,out=folded)
             out = self.head_fold(ctx, folded, ctx.take_xn())
-            return streams, out
+            return folded, out
         finally:
             ctx.close()

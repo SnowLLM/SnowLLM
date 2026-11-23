@@ -17,6 +17,7 @@ from .forward_context import (
     Batch,
     Qwen4ExpContext,
     i32,
+    i64,
 )
 from .inputs import synthetic_batch
 from .qwen_runner import QwenRunner
@@ -143,6 +144,12 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _activation_cases(self, chunk, decode):
         yield from super()._activation_cases(chunk,decode)
+        if self.num_spec and self.model.mtp is not None:
+            selected = self._probe_batch(decode, False)
+            selected.last_row = i64(list(range(0, decode, selected.tokens_per_req)))
+            yield ActivationProbe(mtp_tail.HEAD_PLAN, decode,
+                lambda: self.mtp_draft(self._mtp_input(decode), selected.input_ids, selected),
+                lifetimes='uses' if self.plan_activations else 'references')
         if chunk < 8192 or not mtp_tail.available(self.model.mtp) or self.kv_int8:
             return
         total,qmap=ops.prefill_q_plan([8192])
@@ -161,7 +168,10 @@ class Qwen4ExpRunner(QwenRunner):
         if draft and mtp_tail.enabled(self.model.mtp,b,M,self.kv_int8):
             plan_key = mtp_tail.PLAN
         if not b.is_prefill:
-            plan_key = PLAN_MTP_DECODE if draft else self._decode_plan_key(b)
+            if draft:
+                plan_key = PLAN_MTP_DECODE if b.last_row is None else mtp_tail.HEAD_PLAN
+            else:
+                plan_key = self._decode_plan_key(b)
         # Prefill already carries its ragged offsets in Batch. Equal-width row
         # maps are decode metadata; M // B is not a prefill sequence length.
         rows_of, cu = (None, None) if b.is_prefill else self._qsa_shape(b)
@@ -284,6 +294,4 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _draft_hidden(self, ctx, hidden, next_ids):
         streams, folded = self.model.mtp(ctx, self.model, hidden, next_ids)
-        if ctx.batch.last_row is not None:
-            streams = ops.gather_rows(streams, ctx.batch.last_row)
         return folded, streams

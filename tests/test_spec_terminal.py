@@ -25,7 +25,7 @@ class SpecTerminalTests(unittest.TestCase):
             ([8, 9, 10], [8, 9], 8, set(), (), None, 3, [8, 9, 10], None, True),
         ]
         for tokens, drafts, cap, eos, stops, closing, accepted, output, reason, propose in cases:
-            for kind, limit in ((SpecDecoder, None),):
+            for kind, limit in ((SpecDecoder, None), (Qwen4ExpSpecDecoder, None)):
                 with self.subTest(kind=kind, tokens=tokens, cap=cap, eos=eos, stops=stops):
                     decoder = object.__new__(kind)
                     decoder.runner = Mock(block_size=16, prev_context=0)
@@ -65,6 +65,8 @@ class SpecTerminalTests(unittest.TestCase):
                     hinted = (cap <= 4 or closing is not None or any(t in eos or t in stops for t in drafts))
                     self.assertEqual(reads, [0 if hinted else 1])
                     self.assertEqual(req.drafts, [6, 6] if reason is None else [])
+                    if kind is Qwen4ExpSpecDecoder:
+                        self.assertEqual(decoder.verify_hist[2], 1)
 
     def test_ragged_draft_uses_live_taps_and_compact_block_table(self):
         for kind in (DFlashDecoder, DSparkDecoder):
