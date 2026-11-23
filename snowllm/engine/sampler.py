@@ -226,9 +226,12 @@ class Sampler:
         for r, tok in zip(batch, self.sample_list(logits, batch)):
             self.append(r, tok)
 
+    def is_stop(self, r: Request, tok: int) -> bool:
+        return tok in self.stop_token_ids or tok in r.params.stop_token_ids
+
     def append(self, r: Request, tok: int) -> None:
         r.out.append(tok)
-        if tok in self.stop_token_ids or tok in r.params.stop_token_ids:
+        if self.is_stop(r, tok):
             r.done, r.finish_reason = True, "stop"
         elif len(r.out) >= r.params.max_new_tokens:
             r.done, r.finish_reason = True, "length"

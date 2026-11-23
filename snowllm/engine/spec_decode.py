@@ -96,6 +96,8 @@ class DSparkScheduling:
 
     def _store_proposals(self, batch, drafts, confidence):
         for i, (r, row) in enumerate(zip(batch, drafts)):
+            if r.done:
+                continue
             if self.adaptive:
                 self.confidence[r] = confidence[i]
             elif confidence is not None:
@@ -108,16 +110,21 @@ class DSparkScheduling:
             r.drafts = row
 
     def _write_prefixes(self, batch: list[Request], accepted: list[int], lengths: list[int]):
-        bt = self._draft_table(batch)
         rows, seqs, cache_pos, rope_pos = [], [], [], []
+        live = []
         offset = 0
-        for i, (r, kept, width) in enumerate(zip(batch, accepted, lengths)):
+        for r, kept, width in zip(batch, accepted, lengths):
+            start = offset
+            offset += width
+            if r.done:
+                continue
             first = r.num_cached - kept
-            rows.extend(range(offset, offset + kept))
-            seqs.extend([i] * kept)
+            rows.extend(range(start, start + kept))
+            seqs.extend([len(live)] * kept)
+            live.append(r)
             cache_pos.extend(range(first, r.num_cached))
             rope_pos.extend(p + r.pos_delta for p in range(first, r.num_cached))
-            offset += width
+        bt = self._draft_table(live)
         self._write_ctx(rows, seqs, cache_pos, rope_pos, bt)
         return bt
 
@@ -260,7 +267,7 @@ class SpecDecoder:
     def rows_needed(self, rows: int) -> int:
         return rows + (rows - 1) - 1
 
-    def verify_step(self, batch: list[Request], T: int) -> None:
+    def verify_step(self, batch: list[Request], T: int, draft_limit: int | None = None) -> None:
         k, B = T - 1, len(batch)
         c = [r.num_cached for r in batch]
         bs = self.runner.block_size
@@ -284,29 +291,58 @@ class SpecDecoder:
             seq_lens=seq,
             is_prefill=False, num_tokens=B * T,
             state_indices=d_sidx,
-            num_accepted=ones,
-            cu_seqlens=cu, total_q_blocks=self.messages.q_plan(("verify",B,T),[T]*B)[0],
-            chunk_decode=True,
+            num_accepted=ones if k else None,
+            cu_seqlens=cu if k else None,
+            total_q_blocks=self.messages.q_plan(("verify",B,T),[T]*B)[0] if k else 0,
+            chunk_decode=bool(k),
             prev_ids=self._ngram_context(batch, T),
             host_ids=ids,
         )
-        ops.copy_rows(self.d_drafts[:B,:k],drafts.view(B,k))
+        if k:
+            ops.copy_rows(self.d_drafts[:B,:k],drafts.view(B,k))
         ops.copy_rows(self.d_c[:B],cs)
         ops.copy_rows(self.d_pd[:B],pds)
 
         tv = self.sampler.sample(self.runner.forward(b),
                                  [r for r in batch for _ in range(T)],out=self.d_tokens[:B*T]).view(B, T)
-        nacc = ops.spec_accept(tv,self.d_drafts[:B,:k],out=self.d_accept[:B])
+        nacc = (ops.spec_accept(tv, self.d_drafts[:B, :k], out=self.d_accept[:B])
+                if k else self.d_accept[:B].fill_(1))
 
-        self.propose_first(batch, pos, cu, b.total_q_blocks, k, tv, nacc, seq)
-
-        acc = nacc.tolist()
-        got = tv.tolist()
-        drafted = self.d_drafts[:B, :k].tolist()
+        # Keep target verification and drafting queued together on ordinary rounds.
+        got = tv.tolist() if all(self._may_finish(r, k) for r in batch) else None
+        terminal = got is not None and all(self._ends_request(r, row) for r, row in zip(batch, got))
+        next_k, acc = self._propose_verified(batch, pos, cu, b.total_q_blocks,
+                                             k, tv, nacc, seq, d_sidx, draft_limit, terminal=terminal)
+        if got is None:
+            got = tv.tolist()
+        drafted = self.d_drafts[:B, :next_k].tolist() if next_k else None
         for i, r in enumerate(batch):
             kept = self._accept(r, got[i], acc[i])
             r.state_head = sidx[i * T + kept - 1]
-            r.drafts = drafted[i]
+            r.drafts = drafted[i] if drafted is not None and not r.done else []
+
+    def _may_finish(self, r, k):
+        if len(r.out) + k + 1 >= r.params.max_new_tokens:
+            return True
+        drafts = r.drafts[:k]
+        return any(self.sampler.is_stop(r, t) for t in drafts)
+
+    def _ends_request(self, r, tokens):
+        remaining = r.params.max_new_tokens - len(r.out)
+        for i, token in enumerate(tokens):
+            if i + 1 >= remaining or self.sampler.is_stop(r, token):
+                return True
+            # A target correction is committed, but the following verification rows are discarded.
+            if i + 1 < len(tokens) and token != r.drafts[i]:
+                break
+        return False
+
+    def _propose_verified(self, batch, pos, cu, total, k, tv, nacc, seq, states, draft_limit,
+                          *, terminal=False):
+        if terminal:
+            return 0, nacc.tolist()
+        self.propose_first(batch, pos, cu, total, k, tv, nacc, seq)
+        return k, nacc.tolist()
 
     def _ngram_context(self, batch: list[Request], T: int) -> list[list[int]] | None:
         k = self.runner.prev_context
@@ -337,6 +373,7 @@ class SpecDecoder:
             self.sampler.append(r, toks[t])
             emitted += 1
             if r.done:
+                r.drafts = []
                 break
         r.n_accepted = emitted
         return emitted
@@ -681,8 +718,11 @@ class DFlashDecoder(DSparkScheduling):
             self.sampling.remember(batch, drafts)
 
     def _propose_prefixes(self, batch, accepted, lengths):
+        live = [r for r in batch if not r.done]
+        if not live:
+            return
         self._write_prefixes(batch, accepted, lengths)
-        self._draft_blocks(batch)
+        self._draft_blocks(live)
 
     def _draft_blocks(self, batch):
         self._stage_rows(batch, None)
@@ -696,6 +736,11 @@ class DFlashDecoder(DSparkScheduling):
         self._proposals(batch)
 
     def propose(self, batch: list[Request], accepted: list[int]) -> None:
+        if all(r.done for r in batch):
+            if self.sampling is not None:
+                # DFlash2 and the target share a generator across requests.
+                self.sampling.draw_uniforms(batch)
+            return
         B = len(batch)
         self._draft_table(batch)
         self._stage_rows(batch, accepted)

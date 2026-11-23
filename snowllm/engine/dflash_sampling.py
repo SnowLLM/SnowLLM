@@ -33,8 +33,11 @@ class DFlashSampling:
             slots = self.inputs.tensor("draft_slots", [r.slot for r in batch], torch.int32)
             ops.copy_rows(self.temperature[:count], temp)
             ops.copy_rows(self.slots[:count], slots)
-        if any(t > 0 for t in temperatures):
-            self.uniform[:count].uniform_(generator=self.sampler.rng)
+        self.draw_uniforms(batch)
+
+    def draw_uniforms(self, batch):
+        if any(r.params.temperature > 0 for r in batch):
+            self.uniform[:len(batch)].uniform_(generator=self.sampler.rng)
 
     def propose(self, draft, hidden, logits, anchor, path):
         count = path.shape[0]

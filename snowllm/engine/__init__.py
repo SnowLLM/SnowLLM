@@ -954,8 +954,9 @@ class Engine:
             publish()
             return
         self.sampler.emit(out, [r])
-        if self.dflash and not r.done:
-            self.dflash.after_prefill(r, lo, hi, M, propose=True)
+        if self.dflash:
+            if not r.done or marks:
+                self.dflash.after_prefill(r, lo, hi, M, propose=not r.done)
             r.n_accepted = 1
             publish()
             self._retire_finished()

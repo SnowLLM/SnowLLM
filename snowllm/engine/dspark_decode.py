@@ -79,11 +79,11 @@ class DSparkDecoder(DSparkScheduling):
         self.propose(batch, kept, T)
 
     def propose(self, batch: list[Request], kept: list[int], lengths: list[int]) -> None:
-        live = [i for i, r in enumerate(batch) if not r.done]
+        live = [r for r in batch if not r.done]
         if not live:
             return
         bt = self._write_prefixes(batch, kept, lengths)
-        self._block([batch[i] for i in live], ops.gather_rows(bt,i64(live)) if len(live) < len(batch) else bt)
+        self._block(live, bt)
 
     def after_prefill(self, r: Request, lo: int, hi: int, M: int, propose: bool) -> None:
         if self.windowed:
