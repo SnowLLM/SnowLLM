@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.25 — 2026-11-23
+
+- Add adaptive MTP up to K=7 for Qwen3.8-Flash-Next UD3.1 Q3_K_XL and IQ4_XS. The new recipes share weights with the existing fixed-K=2 recipes.
+  Qwen3.8-Flash-Next UD3.1 的 Q3_K_XL 和 IQ4_XS 新增自适应 MTP 配方，最高 K=7，与原有固定 K=2 配方共用权重。
+- Add optional prompt lookup, tool-call drafting for Flash-Next MTP, and adaptive verification lengths for DFlash and DFlash2.
+  新增可选的提示词查找、Flash-Next MTP 工具调用草稿，以及 DFlash 和 DFlash2 自适应验证长度。
+- Fix row selection in batched Flash-Next MTP and QSA snapshots of partially filled groups. Pin SnowLLM-Kernels to `0.3.17.dev5`.
+  修复 Flash-Next 批量 MTP 的行选择和 QSA 未满分组的快照恢复。SnowLLM-Kernels 固定为 `0.3.17.dev5`。
+
 ## 0.3.24 — 2026-11-21
 
 - MiniCPM-V 4.7 DSpark recipes retain the first 64 tokens and use a 2,048-token recent draft attention window. The draft KV pool recycles older pages and preserves pages still held by prefix checkpoints. The 32 GiB Windows recipe now places weights automatically with a 94% GPU memory budget.

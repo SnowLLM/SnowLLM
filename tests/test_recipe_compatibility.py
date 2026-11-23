@@ -245,7 +245,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
         book = builder.recipes()
         for view in (book, builder.for_client(book, '0.3.13')):
             selected = [r for r in view if r['id'].startswith('qwen3.8-flash-next-')]
-            self.assertEqual(len(selected), 10 if view is book else 5)
+            self.assertEqual(len(selected), 12 if view is book else 5)
             for raw in selected:
                 with self.subTest(recipe=raw['id'], legacy=view is not book):
                     defaults = raw['defaults']
@@ -253,6 +253,31 @@ class RecipeCompatibilityTests(unittest.TestCase):
                     self.assertEqual(defaults['max_num_batched_tokens'], 8192)
                     self.assertEqual(defaults.get('max_gpu_mem_util', .9), .9)
                     self.assertEqual(defaults.get('gpu_memory_utilization', .9), .9)
+
+    def test_ud31_adaptive_shares_weights_and_preserves_fixed_installation(self):
+        entries = {r.id: r for r in recipes.catalogue(bundle=True)}
+        for quant in ('q3-k-xl', 'iq4-xs'):
+            fixed = entries[f'qwen3.8-flash-next-{quant}-ud3.1']
+            adaptive = entries[f'qwen3.8-flash-next-{quant}-mtp-adaptive-ud3.1']
+            self.assertEqual(recipes.source_digest(adaptive), recipes.source_digest(fixed))
+            self.assertEqual(adaptive.dir, fixed.dir)
+            self.assertEqual(adaptive.defaults, {**fixed.defaults, 'num_spec': 7, 'mtp_adaptive': True})
+            self.assertEqual(adaptive.requires, '0.3.25')
+            with patch.object(recipes, '__version__', '0.3.24'):
+                self.assertTrue(adaptive.stale)
+                self.assertTrue(fixed.servable)
+            for order in ((fixed, adaptive), (adaptive, fixed)):
+                with tempfile.TemporaryDirectory() as folder:
+                    dest = fixed.path(Path(folder))
+                    dest.mkdir()
+                    for entry in order:
+                        recipes.write_manifest(entry, dest, [])
+                    self.assertEqual(json.loads((dest / recipes.MANIFEST).read_text())['id'], fixed.id)
+                    saved = {r.id: r.defaults for r in recipes.on_disk(Path(folder))}
+                    self.assertEqual(saved, {r.id: r.defaults for r in order})
+                    self.assertEqual(next(iter(saved)), fixed.id)
+                    for entry in order:
+                        self.assertEqual(recipes.manifest(entry, dest)['defaults'], entry.defaults)
 
     def test_old_saved_default_is_migrated_without_changing_explicit_overrides(self):
         old = 'https://snowllm.dev/recipe.json'

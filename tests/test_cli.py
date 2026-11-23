@@ -531,6 +531,19 @@ class CLITests(unittest.TestCase):
         self.assertTrue(kw['dflash_adaptive'])
         self.assertFalse(kw['dspark_adaptive'])
 
+    def test_adaptive_recipe_and_explicit_fixed_depth(self):
+        from snowllm.hub.recipes import catalogue
+        by_id = {entry.id: entry for entry in catalogue(bundle=True)}
+        for quant in ('q3-k-xl', 'iq4-xs'):
+            fixed = by_id[f'qwen3.8-flash-next-{quant}-ud3.1']
+            adaptive = by_id[f'qwen3.8-flash-next-{quant}-mtp-adaptive-ud3.1']
+            for recipe, flags, expected in ((fixed, (), (2, False)), (adaptive, (), (7, True)),
+                    (adaptive, ('--no-mtp-adaptive', '--num-spec', '2'), (2, False))):
+                _, options = self.launch_options(flags, recipe)
+                self.assertEqual((options['num_spec'], options['mtp_adaptive']), expected)
+                self.assertFalse(any(options[key] for key in (
+                    'mtp_prompt_lookup', 'mtp_tool_draft', 'dflash_adaptive')))
+
     def test_legacy_positional_dflash_arguments(self):
         from inspect import signature
         from snowllm import cli
