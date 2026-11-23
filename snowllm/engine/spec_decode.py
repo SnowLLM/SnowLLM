@@ -479,6 +479,7 @@ class SpecDecoder:
 
 
 class DFlashDecoder(DSparkScheduling):
+    prefix_feedback: dict[Request, int] | None = None
     _window = SpecDecoder._window
     _ngram_context = SpecDecoder._ngram_context
 
@@ -486,7 +487,7 @@ class DFlashDecoder(DSparkScheduling):
                  draft: "DFlashDraft", draft_blocks: BlockAllocator, tables: TableMirror,
                  stage: Staging, *, block: int, max_blocks_per_seq: int,
                  p_min: float = 0.0, adaptive: bool = False,
-                 window: int = 0, sinks: int = 64) -> None:
+                 window: int = 0, sinks: int = 64, dflash_adaptive: bool = False) -> None:
         self.runner = runner
         self.blocks = draft_blocks
         self.sampler = sampler
@@ -508,6 +509,10 @@ class DFlashDecoder(DSparkScheduling):
         self.p_min = p_min if self.dspark else 0.0
         self.init_adaptive(adaptive, p_min, self.dspark and "conf_weight" in draft.w)
         self.width = block + int(self.dspark)
+        if dflash_adaptive and block > 2:
+            self.short_width = min(3, block - 1)
+            self.prefix_feedback = {}
+            self.verify_hist = [0] * block
         self.runner.tap_at = {layer: j for j, layer in enumerate(self.geo.tap_layers)}
         if self.runner.taps.shape[1] != self.geo.num_taps * H:
             raise SnowLLMError(f"the runner was built for {self.runner.num_taps} taps, this draft "
@@ -566,7 +571,19 @@ class DFlashDecoder(DSparkScheduling):
     def verify_rows(self, n: int) -> int:
         return self.width if n * self.width <= SPEC_MAX_STEP_ROWS else 0
 
-    step_rows = SpecDecoder.step_rows
+    def step_rows(self, n: int) -> tuple[int, ...]:
+        rows = SpecDecoder.step_rows(self, n)
+        if self.prefix_feedback is not None and rows[0] > 2:
+            return (self.short_width, rows[0])
+        return rows
+
+    def select_verify_rows(self, batch: list[Request]) -> int:
+        # Require a longer run of early rejections when shortening saves only one target row.
+        threshold = 4 if self.width - self.short_width == 1 else 2
+        if all(self.prefix_feedback.get(r, 0) >= threshold or
+               r.params.max_new_tokens - len(r.out) <= self.short_width for r in batch):
+            return self.short_width
+        return self.width
 
     def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
         if isinstance(T, list):
@@ -622,6 +639,17 @@ class DFlashDecoder(DSparkScheduling):
         if roll:
             self.runner.linear_advance(i32(sidx), i32(keep), B, T)
 
+        if self.prefix_feedback is not None:
+            self.verify_hist[T - 1] += B
+            for r, kept in zip(batch, keep):
+                misses = self.prefix_feedback.get(r, 0)
+                self.prefix_feedback[r] = misses + 1 if kept < self.short_width else 0
+            if T < self.width:
+                # The draft graph reads full block strides. Move rows backwards to preserve overlapping taps.
+                taps = self.runner.taps
+                for i in range(B - 1, 0, -1):
+                    for j in reversed(range(keep[i])):
+                        taps[i * self.width + j].copy_(taps[i * T + j])
         self.propose(batch, keep)
 
     accept_hist: list = []
@@ -629,6 +657,8 @@ class DFlashDecoder(DSparkScheduling):
     _note_accept = SpecDecoder._note_accept
 
     def release(self, r: Request) -> None:
+        if self.prefix_feedback is not None:
+            self.prefix_feedback.pop(r, None)
         if self.sampling is not None:
             self.sampling.release(r)
         super().release(r)

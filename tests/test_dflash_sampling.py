@@ -143,6 +143,38 @@ def rejection(ck):
         ck.exact(f"rejection width={width} block={length+1}: residual or bonus token", actual.cpu(), want)
 
 
+def verify_prefix(ck, geo):
+    block, width, vocab = 4, 3, geo.vocab_size
+    sampler = Sampler((), 73)
+    sampler.reserve(2 * block, vocab)
+    sampling = DFlashSampling(sampler, geo, 3, block, vocab)
+    requests = [Request([1], SamplingParams(temperature=.7, top_k=8), slot=slot)
+                for slot in (2, 0)]
+    sampling.candidates.fill_(8)
+    sampling.candidates[:, :, 0] = 5
+    sampling.q.zero_()
+    sampling.q[:, :, 0] = 1
+    sampling.q[2, :2, 0] = .25
+    sampling.q[2, :2, 1] = .75
+    for request in requests:
+        request.drafts = [5] * (block - 1)
+    sampling.remember(requests, [r.drafts for r in requests])
+    sampling.release(requests[1])
+    logits = torch.full((2 * width, vocab), -100., device='cuda')
+    logits[:, [5, 8]] = 0.
+    uniforms = torch.tensor([[.9, .9, .41], [.9, .9, .76]], device='cuda')
+    sampler._uniform = lambda n: uniforms.reshape(n)
+    drafts = torch.tensor([r.drafts[:width-1] for r in requests], device='cuda')
+    rows = [r for r in requests for _ in range(width)]
+    p, indices = sampler.probabilities(logits, rows, sampling.p, sampling.p_ids)
+    expected, counts = reference_reject(p.cpu().view(2, width, -1), indices.cpu().view(2, width, -1),
+        drafts.cpu(), sampling.candidates.cpu(), sampling.q.cpu(), [2, 0], [True, False], uniforms.cpu())
+    assert counts.tolist() == [3, 1]
+    tokens, kept = sampling.verify(logits, requests, drafts)
+    ck.exact("short prefix: reordered native and lookup slots", tokens.cpu(), expected)
+    ck.exact("short prefix: acceptance and bonus position", kept.cpu(), counts)
+
+
 def distribution(ck):
     batch, width = 40000, 4
     target = torch.tensor([.1, .2, .3, .4])
@@ -228,6 +260,7 @@ def main():
     rejection(ck)
     distribution(ck)
     allocation(ck, geo)
+    verify_prefix(ck, geo)
     target_probabilities(ck)
     return ck.done()
 

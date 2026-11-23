@@ -105,7 +105,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           host_offload: int | str | None = None,
           serve_as: str | None = None,
           prefix_memory_ratio: float | None = None,
-          offload_ratio: float | None = None, host_alloc: bool = False, scheduler=None) -> "ServerState":
+          offload_ratio: float | None = None, host_alloc: bool = False, scheduler=None,
+          dflash_adaptive: bool = False) -> "ServerState":
     from .capacity import MemoryBudget, configure, placement_options
     limits = MemoryBudget(max_gpu_mem_util, max_host_mem_util, max_host_mem_gib,
                           max_gpu_mem_gib=max_gpu_mem_gib, max_disk_mem_gib=max_disk_mem_gib)
@@ -171,7 +172,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
               host_taken=draft.host_load_peak_bytes, blocks=num_kv_blocks,
               dflash_block=dflash_block,
               dflash_p_min=DEFAULT_DSPARK_P_MIN if dflash_p_min is None else dflash_p_min,
-              dspark_adaptive=dspark_adaptive, mtp_window=mtp_window, mtp_sinks=mtp_sinks,
+              dspark_adaptive=dspark_adaptive, dflash_adaptive=dflash_adaptive,
+              mtp_window=mtp_window, mtp_sinks=mtp_sinks,
               offload_ratio=offload_ratio,
               memory_auto=memory_auto,
               host_offload_allowed=limits.host_offload_enabled,
@@ -221,7 +223,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
             dflash_path=dflash, dflash_block=dflash_block,
             dflash_p_min=(DEFAULT_DSPARK_P_MIN if dflash_p_min is None
                           else dflash_p_min),
-            dspark_adaptive=dspark_adaptive,
+            dspark_adaptive=dspark_adaptive, dflash_adaptive=dflash_adaptive,
             prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
             account=exact_stats or stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
             gpu_memory_utilization=kv['util'],
@@ -290,6 +292,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  mtp_window=mtp_window, mtp_sinks=mtp_sinks,
                                  dflash_p_min=getattr(engine.dflash, 'p_min', None),
                                  dspark_adaptive=dspark_adaptive,
+                                 dflash_adaptive=getattr(engine.dflash, "prefix_feedback", None) is not None,
                                  enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
     graph_status = ('pending shared workspace initialization' if getattr(scheduler, 'defer_capture', False)
@@ -344,6 +347,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         stages = getattr(g, "stack", g).num_layers
         p_min = getattr(engine.dflash, "p_min", 0.0)
         cut = f", cut at confidence {p_min}" if p_min else ", whole block every step"
+        if getattr(engine.dflash, "prefix_feedback", None) is not None:
+            cut = f", adaptive verification K={engine.dflash.short_width - 1}/{engine.dflash.block - 1}"
         _log(f"dflash: block {engine.dflash.block}{cut}, {pool.total} draft KV blocks "
              f"({engine._dflash_pool_bytes(pool.total) / (1 << 30):.1f} GiB in {stages} pools of "
              f"its own) -- held back from the context above, not taken on top of it")
@@ -460,6 +465,8 @@ def parser() -> argparse.ArgumentParser:
                    help='Draft block size; 0 uses the checkpoint default.')
     g.add_argument("--dflash-p-min", type=float, default=DEFAULT_DSPARK_P_MIN, metavar="P",
                    help='DSpark confidence threshold; 0 disables early stopping.')
+    g.add_argument("--dflash-adaptive", action=argparse.BooleanOptionalAction, default=False,
+                   help="Shorten DFlash/DFlash2 target verification when few draft tokens are accepted.")
     g.add_argument("--dspark-adaptive", action=argparse.BooleanOptionalAction, default=False,
                    help='Profile DSpark step costs at startup and schedule confidence prefixes.')
     g.add_argument("--kv-cache-dtype", choices=("bf16", "auto", "int8"), default="bf16",
@@ -665,7 +672,7 @@ def _build_prepared(a, model, recipe, scheduler=None):
               mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, served_names=a.served_model_name,
               dflash=a.dflash, dflash_block=a.dflash_block,
               dflash_p_min=a.dflash_p_min,
-              dspark_adaptive=a.dspark_adaptive,
+              dspark_adaptive=a.dspark_adaptive, dflash_adaptive=getattr(a, 'dflash_adaptive', False),
               batch_prefill=a.batch_prefill, allow_image_urls=a.allow_image_urls,
               prefill_chunk=a.max_num_batched_tokens, kv_int8=a.kv_cache_dtype == "int8",
               max_gpu_mem_util=a.max_gpu_mem_util, max_gpu_mem_gib=a.max_gpu_mem_gib,

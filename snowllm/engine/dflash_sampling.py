@@ -53,7 +53,7 @@ class DFlashSampling:
         self.proposals[request.slot] = None
 
     def verify(self, logits, batch, drafts):
-        count, width = len(batch), self.block
+        count, width = drafts.shape[0], drafts.shape[1] + 1
         rows = [r for r in batch for _ in range(width)]
         tokens = self.tokens[:count * width].view(count, width)
         accepted = self.accepted[:count]
@@ -65,8 +65,19 @@ class DFlashSampling:
         valid = [int(tuple(r.drafts) == self.proposals[r.slot]) for r in batch]
         uniform = self.sampler._uniform(count * width).view(count, width)
         with self.inputs.reading(reuse=True):
-            slots = self.inputs.tensor("verify_slots", [r.slot for r in batch], torch.int32)
+            source_slots = [r.slot for r in batch] if width == self.block else [0]
+            slots = self.inputs.tensor("verify_slots", source_slots, torch.int32)
             current = self.inputs.tensor("verify_valid", valid, torch.int32)
-            ops.dflash.reject(p, ids, drafts, self.candidates, self.q, slots, current, uniform,
-                               tokens, accepted)
+            if width == self.block:
+                ops.dflash.reject(p, ids, drafts, self.candidates, self.q, slots, current, uniform,
+                                  tokens, accepted)
+            else:
+                # Each saved q has full-block stride. Pass its contiguous prefix as a one-slot pool.
+                for i, request in enumerate(batch):
+                    row = slice(i, i + 1)
+                    target = slice(i * width, (i + 1) * width)
+                    prefix = (slice(request.slot, request.slot + 1), slice(0, width - 1))
+                    ops.dflash.reject(p[target], ids[target], drafts[row], self.candidates[prefix],
+                                      self.q[prefix], slots, current[row], uniform[row], tokens[row],
+                                      accepted[row])
         return tokens, accepted

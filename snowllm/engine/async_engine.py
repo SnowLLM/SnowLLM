@@ -273,8 +273,12 @@ class AsyncEngine:
         rows = sum(hist)
         if rows < 1 or len(hist) < 2:
             return
-        rate = " ".join(f"{sum(hist[j + 1:]) / rows:.3f}" for j in range(len(hist) - 1))
-        drafted = rows * (len(hist) - 1)
+        widths = getattr(spec, "verify_hist", None)
+        opportunities = [rows if widths is None else sum(widths[j:])
+                         for j in range(1, len(hist))]
+        rate = " ".join(f"{sum(hist[j + 1:]) / offered:.3f}"
+                        for j, offered in enumerate(opportunities) if offered)
+        drafted = sum(opportunities)
         kept = sum(i * n for i, n in enumerate(hist))
         print(f"{term.stamp(time.strftime('%H:%M:%S'))}   accepted {kept}/{drafted} drafts "
               f"({kept / drafted * 100:.1f}%) over {rows} verify rows | per position {rate}",

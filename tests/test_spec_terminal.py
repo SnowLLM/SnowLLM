@@ -15,6 +15,24 @@ from snowllm.engine.spec_decode import DFlashDecoder, SpecDecoder
 
 
 class SpecTerminalTests(unittest.TestCase):
+    def test_dflash_verification_width_is_shared_and_uses_prior_acceptance(self):
+        decoder = object.__new__(DFlashDecoder)
+        decoder.width, decoder.short_width = 4, 3
+        a, b = (Request([1], SamplingParams(max_new_tokens=32)) for _ in range(2))
+        decoder.prefix_feedback = {a: 4, b: 3}
+        self.assertEqual(decoder.step_rows(2), (3, 4))
+        self.assertEqual(decoder.select_verify_rows([a, b]), 4)
+        self.assertEqual(decoder.select_verify_rows([a]), 3)
+        b.params.max_new_tokens = 3
+        self.assertEqual(decoder.select_verify_rows([a, b]), 3)
+        decoder.width = 8
+        decoder.prefix_feedback[a] = 2
+        self.assertEqual(decoder.select_verify_rows([a]), 3)
+        decoder.prefix_feedback[a] = 0
+        self.assertEqual(decoder.select_verify_rows([a]), 8)
+        decoder.prefix_feedback = None
+        self.assertEqual(decoder.step_rows(2), (8,))
+
     def test_target_commit_controls_next_mtp_graph(self):
         # The target may stop at an accepted draft, a correction, or a bonus token.
         cases = [

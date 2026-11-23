@@ -85,6 +85,7 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--num-spec` / `--num-speculative-tokens` | `2` | MTP draft tokens per step; `0` disables MTP. |
 | `--dflash` | Unset | DFlash or DSpark draft checkpoint; replaces MTP and shares the memory budget. |
 | `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). DSpark enforces its checkpoint minimum. |
+| `--dflash-adaptive` | Off | Adjust how many tokens the target verifies from each DFlash or DFlash2 block, based on recent acceptance. |
 | `--dflash-p-min` | `0.0` | DSpark confidence threshold; 0 disables early stopping. |
 | `--kv-cache-dtype` | `bf16` | `bf16`, `auto` (bf16) or experimental `int8`. INT8 is [model-dependent](../guides/performance#long-contexts). |
 | `--max-num-batched-tokens` | `8192` | Fixed prefill chunk size, e.g. `2k`. See [tuning](../guides/performance#prefill-chunk-size). |

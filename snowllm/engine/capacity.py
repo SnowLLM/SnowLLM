@@ -111,7 +111,8 @@ def auxiliary_bytes(r, kv):
                 spec = DFlashDecoder(r, sampler, None, draft, None, tables, stage,
                     block=block, max_blocks_per_seq=width,
                     window=kv.get('mtp_window', 0), sinks=kv.get('mtp_sinks', 64),
-                    p_min=kv.get('dflash_p_min', 0.), adaptive=kv.get('dspark_adaptive', False))
+                    p_min=kv.get('dflash_p_min', 0.), adaptive=kv.get('dspark_adaptive', False),
+                    dflash_adaptive=kv.get('dflash_adaptive', False))
         elif r.num_spec:
             decoder = getattr(r, 'spec_decoder_type', SpecDecoder)
             spec = decoder(r, sampler, None, tables, stage, num_spec=r.num_spec,

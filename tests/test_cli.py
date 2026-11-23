@@ -526,6 +526,11 @@ class CLITests(unittest.TestCase):
         _, kw = self.launch_options(('--no-dspark-adaptive',), recipe)
         self.assertFalse(kw['dspark_adaptive'])
 
+    def test_dflash_adaptive_reaches_model_build(self):
+        _, kw = self.launch_options(('--dflash', '/tmp/dflash', '--dflash-adaptive'))
+        self.assertTrue(kw['dflash_adaptive'])
+        self.assertFalse(kw['dspark_adaptive'])
+
     def test_budgets_do_not_change_context_or_chunk(self):
         args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-batched-tokens', '512',
                                         '--max-gpu-mem', '.4', '--max-host-mem', '.5'))

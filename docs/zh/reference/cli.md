@@ -83,6 +83,7 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | `--num-spec` / `--num-speculative-tokens` | `2` | 每步 MTP 草稿 token 数；`0` 禁用 MTP。 |
 | `--dflash` | 未设置 | DFlash 或 DSpark 草稿模型目录；替代 MTP 并共享内存预算。 |
 | `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置且限制最小值。 |
+| `--dflash-adaptive` | 关闭 | 根据近期接受率调整 DFlash 或 DFlash2 每个草稿块的验证长度。 |
 | `--dflash-p-min` | `0.0` | DSpark 置信度阈值；`0` 禁用提前停止。 |
 | `--kv-cache-dtype` | `bf16` | `bf16`、`auto`（bf16）或实验性 `int8`。INT8 的支持[依赖模型](../guides/performance#long-contexts)。 |
 | `--max-num-batched-tokens` | `8192` | 固定预填充分块大小，如 `2k`。见[调优指南](../guides/performance#prefill-chunk-size)。 |

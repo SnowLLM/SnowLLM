@@ -367,9 +367,13 @@ class Engine:
                  account: bool = True, exact_stats: bool = False,
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
-                 draft_plan: DraftPlan | None = None, defer_capture: bool = False) -> None:
+                 draft_plan: DraftPlan | None = None, defer_capture: bool = False,
+                 dflash_adaptive: bool = False) -> None:
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
+        if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
+                                    and not self.dflash_geo.dspark):
+            raise ValueError('--dflash-adaptive requires a DFlash or DFlash2 checkpoint')
         if dspark_adaptive and not (_dspark(self.dflash_geo)
                                     or getattr(self.dflash_geo, 'dspark', False)):
             raise ValueError('--dspark-adaptive requires a DSpark checkpoint')
@@ -428,7 +432,8 @@ class Engine:
                                                  dflash_p_min, dspark_adaptive)
             elif dflash_path:
                 self.dflash = self._build_dflash(dflash_path, dflash_block, max_model_len,
-                                                dflash_p_min, dspark_adaptive, mtp_window, mtp_sinks)
+                                                dflash_p_min, dspark_adaptive, mtp_window, mtp_sinks,
+                                                dflash_adaptive=dflash_adaptive)
             if self.dflash is not None:
                 model._placement_host_reserve = 0
                 self.runner.load_peak_bytes = 0
@@ -572,7 +577,7 @@ class Engine:
 
     def _build_dflash(self, path: str, block: int, max_model_len: int,
                       p_min: float = 0.0, adaptive: bool = False, window: int = 0,
-                      sinks: int = 64) -> DFlashDecoder:
+                      sinks: int = 64, *, dflash_adaptive: bool = False) -> DFlashDecoder:
         from ..models.qwen3_5 import dflash_draft
         from .block_manager import BlockAllocator
 
@@ -599,7 +604,8 @@ class Engine:
         return DFlashDecoder(self.runner, self.sampler, self.slots, draft,
                              BlockAllocator(need, self.runner.block_size), self.tables, self.stage,
                              block=block, window=window, sinks=sinks,
-                             max_blocks_per_seq=per_seq, p_min=p_min, adaptive=adaptive)
+                             max_blocks_per_seq=per_seq, p_min=p_min, adaptive=adaptive,
+                             dflash_adaptive=dflash_adaptive)
 
     def add(self, prompt: list[int], params: SamplingParams | None = None,
             rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
@@ -1015,6 +1021,8 @@ class Engine:
             T = self.spec.select_lengths(batch, self.max_model_len)
         else:
             T = self.spec.verify_rows(n) if self.spec else 0
+            if T and isinstance(self.spec, DFlashDecoder) and self.spec.prefix_feedback is not None:
+                T = self.spec.select_verify_rows([r for r in self.running if r.prefilled])
             if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
                          for r in self.running if r.prefilled):
                 T = 0
