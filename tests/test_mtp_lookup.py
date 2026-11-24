@@ -12,24 +12,25 @@ from snowllm.engine.spec_decode import SpecDecoder
 
 
 class MtpLookupTests(unittest.TestCase):
-    def test_startup_gates_spec_options_and_reports_disabled_flags(self):
+    def test_speculation_options_respect_legacy_flags_and_explicit_fixed_depth(self):
         from snowllm.engine import _spec_options
-
-        for mtp, draft, lookup, tools, expected, disabled in (
-            (False, False, True, True, (False, False), ['--mtp-prompt-lookup', '--mtp-tool-draft']),
-            (False, True, True, True, (True, False), ['--mtp-tool-draft']),
-            (True, False, True, True, (True, True), []),
-            (True, False, False, True, (False, True), []),
-            (False, False, False, False, (False, False), []),
-        ):
-            with self.subTest(mtp=mtp, draft=draft, lookup=lookup, tools=tools), patch('builtins.print') as log:
-                self.assertEqual(_spec_options(mtp, draft, lookup, tools), expected)
-                if disabled:
-                    log.assert_called_once()
-                    for flag in disabled:
-                        self.assertIn(flag, log.call_args.args[0])
-                else:
-                    log.assert_not_called()
+        from snowllm.models.geometry import Qwen4ExpGeometry
+        model = SimpleNamespace(geo=Mock(spec=Qwen4ExpGeometry), mtp=object())
+        for k in (1, 2, 7, 8):
+            with self.subTest(k=k):
+                self.assertEqual(_spec_options(model, k, None, lookup=True), (True, True, False))
+                self.assertEqual(_spec_options(model, k, None, tools=True), (True, False, True))
+                self.assertEqual(_spec_options(model, k, None, adaptive=True), (True, False, False))
+                self.assertEqual(_spec_options(model, k, None, adaptive=False, lookup=True), (False, True, False))
+        self.assertEqual(_spec_options(model, 2, 'fixed.gguf', lookup=True), (False, True, False))
+        with self.assertRaisesRegex(ValueError, 'positive --num-spec'):
+            _spec_options(model, 0, None, adaptive=True)
+        model.geo = object()
+        self.assertEqual(_spec_options(model, 2, None, lookup=True), (False, True, False))
+        with patch('builtins.print') as log:
+            self.assertEqual(_spec_options(model, 0, None, lookup=True, tools=True), (False, False, False))
+            self.assertIn('--mtp-prompt-lookup', log.call_args_list[0].args[0])
+            self.assertIn('--mtp-tool-draft', log.call_args_list[1].args[0])
 
     def test_tool_sources_restore_text_without_changing_prompt(self):
         from snowllm.engine import Engine

@@ -359,19 +359,20 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     return got
 
 
-def _spec_options(adaptive_mtp, adaptive_draft, prompt_lookup, tool_draft):
-    if adaptive_mtp:
-        return prompt_lookup, tool_draft
-    disabled = []
-    if prompt_lookup and not adaptive_draft:
-        disabled.append('--mtp-prompt-lookup')
-    if tool_draft:
-        disabled.append('--mtp-tool-draft')
-    if disabled:
-        reason = ('tool-call drafting requires adaptive Flash-Next MTP' if adaptive_draft else
-                  'adaptive MTP, DFlash and DSpark are off')
-        print(f"[snowllm] Disabling {', '.join(disabled)}: {reason}.", flush=True)
-    return prompt_lookup and adaptive_draft, False
+def _spec_options(model, num_spec, draft_path, *, adaptive=None, lookup=False, tools=False):
+    flash_next = isinstance(model.geo, Qwen4ExpGeometry)
+    native_mtp = not draft_path and num_spec > 0 and getattr(model, "mtp", None) is not None
+    if adaptive is None:
+        adaptive = flash_next and native_mtp and (lookup or tools)
+    if adaptive and not (flash_next and native_mtp):
+        raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and positive --num-spec')
+    if lookup and not (native_mtp or draft_path):
+        print('[snowllm] Disabling --mtp-prompt-lookup: no speculative decoder.', flush=True)
+        lookup = False
+    if tools and not adaptive:
+        print('[snowllm] Disabling --mtp-tool-draft: adaptive Flash-Next MTP is off.', flush=True)
+        tools = False
+    return adaptive, lookup, tools
 
 
 class Engine:
@@ -390,12 +391,11 @@ class Engine:
                  gpu_memory_utilization: float = DEFAULT_GPU_UTIL,
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
                  draft_plan: DraftPlan | None = None, defer_capture: bool = False,
-                 mtp_adaptive: bool = False,
-                 mtp_prompt_lookup: bool = True, mtp_tool_draft: bool = True,
+                 mtp_adaptive: bool | None = None,
+                 mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
                  dflash_adaptive: bool = False) -> None:
-        flash_next_mtp = isinstance(model.geo, Qwen4ExpGeometry) and not dflash_path
-        if mtp_adaptive and (not flash_next_mtp or model.mtp is None or not 2 <= num_spec <= 7):
-            raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and --num-spec 2–7')
+        mtp_adaptive, mtp_prompt_lookup, mtp_tool_draft = _spec_options(
+            model, num_spec, dflash_path, adaptive=mtp_adaptive, lookup=mtp_prompt_lookup, tools=mtp_tool_draft)
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
@@ -467,9 +467,6 @@ class Engine:
                 self.runner.load_peak_bytes = 0
                 self.runner.reserve_bytes = (self.dflash.workspace_bytes()
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
-            adaptive_draft = dspark_adaptive or getattr(self.dflash, 'prefix_feedback', None) is not None
-            mtp_prompt_lookup, mtp_tool_draft = _spec_options(
-                mtp_adaptive, adaptive_draft, mtp_prompt_lookup, mtp_tool_draft)
             self.mtp_adaptive = mtp_adaptive
             self.mtp_prompt_lookup = mtp_prompt_lookup
             self.mtp_tool_draft = mtp_tool_draft

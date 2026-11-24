@@ -32,9 +32,27 @@ class GraphAdmissionTests(unittest.TestCase):
         self.assertEqual(runner.last_hidden, 'original')
         self.assertEqual(budget.retained_bytes, 0)
 
+    def test_full_target_budget_skips_draft_staging(self):
+        runner, draft = Mock(), Mock()
+        runner.max_num_seqs = 4
+        runner.budget.full = True
+        draft.graphs = {}
+        self.assertEqual(DFlashDecoder.capture(draft, runner), [])
+        draft._stage_values.assert_not_called()
+        runner._try_capture.assert_not_called()
+
+    def test_fixed_placement_without_prefix_cache_probes_only_at_final_capture(self):
+        runner, draft = Mock(), Mock()
+        runner.prefix_memory_ratio = 0
+        runner.model._automatic_placement = False
+        self.assertEqual(DFlashDecoder.probe_graph_bytes(draft, runner, [1, 2]), 0)
+        runner.capture.assert_not_called()
+        draft.capture.assert_not_called()
+
     def test_draft_probe_measures_coexisting_graphs_and_releases_them(self):
         from contextlib import nullcontext
         runner = Mock()
+        runner.prefix_memory_ratio = .08
         runner._graph_probe_scope.return_value = nullcontext()
         runner.budget._in_use.side_effect = [100, 400]
         draft = SimpleNamespace(graphs={})

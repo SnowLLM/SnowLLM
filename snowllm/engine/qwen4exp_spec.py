@@ -51,10 +51,10 @@ class MtpDepth:
     @staticmethod
     def extend(k, kept, history, gap, cap):
         if kept < 2 or not gap >= 3.:
-            return 2
+            return min(2, cap)
         if gap >= 6. and ((k >= 4 and kept == k) or
                           any(width >= 4 and accepted == width for width, accepted in history[-4:])):
-            return min(7, cap)
+            return cap
         return min(4, cap)
 
     def select(self, batch, k, cap):
@@ -133,11 +133,10 @@ class MtpDepth:
             if width != k:
                 break
             recent.append(kept)
-        wide = min(7, cap)
         if k == 2:
-            if (remaining >= 2 * (wide + 1) and len(recent) >= 6
+            if (remaining >= 2 * (cap + 1) and len(recent) >= 6
                     and recent[:2] == [2, 2] and recent[:6].count(2) >= 5):
-                return wide
+                return cap
             return 2
         # History trails the current verification by one round so stable widths can replay their graph.
         if recent and recent[0] < 2:
@@ -150,8 +149,8 @@ class MtpDepth:
         # Compare extra accepted tokens to the marginal cost above a K=2 round (four base + two draft units).
         if 6 * extra <= (k - 2) * base:
             return 2
-        if recent[:3] == [k, k, k] and remaining >= k + 1 + 2 * (wide + 1):
-            return wide
+        if recent[:3] == [k, k, k] and remaining >= k + 1 + 2 * (cap + 1):
+            return cap
         return k
 
 
@@ -252,7 +251,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         return {name: getattr(state, name, 0) for name in ('rounds', 'proposed', 'verified', 'accepted')}
 
     def _offer_tool_draft(self, request, cap):
-        limit = min(7, cap, request.params.max_new_tokens - len(request.out) - 1)
+        limit = min(cap, request.params.max_new_tokens - len(request.out) - 1)
         if limit < 2:
             return False
         state = self.tool_states.get(request)
@@ -262,7 +261,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
 
     def propose_rest(self, batch, h, k):
         if (self.adaptive is not None and len(batch) == 1 and batch[0].tool_draft is not None
-                and self._offer_tool_draft(batch[0], self.num_spec)):
+                and self._offer_tool_draft(batch[0], self.verify_rows(1) - 1)):
             return
         super().propose_rest(batch, h, k)
 
@@ -352,15 +351,15 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
 
     def _guarded_proposals(self, batch, pos, cu, total, k, tv, nacc, seq, states, cap):
         history = tuple(self.adaptive.samples.get(batch[0], ()))
-        stable = k == 7 and cap >= 7 and history[-2:] == ((7, 7), (7, 7))
-        depth = 7 if stable else 2
+        stable = k == cap and cap >= 7 and history[-2:] == ((cap, cap), (cap, cap))
+        depth = cap if stable else 2
         self.propose_first(batch, pos, cu, total, k, tv, nacc, seq, states, depth)
         if stable or k < 2 or not history or history[-1][1] < 2:
             return depth, nacc.tolist()
         copied = False
         if k == 2:
             remaining = batch[0].params.max_new_tokens - len(batch[0].out)
-            if remaining < 2 * (min(7, cap) + 1):
+            if remaining < 2 * (cap + 1):
                 return depth, nacc.tolist()
             if len(history) < 6 or any(kept < 2 for _, kept in history[-6:]):
                 copied = self._greedy_prompt_match(batch[0], cap)
@@ -368,7 +367,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
                     return depth, nacc.tolist()
         count, gap = self._second_draft_margin(nacc)
         if copied and count == 3 and gap >= 6.:
-            depth = min(7, cap)
+            depth = cap
         else:
             depth = self.adaptive.extend(k, count - 1, history, gap, cap)
         if depth > 2:

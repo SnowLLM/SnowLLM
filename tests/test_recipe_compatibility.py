@@ -256,12 +256,16 @@ class RecipeCompatibilityTests(unittest.TestCase):
 
     def test_ud31_adaptive_shares_weights_and_preserves_fixed_installation(self):
         entries = {r.id: r for r in recipes.catalogue(bundle=True)}
+        enabled = {f'qwen3.8-flash-next-{quant}-mtp-adaptive-ud3.1' for quant in ('q3-k-xl', 'iq4-xs')}
+        for flag in ('mtp_prompt_lookup', 'mtp_tool_draft'):
+            self.assertEqual({entry.id for entry in entries.values() if entry.defaults.get(flag)}, enabled)
         for quant in ('q3-k-xl', 'iq4-xs'):
             fixed = entries[f'qwen3.8-flash-next-{quant}-ud3.1']
             adaptive = entries[f'qwen3.8-flash-next-{quant}-mtp-adaptive-ud3.1']
             self.assertEqual(recipes.source_digest(adaptive), recipes.source_digest(fixed))
             self.assertEqual(adaptive.dir, fixed.dir)
-            self.assertEqual(adaptive.defaults, {**fixed.defaults, 'num_spec': 7, 'mtp_adaptive': True})
+            self.assertEqual(adaptive.defaults, {**fixed.defaults, 'num_spec': 7, 'mtp_adaptive': True,
+                                                 'mtp_prompt_lookup': True, 'mtp_tool_draft': True})
             self.assertEqual(adaptive.requires, '0.3.25')
             with patch.object(recipes, '__version__', '0.3.24'):
                 self.assertTrue(adaptive.stale)

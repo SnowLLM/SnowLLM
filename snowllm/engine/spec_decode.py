@@ -811,6 +811,9 @@ class DFlashDecoder(DSparkScheduling):
                 self.sampling.release(r)
 
     def probe_graph_bytes(self, runner: "GraphRunner", shapes) -> int:
+        # With fixed weights and no prefix checkpoints the KV pool size is independent of graph bytes.
+        if not runner.prefix_memory_ratio and not getattr(runner.model, '_automatic_placement', False):
+            return 0
         # Target and draft coexist in one graph pool during serving.
         used = runner.budget._in_use()
         try:
@@ -827,6 +830,8 @@ class DFlashDecoder(DSparkScheduling):
     def capture(self, runner: "GraphRunner") -> list[int]:
         blk = self.block
         for B in range(1, runner.max_num_seqs + 1):
+            if runner.budget.full:
+                break
             if B in self.graphs or self.verify_rows(B) != self.width:
                 continue
             self.d_bt[:B].zero_()
