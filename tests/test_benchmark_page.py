@@ -74,13 +74,15 @@ class BenchmarkPageTests(unittest.TestCase):
                 self.assertEqual(merge(), [current])
 
     def test_hardware_groups_keep_their_own_measurements(self):
-        series, skipped = BUILDER["build_series"](BUILDER["merged_rows"]())
+        rows = BUILDER["merged_rows"]()
+        series, skipped = BUILDER["build_series"](rows)
         self.assertFalse(set(skipped) & BUILDER["GFX1103_LABELS"])
         parser = ResultsParser()
         content = BUILDER["render_benchmark_content"]({"series": series}, MESSAGES)
         parser.feed(content)
         secondary = [s for s in series if s["platform"] == "gfx1103"]
-        self.assertEqual({s["key"] for s in secondary}, BUILDER["GFX1103_LABELS"])
+        active_labels = {row["label"] for row in rows}
+        self.assertEqual({s["key"] for s in secondary}, BUILDER["GFX1103_LABELS"] & active_labels)
         self.assertEqual({s["engine"] for s in secondary}, {"SnowLLM", "llama.cpp"})
         for s in series:
             expected = "benchmark-results-780m" if s["platform"] == "gfx1103" else "benchmark-results"

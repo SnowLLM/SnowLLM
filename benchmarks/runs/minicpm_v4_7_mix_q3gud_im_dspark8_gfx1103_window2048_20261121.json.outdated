@@ -1,0 +1,3 @@
+{
+  "reason": "MiniCPM DSpark block 8 verifies nine rows with BF16 KV. SnowLLM-Kernels 0.3.17.dev4 used a stale attention plan on this path, so these measurements are unsuitable as performance baselines."
+}
