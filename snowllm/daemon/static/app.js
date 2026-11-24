@@ -30,7 +30,8 @@ let modelSignature = '', aliasRequest = 0;
 let preferredThinkingLevel = '';
 let conversation = [];
 let sessions = [], sessionId = newSessionId(), loadSettings = {};
-const loadFieldIds = ['load-id', 'load-target', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', 'extra-options'];
+const specOptionFields = ['mtp-prompt-lookup', 'mtp-tool-draft'];
+const loadFieldIds = ['load-id', 'load-target', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', ...specOptionFields, 'extra-options'];
 const loadCards = [];
 let loadCardSequence = 0, submittingLoad = false;
 let seenLoadAdvice = null;
@@ -86,7 +87,7 @@ function restoreLoadSettings(card) {
 function updateTargetSettings(card) {
   const npu = card.fields['load-target'].value === 'npu';
   card.fields['npu-load-hint'].hidden = !npu;
-  for (const id of ['context-length', 'gpu-budget', 'spec-depth', 'kv-type']) card.fields[id].disabled = npu;
+  for (const id of ['context-length', 'gpu-budget', 'spec-depth', 'kv-type', ...specOptionFields]) card.fields[id].disabled = npu;
 }
 function modelLoadRequest(card) {
   const fields = card.fields;
@@ -94,6 +95,10 @@ function modelLoadRequest(card) {
   if (!model) throw new Error(t('Choose a recipe or enter a checkpoint directory.'));
   const options = [];
   for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if (!fields[id].disabled && fields[id].value.trim()) options.push(flag, fields[id].value.trim());
+  for (const id of specOptionFields) {
+    const field = fields[id];
+    if (!field.disabled && field.value) options.push(field.value === 'on' ? '--' + id : '--no-' + id);
+  }
   options.push(...parseOptions(fields['extra-options'].value));
   return {model, options, target: fields['load-target'].value, id: fields['load-id'].value.trim() || null};
 }
@@ -261,6 +266,9 @@ function renderEffectiveSettings(container, config) {
     ['Offload ratio', Number.isFinite(config.offload_ratio) ? `${(config.offload_ratio * 100).toFixed(2)}%` : '—'],
     ['MTP depth', config.num_spec], ['DFlash drafter', config.dflash_path || '—'], ['DFlash block', config.dflash_block ?? '—'],
     ['Execution mode', t(config.enforce_eager ? 'Eager' : 'CUDA graphs')], ['Prefill chunk', config.prefill_chunk]];
+  for (const [key, label] of [['mtp_prompt_lookup', 'Prompt lookup'], ['mtp_tool_draft', 'Tool-call drafting']]) {
+    if (typeof config[key] === 'boolean') entries.push([label, t(config[key] ? 'On' : 'Off')]);
+  }
   if (Number.isFinite(config.max_gpu_mem_bytes)) entries.push(['GPU memory limit', bytes(config.max_gpu_mem_bytes)]);
   if (Number.isFinite(config.max_disk_mem_gib)) entries.push(['Disk offload limit', bytes(config.max_disk_mem_gib * 2 ** 30)]);
   if (Number.isFinite(config.max_host_mem_bytes)) entries.push(['Host memory limit', bytes(config.max_host_mem_bytes)]);

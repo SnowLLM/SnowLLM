@@ -354,6 +354,21 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     return got
 
 
+def _spec_options(adaptive_mtp, adaptive_draft, prompt_lookup, tool_draft):
+    if adaptive_mtp:
+        return prompt_lookup, tool_draft
+    disabled = []
+    if prompt_lookup and not adaptive_draft:
+        disabled.append('--mtp-prompt-lookup')
+    if tool_draft:
+        disabled.append('--mtp-tool-draft')
+    if disabled:
+        reason = ('tool-call drafting requires adaptive Flash-Next MTP' if adaptive_draft else
+                  'adaptive MTP, DFlash and DSpark are off')
+        print(f"[snowllm] Disabling {', '.join(disabled)}: {reason}.", flush=True)
+    return prompt_lookup and adaptive_draft, False
+
+
 class Engine:
     def __init__(self, model: torch.nn.Module, num_kv_blocks: int | None = None,
                  max_num_seqs: int = DEFAULT_MAX_NUM_SEQS,
@@ -371,19 +386,11 @@ class Engine:
                  preempt: bool = True, prefix_memory_ratio: float = 0.0,
                  draft_plan: DraftPlan | None = None, defer_capture: bool = False,
                  mtp_adaptive: bool = False,
-                 mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
+                 mtp_prompt_lookup: bool = True, mtp_tool_draft: bool = True,
                  dflash_adaptive: bool = False) -> None:
         flash_next_mtp = isinstance(model.geo, Qwen4ExpGeometry) and not dflash_path
-        mtp_adaptive = mtp_adaptive or mtp_tool_draft or (mtp_prompt_lookup and flash_next_mtp)
         if mtp_adaptive and (not flash_next_mtp or model.mtp is None or not 2 <= num_spec <= 7):
-            option = ('--mtp-tool-draft' if mtp_tool_draft else
-                      '--mtp-prompt-lookup' if mtp_prompt_lookup and flash_next_mtp else '--mtp-adaptive')
-            raise ValueError(f'{option} requires a Flash-Next MTP head and --num-spec 2–7')
-        if mtp_prompt_lookup and not dflash_path and (num_spec < 1 or model.mtp is None):
-            raise ValueError('--mtp-prompt-lookup requires native MTP, DFlash or DSpark')
-        self.mtp_adaptive = mtp_adaptive
-        self.mtp_prompt_lookup = mtp_prompt_lookup
-        self.mtp_tool_draft = mtp_tool_draft
+            raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and --num-spec 2–7')
         draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
@@ -454,6 +461,12 @@ class Engine:
                 self.runner.load_peak_bytes = 0
                 self.runner.reserve_bytes = (self.dflash.workspace_bytes()
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
+            adaptive_draft = dspark_adaptive or getattr(self.dflash, 'prefix_feedback', None) is not None
+            mtp_prompt_lookup, mtp_tool_draft = _spec_options(
+                mtp_adaptive, adaptive_draft, mtp_prompt_lookup, mtp_tool_draft)
+            self.mtp_adaptive = mtp_adaptive
+            self.mtp_prompt_lookup = mtp_prompt_lookup
+            self.mtp_tool_draft = mtp_tool_draft
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
                             num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks,

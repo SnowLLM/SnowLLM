@@ -216,3 +216,19 @@ test('benchmark comparisons expose outdated, incomplete and mismatched measureme
   right.events[0].corpus_sha256 = 'different'; right.config.reps = 1;
   assert.deepEqual(comparisonDifferences(left, right), ['Incomplete run', 'Outdated result', 'reps', 'Inference settings', 'Corpus']);
 });
+
+test('model load sends explicit spec overrides and inherits recipe defaults', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const fields = Object.fromEntries(['context-length', 'gpu-budget', 'spec-depth', 'kv-type',
+    'load-target', 'load-id', 'extra-options', 'mtp-prompt-lookup', 'mtp-tool-draft'].map(id => [id, {value: ''}]));
+  const context = vm.createContext({loadKey: () => 'model', parseOptions: () => []});
+  vm.runInContext(app.match(/^const specOptionFields = .*;$/m)[0] +
+    app.slice(app.indexOf('function modelLoadRequest('), app.indexOf('function renderLoadCards(')), context);
+  const options = () => Array.from(context.modelLoadRequest({fields}).options);
+  assert.deepEqual(options(), []);
+  fields['mtp-prompt-lookup'].value = 'off';
+  fields['mtp-tool-draft'].value = 'on';
+  assert.deepEqual(options(), ['--no-mtp-prompt-lookup', '--mtp-tool-draft']);
+  fields['mtp-prompt-lookup'].disabled = fields['mtp-tool-draft'].disabled = true;
+  assert.deepEqual(options(), []);
+});

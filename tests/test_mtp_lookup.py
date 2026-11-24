@@ -12,6 +12,25 @@ from snowllm.engine.spec_decode import SpecDecoder
 
 
 class MtpLookupTests(unittest.TestCase):
+    def test_startup_gates_spec_options_and_reports_disabled_flags(self):
+        from snowllm.engine import _spec_options
+
+        for mtp, draft, lookup, tools, expected, disabled in (
+            (False, False, True, True, (False, False), ['--mtp-prompt-lookup', '--mtp-tool-draft']),
+            (False, True, True, True, (True, False), ['--mtp-tool-draft']),
+            (True, False, True, True, (True, True), []),
+            (True, False, False, True, (False, True), []),
+            (False, False, False, False, (False, False), []),
+        ):
+            with self.subTest(mtp=mtp, draft=draft, lookup=lookup, tools=tools), patch('builtins.print') as log:
+                self.assertEqual(_spec_options(mtp, draft, lookup, tools), expected)
+                if disabled:
+                    log.assert_called_once()
+                    for flag in disabled:
+                        self.assertIn(flag, log.call_args.args[0])
+                else:
+                    log.assert_not_called()
+
     def test_tool_sources_restore_text_without_changing_prompt(self):
         from snowllm.engine import Engine
         from snowllm.serve import generation

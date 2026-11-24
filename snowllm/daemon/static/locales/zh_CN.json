@@ -1,4 +1,6 @@
 {
+  "Tool-call drafting": "工具调用草稿",
+  "Prompt lookup": "提示文本复用",
   "Close the quotation mark in additional options.": "请闭合附加参数中的引号。",
   "The response has no readable stream.": "响应没有可读取的数据流。",
   "Overview": "概览",

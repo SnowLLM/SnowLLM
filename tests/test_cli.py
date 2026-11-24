@@ -541,8 +541,13 @@ class CLITests(unittest.TestCase):
                     (adaptive, ('--no-mtp-adaptive', '--num-spec', '2'), (2, False))):
                 _, options = self.launch_options(flags, recipe)
                 self.assertEqual((options['num_spec'], options['mtp_adaptive']), expected)
-                self.assertFalse(any(options[key] for key in (
-                    'mtp_prompt_lookup', 'mtp_tool_draft', 'dflash_adaptive')))
+                self.assertTrue(options['mtp_prompt_lookup'])
+                self.assertTrue(options['mtp_tool_draft'])
+                self.assertFalse(options['dflash_adaptive'])
+        _, options = self.launch_options(('--no-mtp-prompt-lookup', '--no-mtp-tool-draft'), adaptive)
+        self.assertTrue(options['mtp_adaptive'])
+        self.assertFalse(options['mtp_prompt_lookup'])
+        self.assertFalse(options['mtp_tool_draft'])
 
     def test_legacy_positional_dflash_arguments(self):
         from inspect import signature
