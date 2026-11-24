@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import torch
 
 from ...errors import SnowLLMError
-from ...ops.allocation import empty
+from ...ops import empty_shaped
+from ..placement import place
 from ...ops.inkling import expert_linear, kquant_expert_linear, pack_kquant_experts
 
 
@@ -12,7 +13,7 @@ def pack_nvfp4(weight, experts, n, k):
     blocks = k // 64
     rows = weight.view(experts, n // 16, 16, blocks, 36)
     # Each 16x16 panel has 16 source scales followed by 8 packed bytes per row.
-    panels = empty(experts, n // 16, blocks, 4, 144, device=weight.device, dtype=weight.dtype)
+    panels = empty_shaped((experts, n // 16, blocks, 4, 144), weight.dtype)
     panels[..., :16].copy_(rows[..., :4].permute(0, 1, 3, 4, 2))
     data = rows[..., 4:].view(experts, n // 16, 16, blocks, 4, 8)
     panels[..., 16:].view(experts, n // 16, blocks, 4, 16, 8).copy_(data.permute(0, 1, 3, 4, 2, 5))
@@ -43,7 +44,9 @@ class ExpertProjection:
             weight, meta = pack_kquant_experts(rd.raw(tensor.name), fmt, experts, n, k)
             return cls(weight, None, meta, fmt)
         if tensor.quant.name == "BF16" and stem + ".scale" not in rd.gguf:
-            return cls(rd.tensor(tensor.name, torch.bfloat16), None)
+            weight = empty_shaped(tensor.shape, torch.bfloat16)
+            rd.raw(tensor.name, out=weight.view(torch.uint8).reshape(-1))
+            return cls(weight, None)
         raise SnowLLMError(f"{tensor.name}: unsupported Inkling expert format {tensor.quant.name}")
 
     def __call__(self, x, ids, prefill=False, plan=None):
@@ -76,7 +79,7 @@ def pack_router(reader, name, weight):
 
 
 class InklingMoE:
-    def __init__(self, rd, cfg, layer):
+    def __init__(self, rd, cfg, layer, device_map=None):
         prefix = f"blk.{layer}."
         hidden, inter = cfg["hidden_size"], cfg["moe_intermediate_size"]
         self.intermediate = inter
@@ -88,8 +91,10 @@ class InklingMoE:
         self.packed_router = pack_router(rd, router_name, self.router)
         bias = prefix + "exp_probs_b.bias"
         self.bias = rd.tensor(bias, torch.float32) if bias in rd.gguf else None
-        self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden)
-        self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter)
+        with place(device_map, "experts.gate_up", layer):
+            self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden)
+        with place(device_map, "experts.down", layer):
+            self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter)
 
     def __call__(self, x, prefill=False, *, post_conv=None):
         from ...ops.inkling import combine, expert_plan, route, short_conv, softcapped_swiglu

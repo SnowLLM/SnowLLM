@@ -5,7 +5,7 @@ from functools import lru_cache
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import _chk, _chk_rows, _p, _stream
+from ._common import _chk, _chk_rows, _p, _stream, empty_bytes
 from .allocation import empty
 from .operation import operator
 
@@ -324,8 +324,8 @@ def pack_kquant_experts(raw, fmt, experts, n, k):
     quant_bytes, meta_bytes, raw_bytes = _kquant_expert_sizes(fmt, experts, n, k)
     down = k == 1152
     _chk(raw, "Inkling raw expert codes", torch.uint8, raw_bytes)
-    weight = empty(quant_bytes, dtype=torch.uint8, device=raw.device)
-    meta = empty(meta_bytes, dtype=torch.uint8, device=raw.device)
+    weight = empty_bytes(quant_bytes)
+    meta = empty_bytes(meta_bytes)
     if not raw.is_meta:
         check(lib.snowllm_inkling_kquant_shuffle(_p(raw), _p(weight), _p(meta), fmt, down, _stream()),
               "inkling_kquant_shuffle")

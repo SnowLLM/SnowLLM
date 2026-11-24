@@ -49,8 +49,8 @@ def apply_device_map(model, allocations, dmap):
         key = tensor.untyped_storage()._cdata
         if key not in moved:
             with ops.host_memory():
-                host = ops.empty_bytes(tensor.numel())
-            host.copy_(tensor)
+                host = ops.empty_bytes(tensor.nbytes)
+            host.copy_(tensor.reshape(-1).view(torch.uint8))
             moved[key] = host
     memo = {}
     def replace(obj):

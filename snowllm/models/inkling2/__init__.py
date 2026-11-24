@@ -19,10 +19,8 @@ def validate_config(cfg):
 def load_gguf_weights(reader, cfg, layers, *, device_map, mtp):
     if tuple(layers) != tuple(range(cfg["num_hidden_layers"])):
         raise SnowLLMError("the fixed Inkling loop requires every weight layer")
-    if device_map and device_map.host_bytes:
-        raise SnowLLMError("Inkling expert offload is unavailable")
-    model = InklingTextModel(reader)
+    model = InklingTextModel(reader, device_map)
     if not model.embedding.is_meta:
         with ops.dry_load():
-            model.planning_model = InklingTextModel(reader)
+            model.planning_model = InklingTextModel(reader, device_map)
     return model

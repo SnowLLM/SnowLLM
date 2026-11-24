@@ -467,7 +467,8 @@ def empty_shaped(shape: Sequence[int], dtype: torch.dtype) -> torch.Tensor:
     n = 1
     for s in shape:
         n *= int(s)
-    return empty_bytes(n * torch.empty((), dtype=dtype).element_size()).view(dtype).view(*shape)
+    storage = empty_bytes(n * torch.empty((), dtype=dtype).element_size())
+    return _observe(storage.view(dtype).view(*shape))
 
 
 def empty_shaped_like(t: torch.Tensor) -> torch.Tensor:
