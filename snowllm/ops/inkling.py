@@ -103,22 +103,38 @@ def expert_linear(x, weight, scales, ids, prefill=False):
 
 
 @operator
-def route(x, router, bias, topk, scale):
+def route(x, router, bias, topk, scale, prefill=False):
     tokens, hidden = x.shape
     experts = router.shape[0]
     _chk(x, "Inkling router inputs", torch.bfloat16, tokens, hidden)
     _chk(router, "Inkling router", torch.float32, experts, hidden)
-    work = empty(tokens, hidden, dtype=torch.float32, device=x.device).copy_(x)
-    scores = empty(tokens, experts, dtype=torch.float32, device=x.device)
-    torch.mm(work, router.T, out=scores).sigmoid_()
-    ranked = scores
     if bias is not None:
         _chk(bias, "Inkling router bias", torch.float32, experts)
-        ranked = empty(tokens, experts, dtype=torch.float32, device=x.device)
-        torch.add(scores, bias, out=ranked)
+    if router.device != x.device or (bias is not None and bias.device != x.device):
+        raise SnowLLMError("Inkling routing tensors must share a device")
+    if not 0 < topk <= experts:
+        raise SnowLLMError("Inkling top-k exceeds the expert table")
+    scores = empty(tokens, experts, dtype=torch.float32, device=x.device)
+    ranked = scores if bias is None else empty(tokens, experts, dtype=torch.float32, device=x.device)
+    small = lib.snowllm_inkling_small_router(prefill, tokens, topk)
+    if small:
+        if not x.is_meta:
+            check(lib.snowllm_inkling_router_scores(_p(x), _p(router), _p(bias), _p(scores), _p(ranked),
+                  tokens, experts, hidden, _stream()), "inkling_router_scores")
+    else:
+        work = empty(tokens, hidden, dtype=torch.float32, device=x.device).copy_(x)
+        torch.mm(work, router.T, out=scores).sigmoid_()
+        if bias is not None:
+            torch.add(scores, bias, out=ranked)
     ids = empty(tokens, topk, dtype=torch.int64, device=x.device)
     weights = empty(tokens, topk, dtype=torch.float32, device=x.device)
     torch.topk(ranked, topk, out=(weights, ids))
+    if small:
+        selected = empty(tokens, topk, dtype=torch.int32, device=x.device)
+        if not x.is_meta:
+            check(lib.snowllm_inkling_router_gather(_p(scores), _p(ids), _p(selected), _p(weights),
+                  tokens, experts, topk, scale, _stream()), "inkling_router_gather")
+        return selected, weights
     torch.gather(scores, 1, ids, out=weights)
     total = empty(tokens, 1, dtype=torch.float32, device=x.device)
     torch.sum(weights, dim=1, keepdim=True, out=total)
@@ -127,25 +143,45 @@ def route(x, router, bias, topk, scale):
 
 
 @operator
-def softcapped_swiglu(gate_up, gate_cap, up_cap):
-    gate, up = gate_up.chunk(2, dim=-1)
-    def fp32():
-        return empty(gate.shape, dtype=torch.float32, device=gate.device)
-    capped_gate, capped_up, sigmoid = fp32().copy_(gate), fp32().copy_(up), fp32()
-    torch.sigmoid(capped_gate, out=sigmoid)
-    capped_gate.div_(gate_cap).tanh_().mul_(gate_cap).mul_(sigmoid)
-    capped_up.div_(up_cap).tanh_().mul_(up_cap)
-    return empty(gate.shape, dtype=gate.dtype, device=gate.device).copy_(capped_gate.mul_(capped_up))
+def softcapped_swiglu(gate_up, gate_cap, up_cap, prefill=False):
+    tokens, topk, channels = gate_up.shape
+    _chk(gate_up, "Inkling gate/up", torch.bfloat16)
+    if channels % 2:
+        raise SnowLLMError("Inkling gate/up requires equal projection widths")
+    if not lib.snowllm_inkling_small_router(prefill, tokens, topk):
+        gate, up = gate_up.chunk(2, dim=-1)
+        def fp32():
+            return empty(gate.shape, dtype=torch.float32, device=gate.device)
+        capped_gate, capped_up, sigmoid = fp32().copy_(gate), fp32().copy_(up), fp32()
+        torch.sigmoid(capped_gate, out=sigmoid)
+        capped_gate.div_(gate_cap).tanh_().mul_(gate_cap).mul_(sigmoid)
+        capped_up.div_(up_cap).tanh_().mul_(up_cap)
+        return empty(gate.shape, dtype=gate.dtype, device=gate.device).copy_(capped_gate.mul_(capped_up))
+    out = empty(tokens, topk, channels//2, dtype=gate_up.dtype, device=gate_up.device)
+    if not gate_up.is_meta:
+        check(lib.snowllm_inkling_capped_swiglu(_p(gate_up), _p(out), tokens*topk, channels//2,
+              gate_cap, up_cap, _stream()), "inkling_capped_swiglu")
+    return out
 
 
 @operator
-def combine(expert_out, weights):
+def combine(expert_out, weights, prefill=False):
     tokens, topk, hidden = expert_out.shape
-    values = empty(expert_out.shape, dtype=torch.float32, device=weights.device).copy_(expert_out)
-    values.mul_(weights.view(tokens, topk, 1))
-    combined = empty(tokens, hidden, dtype=torch.float32, device=weights.device)
-    torch.sum(values, dim=1, out=combined)
-    return empty(tokens, hidden, dtype=expert_out.dtype, device=weights.device).copy_(combined)
+    _chk(expert_out, "Inkling routed outputs", torch.bfloat16)
+    _chk(weights, "Inkling routed weights", torch.float32, tokens, topk)
+    if weights.device != expert_out.device:
+        raise SnowLLMError("Inkling routed outputs and weights must share a device")
+    if not lib.snowllm_inkling_small_router(prefill, tokens, topk):
+        values = empty(expert_out.shape, dtype=torch.float32, device=weights.device).copy_(expert_out)
+        values.mul_(weights.view(tokens, topk, 1))
+        combined = empty(tokens, hidden, dtype=torch.float32, device=weights.device)
+        torch.sum(values, dim=1, out=combined)
+        return empty(tokens, hidden, dtype=expert_out.dtype, device=weights.device).copy_(combined)
+    out = empty(tokens, hidden, dtype=expert_out.dtype, device=expert_out.device)
+    if not expert_out.is_meta:
+        check(lib.snowllm_inkling_combine_experts(_p(expert_out), _p(weights), _p(out),
+              tokens, topk, hidden, _stream()), "inkling_combine_experts")
+    return out
 
 
 @operator
