@@ -37,7 +37,7 @@ def reference(q, k, v, bias, sinks, sequences, positions, table, window):
 
 
 class InklingAttentionTest(unittest.TestCase):
-    def check_attention(self, seq, pos, width, extent, windows, seed, bias_dtype=torch.float32):
+    def check_attention(self, seq, pos, width, extent, windows, seed, bias_dtype=torch.float32, position_shift=0):
         device = 'cuda'
         gen = torch.Generator(device=device).manual_seed(seed)
         def randn(*shape):
@@ -54,7 +54,7 @@ class InklingAttentionTest(unittest.TestCase):
         for window in windows:
             with self.subTest(window=window):
                 expected = reference(q, k, v, bias, sinks, sequences, positions, table, window)
-                actual = attention(q, k, v, bias, sinks, sequences, positions, table, window)
+                actual = attention(q, k, v, bias, sinks, sequences, positions + position_shift, table, window)
                 diff = actual.float() - expected
                 self.assertLess((diff.norm() / expected.norm()).item(), .005)
                 self.assertLess(diff.abs().max().item(), .032)
@@ -88,6 +88,11 @@ class InklingAttentionTest(unittest.TestCase):
     def test_ragged_resumed_prefill_with_wrapped_pages(self):
         self.check_attention([0] * 83 + [1] * 54, [*range(58, 141), *range(159, 213)],
                              width=9, extent=81, windows=(0, 67), seed=473)
+
+    def test_sliding_prefill_near_int32_limit(self):
+        # Shifting by complete KV rings preserves the visible keys and their relative distances.
+        self.check_attention([1] * 79, list(range(177, 256)), width=8, extent=37,
+                             windows=(1, 31, 67), seed=827, position_shift=2**31 - 256)
 
     def test_split_decode_with_ring_and_sink(self):
         self.check_attention([1, 0], [8192, -1], width=65, extent=1024, windows=(1024, 0),
