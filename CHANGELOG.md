@@ -1,7 +1,7 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
-## Unreleased / 未发布
+## 0.3.26 — 2026-11-24
 
 - Add Inkling-2-Mini UD-Q8_K_XL and UD-Q4_K_M GGUF text generation with batched requests, BF16 KV, decode graphs and prefix caching. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev10`.
   支持 Inkling-2-Mini UD-Q8_K_XL 和 UD-Q4_K_M GGUF 文本生成，可使用连续批处理、BF16 KV、解码图和前缀缓存。内核依赖升级至 `0.3.17.dev10`。
