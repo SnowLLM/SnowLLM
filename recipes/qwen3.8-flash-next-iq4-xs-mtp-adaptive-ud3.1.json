@@ -22,8 +22,6 @@
   "defaults": {
     "num_spec": 7,
     "mtp_adaptive": true,
-    "mtp_prompt_lookup": true,
-    "mtp_tool_draft": true,
     "max_model_len": 409600,
     "max_num_seqs": 4,
     "max_num_batched_tokens": 8192

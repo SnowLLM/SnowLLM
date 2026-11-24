@@ -6,8 +6,8 @@
 - Add Inkling-2-Mini UD-Q8_K_XL and UD-Q4_K_M GGUF text generation with batched requests, BF16 KV, decode graphs and prefix caching. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev10`.
   支持 Inkling-2-Mini UD-Q8_K_XL 和 UD-Q4_K_M GGUF 文本生成，可使用连续批处理、BF16 KV、解码图和前缀缓存。内核依赖升级至 `0.3.17.dev10`。
 
-- Only the two UD3.1 adaptive MTP recipes enable prompt lookup and tool-call drafting by default. Flash-Next adaptive MTP accepts a positive draft depth, and fixed-width DFlash supports explicit prompt lookup.
-  仅两个 UD3.1 自适应 MTP 配方默认开启提示词查找和工具调用草稿。Flash-Next 自适应 MTP 接受正整数草稿深度，固定宽度 DFlash 支持显式开启提示词查找。
+- Prompt lookup and tool-call drafting are opt-in. Adaptive MTP prints a startup tip for available options. Flash-Next adaptive MTP accepts a positive draft depth, and fixed-width DFlash supports explicit prompt lookup.
+  提示词查找和工具调用草稿默认关闭。自适应 MTP 启动时会提示可开启的选项。Flash-Next 自适应 MTP 接受正整数草稿深度，固定宽度 DFlash 支持显式开启提示词查找。
 
 - Fuse LFM2.5 QKV projections, KV writes and residual normalization, and reduce GLM beta projections in one workgroup per output column.
   LFM2.5 融合 QKV 投影、KV 写入和残差归一化，GLM 的 beta 投影由每个工作组完成一列输出。

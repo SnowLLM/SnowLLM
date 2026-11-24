@@ -1,4 +1,6 @@
 {
+  "Off by default. Enable for repeated passages in prompts or tool results during speculative decoding.": "默认关闭。投机解码时，如果提示词或工具返回中有重复段落，建议开启。",
+  "Off by default. Enable for tool calls with Flash-Next adaptive MTP to draft function names and argument markup.": "默认关闭。使用 Flash-Next 自适应 MTP 调用工具时，建议开启以起草函数名和参数标记。",
   "Tool-call drafting": "工具调用草稿",
   "Prompt lookup": "提示文本复用",
   "Close the quotation mark in additional options.": "请闭合附加参数中的引号。",
