@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 import ctypes
+from functools import lru_cache
 
 import torch
 
@@ -305,6 +306,52 @@ def residual_mix(states, queries, eps, prefill):
     if not states.is_meta:
         check(lib.snowllm_inkling_mix(_p(states), _p(queries), _p(coefficients), _p(out),
               rows, count, heads, width, int(states.dtype == torch.bfloat16), eps, _stream()), "inkling_mix")
+    return out
+
+
+@lru_cache(None)
+def _kquant_expert_sizes(fmt, experts, n, k):
+    from .gemm import kquant_bytes
+
+    if (experts, n) != (128, 2304) or (fmt, k) not in ((5, 2304), (8, 2304), (8, 1152)):
+        raise SnowLLMError("unsupported Inkling quantized expert layout")
+    quant, meta, raw = kquant_bytes(fmt, n, k)
+    # Expert slabs share the shuffler's final four-byte padding word.
+    return experts * (quant - 4) + 4, experts * meta, experts * raw
+
+
+def pack_kquant_experts(raw, fmt, experts, n, k):
+    quant_bytes, meta_bytes, raw_bytes = _kquant_expert_sizes(fmt, experts, n, k)
+    down = k == 1152
+    _chk(raw, "Inkling raw expert codes", torch.uint8, raw_bytes)
+    weight = empty(quant_bytes, dtype=torch.uint8, device=raw.device)
+    meta = empty(meta_bytes, dtype=torch.uint8, device=raw.device)
+    if not raw.is_meta:
+        check(lib.snowllm_inkling_kquant_shuffle(_p(raw), _p(weight), _p(meta), fmt, down, _stream()),
+              "inkling_kquant_shuffle")
+    return weight, meta
+
+
+@operator
+def kquant_expert_linear(x, weight, meta, fmt, ids, plan):
+    tokens, groups, k = x.shape
+    down = k == 1152
+    if (k, groups) not in ((2304, 1), (1152, 8)):
+        raise SnowLLMError("incompatible Inkling quantized expert input")
+    _chk(x, "Inkling expert inputs", torch.bfloat16)
+    _chk(ids, "Inkling expert IDs", torch.int32, tokens, 8)
+    quant_bytes, meta_bytes, _ = _kquant_expert_sizes(fmt, 128, 2304, k)
+    _chk(weight, "Inkling expert codes", torch.uint8, quant_bytes)
+    _chk(meta, "Inkling expert scale records", torch.uint8, meta_bytes)
+    if plan is not None:
+        size = lib.snowllm_inkling_bf16_plan_ints(tokens, 128, 8, 2304, 1152, True)
+        _chk(plan, "Inkling expert plan", torch.int32, size)
+    if any(t.device != x.device for t in (weight, meta, ids, plan) if t is not None):
+        raise SnowLLMError("Inkling quantized expert tensors must share a device")
+    out = empty(tokens, 8, 2304, dtype=x.dtype, device=x.device)
+    if not x.is_meta:
+        check(lib.snowllm_inkling_kquant_project(_p(x), _p(weight), _p(meta), _p(ids), _p(plan),
+              _p(out), tokens, fmt, down, _stream()), "inkling_kquant_project")
     return out
 
 

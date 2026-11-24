@@ -46,7 +46,7 @@ class InklingServingTest(unittest.TestCase):
                     self.assertTrue((ring[:, :, i] == -1).all())
             residue.drop(0)
 
-    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the UD-Q8_K_XL file")
+    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the Inkling GGUF")
     def test_batch_and_restore(self):
         root = Path(os.environ["SNOWLLM_INKLING_GGUF"]).parent
         tokenizer, stops = loader.load_tokenizer(root)

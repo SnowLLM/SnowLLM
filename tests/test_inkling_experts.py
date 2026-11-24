@@ -11,7 +11,15 @@ from snowllm.checkpoint.gguf.source import GGUFReader
 from snowllm.models.inkling2.experts import InklingMoE
 
 
-def dense_expert(projection, expert):
+def dense_expert(projection, expert, gguf, name):
+    if projection.meta is not None:
+        from snowllm.checkpoint.gguf.dequant import dequantize
+
+        t = gguf[name]
+        _, n, k = t.shape
+        size = t.quant.nbytes(n * k)
+        raw = torch.frombuffer(bytearray(gguf.read(name, expert * size, size)), dtype=torch.uint8)
+        return dequantize(raw, t.quant.name, n * k).view(n, k).float()
     weight = projection.weight[expert].cpu()
     if projection.scale is None:
         return weight.float()
@@ -249,13 +257,14 @@ class InklingExpertsTest(unittest.TestCase):
                     ids = ranked.topk(moe.topk).indices
                     probs = scores.gather(1, ids)
                     probs = probs / probs.sum(dim=1, keepdim=True) * cfg["route_scale"]
+                    gate_name, down_name = (f"blk.{layer}.ffn_{p}_exps.weight" for p in ("gate_up", "down"))
                     want = torch.zeros_like(got)
                     for token, experts in enumerate(ids.tolist()):
                         for slot, expert in enumerate(experts):
-                            fused = dense_expert(moe.gate_up, expert) @ x[token].float()
+                            fused = dense_expert(moe.gate_up, expert, reader.gguf, gate_name) @ x[token].float()
                             gate, up = fused.bfloat16().float().chunk(2)
                             act = 4 * (gate / 4).tanh() * gate.sigmoid() * 25 * (up / 25).tanh()
-                            down = dense_expert(moe.down, expert) @ act.bfloat16().float()
+                            down = dense_expert(moe.down, expert, reader.gguf, down_name) @ act.bfloat16().float()
                             want[token] += probs[token, slot] * down.bfloat16().float()
                     error = ((got - want.bfloat16().float()).norm() / want.norm()).item()
                     print(f"Inkling layer {layer} MoE relative L2 {error:.6g}", flush=True)
