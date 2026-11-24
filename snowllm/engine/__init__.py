@@ -448,7 +448,8 @@ class Engine:
             self.slots = StateSlots(max_num_seqs, self.runner.slots_per_request,
                                     self.runner.dummy_slot)
             self.sampler = Sampler(frozenset(stop_token_ids),seed,
-                                   native_rng=isinstance(model.geo, DeepSeekV4Geometry) and model.geo.v41)
+                                   native_rng=((isinstance(model.geo, DeepSeekV4Geometry) and model.geo.v41) or
+                                               getattr(model, "config", {}).get("model_type") == "inkling2_loop"))
             self.sampler.reserve(max_num_seqs*self.T,self.runner.geo.vocab_size,
                                  max_tokens=max_model_len+self.T,
                                  max_requests=max_num_seqs,arena=self.runner.arena)

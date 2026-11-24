@@ -43,26 +43,56 @@ class ExpertProjection:
         return expert_linear(x, self.weight, self.scale, ids, prefill, plan)
 
 
+def pack_router(reader, name, weight):
+    from ...ops.gemm import gemm_bf16_shuffle_b
+
+    experts, hidden = weight.shape
+    if experts % 128 or hidden % 32:
+        return None
+    tensor = reader.gguf[name]
+    if tensor.quant.name == "F32":
+        # Inspect the checkpoint so the allocation planner and real load select the same layout.
+        payload = bytearray()
+        for path, offset, size in reader.gguf.ranges(name):
+            with path.open("rb") as fp:
+                fp.seek(offset)
+                payload.extend(fp.read(size))
+        if len(payload) != tensor.nbytes:
+            raise OSError(f"short read for {name}")
+        if any(payload[0::4]) or any(payload[1::4]):
+            return None
+    elif tensor.quant.name != "BF16":
+        return None
+    return gemm_bf16_shuffle_b(weight.bfloat16(), experts, hidden)
+
+
 class InklingMoE:
     def __init__(self, rd, cfg, layer):
         prefix = f"blk.{layer}."
         hidden, inter = cfg["hidden_size"], cfg["moe_intermediate_size"]
+        self.intermediate = inter
         experts = cfg["num_experts"]
         self.topk, self.scale = cfg["num_experts_per_tok"], cfg["route_scale"]
         self.gate_cap, self.up_cap = cfg["mlp_gate_softcap"], cfg["mlp_up_softcap"]
-        self.router = rd.tensor(prefix + "ffn_gate_inp.weight", torch.float32)
+        router_name = prefix + "ffn_gate_inp.weight"
+        self.router = rd.tensor(router_name, torch.float32)
+        self.packed_router = pack_router(rd, router_name, self.router)
         bias = prefix + "exp_probs_b.bias"
         self.bias = rd.tensor(bias, torch.float32) if bias in rd.gguf else None
         self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden)
         self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter)
 
-    def __call__(self, x, prefill=False):
-        from ...ops.inkling import bf16_expert_plan, combine, route, softcapped_swiglu
-        ids, weights = route(x, self.router, self.bias, self.topk, self.scale, prefill)
-        plan = None
-        if self.gate_up.scale is None and self.down.scale is None:
-            experts, hidden, intermediate = self.down.weight.shape
-            plan = bf16_expert_plan(ids, experts, hidden, intermediate, prefill)
+    def __call__(self, x, prefill=False, *, post_conv=None):
+        from ...ops.inkling import combine, expert_plan, route, short_conv, softcapped_swiglu
+        ids, weights = route(x, self.router, self.bias, self.topk, self.scale, prefill, packed=self.packed_router)
+        experts, hidden = self.router.shape
+        plan = expert_plan(ids, experts, hidden, self.intermediate, prefill,
+                           packed=self.gate_up.scale is not None or self.down.scale is not None)
         gate_up = self.gate_up(x[:, None, :], ids, prefill, plan=plan)
         activated = softcapped_swiglu(gate_up, self.gate_cap, self.up_cap, prefill)
-        return combine(self.down(activated, ids, prefill, plan=plan), weights, prefill)
+        states = self.down(activated, ids, prefill, plan=plan)
+        if post_conv is None:
+            return combine(states, weights, prefill)
+        kernel, history, plan, residual = post_conv
+        return short_conv(states, kernel, None, history, *plan, residual=residual, out_dtype=torch.bfloat16,
+                          expert_weights=weights, prefill=prefill)

@@ -763,6 +763,18 @@ if hasattr(lib, "snowllm_rmsnorm_rows_rounded_supported"):
 if hasattr(lib, "snowllm_lfm2_qkv_project"):
     _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
                   ("snowllm_lfm2_qkv_project", c_int, [P,P,c_int,P,c_int64,S])))
+if hasattr(lib, "snowllm_sampling_mask_tokens"):
+    _SIGS.append(("snowllm_sampling_mask_tokens", c_int, [P, P, c_int, c_int, S]))
+
+if hasattr(lib, "snowllm_inkling_norm_rows"):
+    _SIGS.extend([
+        ("snowllm_inkling_norm_rows", c_int, [P]*5 + [c_int]*7 + [c_float]*3 + [S]),
+        ("snowllm_inkling_gate", c_int, [P]*3 + [c_int64, S]),
+        ("snowllm_inkling_add", c_int, [P]*3 + [c_int64, c_int, c_int, S]),
+        ("snowllm_inkling_softcap", c_int, [P]*2 + [c_int]*3 + [c_float, S]),
+        ("snowllm_inkling_select", c_int, [P]*4 + [c_int]*5 + [c_float, S]),
+        ("snowllm_inkling_metadata", c_int, [P]*9 + [c_int]*4 + [S]),
+    ])
 
 if hasattr(lib, "snowllm_inkling_small_router"):
     _SIGS.extend([
@@ -772,6 +784,19 @@ if hasattr(lib, "snowllm_inkling_small_router"):
         ("snowllm_inkling_capped_swiglu", c_int, [P]*2 + [c_int]*2 + [c_float]*2 + [S]),
         ("snowllm_inkling_combine_experts", c_int, [P]*3 + [c_int]*3 + [S]),
     ])
+if hasattr(lib, "snowllm_inkling_qkv_controller"):
+    _SIGS.extend([
+        ("snowllm_inkling_qkv_controller_supported", c_int, [c_int]*3),
+        ("snowllm_inkling_qkv_controller", c_int, [P]*8 + [c_int]*4 + [c_float, S]),
+    ])
+if hasattr(lib, "snowllm_inkling_controller_gemm"):
+    _SIGS.append(("snowllm_inkling_controller_gemm", c_int, [P]*8 + [c_int]*4 + [c_float, c_int, S]))
+if hasattr(lib, "snowllm_inkling_controller_prefill_supported"):
+    _SIGS.extend([
+        ("snowllm_inkling_controller_prefill_inputs", c_int, [P]*3 + [c_int]*4 + [c_float, S]),
+        ("snowllm_inkling_controller_prefill_supported", c_int, [c_int]*2),
+        ("snowllm_inkling_controller_blend", c_int, [P]*5 + [c_int]*4 + [S]),
+    ])
 if hasattr(lib, "snowllm_inkling_controller_supported"):
     _SIGS.extend([
         ("snowllm_inkling_controller_supported", c_int, [c_int]*3),
@@ -780,12 +805,57 @@ if hasattr(lib, "snowllm_inkling_controller_supported"):
     ])
 if hasattr(lib, "snowllm_inkling_mix_workspace_floats"):
     _SIGS.append(("snowllm_inkling_mix_workspace_floats", c_int64, [c_int]*4))
+if hasattr(lib, "snowllm_inkling_mix_blocks"):
+    _SIGS.extend([
+        ("snowllm_inkling_mix_blocks_supported", c_int, [c_int]*2),
+        ("snowllm_inkling_mix_blocks", c_int, [POINTER(P), P, P] + [c_int]*5 + [c_float, S]),
+    ])
 if hasattr(lib, "snowllm_inkling_mix"):
     _SIGS.append(("snowllm_inkling_mix", c_int, [P]*4 + [c_int]*5 + [c_float, S]))
 if hasattr(lib, "snowllm_inkling_conv"):
     _SIGS.append(("snowllm_inkling_conv", c_int, [P]*9 + [c_int]*4 + [c_int64]*2 + [S]))
+if hasattr(lib, "snowllm_inkling_prepare_heads"):
+    _SIGS.extend([
+        ("snowllm_inkling_prepare_heads_supported", c_int, [c_int]*5),
+        ("snowllm_inkling_prepare_heads", c_int, [P]*19 + [c_int]*5 + [c_int64]*2 + [c_float]*5 + [S]),
+    ])
+if hasattr(lib, "snowllm_inkling_combine_post_conv_supported"):
+    _SIGS.extend((("snowllm_inkling_combine_post_conv_supported", c_int, [c_int]*4),
+                  ("snowllm_inkling_combine_post_conv", c_int, [P]*8 + [c_int]*2 + [c_int64]*2 + [S])))
+if hasattr(lib, "snowllm_inkling_post_conv"):
+    _SIGS.append(("snowllm_inkling_post_conv", c_int, [P]*9 + [c_int]*3 + [c_int64]*2 + [c_int, S]))
+if hasattr(lib, "snowllm_inkling_route_packed"):
+    _SIGS.extend([
+        ("snowllm_inkling_router_splits", c_int, [c_int]*5),
+        ("snowllm_inkling_route_packed", c_int, [P]*6 + [c_int]*5 + [c_float, S]),
+    ])
+if hasattr(lib, "snowllm_inkling_input_projections"):
+    _SIGS.extend([
+        ("snowllm_inkling_inputs_supported", c_int, [c_int, P, c_int]),
+        ("snowllm_inkling_input_projections", c_int, [P]*3 + [c_int]*3 + [S]),
+    ])
+if hasattr(lib, "snowllm_inkling_dense"):
+    _SIGS.extend([
+        ("snowllm_inkling_relative_projection", c_int, [P]*3 + [c_int]*2 + [S]),
+        ("snowllm_inkling_float_projection", c_int, [P]*3 + [c_int]*3 + [S]),
+        ("snowllm_inkling_logits_workspace_bytes", c_int64, [c_int]*3),
+        ("snowllm_inkling_logits", c_int, [P]*4 + [c_int]*3 + [S]),
+        ("snowllm_inkling_dense_workspace_bytes", c_int64, [c_int]*4),
+        ("snowllm_inkling_dense", c_int, [P]*4 + [c_int]*4 + [S]),
+    ])
+if hasattr(lib, "snowllm_inkling_attention_project"):
+    _SIGS.append(("snowllm_inkling_attention_project", c_int, [P]*13 + [c_int]*11 + [S]))
+if hasattr(lib, "snowllm_inkling_attention_with_workspace"):
+    _SIGS.append(("snowllm_inkling_attention_workspace_bytes", c_int64, [c_int]*7))
+    _SIGS.append(("snowllm_inkling_attention_with_workspace", c_int, [P]*10 + [c_int]*10 + [S]))
+if hasattr(lib, "snowllm_inkling_normalize_qkv"):
+    _SIGS.append(("snowllm_inkling_normalize_qkv", c_int, [P]*7 + [c_int]*6 + [c_float, S]))
+if hasattr(lib, "snowllm_inkling_attention_bf16_bias"):
+    _SIGS.append(("snowllm_inkling_attention_bf16_bias", c_int, [P]*9 + [c_int]*9 + [S]))
 if hasattr(lib, "snowllm_inkling_attention"):
     _SIGS.append(("snowllm_inkling_attention", c_int, [P]*9 + [c_int]*9 + [S]))
+if hasattr(lib, "snowllm_inkling_grouped_project"):
+    _SIGS.append(("snowllm_inkling_grouped_project", c_int, [P]*5 + [c_int, c_int, S]))
 if hasattr(lib, "snowllm_inkling_bf16_plan_ints"):
     _SIGS.extend([
         ("snowllm_inkling_bf16_plan_ints", c_int, [c_int]*6),

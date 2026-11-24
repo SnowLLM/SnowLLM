@@ -16,6 +16,7 @@ Expand **Recipes** to see recipe IDs. See [Model downloads](../guides/models) fo
 | --- | --- |
 | Qwen3.8-Flash-Next | PLE lookup tables are read on demand; keep them on a local SSD. |
 | DeepSeek V4 / V4.1 | Text only; keep the matching Engram files on a local SSD. |
+| Inkling-2-Mini (GGUF) | Text generation uses BF16 KV and supports batched requests. |
 | MiniCPM-V 4.7 | Single images, multiple images and high-resolution slices are supported. Video and LES expert streaming are not implemented. |
 | LFM2.5-8B-A1B | Thinking must stay enabled. Requests that disable it return HTTP 400. |
 | MinerU | `mineru-vlm` serves the VLM alone; `mineru` serves the full bundle. See [MinerU integration](../integrations/mineru). |
