@@ -54,6 +54,22 @@ class InklingExpertsTest(unittest.TestCase):
                     error = ((got - want.bfloat16().float()).norm() / want.norm()).item()
                     print(f"Inkling layer {layer} MoE relative L2 {error:.6g}", flush=True)
                     self.assertLess(error, .005)
+                    # Cross a WMMA routing segment with repeated and invalid expert IDs.
+                    rows = 131
+                    ids = torch.randint(cfg["num_experts"], (rows, moe.topk), generator=generator,
+                                        dtype=torch.int32)
+                    ids[:, :2] = 0
+                    ids[-1, -1] = -1
+                    ids = ids.cuda()
+                    for proj, groups, size in ((moe.gate_up, 1, cfg["hidden_size"]),
+                                               (moe.down, moe.topk, cfg["moe_intermediate_size"])):
+                        inputs = torch.randn(rows, groups, size, generator=generator).bfloat16().cuda()
+                        result = proj(inputs, ids)
+                        for row in (0, 127, 128, 130):
+                            ref = proj(inputs[row:row+1], ids[row:row+1])[0].float()
+                            rel = (result[row].float() - ref).norm() / ref.norm()
+                            self.assertLess(rel.item(), .002)
+                        self.assertEqual(result[-1, -1].count_nonzero().item(), 0)
                     del moe
 
 

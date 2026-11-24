@@ -130,7 +130,7 @@ class InklingLayer:
         gated = y.flatten(1).float() * self.linear(q_in, "attn_gate").float().sigmoid_()
         return convolve(self.linear(gated, "attn_output"), state.history[2], w["attn_post_conv"], plan=plan)
 
-    def __call__(self, x, blocks, bank, state, table, position, sequences, indices, plan):
+    def __call__(self, x, blocks, bank, state, table, position, sequences, indices, plan, prefill):
         w, eps = self.weights, self.cfg["rms_norm_eps"]
         query = w.get("attn_res_query")
         mixed = (x,) if query is None else mix(blocks, x, query, eps).unbind(1)
@@ -149,7 +149,7 @@ class InklingLayer:
         z = mix(blocks, y, w["ffn_res_query"], eps).squeeze(1)
         if messages is not None:
             z = self.control(z, messages[3], "ffn")
-        z = self.moe(rms(z, eps, w["ffn_norm"]).bfloat16())
+        z = self.moe(rms(z, eps, w["ffn_norm"]).bfloat16(), prefill)
         return (y + convolve(z, state.history[3], w["ffn_post_conv"], plan=plan)).bfloat16()
 
 
@@ -209,7 +209,7 @@ class InklingTextModel:
         return InklingCache(self, capacity, chunk_size)
 
     @torch.inference_mode()
-    def forward(self, input_ids, cache):
+    def forward(self, input_ids, cache, *, prefill=None):
         size = input_ids.numel()
         if cache.model is not self or cache.position < 0:
             raise ValueError("Inkling cache belongs to another model or an interrupted forward")
@@ -225,12 +225,14 @@ class InklingTextModel:
             state = cache.states[visit]
             slots = position.long() % (state.k.size(0) * state.k.size(1))
             return state, cache.tables[state.k.size(0)], slots
-        x = self.hidden(input_ids, position, sequences, visit_inputs, None)
+        if prefill is None:
+            prefill = offset == 0 or size > 1
+        x = self.hidden(input_ids, position, sequences, visit_inputs, None, prefill)
         logits = self.logits(x)
         cache.position = offset + size
         return logits
 
-    def hidden(self, input_ids, position, sequences, visit_inputs, plan):
+    def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill):
         eps = self.config["rms_norm_eps"]
         x = rms(F.embedding(input_ids, self.embedding), eps, self.embed_norm).bfloat16()
         blocks, bank = [], None
@@ -244,7 +246,7 @@ class InklingTextModel:
             if i == self.end:
                 bank = None
             state, table, slots = visit_inputs(visit)
-            x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan)
+            x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan, prefill)
         x = mix(blocks, x, self.output_query, eps).squeeze(1)
         return rms(x, eps, self.norm).bfloat16()
 

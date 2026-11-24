@@ -159,7 +159,7 @@ class InklingRunner(QwenRunner):
             peaks = []
             with ops.dry_load():
                 history = self.resources.history_tensor(None, self.max_num_seqs)
-                with self.resources.cache.temporary(1):
+                with self.resources.cache.temporary(self.ring_pages or 1):
                     pages = self.pages
                 for tokens, prefill in ((rows, True), (self.max_num_seqs, False)):
                     b = min(tokens, self.max_num_seqs)
@@ -208,7 +208,7 @@ class InklingRunner(QwenRunner):
                 table_i, mapping_i = table, mapping
             state = SimpleNamespace(k=k, v=v, history=history[:, i].split(self.channels, dim=-1))
             return state, table_i, mapping_i
-        hidden = model.hidden(batch.input_ids, position, seq, visit_inputs, plan)
+        hidden = model.hidden(batch.input_ids, position, seq, visit_inputs, plan, batch.is_prefill)
         if batch.is_prefill:
             hidden = hidden.index_select(0, batch.last_row)
         return model.logits(hidden) if batch.need_logits else None

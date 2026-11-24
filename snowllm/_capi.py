@@ -768,8 +768,9 @@ if hasattr(lib, "snowllm_inkling_conv"):
     _SIGS.append(("snowllm_inkling_conv", c_int, [P]*9 + [c_int]*4 + [c_int64]*2 + [S]))
 if hasattr(lib, "snowllm_inkling_attention"):
     _SIGS.append(("snowllm_inkling_attention", c_int, [P]*9 + [c_int]*9 + [S]))
-if hasattr(lib, "snowllm_inkling_expert_linear"):
-    _SIGS.append(("snowllm_inkling_expert_linear", c_int, [P]*5 + [c_int]*6 + [S]))
+for name in ("snowllm_inkling_expert_linear", "snowllm_inkling_expert_prefill"):
+    if hasattr(lib, name):
+        _SIGS.append((name, c_int, [P]*5 + [c_int]*6 + [S]))
 if hasattr(lib, "snowllm_lfm2_short_conv"):
     _SIGS.extend((("snowllm_lfm2_short_conv", c_int, [P]*10+[c_int64]*5+[S]),
                   ("snowllm_lfm2_rope", c_int, [P]*3+[c_int64]*2+[S])))

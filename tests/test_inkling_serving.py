@@ -59,10 +59,11 @@ class InklingServingTest(unittest.TestCase):
         self.assertEqual(engine.n_batched_prefills, 1)
         self.assertEqual(both[0].out, [200001, 200008, 371, 150409, 171960, 149878, 150744, 169292])
         self.assertEqual(both[1].out, run(b)[0].out)
-        long = question("Repeat the following word: " + " apple" * 74)
+        ring_tokens = engine.runner.ring_pages * engine.runner.block_size
+        long = question("Repeat the following word: " + " apple" * (ring_tokens + 64))
         first, = run(long)
         restored, = run(long)
-        self.assertGreaterEqual(restored.cached_tokens, 64)
+        self.assertGreaterEqual(restored.cached_tokens, ring_tokens)
         self.assertEqual(first.out, restored.out)
 
 

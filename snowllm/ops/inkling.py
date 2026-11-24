@@ -8,7 +8,7 @@ from .operation import operator
 
 
 @operator
-def expert_linear(x, weight, scales, ids):
+def expert_linear(x, weight, scales, ids, prefill=False):
     tokens, groups, k = x.shape
     experts, n, stored_k = weight.shape
     _chk(x, "Inkling expert inputs", torch.bfloat16)
@@ -27,9 +27,11 @@ def expert_linear(x, weight, scales, ids):
     out = empty(tokens, topk, n, dtype=x.dtype, device=x.device)
     if x.is_meta:
         return out
-    if not hasattr(lib, "snowllm_inkling_expert_linear"):
-        raise SnowLLMError("Inkling experts require a SnowLLM-Kernels build with inkling_expert_linear")
-    check(lib.snowllm_inkling_expert_linear(_p(x), _p(weight), _p(scales), _p(ids), _p(out),
+    name = "snowllm_inkling_expert_prefill" if prefill else "snowllm_inkling_expert_linear"
+    kernel = getattr(lib, name, None)
+    if kernel is None:
+        raise SnowLLMError(f"Inkling experts require a SnowLLM-Kernels build with {name}")
+    check(kernel(_p(x), _p(weight), _p(scales), _p(ids), _p(out),
           tokens, groups, topk, experts, n, k, _stream()), "inkling_expert_linear")
     return out
 
