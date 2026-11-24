@@ -1,8 +1,38 @@
 # SPDX-License-Identifier: Apache-2.0
 from .operation import operator
 from ._common import _p, _stream, _chk
-from .._capi import check, lib
+from .._capi import SnowLLMError, check, lib
+import ctypes
 import torch
+
+
+class _Projection(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_void_p) for n in ("weight", "meta", "out")] + [
+        (n, ctypes.c_int) for n in ("fmt", "n", "stride")]
+
+
+@operator
+def project_qkv(x, weights, outputs, arena):
+    rows, width = x.shape
+    _chk(x, "LFM QKV input", torch.bfloat16, rows, 2048)
+    if len(weights) != 3 or len(outputs) != 3:
+        raise SnowLLMError("LFM attention requires Q, K and V")
+    jobs = (_Projection * 3)()
+    for i, (p, out) in enumerate(zip(weights, outputs, strict=True)):
+        n = 512 if i else 2048
+        _chk(out, "LFM QKV output", torch.bfloat16, rows, n)
+        if p.k != width or p.n != n:
+            raise SnowLLMError("invalid LFM QKV projection shape")
+        if p.quant is None:
+            if p.dense.dtype != torch.bfloat16 or p.dense.numel() != n*width or not p.dense.is_contiguous():
+                raise SnowLLMError("invalid LFM packed BF16 weight")
+            jobs[i] = _Projection(_p(p.dense), 0, _p(out), 0, n, n)
+        else:
+            jobs[i] = _Projection(_p(p.quant.quant), _p(p.quant.meta), _p(out), p.quant.fmt, n, n)
+    need = lib.snowllm_lfm2_qkv_workspace_bytes(rows, any(p.quant is None for p in weights))
+    with arena.frame():
+        ws = arena.workspace(need, "workspace:lfm_qkv")
+        check(lib.snowllm_lfm2_qkv_project(_p(x), jobs, rows, _p(ws), need, _stream()), "lfm2_qkv_project")
 
 
 @operator

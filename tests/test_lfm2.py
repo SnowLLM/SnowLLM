@@ -28,6 +28,103 @@ class Lfm2Tests(unittest.TestCase):
                             for i in range(len(lengths))]) if marks else None,
             ckpt_n=len(marks[0]) if marks else 0)
 
+    @unittest.skipUnless(hasattr(lib, 'snowllm_lfm2_qkv_project'), 'requires fused LFM attention')
+    def test_rounded_norm_rope_cache(self):
+        rows, width = 73, 64
+        block = ops.geo().block_size
+        slots = (torch.arange(rows, device='cuda', dtype=torch.int32) * 13) % 97
+        slots[::7] = -1
+        q, k, v = [torch.randn(rows, n, width, device='cuda', dtype=torch.bfloat16)
+                   for n in (32, 8, 8)]
+        qg, kg = (torch.randn(width, device='cuda', dtype=torch.bfloat16) for _ in range(2))
+        angles = torch.randn(rows, 64, device='cuda')
+        cos, sin = angles.cos(), angles.sin()
+        def normalized(x, gamma):
+            out = torch.empty_like(x)
+            ops.dsv4_rmsnorm(x.flatten(0, 1), None, out.flatten(0, 1), 1e-5)
+            out.mul_(gamma)
+            rope(out, cos, sin)
+            return out
+        qr, kr = normalized(q, qg), normalized(k, kg)
+        size = ((97 + block - 1) // block) * block * 8 * width
+        for quant in (False, True):
+            with self.subTest(int8=quant):
+                dtype = torch.int8 if quant else torch.bfloat16
+                pools = [torch.full((size,), 3, device='cuda', dtype=dtype) for _ in range(2)]
+                scales = [torch.full((size//d,), 3, device='cuda', dtype=torch.bfloat16)
+                          for d in (32, width)] if quant else []
+                ref = [t.clone() for t in pools + scales]
+                store = ops.reshape_and_cache_int8 if quant else ops.reshape_and_cache
+                store(kr, v, *ref, slots, 512, 512, block)
+                out = torch.empty_like(q)
+                ks, vs = scales if quant else (None, None)
+                ops.qk_norm_rope_cache(q.flatten(1), qg, kg, cos, sin, out, v.flatten(1),
+                                       *pools, slots, 1e-5, block, k_proj=k.flatten(1),
+                                       k_scale=ks, v_scale=vs)
+                for actual, expected in zip([out, *pools, *scales], [qr, *ref], strict=True):
+                    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+    def test_rounded_hidden_norm_in_place(self):
+        x = torch.randn(257, 2048, dtype=torch.bfloat16, device='cuda')
+        gamma = torch.randn(2048, dtype=x.dtype, device=x.device)
+        expected = torch.empty_like(x)
+        ops.dsv4_rmsnorm(x, None, expected, 1e-5)
+        expected.mul_(gamma)
+        ops.rmsnorm_rows(x, gamma, x, 1e-5, round_before_weight=True)
+        torch.testing.assert_close(x, expected, rtol=0, atol=0)
+
+    def test_residual_norm_preserves_both_outputs(self):
+        delta = torch.randn(257, 2048, dtype=torch.bfloat16, device='cuda')
+        residual = torch.randn_like(delta)
+        gamma = torch.randn(2048, dtype=delta.dtype, device=delta.device)
+        expected_residual = residual + delta
+        expected_norm = torch.empty_like(delta)
+        ops.dsv4_rmsnorm(expected_residual, None, expected_norm, 1e-5)
+        expected_norm.mul_(gamma)
+        norm = torch.empty_like(delta)
+        ops.rmsnorm_residual(delta, residual, gamma, norm, 1e-5, round_before_weight=True)
+        torch.testing.assert_close(residual, expected_residual, rtol=0, atol=0)
+        torch.testing.assert_close(norm, expected_norm, rtol=0, atol=0)
+
+    @unittest.skipUnless(hasattr(lib, 'snowllm_lfm2_qkv_project'), 'requires fused LFM projections')
+    def test_qkv_mixed_dense_and_q8(self):
+        from snowllm.models.lfm2.layers import Projection
+        from snowllm.models.projection import pack_bf16, pack_kquant
+        from snowllm.ops.lfm2 import project_qkv
+
+        arena = ops.Arena()
+        arena.freeze(max(ops.gemm_bf16_a_ws_bytes(m, 2048) for m in (1, 32, 33)))
+        ctx = SimpleNamespace(arena=arena)
+        quantized = []
+        for width in (2048, 512, 512):
+            blocks = torch.randint(0, 256, (width*2048//32, 34), device='cuda', dtype=torch.uint8)
+            blocks[:, :2] = torch.tensor([0, 40], device='cuda', dtype=torch.uint8)
+            quantized.append(Projection(width, 2048, quant=pack_kquant(blocks.flatten(), 8, width, 2048)))
+        dense = Projection(512, 2048, dense=pack_bf16(
+            torch.randn(512, 2048, dtype=torch.bfloat16, device='cuda'))[0])
+        for rows in (1, 32, 33):
+            x = torch.randn(rows, 2048, dtype=torch.bfloat16, device='cuda')
+            for weights in (quantized, [*quantized[:2], dense]):
+                expected = [torch.empty(rows, p.n, dtype=x.dtype, device=x.device) for p in weights]
+                actual = [torch.empty_like(y) for y in expected]
+                for p, y in zip(weights, expected):
+                    p(ctx, x, y)
+                project_qkv(x, weights, actual, arena)
+                for new, old in zip(actual, expected):
+                    torch.testing.assert_close(new, old, rtol=0, atol=0)
+
+        planned = ops.Arena()
+        def walk(m):
+            outputs = [planned.new(m, p.n) for p in quantized]
+            project_qkv(x[:m], quantized, outputs, planned)
+            return outputs, planned.new(m, 32, 64)
+        for m in (33, 1):
+            outputs, _ = planned.execute(('qkv',), m, lambda: walk(m))
+            for proj, actual in zip(quantized, outputs):
+                expected = torch.empty_like(actual)
+                proj(ctx, x[:m], expected)
+                torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
     def test_conv_chunking_state_reset_checkpoints_and_graph(self):
         H = 2048
         x = torch.randn(14, 3*H, device='cuda', dtype=torch.bfloat16)*.2

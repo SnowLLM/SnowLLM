@@ -3,7 +3,8 @@ import torch
 from torch import nn
 
 from ... import ops
-from ...ops.lfm2 import short_conv, rope
+from ..._capi import lib
+from ...ops.lfm2 import project_qkv, short_conv, rope
 from ..projection import project
 from ..qwen3_5.layers import FullAttention
 
@@ -45,25 +46,35 @@ class Attention(FullAttention):
         b, a, g, M = ctx.batch, ctx.arena, self.geo, ctx.M
         with a.frame():
             q, k, v = a.new(M, g.q_dim), a.new(M, g.kv_dim), a.new(M, g.kv_dim)
-            self.q_proj(ctx, x, q)
-            self.k_proj(ctx, x, k)
-            self.v_proj(ctx, x, v)
-            q, k, v = (q.view(M, g.num_heads, g.head_size),
-                       k.view(M, g.num_kv_heads, g.head_size),
-                       v.view(M, g.num_kv_heads, g.head_size))
-            if self.qnorm is not None:
-                ops.rmsnorm_rows(q.view(-1,g.head_size), self.qnorm,
-                                 q.view(-1,g.head_size), ctx.eps, round_before_weight=True)
-            if self.knorm is not None:
-                ops.rmsnorm_rows(k.view(-1,g.head_size), self.knorm,
-                                 k.view(-1,g.head_size), ctx.eps, round_before_weight=True)
-            rope(q, ctx.cos, ctx.sin)
-            rope(k, ctx.cos, ctx.sin)
-            if ctx.kv_int8:
-                ops.reshape_and_cache_int8(k,v,*self.kv,*self.kv_scale,b.slot_mapping,
-                                           g.kv_dim,g.kv_dim,ctx.block_size)
+            if (hasattr(lib, "snowllm_lfm2_qkv_project") and self.qnorm is not None
+                    and self.knorm is not None and ctx.block_size == ops.geo().block_size):
+                project_qkv(x, (self.q_proj, self.k_proj, self.v_proj), (q, k, v), a)
+                query = a.new(M, g.num_heads, g.head_size)
+                ks, vs = self.kv_scale if ctx.kv_int8 else (None, None)
+                ops.qk_norm_rope_cache(q, self.qnorm, self.knorm, ctx.cos, ctx.sin, query, v,
+                                       *self.kv, b.slot_mapping, ctx.eps, ctx.block_size, k_proj=k,
+                                       k_scale=ks, v_scale=vs)
+                q = query
             else:
-                ops.reshape_and_cache(k,v,*self.kv,b.slot_mapping,g.kv_dim,g.kv_dim,ctx.block_size)
+                self.q_proj(ctx, x, q)
+                self.k_proj(ctx, x, k)
+                self.v_proj(ctx, x, v)
+                q, k, v = (q.view(M, g.num_heads, g.head_size),
+                           k.view(M, g.num_kv_heads, g.head_size),
+                           v.view(M, g.num_kv_heads, g.head_size))
+                if self.qnorm is not None:
+                    ops.rmsnorm_rows(q.view(-1,g.head_size), self.qnorm,
+                                     q.view(-1,g.head_size), ctx.eps, round_before_weight=True)
+                if self.knorm is not None:
+                    ops.rmsnorm_rows(k.view(-1,g.head_size), self.knorm,
+                                     k.view(-1,g.head_size), ctx.eps, round_before_weight=True)
+                rope(q, ctx.cos, ctx.sin)
+                rope(k, ctx.cos, ctx.sin)
+                if ctx.kv_int8:
+                    ops.reshape_and_cache_int8(k,v,*self.kv,*self.kv_scale,b.slot_mapping,
+                                               g.kv_dim,g.kv_dim,ctx.block_size)
+                else:
+                    ops.reshape_and_cache(k,v,*self.kv,b.slot_mapping,g.kv_dim,g.kv_dim,ctx.block_size)
             y = a.new(M, g.num_heads, g.head_size)
             pools = self.kv + (self.kv_scale if ctx.kv_int8 else ())
             self._attend(ctx,q,pools,y,None)
@@ -94,14 +105,12 @@ class Layer(nn.Module):
         self.attn, self.mlp = attn, mlp
         self.operator_norm, self.ffn_norm = operator_norm, ffn_norm
 
-    def forward(self, ctx):
+    def forward(self, ctx, next_norm):
         x, norm, out = ctx.residual, ctx.x, ctx.blk
-        ops.rmsnorm_rows(x,self.operator_norm,norm,ctx.eps,round_before_weight=True)
         self.attn(ctx,norm,out)
-        torch.add(x,out,out=x)
-        ops.rmsnorm_rows(x,self.ffn_norm,norm,ctx.eps,round_before_weight=True)
+        ops.rmsnorm_residual(out, x, self.ffn_norm, norm, ctx.eps, round_before_weight=True)
         self.mlp(ctx,norm,out)
-        torch.add(x,out,out=x)
+        ops.rmsnorm_residual(out, x, next_norm, norm, ctx.eps, round_before_weight=True)
 
 
 class Lfm2MoeForCausalLM(nn.Module):
@@ -120,12 +129,14 @@ class Lfm2MoeForCausalLM(nn.Module):
         ctx.open()
         self.embed_tokens(ctx.batch.input_ids,ctx.residual)
         ops.rope_cos_sin(ctx.batch.positions,self.inv_freq,ctx.cos,ctx.sin,mrope=False)
+        ops.rmsnorm_rows(ctx.residual, self.layers[0].operator_norm, ctx.x, ctx.eps,
+                         round_before_weight=True)
         for i, layer in enumerate(self.layers):
-            layer(ctx)
+            next_norm = self.layers[i+1].operator_norm if i+1 < len(self.layers) else self.norm
+            layer(ctx, next_norm)
             j=ctx.tap_at.get(i) if ctx.tap_at else None
             if j is not None:
                 H=self.geo.hidden
                 ops.copy_rows(ctx.taps[:,j*H:(j+1)*H],ctx.residual)
-        ops.rmsnorm_rows(ctx.residual,self.norm,ctx.x,ctx.eps,round_before_weight=True)
         ctx.close()
         return ctx.x

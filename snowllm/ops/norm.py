@@ -17,7 +17,9 @@ def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
     width = x.shape[-1]
     if gamma is not None:
         _chk(gamma, "gamma", torch.bfloat16, width)
-    if round_before_weight and gamma is not None and x.dtype == torch.bfloat16 and width == 896:
+    if round_before_weight and gamma is not None and x.dtype == torch.bfloat16 and (
+            lib.snowllm_rmsnorm_rows_rounded_supported(width, False)
+            if hasattr(lib, "snowllm_rmsnorm_rows_rounded_supported") else width == 896):
         _chk_norm_x(x, torch.bfloat16)
         _chk(out, "out", torch.bfloat16)
         check(lib.snowllm_rmsnorm_rows_rounded(_p(x), _p(gamma), _p(out), width,
@@ -87,11 +89,21 @@ def dsv4_rmsnorm(x: torch.Tensor, gamma: torch.Tensor | None, out: torch.Tensor,
 
 @operator
 def rmsnorm_residual(x: torch.Tensor, residual: torch.Tensor, gamma: torch.Tensor,
-                     out: torch.Tensor, eps: float) -> None:
+                     out: torch.Tensor, eps: float, *, round_before_weight=False) -> None:
     M, H = x.shape
     _chk(x, "x", torch.bfloat16, M, H)
     _chk(residual, "residual", torch.bfloat16, M, H)
     _chk(gamma, "gamma", torch.bfloat16, H)
     _chk(out, "out", torch.bfloat16, M, H)
+    if round_before_weight:
+        if (hasattr(lib, "snowllm_rmsnorm_residual_rounded")
+                and lib.snowllm_rmsnorm_rows_rounded_supported(H, True)):
+            check(lib.snowllm_rmsnorm_residual_rounded(_p(x), _p(residual), _p(gamma), _p(out),
+                                                      H, M, eps, _stream()), "rmsnorm_residual_rounded")
+        else:
+            if residual.device.type != "meta":
+                torch.add(residual, x, out=residual)
+            rmsnorm_rows(residual, gamma, out, eps, round_before_weight=True)
+        return
     check(lib.snowllm_rmsnorm_residual(_p(x), _p(residual), _p(gamma), _p(out), M, eps, _stream()),
           "rmsnorm_residual")

@@ -753,6 +753,16 @@ if hasattr(lib, "snowllm_dsv41_attention_split"):
                   ("snowllm_dsv41_attention_split", c_int,
                    [P]*11+[c_int64]+[c_int]*5+[P, c_int64, S])))
 
+if hasattr(lib, "snowllm_rmsnorm_residual_rounded"):
+    _SIGS.append(("snowllm_rmsnorm_residual_rounded", c_int, [P,P,P,P,c_int64,c_int64,c_float,S]))
+
+if hasattr(lib, "snowllm_rmsnorm_rows_rounded_supported"):
+    _SIGS.append(("snowllm_rmsnorm_rows_rounded_supported", c_int, [c_int64,c_int]))
+
+if hasattr(lib, "snowllm_lfm2_qkv_project"):
+    _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
+                  ("snowllm_lfm2_qkv_project", c_int, [P,P,c_int,P,c_int64,S])))
+
 if hasattr(lib, "snowllm_lfm2_short_conv"):
     _SIGS.extend((("snowllm_lfm2_short_conv", c_int, [P]*10+[c_int64]*5+[S]),
                   ("snowllm_lfm2_rope", c_int, [P]*3+[c_int64]*2+[S])))
