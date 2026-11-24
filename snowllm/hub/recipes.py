@@ -45,6 +45,7 @@ TIMEOUT = 30.0
 SUPPORTED = "supported"
 COMING_SOON = "coming soon"
 RECIPE_TYPES = {
+    "inkling": "Inkling",
     "qwen38fn": "Qwen3.8 Flash-Next",
     "minicpm": "MiniCPM",
     "qwen35moe": "Qwen 35B MoE",
