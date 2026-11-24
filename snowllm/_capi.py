@@ -764,6 +764,10 @@ if hasattr(lib, "snowllm_lfm2_qkv_project"):
     _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
                   ("snowllm_lfm2_qkv_project", c_int, [P,P,c_int,P,c_int64,S])))
 
+if hasattr(lib, "snowllm_inkling_mix_workspace_floats"):
+    _SIGS.append(("snowllm_inkling_mix_workspace_floats", c_int64, [c_int]*4))
+if hasattr(lib, "snowllm_inkling_mix"):
+    _SIGS.append(("snowllm_inkling_mix", c_int, [P]*4 + [c_int]*5 + [c_float, S]))
 if hasattr(lib, "snowllm_inkling_conv"):
     _SIGS.append(("snowllm_inkling_conv", c_int, [P]*9 + [c_int]*4 + [c_int64]*2 + [S]))
 if hasattr(lib, "snowllm_inkling_attention"):

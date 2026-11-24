@@ -10,7 +10,7 @@ from ..._platform import gpu_mem_info
 from ...checkpoint.gguf.inkling2 import config
 from ...checkpoint.gguf.source import GGUFReader
 from ...errors import SnowLLMError
-from ...ops.inkling import attention
+from ...ops.inkling import attention, residual_mix
 from .experts import InklingMoE
 
 
@@ -18,10 +18,9 @@ def rms(x, eps, weight=None):
     return F.rms_norm(x.float(), (x.shape[-1],), weight, eps)
 
 
-def mix(blocks, current, query, eps):
-    states = rms(torch.stack((*blocks, current), dim=1), eps)
-    scores = F.linear(states, query.view(-1, current.size(-1))).transpose(1, 2)
-    return torch.bmm((scores * current.size(-1)**-.5).softmax(-1), states)
+def mix(blocks, current, query, eps, prefill):
+    states = torch.stack((*blocks, current), dim=1)
+    return residual_mix(states, query.view(-1, current.size(-1)), eps, prefill)
 
 
 def clip(x, limit):
@@ -133,11 +132,11 @@ class InklingLayer:
     def __call__(self, x, blocks, bank, state, table, position, sequences, indices, plan, prefill):
         w, eps = self.weights, self.cfg["rms_norm_eps"]
         query = w.get("attn_res_query")
-        mixed = (x,) if query is None else mix(blocks, x, query, eps).unbind(1)
+        mixed = (x,) if query is None else mix(blocks, x, query, eps, prefill).unbind(1)
         inputs = mixed * 3 if len(mixed) == 1 else mixed
         messages = None
         if bank is not None:
-            messages = mix(bank[:-1], bank[-1], w["loop_msg_query"], eps).unbind(1)
+            messages = mix(bank[:-1], bank[-1], w["loop_msg_query"], eps, prefill).unbind(1)
             inputs = tuple(self.control(v, m, n) for v, m, n in zip(inputs, messages, ("q", "k", "v")))
         norms = ("attn_norm",) * 3 if self.local else tuple(f"attn_{n}_inp_norm" for n in ("q", "k", "v"))
         inputs = tuple(rms(v, eps, w[n]).bfloat16() for v, n in zip(inputs, norms))
@@ -146,7 +145,7 @@ class InklingLayer:
             blocks.append(x)
         else:
             y.add_(x)
-        z = mix(blocks, y, w["ffn_res_query"], eps).squeeze(1)
+        z = mix(blocks, y, w["ffn_res_query"], eps, prefill).squeeze(1)
         if messages is not None:
             z = self.control(z, messages[3], "ffn")
         z = self.moe(rms(z, eps, w["ffn_norm"]).bfloat16(), prefill)
@@ -247,7 +246,7 @@ class InklingTextModel:
                 bank = None
             state, table, slots = visit_inputs(visit)
             x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan, prefill)
-        x = mix(blocks, x, self.output_query, eps).squeeze(1)
+        x = mix(blocks, x, self.output_query, eps, prefill).squeeze(1)
         return rms(x, eps, self.norm).bfloat16()
 
     def logits(self, x):
