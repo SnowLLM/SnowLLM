@@ -16,6 +16,7 @@ import ModelRecipes from '../../reference/ModelRecipes.vue'
 | --- | --- |
 | Qwen3.8-Flash-Next | PLE 查找表按需从磁盘读取，请保留在本地 SSD。 |
 | DeepSeek V4 / V4.1 | 目前仅支持文本；匹配的 Engram 文件需保留在本地 SSD。 |
+| Inkling-2-Mini（GGUF） | 文本推理使用 BF16 KV，支持多请求批处理。 |
 | MiniCPM-V 4.7 | 支持单图、多图和高分辨率切片；暂不支持视频和 LES 专家流式加载。 |
 | LFM2.5-8B-A1B | 必须开启 thinking，关闭时 API 返回 HTTP 400。 |
 | MinerU | `mineru-vlm` 仅提供 VLM；`mineru` 提供整套模型，见 [MinerU 接入](../integrations/mineru)。 |

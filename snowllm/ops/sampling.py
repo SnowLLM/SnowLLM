@@ -92,6 +92,17 @@ def probabilities(logits, top_k, top_p, temperature, width, out, indices, worksp
 
 
 @operator
+def mask_tokens(logits, ids):
+    _chk(logits, "logits row", torch.float32, logits.numel())
+    _chk(ids, "banned token ids", torch.int64, ids.numel())
+    if not hasattr(lib, "snowllm_sampling_mask_tokens"):
+        logits.index_fill_(0, ids, float("-inf"))
+        return
+    check(lib.snowllm_sampling_mask_tokens(_p(logits), _p(ids), ids.numel(), logits.numel(),
+                                          _stream()), "sampling_mask_tokens")
+
+
+@operator
 def penalties(logits, ids, counts, presence, frequency, repetition):
     _chk(logits,"penalty logits",torch.float32,logits.numel())
     _chk(ids,"penalty token IDs",torch.int64,ids.numel())

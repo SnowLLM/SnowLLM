@@ -5,11 +5,64 @@ from pathlib import Path
 
 import torch
 
+from snowllm.checkpoint.gguf import GGUF
 from snowllm.checkpoint.tokenizer import load_tokenizer
 from snowllm.models.inkling2 import InklingTextModel
 
 
 class InklingDecoderTest(unittest.TestCase):
+    def test_qkv_input_norm_strides(self):
+        from snowllm.ops.inkling import normalize_qkv, normalize_rows
+
+        for dtype in (torch.bfloat16, torch.float32):
+            x = torch.randn(17, 3, 2304, dtype=dtype, device="cuda")
+            inputs = x.unbind(1)
+            weights = tuple(torch.randn(2304, device="cuda") for _ in range(3))
+            actual = normalize_qkv(inputs, weights, 1.e-6)
+            for y, v, w in zip(actual, inputs, weights):
+                torch.testing.assert_close(y, normalize_rows(v, 1.e-6, w), atol=0, rtol=0)
+
+    def test_grouped_attention_projection_sources(self):
+        from snowllm.models.projection import pack_bf16
+        from snowllm.ops.inkling import dense, input_projections
+
+        widths = (3072, 3072, 1024, 1024, 384, 24, 32, 32)
+        sources = (0, 0, 1, 2, 0, 0, 1, 2)
+        gen = torch.Generator(device="cuda").manual_seed(915)
+        def matrix(rows):
+            return torch.randn(rows, 2304, device="cuda", dtype=torch.bfloat16, generator=gen)
+        weights = [pack_bf16(matrix(width)) for width in widths]
+        for rows, count in ((1, 6), (2, 8)):
+            inputs = tuple(matrix(rows) for _ in range(3))
+            outputs = input_projections(inputs, [w[0] for w in weights[:count]], widths[:count], False)
+            self.assertEqual(len(outputs), count)
+            for j, result in enumerate(outputs):
+                expected = dense(inputs[sources[j]], *weights[j], False)
+                torch.testing.assert_close(result, expected.float() if j == 5 else expected, atol=0, rtol=0)
+
+    def test_attention_clip_and_norm_rounding(self):
+        from snowllm.ops.inkling import normalize_rows
+
+        gen = torch.Generator(device="cuda").manual_seed(1846)
+        rows, heads = 2048, 24
+        pos = torch.arange(6900, 6900 + rows, dtype=torch.int32, device="cuda")
+        tau = (((pos.float() + 1) / 128).clamp_min(1).log() * .2 + 1).view(-1, 1, 1)
+        for width in (16, 128):
+            x = torch.randn(rows, heads, width, device="cuda", generator=gen).bfloat16()
+            weight = torch.randn(heads, width, device="cuda", generator=gen)
+            values = x.float() * weight
+            values *= (3.5 / (values.norm(dim=-1, keepdim=True) + 1e-6)).clamp_max(1)
+            if width == 16:
+                values = values.bfloat16().float()
+            expected = (values * tau).bfloat16()
+            actual = normalize_rows(x, 3.5, weight, clip=True, positions=pos, floor=128, alpha=.2,
+                                    round_relative=width == 16)
+            torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        x = torch.randn(rows, 2, 2304, device="cuda", generator=gen)[:, 1]
+        weight = torch.randn(2304, device="cuda", generator=gen)
+        expected = torch.nn.functional.rms_norm(x, (2304,), weight, 1e-5).bfloat16()
+        torch.testing.assert_close(normalize_rows(x, 1e-5, weight), expected, atol=0, rtol=0)
+
     @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the UD-Q8_K_XL file")
     def test_chunked_prefill_and_greedy_decode(self):
         path = Path(os.environ["SNOWLLM_INKLING_GGUF"])
@@ -19,6 +72,27 @@ class InklingDecoderTest(unittest.TestCase):
                                                reasoning_effort="none")
         ids = torch.tensor(tokenizer.encode(prompt, add_special_tokens=False), device="cuda")
         model = InklingTextModel.from_gguf(path)
+        gguf = GGUF(path)
+        rows = [0, 127, model.geo.vocab_size - 1]
+        width = model.geo.hidden
+        weight = []
+        for row in rows:
+            data = bytearray()
+            for part, at, size in gguf.ranges("output.weight", row * width * 2, width * 2):
+                with part.open("rb") as stream:
+                    stream.seek(at)
+                    data.extend(stream.read(size))
+            weight.append(torch.frombuffer(data, dtype=torch.bfloat16))
+        weight = torch.stack(weight).cuda().double()
+        gen = torch.Generator(device="cuda").manual_seed(19)
+        hidden = torch.randn(33, width, device="cuda", generator=gen).bfloat16()
+        cap = model.config["final_logit_softcapping"]
+        for count in (1, 32, 33):
+            projected = model.logits(hidden[:count])
+            self.assertEqual(projected.dtype, torch.float32)
+            self.assertEqual(projected.shape, (count, model.geo.vocab_size))
+            reference = (hidden[:count].double() @ weight.T / cap).tanh() * cap
+            torch.testing.assert_close(projected[:, rows], reference.float(), rtol=1e-5, atol=1e-5)
         cache = model.cache(capacity=64, chunk_size=32)
         logits = model.forward(ids, cache)
         split = model.cache(capacity=64, chunk_size=32)

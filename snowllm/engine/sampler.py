@@ -153,6 +153,7 @@ class Sampler:
                 self.inputs.used()
 
     def _mask_ngrams(self, logits, rows):
+        from ..ops.sampling import mask_tokens
         if self._ngram_slab is None:
             self._ngram_slab = MappedBuffer(torch.int64)
             self._ngram_slab.reserve(self._penalty_rows * self._penalty_limit, exact=True)
@@ -173,8 +174,7 @@ class Sampler:
             offset = row * self._penalty_limit
             ctypes.memmove(self._ngram_slab.host.data_ptr() + offset * 8,
                            values.buffer_info()[0], len(values) * 8)
-            logits[row].index_fill_(0, self._ngram_slab.device[offset:offset + len(values)],
-                                    float('-inf'))
+            mask_tokens(logits[row], self._ngram_slab.device[offset:offset + len(values)])
 
     def _penalty_write(self, values, code, offset):
         if len(values)>self._penalty_limit:

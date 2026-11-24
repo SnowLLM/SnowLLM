@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import torch
 
 from .. import ops
+from ..ops.inkling import batch_metadata, converted
 from ..errors import SnowLLMError
 from .cache import tensor
 from .cache_resources import QwenResources
@@ -27,6 +28,7 @@ class InklingResidue(Residue):
         self.history, self.checkpoints = history, checkpoints
         self.sliding, self.windows = sliding, windows
         self.positions = {}
+        self.copy = torch.Tensor.copy_ if history.device.type == "cpu" else ops.copy_tensor
 
     def _window(self, i, slot, position, restore):
         if self.windows is None:
@@ -41,21 +43,21 @@ class InklingResidue(Residue):
                 live = source.narrow(2, ring, rows)
                 saved = snapshot.narrow(2, offset, rows)
                 if restore:
-                    live.copy_(saved)
+                    self.copy(live, saved)
                 else:
-                    saved.copy_(live)
+                    self.copy(saved, live)
 
     def bytes_each(self):
         return self.history[0].nbytes + (self.windows[0].nbytes if self.windows is not None else 0)
 
     def save(self, i, slot, m, r):
-        self.checkpoints[i].copy_(self.history[slot])
+        self.copy(self.checkpoints[i], self.history[slot])
         self._window(i, slot, m, False)
         self.positions[i] = m
         return True
 
     def load(self, i, slot, raw_blocks=None, held=None):
-        self.history[slot].copy_(self.checkpoints[i])
+        self.copy(self.history[slot], self.checkpoints[i])
         self._window(i, slot, self.positions[i], True)
 
     def drop(self, i):
@@ -178,24 +180,11 @@ class InklingRunner(QwenRunner):
         return self._act[rows]
 
     def _run(self, model, batch, history, pages):
-        b, n = batch.batch_size, batch.num_tokens
-        device = batch.input_ids.device
-        if batch.is_prefill:
-            ends = batch.cu_seqlens[1:].long()
-            seq = torch.searchsorted(ends, torch.arange(n, device=device), right=True).int()
-        else:
-            seq = torch.arange(b, device=device, dtype=torch.int32)
-        position = batch.positions[0].int()
-        plan = (seq, position, batch.cu_seqlens, batch.state_indices)
-        table = batch.block_tables.contiguous()
-        mapping = batch.slot_mapping.long().clamp_min_(0)
         sliding = pages.sliding
-        if sliding is not None:
-            width = sliding.size(3)
-            offset = batch.state_indices.long() * width
-            local_table = (offset[:, None] + torch.arange(width, device=device)).int()
-            ring_tokens = width * self.block_size
-            local_mapping = offset.index_select(0, seq.long()) * self.block_size + position.long() % ring_tokens
+        width = sliding.size(3) if sliding is not None else 0
+        position, seq, mapping, local_mapping, local_table = batch_metadata(batch, width, self.block_size)
+        plan = (seq, position, batch.cu_seqlens, batch.state_indices)
+        table = converted(batch.block_tables, torch.int32)
         def visit_inputs(i):
             if sliding is None:
                 k, v = pages.full[i].unbind()
@@ -210,7 +199,7 @@ class InklingRunner(QwenRunner):
             return state, table_i, mapping_i
         hidden = model.hidden(batch.input_ids, position, seq, visit_inputs, plan, batch.is_prefill)
         if batch.is_prefill:
-            hidden = hidden.index_select(0, batch.last_row)
+            hidden = ops.gather_rows(hidden, batch.last_row)
         return model.logits(hidden) if batch.need_logits else None
 
     def _forward_eager(self, batch):

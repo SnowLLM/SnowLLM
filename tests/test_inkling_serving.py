@@ -5,8 +5,24 @@ from pathlib import Path
 
 import torch
 
+from torch.utils._python_dispatch import TorchDispatchMode
+
 from snowllm.checkpoint import loader
 from snowllm.engine import Engine, SamplingParams
+
+
+class NativeComputeOnly(TorchDispatchMode):
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        if func._schema.name in {
+            "aten::linear", "aten::mm", "aten::bmm", "aten::mv", "aten::addmm", "aten::baddbmm",
+            "aten::addmv", "aten::matmul", "aten::_scaled_mm", "aten::einsum", "aten::dot",
+            "aten::add", "aten::add_", "aten::mul", "aten::mul_", "aten::div", "aten::div_",
+            "aten::sigmoid", "aten::sigmoid_", "aten::tanh", "aten::tanh_", "aten::topk",
+            "aten::rms_norm", "aten::_fused_rms_norm", "aten::linalg_vector_norm",
+            "aten::index_copy_", "aten::index_select", "aten::embedding", "aten::searchsorted",
+        }:
+            raise AssertionError(f"Inkling inference dispatched {func}")
+        return func(*args, **(kwargs or {}))
 
 
 class InklingServingTest(unittest.TestCase):
@@ -49,8 +65,9 @@ class InklingServingTest(unittest.TestCase):
         def run(*prompts):
             params = SamplingParams(temperature=0, max_new_tokens=8)
             requests = [engine.add(p, params) for p in prompts]
-            while not all(r.done for r in requests):
-                engine.step()
+            with NativeComputeOnly():
+                while not all(r.done for r in requests):
+                    engine.step()
             return requests
 
         a = question("What is 2 + 2? Answer with a single number.")

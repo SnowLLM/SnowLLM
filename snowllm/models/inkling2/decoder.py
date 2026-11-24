@@ -3,45 +3,22 @@ import math
 from dataclasses import dataclass
 
 import torch
-import torch.nn.functional as F
 
 from ... import ops
 from ..._platform import gpu_mem_info
 from ...checkpoint.gguf.inkling2 import config
 from ...checkpoint.gguf.source import GGUFReader
 from ...errors import SnowLLMError
-from ...ops.inkling import attention, loop_control, residual_mix
+from ...ops.inkling import (attention, attention_output_supported, capped_logits, controller_tanh_table, converted,
+                           dense, input_projections, input_projections_supported, normalize_qkv, normalize_rows,
+                           pack_controller, packed_logits, sigmoid_gate,
+                           packed_loop_control, qkv_loop_control, prepare_attention_heads, relative_projection, residual_mix_blocks, short_conv, unpacked_linear)
+from ..projection import pack_bf16
 from .experts import InklingMoE
 
 
-def rms(x, eps, weight=None):
-    return F.rms_norm(x.float(), (x.shape[-1],), weight, eps)
-
-
 def mix(blocks, current, query, eps, prefill):
-    states = torch.stack((*blocks, current), dim=1)
-    return residual_mix(states, query.view(-1, current.size(-1)), eps, prefill)
-
-
-def clip(x, limit):
-    return x * (limit / (x.norm(dim=-1, keepdim=True) + 1e-6)).clamp_max_(1)
-
-
-def convolve(x, history, weight, dynamic=None, plan=None):
-    taps = weight.size(1)
-    if plan is None:
-        sequence = torch.cat((history, x), dim=0)
-        history.copy_(sequence[-history.size(0):])
-        windows = sequence.unfold(0, taps, 1).float()
-    else:
-        from ...ops.inkling import short_conv
-        return short_conv(x, weight, dynamic, history, *plan)
-    out = (windows * weight).sum(-1) + x
-    if dynamic is not None:
-        taps_by_head = dynamic.view(x.size(0), -1, 1, taps).flip((-1,)).float()
-        by_head = windows.reshape(x.size(0), taps_by_head.size(1), -1, taps)
-        out.add_((by_head * taps_by_head).sum(-1).flatten(1))
-    return out.mul_(1 / math.sqrt((2 if dynamic is not None else 1) * taps + 1)).bfloat16()
+    return residual_mix_blocks(blocks, current, query.view(-1, current.size(-1)), eps, prefill)
 
 
 class LayerState:
@@ -50,7 +27,7 @@ class LayerState:
         shape = (pages, page_size, kv, dim)
         self.k, self.v = (torch.empty(shape, device=device, dtype=torch.bfloat16) for _ in range(2))
         channels = (kv * dim, kv * dim, cfg["hidden_size"], cfg["hidden_size"])
-        self.history = [torch.zeros((cfg["sconv_kernel_size"] - 1, width), dtype=torch.bfloat16,
+        self.history = [torch.zeros((1, cfg["sconv_kernel_size"] - 1, width), dtype=torch.bfloat16,
                                     device=device) for width in channels]
 
 
@@ -73,12 +50,14 @@ class InklingCache:
 
 
 class InklingLayer:
-    def __init__(self, rd, cfg, index):
+    def __init__(self, rd, cfg, index, controller_tanh):
+        self.controller_tanh = controller_tanh
         self.cfg = cfg
         self.local = cfg["layer_types"][index] == "sliding_attention"
         self.block_start = index % cfg["n_layers_per_attn_res_block"] == 0
         prefix = f"blk.{index}."
         self.weights = {}
+        self.projections = {}
         for name, tensor in rd.gguf.tensors.items():
             if not name.startswith(prefix) or not name.endswith(".weight"):
                 continue
@@ -88,66 +67,95 @@ class InklingLayer:
             if tensor.quant.name not in ("F32", "BF16"):
                 raise SnowLLMError(f"{name}: unsupported dense Inkling weight {tensor.quant.name}")
             dtype = torch.float32 if tensor.quant.name == "F32" else torch.bfloat16
-            self.weights[key] = rd.tensor(name, dtype)
+            weight = rd.tensor(name, dtype)
+            if dtype == torch.bfloat16 and weight.size(-1) % 32 == 0 and key in (
+                    'attn_q', 'attn_k', 'attn_v', 'attn_rel', 'attn_sink_proj', 'attn_output',
+                    'attn_gate', 'attn_k_conv_proj', 'attn_v_conv_proj'):
+                packed, n, k, rows = pack_bf16(weight)
+                self.weights[key] = packed
+                self.projections[key] = (n, k, rows)
+            else:
+                self.weights[key] = weight.bfloat16() if key == "attn_rel_bias" else weight
+        for key in tuple(self.weights):
+            if key.startswith("loop_") and key.endswith("_ctrl_down"):
+                stem = key[:-4]
+                down, gates = pack_controller(self.weights.pop(key), self.weights.pop(stem + "forget"),
+                                              self.weights.pop(stem + "gain"))
+                self.weights[key], self.weights[stem + "gates"] = down, gates
+        self.input_names = ("attn_q", "attn_gate", "attn_k", "attn_v", "attn_rel", "attn_sink_proj")
+        if not self.local:
+            self.input_names += ("attn_k_conv_proj", "attn_v_conv_proj")
+        self.input_widths = tuple(self.projections[n][2] for n in self.input_names if n in self.projections)
+        self.group_inputs = (len(self.input_widths) == len(self.input_names)
+                             and all(self.projections[n][1] == cfg["hidden_size"] for n in self.input_names)
+                             and input_projections_supported(cfg["hidden_size"], self.input_widths))
+        self.project_attention = self.group_inputs and attention_output_supported(self.projections.get("attn_output"))
         self.moe = InklingMoE(rd, cfg, index)
 
-    def linear(self, x, name):
+    def linear(self, x, name, prefill):
         weight = self.weights[name]
-        return F.linear(x.to(weight.dtype), weight)
+        if name in self.projections:
+            n, k, rows = self.projections[name]
+            return dense(converted(x, torch.bfloat16), weight, n, k, rows, prefill)
+        return unpacked_linear(x, weight, prefill)
 
     def control(self, x, msg, name, prefill):
         stem = f"loop_{name}_ctrl_"
         w = self.weights
-        return loop_control(x, msg, w[stem + "down"], w[stem + "forget"], w[stem + "gain"],
-                            self.cfg["rms_norm_eps"], prefill)
+        return packed_loop_control(x, msg, w[stem + "down"], w[stem + "gates"],
+                                   self.controller_tanh, self.cfg["rms_norm_eps"], prefill)
 
-    def attend(self, inputs, state, table, position, sequences, indices, plan):
+    def attend(self, inputs, state, table, position, sequences, indices, plan, prefill, residual):
         cfg, w = self.cfg, self.weights
         heads, kv, dim = cfg["num_attention_heads"], cfg["num_key_value_heads"], cfg["head_dim"]
-        q_in, k_in, v_in = inputs
-        q = self.linear(q_in, "attn_q").view(-1, heads, dim)
-        q = clip(q.float() * w["attn_q_clip"], cfg["qk_l2_clip_threshold"])
-        r = self.linear(q_in, "attn_rel").view(-1, heads, cfg["d_rel"])
-        r = clip(r.float() * w["attn_rel_clip"], cfg["rel_l2_clip_threshold"])
-        if not self.local:
-            tau = ((position.float() + 1) / cfg["log_scaling_n_floor"]).clamp_min_(1).log_()
-            tau = tau.mul_(cfg["log_scaling_alpha"]).add_(1).view(-1, 1, 1)
-            q, r = q * tau, r * tau
-        for j, (name, x, dest) in enumerate((("k", k_in, state.k), ("v", v_in, state.v))):
-            stem = "attn_" + name
-            dynamic = None if self.local else self.linear(x, stem + "_conv_proj")
-            projected = convolve(self.linear(x, stem), state.history[j], w[stem + "_conv"], dynamic, plan)
-            rows = projected.view(-1, kv, dim).float()
-            rows = clip(rows, cfg["qk_l2_clip_threshold"]) if j == 0 else rms(rows, cfg["rms_norm_eps"])
-            dest.flatten(0, 1).index_copy_(0, indices, rows.bfloat16())
-        relative = F.linear(r, w["attn_rel_bias"])
-        sinks = self.linear(q_in, "attn_sink_proj").float()
-        y = attention(q.bfloat16(), state.k, state.v, relative, sinks, sequences,
-                      position, table, cfg["sliding_window"] if self.local else 0)
-        gated = y.flatten(1).float() * self.linear(q_in, "attn_gate").float().sigmoid_()
-        return convolve(self.linear(gated, "attn_output"), state.history[2], w["attn_post_conv"], plan=plan)
+        if self.group_inputs:
+            weights = tuple(w[n] for n in self.input_names)
+            q, gate, k, v, r, sinks, *dynamic = input_projections(inputs, weights, self.input_widths, prefill)
+        else:
+            sources = (0, 0, 1, 2, 0, 0, 1, 2)
+            q, gate, k, v, r, sinks, *dynamic = (
+                self.linear(inputs[i], name, prefill) for i, name in zip(sources, self.input_names))
+            sinks = converted(sinks, torch.float32)
+        q, r = prepare_attention_heads(
+            q.view(-1, heads, dim), r.view(-1, heads, cfg["d_rel"]), k, v, w["attn_q_clip"], w["attn_rel_clip"],
+            (w["attn_k_conv"], w["attn_v_conv"]), (None, None) if self.local else dynamic,
+            state.history[:2], (state.k, state.v), plan, indices, cfg["qk_l2_clip_threshold"],
+            cfg["rel_l2_clip_threshold"], cfg["rms_norm_eps"], cfg["log_scaling_n_floor"],
+            cfg["log_scaling_alpha"], not self.local, prefill)
+        relative = relative_projection(r, w["attn_rel_bias"])
+        project = self.project_attention
+        y = attention(q, state.k, state.v, relative, sinks, sequences, position, table,
+                      cfg["sliding_window"] if self.local else 0,
+                      output_projection=(gate, w["attn_output"], prefill) if project else None)
+        if not project:
+            y = self.linear(sigmoid_gate(y.flatten(1), gate), "attn_output", prefill)
+        return short_conv(y, w["attn_post_conv"], None,
+                          state.history[2], *plan, residual=residual, out_dtype=torch.float32)
 
-    def __call__(self, x, blocks, bank, state, table, position, sequences, indices, plan, prefill):
+    def __call__(self, x, blocks, bank, state, table, position, sequences, indices, plan, prefill, bank_messages=None):
         w, eps = self.weights, self.cfg["rms_norm_eps"]
         query = w.get("attn_res_query")
         mixed = (x,) if query is None else mix(blocks, x, query, eps, prefill).unbind(1)
         inputs = mixed * 3 if len(mixed) == 1 else mixed
         messages = None
         if bank is not None:
-            messages = mix(bank[:-1], bank[-1], w["loop_msg_query"], eps, prefill).unbind(1)
-            inputs = tuple(self.control(v, m, n, prefill) for v, m, n in zip(inputs, messages, ("q", "k", "v")))
+            if bank_messages is None:
+                bank_messages = mix(bank[:-1], bank[-1], w["loop_msg_query"], eps, prefill)
+            messages = bank_messages.unbind(1)
+            downs = tuple(w[f"loop_{n}_ctrl_down"] for n in ("q", "k", "v"))
+            gates = tuple(w[f"loop_{n}_ctrl_gates"] for n in ("q", "k", "v"))
+            inputs = qkv_loop_control(inputs, messages[:3], downs, gates, self.controller_tanh, eps, prefill)
         norms = ("attn_norm",) * 3 if self.local else tuple(f"attn_{n}_inp_norm" for n in ("q", "k", "v"))
-        inputs = tuple(rms(v, eps, w[n]).bfloat16() for v, n in zip(inputs, norms))
-        y = self.attend(inputs, state, table, position, sequences, indices, plan).float()
+        inputs = normalize_qkv(inputs, tuple(w[n] for n in norms), eps)
+        y = self.attend(inputs, state, table, position, sequences, indices, plan, prefill,
+                        None if self.block_start else x)
         if self.block_start:
             blocks.append(x)
-        else:
-            y.add_(x)
         z = mix(blocks, y, w["ffn_res_query"], eps, prefill).squeeze(1)
         if messages is not None:
             z = self.control(z, messages[3], "ffn", prefill)
-        z = self.moe(rms(z, eps, w["ffn_norm"]).bfloat16(), prefill)
-        return (y + convolve(z, state.history[3], w["ffn_post_conv"], plan=plan)).bfloat16()
+        return self.moe(normalize_rows(z, eps, w["ffn_norm"]), prefill,
+                        post_conv=(w["ffn_post_conv"], state.history[3], plan, y))
 
 
 @dataclass(frozen=True)
@@ -180,21 +188,31 @@ class InklingTextModel:
         self.geo = InklingGeometry(cfg["hidden_size"], cfg["unpadded_vocab_size"])
         self.embedding = reader.tensor("token_embd.weight")
         self.embed_norm = reader.tensor("token_embd_norm.weight", torch.float32)
-        self.output = reader.tensor("output.weight")
+        self.output, self.output_columns, _, _ = pack_bf16(reader.tensor("output.weight")[:self.geo.vocab_size])
         self.norm = reader.tensor("output_norm.weight", torch.float32)
         self.output_query = reader.tensor("output_res_query.weight", torch.float32)
-        self.layers = [InklingLayer(reader, cfg, i) for i in range(cfg["num_hidden_layers"])]
+        self.controller_tanh = controller_tanh_table(self.embedding.device)
+        self.layers = [InklingLayer(reader, cfg, i, self.controller_tanh) for i in range(cfg["num_hidden_layers"])]
         loop = cfg["loop_config"]
         self.start, self.end, self.passes = loop["core_start"], loop["core_end"], loop["num_passes"]
         self.visits = (*range(self.start), *(tuple(range(self.start, self.end)) * self.passes),
                        *range(self.end, len(self.layers)))
 
+        self.loop_queries = None
+        if self.passes > 1 and self.start < self.end:
+            core = self.layers[self.start:self.end]
+            self.loop_queries = torch.stack([layer.weights["loop_msg_query"].view(4, -1) for layer in core])
+            for layer, query in zip(core, self.loop_queries.unbind(0)):
+                layer.weights["loop_msg_query"] = query.view_as(layer.weights["loop_msg_query"])
+
     def weight_tensors(self):
-        yield from (self.embedding, self.embed_norm, self.output, self.norm, self.output_query)
+        yield from (self.embedding, self.embed_norm, self.output, self.norm, self.output_query, self.controller_tanh)
         for layer in self.layers:
             yield from layer.weights.values()
             moe = layer.moe
             yield moe.router
+            if moe.packed_router is not None:
+                yield moe.packed_router
             if moe.bias is not None:
                 yield moe.bias
             for proj in (moe.gate_up, moe.down):
@@ -215,41 +233,51 @@ class InklingTextModel:
         if input_ids.device != self.embedding.device or input_ids.dtype not in (torch.int32, torch.int64):
             raise ValueError("Inkling expects integer token ids on the model device")
         offset = cache.position
-        position = torch.arange(offset, offset + size, device=input_ids.device, dtype=torch.int32)
-        sequences = torch.zeros_like(position)
+        def i32(*ranges):
+            return torch.int32, ranges
+        position, sequences, cu, state_slot = ops.metadata_ranges([
+            i32((offset, 1, size)), i32((0, 0, size)), i32((0, size, 2)), i32((0, 0, 1))])
+        plan = sequences, position, cu, state_slot
+        mappings = {}
+        for pages in cache.tables:
+            capacity = pages * 16
+            start = offset % capacity
+            first = min(size, capacity - start)
+            mappings[pages], = ops.metadata_ranges([i32((start, 1, first), (0, 1, size-first))])
         cache.position = -1
         def visit_inputs(visit):
             state = cache.states[visit]
-            slots = position.long() % (state.k.size(0) * state.k.size(1))
-            return state, cache.tables[state.k.size(0)], slots
+            pages = state.k.size(0)
+            return state, cache.tables[pages], mappings[pages]
         if prefill is None:
             prefill = offset == 0 or size > 1
-        x = self.hidden(input_ids, position, sequences, visit_inputs, None, prefill)
+        x = self.hidden(input_ids, position, sequences, visit_inputs, plan, prefill)
         logits = self.logits(x)
         cache.position = offset + size
         return logits
 
     def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill):
         eps = self.config["rms_norm_eps"]
-        x = rms(F.embedding(input_ids, self.embedding), eps, self.embed_norm).bfloat16()
-        blocks, bank = [], None
+        x = normalize_rows(ops.gather_rows(self.embedding, input_ids), eps, self.embed_norm)
+        blocks, bank, pass_messages = [], None, None
         for visit, i in enumerate(self.visits):
             if i == self.start:
                 if visit == self.start:
                     initial, initial_blocks = x, tuple(blocks)
                 else:
                     bank = (*blocks[len(initial_blocks) + 1:], x)
+                    if not prefill:
+                        all_messages = mix(bank[:-1], bank[-1], self.loop_queries, eps, prefill)
+                        pass_messages = all_messages.unflatten(1, (self.end - self.start, 4)).unbind(1)
                     x, blocks = initial, list(initial_blocks)
             if i == self.end:
-                bank = None
+                bank, pass_messages = None, None
             state, table, slots = visit_inputs(visit)
-            x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan, prefill)
+            x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan, prefill,
+                               None if pass_messages is None else pass_messages[i - self.start])
         x = mix(blocks, x, self.output_query, eps, prefill).squeeze(1)
-        return rms(x, eps, self.norm).bfloat16()
+        return normalize_rows(x, eps, self.norm)
 
     def logits(self, x):
-        output_weight = self.output[:self.config["unpadded_vocab_size"]]
-        logits = torch.mm(x, output_weight.T, out_dtype=torch.float32)
-        cap = self.config["final_logit_softcapping"]
-        logits.div_(cap).tanh_().mul_(cap)
-        return logits
+        logits = packed_logits(x, self.output, self.output_columns)
+        return capped_logits(logits, self.geo.vocab_size, self.config["final_logit_softcapping"])
