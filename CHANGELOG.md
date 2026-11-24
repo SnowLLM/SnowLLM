@@ -3,8 +3,11 @@
 
 ## Unreleased / 未发布
 
-- Fix incorrect attention results during BF16 KV speculative verification with more than eight rows per request on the chunked decode path. SnowLLM-Kernels `0.3.17.dev3` through `0.3.17.dev5` (inclusive) passed a stale plan to BF16 attention. These kernels shipped with SnowLLM `0.3.23.dev3` through `0.3.25`, including stable releases `0.3.23`, `0.3.24` and `0.3.25`. SnowLLM now requires the corrected kernel package `0.3.17.dev6`. Throughput measured on the affected path may include incorrect outputs.
-  修复 BF16 KV 分块解码在单请求单轮验证超过 8 行时使用过期 attention 计划、产生错误输出的问题。受影响的内核版本为 `0.3.17.dev3` 至 `0.3.17.dev5`（含两端），对应 SnowLLM `0.3.23.dev3` 至 `0.3.25`，其中稳定版为 `0.3.23`、`0.3.24` 和 `0.3.25`。现在依赖已修复的内核 `0.3.17.dev6`。受影响路径的历史吞吐可能包含错误输出。
+- Fuse LFM2.5 QKV projections, KV writes and residual normalization, and reduce GLM beta projections in one workgroup per output column. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev7`.
+  LFM2.5 融合 QKV 投影、KV 写入和残差归一化，GLM 的 beta 投影由每个工作组完成一列输出。内核依赖升级至 `0.3.17.dev7`。
+
+- Fix incorrect attention results during BF16 KV speculative verification with more than eight rows per request on the chunked decode path. SnowLLM-Kernels `0.3.17.dev3` through `0.3.17.dev5` (inclusive) passed a stale plan to BF16 attention. These kernels shipped with SnowLLM `0.3.23.dev3` through `0.3.25`, including stable releases `0.3.23`, `0.3.24` and `0.3.25`. The fix first shipped in kernel package `0.3.17.dev6`. Throughput measured on the affected path may include incorrect outputs.
+  修复 BF16 KV 分块解码在单请求单轮验证超过 8 行时使用过期 attention 计划、产生错误输出的问题。受影响的内核版本为 `0.3.17.dev3` 至 `0.3.17.dev5`（含两端），对应 SnowLLM `0.3.23.dev3` 至 `0.3.25`，其中稳定版为 `0.3.23`、`0.3.24` 和 `0.3.25`。该问题自内核 `0.3.17.dev6` 起修复。受影响路径的历史吞吐可能包含错误输出。
 
 ## 0.3.25 — 2026-11-23
 
