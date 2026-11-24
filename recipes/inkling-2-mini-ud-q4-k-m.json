@@ -1,0 +1,28 @@
+{
+  "id": "inkling-2-mini-ud-q4-k-m",
+  "type": "inkling",
+  "model": "Inkling-2-Mini",
+  "family": "Inkling",
+  "modalities": [
+    "text"
+  ],
+  "precision": "UD-Q4_K_M",
+  "dir": "Inkling-2-Mini-UD-Q4_K_M",
+  "bytes": 16610544608,
+  "repo": "unsloth/Inkling-2-Mini-GGUF",
+  "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+  "include": [
+    "Inkling-2-Mini-UD-Q4_K_M.gguf"
+  ],
+  "spec": "none",
+  "requires": "0.3.26",
+  "serve_as": "Inkling-2-Mini",
+  "defaults": {
+    "num_spec": 0,
+    "max_num_seqs": 1,
+    "max_model_len": 32768,
+    "max_num_batched_tokens": 8192,
+    "kv_cache_dtype": "bf16"
+  },
+  "summary": "Inkling-2-Mini UD-Q4_K_M GGUF for text generation with BF16 KV."
+}
