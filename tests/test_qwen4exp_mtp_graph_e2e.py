@@ -15,6 +15,11 @@ from snowllm.engine.spec_decode import SpecDecoder
 
 
 class MtpDepthTests(unittest.TestCase):
+    def test_adaptive_caps_outside_legacy_range(self):
+        self.assertEqual(MtpDepth.extend(1, 1, (), 1., 1), 1)
+        self.assertEqual(MtpDepth.extend(4, 4, (), 6., 10), 10)
+        self.assertEqual(MtpDepth._sampled([(2, 2)] * 6, 2, 10, 24), 10)
+
     @staticmethod
     def sampled_request(limit=128):
         return Request(prompt=[0] * 21 + [1, 2] + [3] * 5,

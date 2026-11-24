@@ -537,17 +537,25 @@ class CLITests(unittest.TestCase):
         for quant in ('q3-k-xl', 'iq4-xs'):
             fixed = by_id[f'qwen3.8-flash-next-{quant}-ud3.1']
             adaptive = by_id[f'qwen3.8-flash-next-{quant}-mtp-adaptive-ud3.1']
-            for recipe, flags, expected in ((fixed, (), (2, False)), (adaptive, (), (7, True)),
+            for recipe, flags, expected in ((fixed, (), (2, None)), (adaptive, (), (7, True)),
+                    (adaptive, ('--num-spec', '0'), (0, None)),
                     (adaptive, ('--no-mtp-adaptive', '--num-spec', '2'), (2, False))):
                 _, options = self.launch_options(flags, recipe)
                 self.assertEqual((options['num_spec'], options['mtp_adaptive']), expected)
-                self.assertTrue(options['mtp_prompt_lookup'])
-                self.assertTrue(options['mtp_tool_draft'])
+                self.assertEqual(options['mtp_prompt_lookup'], bool(expected[1]))
+                self.assertEqual(options['mtp_tool_draft'], bool(expected[1]))
                 self.assertFalse(options['dflash_adaptive'])
         _, options = self.launch_options(('--no-mtp-prompt-lookup', '--no-mtp-tool-draft'), adaptive)
         self.assertTrue(options['mtp_adaptive'])
         self.assertFalse(options['mtp_prompt_lookup'])
         self.assertFalse(options['mtp_tool_draft'])
+
+    def test_direct_launch_leaves_spec_helpers_off(self):
+        for flags in ((), ('--mtp-adaptive', '--num-spec', '8'), ('--dflash', '/tmp/draft')):
+            with self.subTest(flags=flags):
+                _, options = self.launch_options(flags)
+                self.assertFalse(options['mtp_prompt_lookup'])
+                self.assertFalse(options['mtp_tool_draft'])
 
     def test_legacy_positional_dflash_arguments(self):
         from inspect import signature

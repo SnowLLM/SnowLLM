@@ -106,8 +106,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           serve_as: str | None = None,
           prefix_memory_ratio: float | None = None,
           offload_ratio: float | None = None, host_alloc: bool = False, scheduler=None,
-          mtp_adaptive: bool = False,
-          mtp_prompt_lookup: bool = True, mtp_tool_draft: bool = True,
+          mtp_adaptive: bool | None = None,
+          mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
           dflash_adaptive: bool = False) -> "ServerState":
     from .capacity import MemoryBudget, configure, placement_options
     limits = MemoryBudget(max_gpu_mem_util, max_host_mem_util, max_host_mem_gib,
@@ -466,11 +466,11 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--num-spec", "--num-speculative-tokens", type=int, default=2,
                    metavar="K", dest="num_spec",
                    help='MTP draft tokens per step; 0 disables MTP.')
-    g.add_argument("--mtp-adaptive", action=argparse.BooleanOptionalAction, default=False,
-                   help='Adapt Flash-Next MTP depth from verification feedback, up to --num-spec (2–7).')
-    g.add_argument("--mtp-prompt-lookup", action=argparse.BooleanOptionalAction, default=True,
-                   help='Reuse matching request text and tool results with adaptive MTP, DFlash or DSpark.')
-    g.add_argument("--mtp-tool-draft", action=argparse.BooleanOptionalAction, default=True,
+    g.add_argument("--mtp-adaptive", action=argparse.BooleanOptionalAction, default=None,
+                   help='Adapt Flash-Next MTP depth from verification feedback, up to a positive --num-spec.')
+    g.add_argument("--mtp-prompt-lookup", action=argparse.BooleanOptionalAction, default=False,
+                   help='Reuse matching request text and tool results with MTP, DFlash or DSpark.')
+    g.add_argument("--mtp-tool-draft", action=argparse.BooleanOptionalAction, default=False,
                    help='Draft tool-call markup when adaptive Flash-Next MTP is active.')
     g.add_argument("--dflash", metavar="PATH", default=None,
                    help='Draft checkpoint for DFlash or DSpark; replaces MTP.')
@@ -612,6 +612,10 @@ def prepare(argv, *, managed=False):
 
         used = {k: _at(v) for k, v in recipe.defaults.items()
                 if k in recipes.SETTABLE and getattr(given, k) is unset}
+        if recipe.defaults.get('mtp_adaptive') and (
+                given.mtp_adaptive is False or given.num_spec == 0 or given.dflash is not unset):
+            for key in ('mtp_adaptive', 'mtp_prompt_lookup', 'mtp_tool_draft'):
+                used.pop(key, None)
         for group in (('max_gpu_mem_util', 'max_gpu_mem_gib'),
                       ('max_host_mem_util', 'max_host_mem_gib'),
                       ('moe_cache_experts', 'max_disk_mem_gib')):
@@ -682,8 +686,8 @@ def _build_prepared(a, model, recipe, scheduler=None):
               profile_dir=a.profile_dir if a.enable_profiler else None,
               stats_interval=a.stats_interval, exact_stats=a.stats_exact,
               enforce_eager=a.enforce_eager, num_spec=a.num_spec,
-              mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, mtp_adaptive=getattr(a, 'mtp_adaptive', False),
-              mtp_prompt_lookup=getattr(a, 'mtp_prompt_lookup', True), mtp_tool_draft=getattr(a, 'mtp_tool_draft', True),
+              mtp_window=a.mtp_window, mtp_sinks=a.mtp_sinks, mtp_adaptive=getattr(a, 'mtp_adaptive', None),
+              mtp_prompt_lookup=getattr(a, 'mtp_prompt_lookup', False), mtp_tool_draft=getattr(a, 'mtp_tool_draft', False),
               served_names=a.served_model_name,
               dflash=a.dflash, dflash_block=a.dflash_block,
               dflash_p_min=a.dflash_p_min,
