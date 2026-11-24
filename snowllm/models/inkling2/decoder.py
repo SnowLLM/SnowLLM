@@ -50,7 +50,7 @@ class InklingCache:
 
 
 class InklingLayer:
-    def __init__(self, rd, cfg, index, controller_tanh):
+    def __init__(self, rd, cfg, index, controller_tanh, device_map=None):
         self.controller_tanh = controller_tanh
         self.cfg = cfg
         self.local = cfg["layer_types"][index] == "sliding_attention"
@@ -90,7 +90,7 @@ class InklingLayer:
                              and all(self.projections[n][1] == cfg["hidden_size"] for n in self.input_names)
                              and input_projections_supported(cfg["hidden_size"], self.input_widths))
         self.project_attention = self.group_inputs and attention_output_supported(self.projections.get("attn_output"))
-        self.moe = InklingMoE(rd, cfg, index)
+        self.moe = InklingMoE(rd, cfg, index, device_map)
 
     def linear(self, x, name, prefill):
         weight = self.weights[name]
@@ -180,7 +180,7 @@ class InklingTextModel:
             model.planning_model = planned
             return model
 
-    def __init__(self, reader):
+    def __init__(self, reader, device_map=None):
         cfg = self.config = config(reader.gguf)
         tokens = reader.gguf.need("tokenizer.ggml.tokens")
         self.chat_channels = {tokens.index("<|message_model|>"): "role", tokens.index("<|end_message|>"): "end",
@@ -192,7 +192,8 @@ class InklingTextModel:
         self.norm = reader.tensor("output_norm.weight", torch.float32)
         self.output_query = reader.tensor("output_res_query.weight", torch.float32)
         self.controller_tanh = controller_tanh_table(self.embedding.device)
-        self.layers = [InklingLayer(reader, cfg, i, self.controller_tanh) for i in range(cfg["num_hidden_layers"])]
+        self.layers = [InklingLayer(reader, cfg, i, self.controller_tanh, device_map)
+                       for i in range(cfg["num_hidden_layers"])]
         loop = cfg["loop_config"]
         self.start, self.end, self.passes = loop["core_start"], loop["core_end"], loop["num_passes"]
         self.visits = (*range(self.start), *(tuple(range(self.start, self.end)) * self.passes),

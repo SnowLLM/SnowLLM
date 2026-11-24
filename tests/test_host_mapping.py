@@ -89,6 +89,22 @@ class MappingTests(unittest.TestCase):
         torch.cuda.synchronize()
         self.assertEqual(ctypes.string_at(base + skip, tensor.numel()), b'\x5a' * tensor.numel())
 
+    @torch.inference_mode()
+    def test_relocate_shaped_weight_and_strided_view(self):
+        from snowllm.models import placement
+
+        expected = torch.arange(24, dtype=torch.bfloat16).reshape(4, 6)
+        with placement.capture_allocations() as allocations, placement.place(None, "experts.down", 0):
+            weight = ops.empty_shaped(expected.shape, expected.dtype)
+            weight.copy_(expected)
+            model = {"weight": weight, "slice": weight[1::2, 2:]}
+        mapping = placement.DeviceMap(frozenset(("experts.down",)), {})
+        placement.apply_device_map(model, allocations, mapping)
+        self.assertTrue(ops.host_mapped(model["weight"]))
+        self.assertEqual(model["slice"].untyped_storage().data_ptr(), model["weight"].data_ptr())
+        torch.testing.assert_close(model["weight"].cpu(), expected)
+        torch.testing.assert_close(model["slice"].cpu(), expected[1::2, 2:])
+
     def test_scheduler_cpu_gpu_aliases_survive_slices_and_graph_replay(self):
         buffer = host_io.MappedBuffer(torch.int64)
         device = buffer.write([1, 2, 3, 4])
