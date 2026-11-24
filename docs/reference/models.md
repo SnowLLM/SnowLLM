@@ -21,6 +21,8 @@ Expand **Recipes** to see recipe IDs. See [Model downloads](../guides/models) fo
 | LFM2.5-8B-A1B | Thinking must stay enabled. Requests that disable it return HTTP 400. |
 | MinerU | `mineru-vlm` serves the VLM alone; `mineru` serves the full bundle. See [MinerU integration](../integrations/mineru). |
 
+On the tested Radeon 780M with a 16 GiB dedicated GPU allocation, the Inkling Q4 recipe ran with expert weights mapped into host memory. Use `snowllm b/inkling-2-mini-ud-q4-k-m --max-gpu-mem 15.5GiB --max-host-mem 7GiB --host-offload 6.5GiB` for a 32K context.
+
 Available context and concurrency depend on the [memory configuration](../guides/memory-management). Download size is not inference memory usage.
 
 ## List and run recipes {#usage}

@@ -21,6 +21,8 @@ import ModelRecipes from '../../reference/ModelRecipes.vue'
 | LFM2.5-8B-A1B | 必须开启 thinking，关闭时 API 返回 HTTP 400。 |
 | MinerU | `mineru-vlm` 仅提供 VLM；`mineru` 提供整套模型，见 [MinerU 接入](../integrations/mineru)。 |
 
+实测 Radeon 780M 的专用显存配置为 16 GiB，Inkling Q4 将部分专家权重放在主机内存。32K 上下文可使用 `snowllm b/inkling-2-mini-ud-q4-k-m --max-gpu-mem 15.5GiB --max-host-mem 7GiB --host-offload 6.5GiB`。
+
 可用上下文和并发取决于内存配置，见[内存管理](../guides/memory-management)。下载体积不等于推理显存占用。
 
 ## 查询与启动 {#usage}
