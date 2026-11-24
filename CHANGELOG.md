@@ -3,8 +3,8 @@
 
 ## Unreleased / 未发布
 
-- Add Inkling-2-Mini GGUF text generation with batched requests, BF16 KV, decode graphs and prefix caching. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev9`.
-  支持 Inkling-2-Mini GGUF 文本生成，可使用连续批处理、BF16 KV、解码图和前缀缓存。内核依赖升级至 `0.3.17.dev9`。
+- Add Inkling-2-Mini UD-Q8_K_XL and UD-Q4_K_M GGUF text generation with batched requests, BF16 KV, decode graphs and prefix caching. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev10`.
+  支持 Inkling-2-Mini UD-Q8_K_XL 和 UD-Q4_K_M GGUF 文本生成，可使用连续批处理、BF16 KV、解码图和前缀缓存。内核依赖升级至 `0.3.17.dev10`。
 
 - Fuse LFM2.5 QKV projections, KV writes and residual normalization, and reduce GLM beta projections in one workgroup per output column.
   LFM2.5 融合 QKV 投影、KV 写入和残差归一化，GLM 的 beta 投影由每个工作组完成一列输出。

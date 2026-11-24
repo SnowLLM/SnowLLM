@@ -854,6 +854,11 @@ if hasattr(lib, "snowllm_inkling_attention_bf16_bias"):
     _SIGS.append(("snowllm_inkling_attention_bf16_bias", c_int, [P]*9 + [c_int]*9 + [S]))
 if hasattr(lib, "snowllm_inkling_attention"):
     _SIGS.append(("snowllm_inkling_attention", c_int, [P]*9 + [c_int]*9 + [S]))
+if hasattr(lib, "snowllm_inkling_kquant_project"):
+    _SIGS += [
+        ("snowllm_inkling_kquant_shuffle", c_int, [P]*3 + [c_int, c_int, S]),
+        ("snowllm_inkling_kquant_project", c_int, [P]*6 + [c_int, c_int, c_int, S]),
+    ]
 if hasattr(lib, "snowllm_inkling_grouped_project"):
     _SIGS.append(("snowllm_inkling_grouped_project", c_int, [P]*5 + [c_int, c_int, S]))
 if hasattr(lib, "snowllm_inkling_bf16_plan_ints"):

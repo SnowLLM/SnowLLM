@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 
 from snowllm.checkpoint.gguf import GGUF
+from snowllm.checkpoint.gguf.dequant import dequantize
 from snowllm.checkpoint.tokenizer import load_tokenizer
 from snowllm.models.inkling2 import InklingTextModel
 
@@ -63,7 +64,7 @@ class InklingDecoderTest(unittest.TestCase):
         expected = torch.nn.functional.rms_norm(x, (2304,), weight, 1e-5).bfloat16()
         torch.testing.assert_close(normalize_rows(x, 1e-5, weight), expected, atol=0, rtol=0)
 
-    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the UD-Q8_K_XL file")
+    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the Inkling GGUF")
     def test_chunked_prefill_and_greedy_decode(self):
         path = Path(os.environ["SNOWLLM_INKLING_GGUF"])
         tokenizer, _ = load_tokenizer(path.parent)
@@ -76,13 +77,11 @@ class InklingDecoderTest(unittest.TestCase):
         rows = [0, 127, model.geo.vocab_size - 1]
         width = model.geo.hidden
         weight = []
+        quant = gguf["output.weight"].quant
+        stride = quant.nbytes(width)
         for row in rows:
-            data = bytearray()
-            for part, at, size in gguf.ranges("output.weight", row * width * 2, width * 2):
-                with part.open("rb") as stream:
-                    stream.seek(at)
-                    data.extend(stream.read(size))
-            weight.append(torch.frombuffer(data, dtype=torch.bfloat16))
+            raw = torch.frombuffer(bytearray(gguf.read("output.weight", row * stride, stride)), dtype=torch.uint8)
+            weight.append(dequantize(raw, quant.name, width))
         weight = torch.stack(weight).cuda().double()
         gen = torch.Generator(device="cuda").manual_seed(19)
         hidden = torch.randn(33, width, device="cuda", generator=gen).bfloat16()
@@ -99,7 +98,7 @@ class InklingDecoderTest(unittest.TestCase):
         chunked = torch.cat((model.forward(ids[:5], split), model.forward(ids[5:], split)))
         self.assertLess(((chunked - logits).norm() / logits.norm()).item(), .02)
         self.assertEqual(chunked[-1].argmax().item(), logits[-1].argmax().item())
-        # llama.cpp b12648, Unsloth UD-Q8_K_XL, greedy decoding.
+        # llama.cpp b12648, Unsloth UD-Q4_K_M and UD-Q8_K_XL, greedy decoding.
         expected = [200001, 200008, 371, 150409, 171960, 149878, 150744, 169292]
         for i, token in enumerate(expected):
             predicted = logits[-1].argmax().view(1)

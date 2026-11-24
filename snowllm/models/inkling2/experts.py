@@ -5,7 +5,7 @@ import torch
 
 from ...errors import SnowLLMError
 from ...ops.allocation import empty
-from ...ops.inkling import expert_linear
+from ...ops.inkling import expert_linear, kquant_expert_linear, pack_kquant_experts
 
 
 def pack_nvfp4(weight, experts, n, k):
@@ -23,6 +23,8 @@ def pack_nvfp4(weight, experts, n, k):
 class ExpertProjection:
     weight: torch.Tensor
     scale: torch.Tensor | None
+    meta: torch.Tensor | None = None
+    fmt: int = 0
 
     @classmethod
     def load(cls, rd, stem, experts, n, k):
@@ -35,11 +37,18 @@ class ExpertProjection:
                 raise SnowLLMError(f"{tensor.name}: invalid NVFP4 row or expert scale")
             return cls(pack_nvfp4(rd.raw(tensor.name), experts, n, k),
                        rd.tensor(scale.name, torch.float32))
+        if tensor.quant.name in ("Q5_K", "Q8_0") and stem + ".scale" not in rd.gguf:
+            from ...checkpoint.gguf.source import KQUANT_ID
+            fmt = KQUANT_ID[tensor.quant.name]
+            weight, meta = pack_kquant_experts(rd.raw(tensor.name), fmt, experts, n, k)
+            return cls(weight, None, meta, fmt)
         if tensor.quant.name == "BF16" and stem + ".scale" not in rd.gguf:
             return cls(rd.tensor(tensor.name, torch.bfloat16), None)
         raise SnowLLMError(f"{tensor.name}: unsupported Inkling expert format {tensor.quant.name}")
 
     def __call__(self, x, ids, prefill=False, plan=None):
+        if self.meta is not None:
+            return kquant_expert_linear(x, self.weight, self.meta, self.fmt, ids, plan)
         return expert_linear(x, self.weight, self.scale, ids, prefill, plan)
 
 

@@ -64,9 +64,9 @@ class InklingLayer:
             key = name[len(prefix):-len(".weight")]
             if key in ("ffn_gate_up_exps", "ffn_down_exps", "ffn_gate_inp"):
                 continue
-            if tensor.quant.name not in ("F32", "BF16"):
+            if tensor.quant.name not in ("F32", "BF16", "Q8_0"):
                 raise SnowLLMError(f"{name}: unsupported dense Inkling weight {tensor.quant.name}")
-            dtype = torch.float32 if tensor.quant.name == "F32" else torch.bfloat16
+            dtype = torch.float32 if tensor.quant.name == "F32" and "_ctrl_" not in key else torch.bfloat16
             weight = rd.tensor(name, dtype)
             if dtype == torch.bfloat16 and weight.size(-1) % 32 == 0 and key in (
                     'attn_q', 'attn_k', 'attn_v', 'attn_rel', 'attn_sink_proj', 'attn_output',
@@ -219,6 +219,8 @@ class InklingTextModel:
                 yield proj.weight
                 if proj.scale is not None:
                     yield proj.scale
+                if proj.meta is not None:
+                    yield proj.meta
 
     def cache(self, capacity, chunk_size):
         return InklingCache(self, capacity, chunk_size)
