@@ -50,7 +50,7 @@ class GraphBudget:
         free, total = gpu_mem_info()
         return total - free
 
-    def room(self, gpu_util: float, have: int) -> bool:
+    def room(self, gpu_util: float, have: int, estimate=None) -> bool:
         self._used = self._in_use()
         self._reserved = torch.cuda.memory_reserved()
         free, physical = device_mem_info()
@@ -67,28 +67,36 @@ class GraphBudget:
                 print(f'{term.stamp()} graphs stop at {have}: driver needs another '
                       f'{self.driver_measured >> 20} MiB of VRAM; uncaptured shapes run eager.', flush=True)
                 return False
-        if not self.measured or self._used + self.measured <= int(total * gpu_util):
+        required = self.measured if estimate is None else estimate
+        if self._used + required <= int(total * gpu_util):
             return True
         if not self.full:
             self.full = True
             print(f"{term.stamp()} {term.paint('graphs stop', term.YELLOW)} at {have}: "
-                  f"another {self.measured >> 20} MiB would cross "
+                  f"another {required >> 20} MiB would cross "
                   f"the memory ceiling ({gpu_util:.2%}). Steps on shapes that have "
                   f"no graph run eager.", flush=True)
         return False
 
-    def charge(self) -> None:
-        retained = max(0, self._in_use() - self._used)
+    def charge(self, gpu_util=None):
+        used = self._in_use()
+        retained = max(0, used - self._used)
+        free, physical = device_mem_info()
+        physical_used = physical - free
+        from ..host_alloc import enabled
+        if gpu_util is not None:
+            from ..capacity import budget
+            if (used > int(gpu_mem_info()[1] * gpu_util) or
+                    (enabled() and physical_used > budget.gpu_limit(physical))):
+                self.full = True
+                return False
         self.measured = max(self.measured, retained)
         self.retained_bytes += retained
-        free, physical = device_mem_info()
         reserved = max(0, torch.cuda.memory_reserved() - self._reserved)
-        driver = max(0, physical - free - self._driver_used - reserved)
-        self.driver_bytes += driver
-        from ..host_alloc import enabled
+        self.driver_bytes += max(0, physical_used - self._driver_used - reserved)
         if enabled():
-            free, total = device_mem_info()
-            self.driver_measured = max(self.driver_measured, total-free-self._driver_used)
+            self.driver_measured = max(self.driver_measured, physical_used - self._driver_used)
+        return True
 
 
 class GraphInputs:

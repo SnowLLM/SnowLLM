@@ -98,13 +98,17 @@ class GraphCache:
             return self.fallback(key, values, out)
         graph = torch.cuda.CUDAGraph()
         pool = self.pools.setdefault(function, torch.cuda.graph_pool_handle())
-        with capture_graph(graph, pool=pool, preserve_cache=True):
-            function(*static, static_out, arena=arena, admit=False)
-        self.budget.charge()
-        if device_memory_snapshot().in_use > self.limit():
+        try:
+            with capture_graph(graph, pool=pool, preserve_cache=True):
+                function(*static, static_out, arena=arena, admit=False)
+            fits = device_memory_snapshot().in_use <= self.limit()
+        except torch.OutOfMemoryError:
+            fits = False
+        if not fits:
             del graph, arena, static, static_out
             self.release_pool(function)
             return self.fallback(key, values, out)
+        self.budget.charge()
         case = CapturedGraph(
             graph, GraphInputs(dict(enumerate(static)), batch_copies=False), static_out, arena.buf,
             workspace=getattr(arena, 'scratch', None),

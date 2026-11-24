@@ -538,6 +538,7 @@ class DFlashDecoder(DSparkScheduling):
         self.sampling = (DFlashSampling(sampler, self.geo, S, block, runner.geo.vocab_size)
                          if self.geo.dflash2 and block > 1 else None)
         self.graphs: dict[int, torch.cuda.CUDAGraph] = {}
+        self.graph_bytes: dict[int, int] = {}
 
     def workspace_bytes(self) -> int:
         arena = self.runner.arena
@@ -809,13 +810,25 @@ class DFlashDecoder(DSparkScheduling):
             for r in batch:
                 self.sampling.release(r)
 
+    def probe_graph_bytes(self, runner: "GraphRunner", shapes) -> int:
+        # Target and draft coexist in one graph pool during serving.
+        used = runner.budget._in_use()
+        try:
+            with runner._graph_probe_scope(shapes):
+                runner.capture(shapes)
+                self.capture(runner)
+                total = max(0, runner.budget._in_use() - used)
+        finally:
+            self.graphs.clear()
+            runner._init_graphs()
+        print(f"[planner] target and draft graphs measured {total / (1<<20):.1f} MiB", flush=True)
+        return total
+
     def capture(self, runner: "GraphRunner") -> list[int]:
-        blk, S = self.block, self.runner.max_num_seqs
-        got = []
-        for B in range(1, S + 1):
-            if self.verify_rows(B) != self.width or not runner._graph_room():
+        blk = self.block
+        for B in range(1, runner.max_num_seqs + 1):
+            if B in self.graphs or self.verify_rows(B) != self.width:
                 continue
-            M = B * blk
             self.d_bt[:B].zero_()
             self._stage_values(B,[blk]*B+[blk]*B+[self.geo.mask_token_id]*B+[0]*B)
 
@@ -824,7 +837,12 @@ class DFlashDecoder(DSparkScheduling):
                     self._ctx_dev(B)
                 self._blocks_dev(B)
 
-            self.graphs[B] = runner._capture(f"draft graph B={B:2d} M={M:3d}", walk)[0]
-            got.append(B)
+            before = runner.budget.retained_bytes
+            result = runner._try_capture(f"draft graph B={B:2d} M={B*blk:3d}", walk,
+                                         self.graph_bytes.get(B, 0))
+            if result is None:
+                break
+            self.graphs[B] = result[0]
+            self.graph_bytes[B] = runner.budget.retained_bytes - before
         self.draft_tables.forget()
-        return got
+        return list(self.graphs)

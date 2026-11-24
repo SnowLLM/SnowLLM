@@ -486,10 +486,14 @@ class Engine:
 
             shapes = (self.spec.decode_shapes(self.runner.max_num_seqs) if self.spec is not None
                       else plain_decode_shapes(self.runner.max_num_seqs))
-            each, n_shapes = (0, 0) if enforce_eager else self.runner.probe_graph_bytes(shapes)
+            if not enforce_eager and isinstance(self.dflash, DFlashDecoder):
+                graph_bytes = self.dflash.probe_graph_bytes(self.runner, shapes)
+            else:
+                each, count = (0, 0) if enforce_eager else self.runner.probe_graph_bytes(shapes)
+                graph_bytes = each * count
             if self.dflash is not None:
                 self._draft_pool.release()
-            num_kv_blocks = self.runner.finish_pools(each * n_shapes)
+            num_kv_blocks = self.runner.finish_pools(graph_bytes)
             self.dflash_blocks = self.runner.draft_blocks
             if self.dflash is not None:
                 if not self.dflash.cache_window:
@@ -517,10 +521,13 @@ class Engine:
                         "pages that the request which wrote them has since reused. Pass "
                         "prefix_memory_ratio=0.")
                 self.cache = PrefixCache(store)
-            if dspark_adaptive and _dspark(self.dflash_geo):
+            if dspark_adaptive:
                 from .dspark_profile import profile
                 # Reconcile measured startup memory before graphs retain weight addresses.
                 profile(self.dflash, warmup=True)
+            if isinstance(self.dflash, DFlashDecoder):
+                self.runner.ensure_capacity(graph_bytes)
+            elif dspark_adaptive:
                 self.runner.ensure_capacity()
             self.graph_sizes = []
             self._capture_shapes = tuple(shapes)

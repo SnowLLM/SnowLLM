@@ -221,19 +221,24 @@ class BaseRunner:
                                    'lower --max-num-seqs/--num-spec or offload more weights')
             self._allow = self._allowance()
 
-    def ensure_capacity(self):
+    def ensure_capacity(self, graph_bytes=0):
         from ..capacity import memory_shortage
         from ..models.placement import ensure_room
         release_device_cache()
-        shortage = -self._allowance()
-        while shortage > 0:
+        while True:
+            room = self._allowance()
+            shortage = graph_bytes - room
+            if shortage <= 0:
+                return
             if not ensure_room(self.model, shortage):
+                if room >= 0:
+                    return
+                shortage = -room
                 from ..memory_report import current
                 if current() is not None:
                     current().shortfall(shortage)
                 raise memory_shortage(shortage)
             release_device_cache()
-            shortage = -self._allowance()
 
     def _pool_capacity(self, plan, *, prefix_budget=0):
         release_device_cache()
@@ -316,8 +321,16 @@ class BaseRunner:
             plan = self._pool_plan(graph_bytes)
             self._prepare_pools()
             while True:
-                units, self.prefix_slots = self._pool_capacity(
-                    plan, prefix_budget=self._prefix_budget(plan))
+                try:
+                    units, self.prefix_slots = self._pool_capacity(
+                        plan, prefix_budget=self._prefix_budget(plan))
+                except CapacityError:
+                    if not graph_bytes:
+                        raise
+                    # Optional graphs must not displace the minimum KV and checkpoint pools.
+                    graph_bytes = 0
+                    plan = self._pool_plan(0)
+                    continue
                 self._allocate_pools(units)
                 release_device_cache()
                 shortage = graph_bytes - self._allowance()
@@ -490,7 +503,9 @@ class GraphRunner(BaseRunner):
     def _init_graphs(self) -> None:
         self.graphs = {}
         self.budget = GraphBudget()
+        self.last_hidden = None
         self._pool = None
+        self._host_graph_pool = None
         self._said_miss = False
         self._init_stats()
 
@@ -571,9 +586,8 @@ class GraphRunner(BaseRunner):
         self._arm()
         got = set()
         for shape in shapes:
-            if not self._graph_room():
-                self._report()
-                return sorted(got)
+            if self.budget.full:
+                break
             if self._capture_shape(shape):
                 got.add(shape.B)
         self._report()
@@ -594,7 +608,7 @@ class GraphRunner(BaseRunner):
             was = self.budget._used = self.budget._in_use()
             if not self._capture_shape(widest):
                 break
-            each = self.budget._in_use() - was
+            each = max(0, self.budget._in_use() - was)
             self.graphs.clear()
             self._pool = None
             gc.collect()
@@ -617,9 +631,10 @@ class GraphRunner(BaseRunner):
                     if case.key in self.graphs:
                         captured = True
                         continue
-                    if not self._graph_room():
+                    result = self._try_capture(case.label, case.run)
+                    if result is None:
                         break
-                    graph, out = self._capture(case.label, case.run)
+                    graph, out = result
                     self.graphs[case.key] = CapturedGraph(
                         graph, case.inputs, out, None if case.draft else self.last_hidden)
                     captured = True
@@ -637,8 +652,21 @@ class GraphRunner(BaseRunner):
     def _arm(self) -> None:
         pass
 
-    def _graph_room(self) -> bool:
-        return not self.budget.full and self.budget.room(self.gpu_util, len(self.graphs))
+    def _try_capture(self, label, walk, estimate=None):
+        if not self.budget.room(self.gpu_util, len(self.graphs), estimate):
+            return None
+        previous_hidden = self.last_hidden
+        try:
+            graph, out = self._capture(label, walk)
+            if self.budget.charge(self.gpu_util):
+                return graph, out
+            print(f'{term.stamp()} discarding {label}: measured usage exceeds graph budget', flush=True)
+            del graph, out
+        except torch.OutOfMemoryError:
+            self.budget.full = True
+        self.last_hidden = previous_hidden
+        release_device_cache()
+        return None
 
     @property
     def _graphs_full(self) -> bool:
@@ -667,7 +695,6 @@ class GraphRunner(BaseRunner):
         with capture_graph(g, pool=self._graph_pool()):
             out = walk()
         torch.cuda.synchronize()
-        self.budget.charge()
         print(f"{term.stamp(time.strftime('%H:%M:%S'))}   capture {label}  "
               f"{(time.time() - t0) * 1e3:5.0f} ms", flush=True)
         return g, out
