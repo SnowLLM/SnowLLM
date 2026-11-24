@@ -786,6 +786,12 @@ if hasattr(lib, "snowllm_inkling_conv"):
     _SIGS.append(("snowllm_inkling_conv", c_int, [P]*9 + [c_int]*4 + [c_int64]*2 + [S]))
 if hasattr(lib, "snowllm_inkling_attention"):
     _SIGS.append(("snowllm_inkling_attention", c_int, [P]*9 + [c_int]*9 + [S]))
+if hasattr(lib, "snowllm_inkling_bf16_plan_ints"):
+    _SIGS.extend([
+        ("snowllm_inkling_bf16_plan_ints", c_int, [c_int]*6),
+        ("snowllm_inkling_bf16_sort", c_int, [P, P, c_int, S]),
+        ("snowllm_inkling_bf16_project", c_int, [P]*4 + [c_int, c_int, S]),
+    ])
 if hasattr(lib, "snowllm_inkling_expert_tiled"):
     _SIGS.append(("snowllm_inkling_expert_tiled", c_int, [P]*5 + [c_int]*7 + [S]))
 for name in ("snowllm_inkling_expert_linear", "snowllm_inkling_expert_prefill"):

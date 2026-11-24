@@ -65,7 +65,23 @@ def residual_mix(states, queries, eps, prefill):
 
 
 @operator
-def expert_linear(x, weight, scales, ids, prefill=False):
+def bf16_expert_plan(ids, experts, hidden, intermediate, prefill):
+    query = getattr(lib, "snowllm_inkling_bf16_plan_ints", None)
+    if query is None:
+        return None
+    tokens, topk = ids.shape
+    ints = query(tokens, experts, topk, hidden, intermediate, prefill)
+    if not ints:
+        return None
+    _chk(ids, "Inkling routed expert IDs", torch.int32, tokens, topk)
+    plan = empty(ints, device=ids.device, dtype=torch.int32)
+    if not ids.is_meta:
+        check(lib.snowllm_inkling_bf16_sort(_p(ids), _p(plan), tokens, _stream()), "inkling_bf16_sort")
+    return plan
+
+
+@operator
+def expert_linear(x, weight, scales, ids, prefill=False, plan=None):
     tokens, groups, k = x.shape
     tiled = weight.ndim == 5
     if tiled:
@@ -89,6 +105,17 @@ def expert_linear(x, weight, scales, ids, prefill=False):
     if any(t.device != x.device for t in (weight, ids) + (() if scales is None else (scales,))):
         raise SnowLLMError("Inkling expert inputs must share a device")
     out = empty(tokens, topk, n, dtype=x.dtype, device=x.device)
+    if plan is not None:
+        down = groups != 1
+        hidden, intermediate = (n, k) if down else (k, n // 2)
+        size = lib.snowllm_inkling_bf16_plan_ints(tokens, experts, topk, hidden, intermediate, prefill)
+        if not size or scales is not None or (not down and n != 2 * intermediate) or plan.device != x.device:
+            raise SnowLLMError("incompatible Inkling BF16 expert plan")
+        _chk(plan, "Inkling BF16 expert plan", torch.int32, size)
+        if not x.is_meta:
+            check(lib.snowllm_inkling_bf16_project(_p(x), _p(weight), _p(plan), _p(out),
+                  tokens, down, _stream()), "inkling_bf16_project")
+        return out
     if x.is_meta:
         return out
     name = "snowllm_inkling_expert_prefill" if prefill else "snowllm_inkling_expert_linear"
