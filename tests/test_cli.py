@@ -542,13 +542,28 @@ class CLITests(unittest.TestCase):
                     (adaptive, ('--no-mtp-adaptive', '--num-spec', '2'), (2, False))):
                 _, options = self.launch_options(flags, recipe)
                 self.assertEqual((options['num_spec'], options['mtp_adaptive']), expected)
-                self.assertEqual(options['mtp_prompt_lookup'], bool(expected[1]))
-                self.assertEqual(options['mtp_tool_draft'], bool(expected[1]))
+                self.assertFalse(options['mtp_prompt_lookup'])
+                self.assertFalse(options['mtp_tool_draft'])
                 self.assertFalse(options['dflash_adaptive'])
         _, options = self.launch_options(('--no-mtp-prompt-lookup', '--no-mtp-tool-draft'), adaptive)
         self.assertTrue(options['mtp_adaptive'])
         self.assertFalse(options['mtp_prompt_lookup'])
         self.assertFalse(options['mtp_tool_draft'])
+
+    def test_mtp_startup_tip_names_only_disabled_helpers(self):
+        from snowllm import cli
+
+        for adaptive, lookup, tool, expected in (
+                (False, False, False, ()), (True, True, True, ()),
+                (True, False, False, ('--mtp-prompt-lookup', '--mtp-tool-draft')),
+                (True, True, False, ('--mtp-tool-draft',)), (True, False, True, ('--mtp-prompt-lookup',))):
+            with self.subTest(adaptive=adaptive, lookup=lookup, tool=tool), patch.object(cli, '_log') as log:
+                cli._log_mtp_tip(SimpleNamespace(mtp_adaptive=adaptive, mtp_prompt_lookup=lookup, mtp_tool_draft=tool))
+                if expected:
+                    log.assert_called_once()
+                    self.assertEqual(tuple(word for word in log.call_args.args[0].split() if word.startswith('--')), expected)
+                else:
+                    log.assert_not_called()
 
     def test_direct_launch_leaves_spec_helpers_off(self):
         for flags in ((), ('--mtp-adaptive', '--num-spec', '8'), ('--dflash', '/tmp/draft')):

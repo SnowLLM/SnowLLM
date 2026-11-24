@@ -84,6 +84,18 @@ def _log(msg: str) -> None:
     print(f"{term.stamp(time.strftime('%H:%M:%S'))} {msg}", flush=True)
 
 
+def _log_mtp_tip(engine) -> None:
+    if not engine.mtp_adaptive:
+        return
+    tips = []
+    if not engine.mtp_prompt_lookup:
+        tips.append('--mtp-prompt-lookup for repeated prompt text or tool results')
+    if not engine.mtp_tool_draft:
+        tips.append('--mtp-tool-draft for tool calls')
+    if tips:
+        _log('Adaptive MTP tip: consider enabling ' + ' and '.join(tips) + '.')
+
+
 @startup_report
 def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks: int | None,
           default_max_tokens: int | None, seed: int | None, profile_dir: str | None,
@@ -232,6 +244,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
             gpu_memory_utilization=kv['util'],
             prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft,
             defer_capture=getattr(scheduler, 'defer_capture', False))
+    _log_mtp_tip(engine)
     from ._platform import device_mem_info
     release_device_cache()
     free, total = device_mem_info()

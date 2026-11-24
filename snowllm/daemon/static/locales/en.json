@@ -1,4 +1,6 @@
 {
+  "Off by default. Enable for repeated passages in prompts or tool results during speculative decoding.": "Off by default. Enable for repeated passages in prompts or tool results during speculative decoding.",
+  "Off by default. Enable for tool calls with Flash-Next adaptive MTP to draft function names and argument markup.": "Off by default. Enable for tool calls with Flash-Next adaptive MTP to draft function names and argument markup.",
   "Tool-call drafting": "Tool-call drafting",
   "Prompt lookup": "Prompt lookup",
   "Close the quotation mark in additional options.": "Close the quotation mark in additional options.",
