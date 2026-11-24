@@ -2,9 +2,45 @@
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import _chk, _p, _stream
+from ._common import _chk, _chk_rows, _p, _stream
 from .allocation import empty
 from .operation import operator
+
+
+@operator
+def loop_control(x, msg, down, forget, gain, eps, prefill):
+    rows, width = x.shape
+    rank = down.size(0)
+    if (not lib.snowllm_inkling_controller_supported(prefill, rows, rank)
+            or any(w.dtype != torch.bfloat16 for w in (down, forget, gain))):
+        def norm(value):
+            return torch.nn.functional.rms_norm(value.float(), (width,), eps=eps)
+        source = torch.cat((norm(x), norm(msg)), dim=-1)
+        z = torch.nn.functional.linear(source.to(down.dtype), down)
+        f = torch.nn.functional.linear(z.to(forget.dtype), forget).float().tanh_()
+        g = torch.nn.functional.linear(z.to(gain.dtype), gain).float().tanh_()
+        return x.float() * (1 - f) + msg.float() * g
+    x, msg = x.float(), msg.float()
+    _chk_rows(x, "Inkling controller residual", torch.float32)
+    _chk_rows(msg, "Inkling controller message", torch.float32)
+    if x.shape != msg.shape:
+        raise SnowLLMError("Inkling controller residual and message shapes differ")
+    _chk(down, "Inkling controller down", torch.bfloat16, rank, 2*width)
+    _chk(forget, "Inkling controller forget", torch.bfloat16, width, rank)
+    _chk(gain, "Inkling controller gain", torch.bfloat16, width, rank)
+    if any(t.device != x.device for t in (msg, down, forget, gain)):
+        raise SnowLLMError("Inkling controller tensors must share a device")
+    packed = empty(rows, 2*width, dtype=torch.bfloat16, device=x.device)
+    dims = rows, width, x.stride(0), msg.stride(0)
+    if not x.is_meta:
+        check(lib.snowllm_inkling_controller_inputs(_p(x), _p(msg), _p(packed),
+              *dims, eps, _stream()), "inkling_controller_inputs")
+    z = torch.nn.functional.linear(packed, down)
+    out = empty(rows, width, dtype=torch.float32, device=x.device)
+    if not x.is_meta:
+        check(lib.snowllm_inkling_controller_output(_p(x), _p(msg), _p(z), _p(forget), _p(gain),
+              _p(out), *dims, _stream()), "inkling_controller_output")
+    return out
 
 
 @operator
