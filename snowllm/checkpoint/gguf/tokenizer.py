@@ -22,6 +22,10 @@ class Pre(NamedTuple):
 
 
 PRE_TOKENIZER = {
+    "inkling2": Pre(NO_NORM, (
+        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|"
+        r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|"
+        r"\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+",)),
     "glm4": Pre(NO_NORM, (
         r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+"
         r"[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",)),
@@ -97,7 +101,7 @@ def tokenizer_json(g: GGUF) -> dict:
         "model": {
             "type": "BPE", "dropout": None, "unk_token": None,
             "continuing_subword_prefix": "", "end_of_word_suffix": "",
-            "fuse_unk": False, "byte_fallback": False, "ignore_merges": False,
+            "fuse_unk": False, "byte_fallback": False, "ignore_merges": pre == "inkling2",
             "vocab": vocab, "merges": list(g.need("tokenizer.ggml.merges")),
         },
     }
@@ -156,7 +160,7 @@ def stop_token_ids(g: GGUF) -> tuple[int, ...]:
         if (i := g.get(key)) is not None and int(i) not in out:
             out.append(int(i))
     index = {t: i for i, t in enumerate(tokens)}
-    for name in EXTRA_STOPS:
+    for name in (() if g.arch == "inkling2_loop" else EXTRA_STOPS):
         if (i := index.get(name)) is not None and i not in out:
             out.append(i)
     if not out:

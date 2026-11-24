@@ -50,6 +50,7 @@ class BaseRunner:
     text_only = False
     defer_model_end = False
     prefetch_ple = False
+    plan_query_tiles = True
     inputs = None
 
     max_num_seqs: int
@@ -157,7 +158,8 @@ class BaseRunner:
     def prefill_batch(self, spans, slots):
         if self.text_only and any(r.embeds is not None or r.mrope is not None for r, _, _ in spans):
             raise SnowLLMError(f"{type(self).__name__} accepts text inputs only")
-        return prefill_batch(spans, slots, self.block_size, self.inputs, self.prev_context)
+        return prefill_batch(spans, slots, self.block_size, self.inputs, self.prev_context,
+                             plan_query_tiles=self.plan_query_tiles)
 
     def _init_stats(self) -> None:
         self.n_graph_replays = 0

@@ -7,7 +7,7 @@ from .block_manager import block_tables
 from .forward_context import Batch, i32, i64
 
 
-def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0):
+def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0, *, plan_query_tiles=True):
     ids, pos, mapping, states, lens, resuming = [], [], [], [], [], []
     cu = [0]
     embed_rows, embeds = [], []
@@ -34,7 +34,7 @@ def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0):
             (ids, pos * 3, last), (mapping, lens, states, cu, resuming))
         positions = d_pos.view(3, -1)
         tables = inputs.tables([r.blocks for r, _, _ in spans])
-        total, qmap = inputs.q_plan("prefill_qmap", lengths)
+        total, qmap = inputs.q_plan("prefill_qmap", lengths) if plan_query_tiles else (0, None)
     else:
         # Draft/verify paths can retain these tensors across asynchronous calls;
         # give each prefill its own device storage rather than reuse staging.
@@ -48,7 +48,7 @@ def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0):
         d_map, d_lens, d_states, d_cu = map(i32, (mapping, lens, states, cu))
         d_resume = i32(resuming) if any(resuming) else None
         tables = block_tables([r for r, _, _ in spans])
-        total, qmap = ops.prefill_q_plan(lengths)
+        total, qmap = ops.prefill_q_plan(lengths) if plan_query_tiles else (0, None)
 
     return Batch(
         input_ids=d_ids, positions=positions, slot_mapping=d_map, block_tables=tables,

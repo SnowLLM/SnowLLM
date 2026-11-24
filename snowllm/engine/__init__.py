@@ -295,6 +295,9 @@ def _runner_for(model: "TargetModel") -> type[BaseRunner]:
     if getattr(model, 'multimodal_type', None) == 'qwen2_vl':
         from .qwen2_runner import Qwen2Runner
         return Qwen2Runner
+    if getattr(model, "config", {}).get("model_type") == "inkling2_loop":
+        from .inkling_runner import InklingRunner
+        return InklingRunner
     if getattr(model, "config", {}).get("model_type") == "lfm2_moe":
         from .lfm2_runner import Lfm2Runner
         return Lfm2Runner
@@ -317,6 +320,8 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
         return 0
     from ..context import ContextCapacity
     capacity = ContextCapacity.for_model(model, ctx)
+    if getattr(model, "mtp", False) is None and kv.get("draft_geo") is None:
+        kv = dict(kv, num_spec=0)
     chunk = kv.get('chunk', 'auto')
     if chunk != 'auto':
         chunk = min(int(chunk), capacity.per_request)
