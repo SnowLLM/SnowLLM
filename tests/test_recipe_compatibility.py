@@ -215,7 +215,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
             self.assertEqual(current['schema'], 2)
             self.assertEqual(old['schema'], 1)
             self.assertEqual(list(current['recipe_types']), [
-                'qwen38fn', 'minicpm', 'qwen35moe', 'lfm', 'deepseek', 'glm', 'qwen35dense', 'mineru',
+                'qwen38fn', 'minicpm', 'qwen35moe', 'lfm', 'deepseek', 'glm', 'qwen35dense', 'mineru', 'inkling',
             ])
             self.assertEqual({r['type'] for r in current['recipes']}, current['recipe_types'].keys())
             self.assertNotIn('recipe_types', old)
