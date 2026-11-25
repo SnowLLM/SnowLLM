@@ -158,12 +158,18 @@
         <p class="home-model-memory">128 GiB</p>
         <div>
           <h3>Qwen3.8-Flash-Next</h3>
-          <p class="note" data-i18n="home.flashRun">UD3.1 UD-IQ4_XS · 32K input · MTP k=2</p>
+          <p class="note" data-i18n="home.flashRun">UD3.1 UD-IQ4_XS · 32K input · adaptive MTP (up to 7)</p>
         </div>
         <div>
           <p class="home-model-rates">
-            <span><strong>1,941.4</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
-            <span><strong>49.67</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+            <b>PG-19</b>
+            <span><strong>1,982.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>49.61</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <p class="home-model-rates">
+            <b data-i18n="home.fileEdit">File Edit</b>
+            <span><strong>1,990.8</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>85.03</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
           </p>
           <a href="/benchmark/#benchmarks" data-i18n="home.radeon8060sTest">Radeon 8060S benchmark</a>
         </div>
@@ -176,8 +182,29 @@
         </div>
         <div>
           <p class="home-model-rates">
+            <b>PG-19</b>
             <span><strong>4,323.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
             <span><strong>63.69</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks" data-i18n="home.radeon8060sTest">Radeon 8060S benchmark</a>
+        </div>
+      </li>
+      <li>
+        <p class="home-model-memory">64 GiB</p>
+        <div>
+          <h3>Inkling 2 Mini</h3>
+          <p class="note" data-i18n="home.inklingQ8Run">UD-Q8_K_XL · 8K input · adaptive DSpark block 8 + prompt lookup</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <b>PG-19</b>
+            <span><strong>1,952.3</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>42.42</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <p class="home-model-rates">
+            <b data-i18n="home.fileEdit">File Edit</b>
+            <span><strong>1,928.1</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>98.40</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
           </p>
           <a href="/benchmark/#benchmarks" data-i18n="home.radeon8060sTest">Radeon 8060S benchmark</a>
         </div>
@@ -190,8 +217,34 @@
         </div>
         <div>
           <p class="home-model-rates">
-            <span><strong>1,100.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
-            <span><strong>21.63</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+            <b>PG-19</b>
+            <span><strong>1,194.9</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>23.00</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <p class="home-model-rates">
+            <b data-i18n="home.fileEdit">File Edit</b>
+            <span><strong>1,178.1</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>76.64</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <a href="/benchmark/#benchmarks-780m-heading" data-i18n="home.radeon780mTest">Radeon 780M benchmark</a>
+        </div>
+      </li>
+      <li>
+        <p class="home-model-memory">32 GiB</p>
+        <div>
+          <h3>Inkling 2 Mini</h3>
+          <p class="note" data-i18n="home.inklingQ4Run">UD-Q4_K_M · 8K input · adaptive DSpark block 8 + prompt lookup</p>
+        </div>
+        <div>
+          <p class="home-model-rates">
+            <b>PG-19</b>
+            <span><strong>617.6</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>18.86</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
+          </p>
+          <p class="home-model-rates">
+            <b data-i18n="home.fileEdit">File Edit</b>
+            <span><strong>614.8</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
+            <span><strong>35.20</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
           </p>
           <a href="/benchmark/#benchmarks-780m-heading" data-i18n="home.radeon780mTest">Radeon 780M benchmark</a>
         </div>
@@ -204,6 +257,7 @@
         </div>
         <div>
           <p class="home-model-rates">
+            <b>PG-19</b>
             <span><strong>1,269.4</strong> <span data-i18n="home.prefillRate">tok/s prefill</span></span>
             <span><strong>43.38</strong> <span data-i18n="home.decodeRate">tok/s decode</span></span>
           </p>
@@ -211,6 +265,11 @@
         </div>
       </li>
     </ul>
+    <p class="note">
+      <span data-i18n="home.runLimits">File Edit measures a single-turn code rename. Output caps are 1,024 tokens for Qwen3.8 and Inkling, and 256 for MiniCPM.</span>
+      <span data-i18n="home.ramNote">Inkling Q8 and LFM use estimated memory tiers. Their test systems had 128 GiB and 32 GiB of RAM, respectively.</span>
+      <a href="/benchmark/recommendations.csv" data-i18n="home.runDetails">Benchmark measurements (CSV)</a>
+    </p>
   </section>
 
   <nav class="home-links" aria-label="Resources" data-i18n-aria-label="home.resources">

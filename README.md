@@ -15,6 +15,7 @@ SnowLLM is fast with:
 
 ## Recent News
 
+- **2026-11-25** — **SnowLLM 0.3.27 stable** adds adaptive DSpark and prompt lookup for Inkling 2 Mini Q4 and Q8. [Release notes](CHANGELOG.md#0327--2026-11-25).
 - **2026-11-23** — **SnowLLM 0.3.25 stable** adds adaptive MTP recipes for Qwen3.8-Flash-Next UD3.1. [Release notes](CHANGELOG.md#0325--2026-11-23).
 - **2026-11-21** — **SnowLLM 0.3.24 stable** improves MiniCPM-V 4.7 long-context DSpark decoding and reduces draft KV memory use. [Release notes](CHANGELOG.md#0324--2026-11-21).
 - **2026-11-20** — **SnowLLM 0.3.23 stable**: faster prefill for Qwen3.8-Flash-Next and Qwen3.5 MoE, plus WebUI benchmarking and improvements to chat and the dashboard. [Release notes](https://github.com/SnowLLM/SnowLLM/releases/tag/v0.3.23).
@@ -35,23 +36,30 @@ SnowLLM vs. llama.cpp on a single Ryzen AI Max+ 395, both driven through [pi.dev
 
 ## Support Matrix
 
-| Model | Weights | Speculative decoding | Min RAM | Test machine | 8K Prefill, tok/s | 8K Decode, tok/s | 220K Prefill, tok/s | 220K Decode, tok/s |
+Each rate pair is **prefill / decode** in tok/s at the indicated input length (1K = 1,024 tokens). PG-19 summarizes a passage. File Edit renames a symbol in one turn. A dash marks a workload or length without a reported result for that configuration.
+
+| Model | Weights | Speculative decoding | System RAM | GPU | 8K PG-19 | 8K File Edit | 220K PG-19 | 220K File Edit |
 | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Qwen3.8-Flash-Next | UD-Q3_K_XL | MTP k=2 | 128 GiB | AI Max+ 395 | **1812.2** | **42.9** | **1723.8** | **38.6** |
-| MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark, block 8 | 64 GiB | AI Max+ 395 | **4323.9** | **63.7** | **1257.3** | **18.0** |
-| MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark, block 8 | 32 GiB | 7940HS (RDNA3) | **1041.8** | **19.6** | — | — |
-| LFM2.5-8B-A1B | Q4_K_M | DSpark, block 9 | 16 GiB* | 7940HS (RDNA3) | **1234.6** | **42.3** | — | — |
-| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark, block 5 | 128 GiB (Linux); 192 GiB (Windows) | AI Max+ 395 | TBD | TBD | TBD | TBD |
-| GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | AI Max+ 395 | **517.1** | **25.8** | **480.7** | **26.8** |
-| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark, block 5 | 128 GiB | AI Max+ 395 | **862.6** | **26.0** | **631.8** | **22.3** |
-| Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | AI Max+ 395 | **3806.5** | **83.8** | **1244.0** | **33.6** |
+| Qwen3.8-Flash-Next | UD3.1 UD-IQ4_XS | Adaptive MTP (up to 7) | 128 GiB | Radeon 8060S | 1,917.6 / 50.36 | 2,054.7 / 84.49 | 1,865.3 / 45.21 | 1,838.6 / 78.10 |
+| Qwen3.8-Flash-Next | UD3.1 UD-Q3_K_XL | Adaptive MTP (up to 7) | 128 GiB | Radeon 8060S | 1,973.6 / 52.05 | 2,091.7 / 86.75 | 1,847.9 / 45.60 | 1,848.6 / 79.83 |
+| MiniCPM-V 4.7 35B-A3B | Q4_K_M | Adaptive DSpark block 8 | 64 GiB | Radeon 8060S | 4,323.9 / 63.69 | — | 1,257.3 / 18.04 | — |
+| Inkling 2 Mini | UD-Q8_K_XL | Adaptive DSpark block 8 + prompt lookup | 64 GiB* | Radeon 8060S | 1,952.3 / 42.42 | 1,928.1 / 98.40 | 702.7 / 20.78 | 700.8 / 44.42 |
+| MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark block 8 | 32 GiB | Radeon 780M | 1,194.9 / 23.00 | 1,178.1 / 76.64 | — | — |
+| Inkling 2 Mini | UD-Q4_K_M | Adaptive DSpark block 8 + prompt lookup | 32 GiB | Radeon 780M | 617.6 / 18.86 | 614.8 / 35.20 | — | — |
+| LFM2.5-8B-A1B | Q4_K_M | DSpark block 9 | 16 GiB* | Radeon 780M | 1,269.4 / 43.38 | — | — | — |
+| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark block 5 | 128 GiB (Linux), 192 GiB (Windows) | Radeon 8060S | — | — | — | — |
+| GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | Radeon 8060S | 517.1 / 25.76 | — | 480.7 / 26.79 | — |
+| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark block 5 | 128 GiB | Radeon 8060S | 862.6 / 25.96 | — | 631.8 / 22.28 | — |
+| Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | Radeon 8060S | 3,806.5 / 83.84 | — | 1,244.0 / 33.59 | — |
+| Qwen3.6-35B-A3B | UD-Q4_K_XL | DFlash block 8 | 64 GiB | Radeon 8060S | 4,325.6 / 76.36 | 4,219.5 / 206.28 | 1,310.0 / 37.14 | — |
 
-*LFM's 16 GiB system RAM requirement is estimated for an 8K-context, single-request deployment (~6.6 GiB device memory). The test machine has 32 GiB RAM.*
+At **32K input**, Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS on the 8060S reached **1,982.9 / 49.61 tok/s** on PG-19 and **1,990.8 / 85.03 tok/s** on File Edit.
 
-LFM rates use the standard HTTP benchmark: exact 8K input, a 256-token output cap,
-thinking on, one warm-up and four retained requests. See [the run details](docs/development/benchmarks.md#lfm25-780m).
+File Edit output caps were 1,024 tokens for Qwen3.8 and Inkling, and 256 for MiniCPM and Qwen3.6. On the 780M, MiniCPM used automatic weight placement for PG-19 and a 5.25 GiB host-offload setting for File Edit.
 
-More: [Benchmarks](https://snowllm.dev/benchmark/) · [Supported Models](docs/reference/models.md).
+\* Inkling Q8’s 64 GiB tier is estimated from the 128 GiB Ryzen AI Max+ 395 run (39.1 GiB of GPU tensors at 220K context). LFM’s 16 GiB tier is estimated for a single 8K request (about 6.6 GiB of device memory). The Ryzen 9 7940HS test machine had 32 GiB of RAM.
+
+[Benchmark measurements (CSV)](web/benchmark/recommendations.csv) · [Benchmark charts](https://snowllm.dev/benchmark/) · [Supported models](docs/reference/models.md).
 
 ## Requirements
 
