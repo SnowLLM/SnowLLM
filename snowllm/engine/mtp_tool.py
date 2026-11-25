@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+import json
 from collections import deque
 from copy import copy
 from functools import partial
@@ -199,6 +200,7 @@ class ToolHeaders:
 class _HeaderState:
     def __init__(self, openings):
         self.openings = openings
+        self.last_tokens = {opening[-1] for opening in openings}
         self.recent = deque(maxlen=max(map(len, openings)))
         self.choices = ()
 
@@ -206,8 +208,11 @@ class _HeaderState:
         for token in tokens:
             self.recent.append(token)
             self.choices = tuple(row[1:] for row in self.choices if row and row[0] == token)
+            if token not in self.last_tokens:
+                continue
+            recent = tuple(self.recent)
             for opening, choices in self.openings.items():
-                if tuple(self.recent)[-len(opening):] == opening:
+                if recent[-len(opening):] == opening:
                     self.choices = choices
                     break
 
@@ -221,27 +226,52 @@ class _HeaderState:
 
 
 def _headers(formats, tokenizer, tools, eos_ids):
-    names = []
+    pairs = []
     for tool in tools:
         if not isinstance(tool, dict) or tool.get('type', 'function') != 'function':
             return None
         function = tool.get('function', tool)
         name = function.get('name') if isinstance(function, dict) else None
-        if not isinstance(name, str) or not all(part.isidentifier() for part in name.split('.')):
+        if not isinstance(name, str) or not name or any(c in name for c in '<>\r\n'):
             return None
-        names.append(name)
+        if formats == 'inkling':
+            marker = '<|message_model|>' + name + '<|content_invoke_tool_json|>'
+            pairs.append((marker, '{"name":' + json.dumps(name, ensure_ascii=False) + ',"args":'))
+        elif formats == 'glm':
+            marker = '<tool_call>'
+            params = function.get('parameters') or {}
+            if not isinstance(params, dict):
+                return None
+            props = params.get('properties', {})
+            if not isinstance(props, dict):
+                return None
+            for key in props:
+                pairs.append((marker, name + '<arg_key>' + key + '</arg_key><arg_value>'))
+            if not params.get('required') or not props:
+                pairs.append((marker, name + '</tool_call>'))
+        else:
+            if not all(part.isidentifier() for part in name.split('.')):
+                return None
+            pairs.extend((marker, header.format(name=name)) for marker, header in formats)
     openings = {}
-    for marker, header in formats:
+    invalid = set()
+    for marker, header in pairs:
         opening = tuple(tokenizer.encode(marker, add_special_tokens=False))
-        rows = [tuple(tokenizer.encode(marker + header.format(name=n), add_special_tokens=False)) for n in names]
-        if opening and rows and all(row[:len(opening)] == opening and len(row) > len(opening) for row in rows):
-            openings[opening] = tuple(row[len(opening):] for row in rows)
+        row = tuple(tokenizer.encode(marker + header, add_special_tokens=False))
+        if not opening or row[:len(opening)] != opening or len(row) == len(opening):
+            invalid.add(opening)
+        else:
+            openings.setdefault(opening, []).append(row[len(opening):])
+    for opening in invalid:
+        openings.pop(opening, None)
     return ToolHeaders(openings) if openings else None
 
 
 TOOL_DRAFT_FORMATS = {
     **dict.fromkeys(('qwen4_exp', 'qwen4_exp_text', 'qwen3_5', 'qwen3_5_text',
                      'qwen3_5_moe', 'qwen3_5_moe_text', 'minicpmv4_7'), MtpToolFormat.from_tools),
+    'inkling2_loop': partial(_headers, 'inkling'),
+    'glm5_next': partial(_headers, 'glm'),
     'lfm2_moe': partial(_headers, (('<|tool_call_start|>', '[{name}('),)),
     'deepseek_v4': partial(_headers, (('<｜DSML｜tool_calls>\n', '<｜DSML｜invoke name="{name}">\n'),
                                       ('<｜DSML｜ calls>\n', '<｜DSML｜ invoke name="{name}">\n'))),

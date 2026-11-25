@@ -34,6 +34,19 @@ class MtpLookupTests(unittest.TestCase):
             self.assertIn('--mtp-prompt-lookup', log.call_args_list[0].args[0])
             self.assertIn('--spec-tool-draft', log.call_args_list[1].args[0])
 
+    def test_native_mtp_tools_enable_adaptive_with_a_head(self):
+        from snowllm.engine import _spec_options
+        from snowllm.models.geometry import Glm5NextGeometry, ModelGeometry
+
+        for geometry in (ModelGeometry, Glm5NextGeometry):
+            with self.subTest(geometry=geometry):
+                model = SimpleNamespace(geo=Mock(spec=geometry), mtp=object())
+                self.assertEqual(_spec_options(model, 2, None, lookup=True), (False, True, False))
+                self.assertEqual(_spec_options(model, 2, None, lookup=True, tools=True), (True, True, True))
+                model.mtp = None
+                with self.assertRaisesRegex(ValueError, 'MTP head'):
+                    _spec_options(model, 2, None, adaptive=True)
+
     def test_tool_overlays_use_each_verify_width_and_drop_sampled_q(self):
         from snowllm.engine import Engine
         from snowllm.engine.mtp_tool import ToolDraft

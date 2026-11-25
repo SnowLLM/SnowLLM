@@ -12,7 +12,7 @@ from .. import ops
 from .._capi import SnowLLMError
 from .._platform import gpu_mem_info, release_device_cache
 from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
-from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
+from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, ModelGeometry, Qwen4ExpGeometry
 from .block_manager import BlockAllocator, StateSlots
 from .mtp_lookup import MtpLookup
 from .mtp_tool import TOOL_DRAFT_FORMATS, ToolDraft
@@ -375,10 +375,11 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
 def _spec_options(model, num_spec, draft_path, *, adaptive=None, lookup=False, tools=False, adaptive_draft=False):
     flash_next = isinstance(model.geo, Qwen4ExpGeometry)
     native_mtp = not draft_path and num_spec > 0 and getattr(model, "mtp", None) is not None
+    supports_adaptive = native_mtp and isinstance(model.geo, (ModelGeometry, Glm5NextGeometry))
     if adaptive is None:
-        adaptive = flash_next and native_mtp and (lookup or tools)
-    if adaptive and not (flash_next and native_mtp):
-        raise ValueError('--mtp-adaptive requires a Flash-Next MTP head and positive --num-spec')
+        adaptive = supports_adaptive and (tools or (flash_next and lookup))
+    if adaptive and not supports_adaptive:
+        raise ValueError('--mtp-adaptive requires a supported native MTP head and positive --num-spec')
     if lookup and not (native_mtp or draft_path):
         print('[snowllm] Disabling --mtp-prompt-lookup: no speculative decoder.', flush=True)
         lookup = False
@@ -481,6 +482,7 @@ class Engine:
                 self.runner.load_peak_bytes = 0
                 self.runner.reserve_bytes = (self.dflash.workspace_bytes()
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
+            self._flash_next_adaptive = mtp_adaptive and isinstance(model.geo, Qwen4ExpGeometry)
             self.mtp_adaptive = mtp_adaptive
             self.mtp_prompt_lookup = mtp_prompt_lookup
             model_type = model.config.get('model_type')
@@ -488,13 +490,16 @@ class Engine:
             if mtp_tool_draft and self.tool_format is None:
                 print(f"[snowllm] Disabling --spec-tool-draft: no tool format registered for {model_type!r}.", flush=True)
             self.mtp_tool_draft = mtp_tool_draft and self.tool_format is not None
+            spec_options = {'adaptive': True} if mtp_adaptive else {}
+            if self._flash_next_adaptive:
+                spec_options['prompt_lookup'] = mtp_prompt_lookup
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
                             num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks,
-                            **({'adaptive': True, 'prompt_lookup': mtp_prompt_lookup} if mtp_adaptive else {}))
+                            **spec_options)
                 if self.num_spec else None)
             if mtp_prompt_lookup:
-                self._prompt_lookups = self.spec.lookups if mtp_adaptive else {}
+                self._prompt_lookups = self.spec.lookups if self._flash_next_adaptive else {}
 
             self.waiting: deque[Request] = deque()
             self.running: list[Request] = []
@@ -690,7 +695,7 @@ class Engine:
                     pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []),
                     system_prefix_len=system_prefix_len, tool_draft=tool_draft,
                     lookup_passages=lookup_passages)
-        if tool_draft is not None and self.dflash is not None:
+        if tool_draft is not None and not self._flash_next_adaptive:
             r.tool_state = ToolDraft(tool_draft)
         if queue:
             self.waiting.append(r)
@@ -1092,6 +1097,11 @@ class Engine:
                     return 0, 0
                 capacity = self.max_model_len - max(r.num_cached for r in batch)
                 width = max(1, self.spec.verify_rows(len(batch)))
+                if self.mtp_tool_draft and not self._flash_next_adaptive:
+                    for r in batch:
+                        if r.tool_state is not None:
+                            limit = min(width - 1, capacity - 1, r.params.max_new_tokens - len(r.out) - 1)
+                            r.tool_state.propose(r, limit)
                 T = min(width, capacity, 1 + min(len(r.drafts) for r in batch))
                 draft_limit = min(width - 1, capacity - T + 1)
                 if self._decodable_batch(T + max(0, draft_limit - 1)) == batch:
@@ -1115,7 +1125,7 @@ class Engine:
             if T:
                 batch = self._decodable_batch(self.spec.rows_needed(T))
         if T:
-            if not self.mtp_adaptive and (self.mtp_prompt_lookup or self.mtp_tool_draft):
+            if not self._flash_next_adaptive and (self.mtp_prompt_lookup or self.mtp_tool_draft):
                 self._apply_draft_overlays(batch, T)
             if draft_limit is None:
                 self.spec.verify_step(batch, T)

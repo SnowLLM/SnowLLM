@@ -67,6 +67,37 @@ class ToolDraftTests(unittest.TestCase):
             state.advance(self.enc('!'))
             self.assertEqual(state.propose(8), [])
 
+    def test_inkling_only_drafts_json_for_the_committed_tool(self):
+        fmt = module.TOOL_DRAFT_FORMATS['inkling2_loop'](self.tok, [tool('read-file'), tool('write')], ())
+        state = fmt.new_state()
+        for prefix in ('<|message_model|><|content_text|>', '<|message_model|>unknown',
+                       '<|content_invoke_tool_json|>', '<|message_model|>read-file'):
+            state.advance(self.enc(prefix))
+            self.assertEqual(state.propose(8), [])
+        state.advance(self.enc('<|content_invoke_tool_json|>'))
+        header = self.enc('{"name":"read-file","args":')
+        self.assertEqual(state.propose(99), header)
+        state.advance(header)
+        self.assertEqual(state.propose(99), [])
+        state.advance(self.enc('<|end_message|><|message_model|>write<|content_invoke_tool_json|>'))
+        self.assertEqual(state.propose(99), self.enc('{"name":"write","args":'))
+        state.advance(self.enc('!'))
+        self.assertEqual(state.propose(99), [])
+
+    def test_glm_tool_choices_abstain_at_argument_values(self):
+        fmt = module.TOOL_DRAFT_FORMATS['glm5_next'](self.tok, [tool('read', ['id','path'], ['id']), tool('ping')], ())
+        state = fmt.new_state()
+        state.advance(self.enc('<tool_call>'))
+        self.assertEqual(state.propose(10), [])
+        state.advance(self.enc('read'))
+        self.assertEqual(state.propose(99), self.enc('<arg_key>'))
+        state.advance(self.enc('<arg_key>id'))
+        self.assertEqual(state.propose(99), self.enc('</arg_key><arg_value>'))
+        state.advance(self.enc('</arg_key><arg_value>'))
+        self.assertEqual(state.propose(99), [])
+        state.advance(self.enc('</tool_call><tool_call>ping'))
+        self.assertEqual(state.propose(99), self.enc('</tool_call>'))
+
     def test_open_required_and_first_native_boundary(self):
         for text in ('', 'example <tool', '<function=list_names>', 'just plain text'):
             self.assertEqual(self.advanced(text).propose(7), [])

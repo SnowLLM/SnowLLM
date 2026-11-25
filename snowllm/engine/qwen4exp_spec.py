@@ -215,11 +215,6 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         ops.copy_rows(self.runner.mtp_h[:B], hidden)
         return self.runner.mtp_h[:B]
 
-    def step_rows(self, n):
-        if self.adaptive is not None:
-            return tuple(range(1, max(1, self.verify_rows(n)) + 1))
-        return super().step_rows(n)
-
     def release_lookup(self, request):
         if self.lookups is not None:
             self.lookups.pop(request, None)

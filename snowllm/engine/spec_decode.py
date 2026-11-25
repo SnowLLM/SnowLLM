@@ -231,12 +231,15 @@ class SpecDecoder:
 
     def __init__(self, runner: "GraphRunner", sampler: "Sampler", slots: StateSlots,
                  tables: TableMirror, stage: Staging, *,
-                 num_spec: int, window: int = 0, sinks: int = 64) -> None:
+                 num_spec: int, window: int = 0, sinks: int = 64, adaptive: bool = False) -> None:
         self.runner = runner
         self.sampler = sampler
         self.slots = slots
         self.tables, self.stage = tables, stage
         self.num_spec = num_spec
+        self.adaptive = adaptive
+        if adaptive:
+            self.verify_hist = [0] * (num_spec + 1)
         self.window, self.sinks = window, sinks
         self.messages = HostArena()
 
@@ -267,7 +270,9 @@ class SpecDecoder:
 
     def step_rows(self, n: int) -> tuple[int, ...]:
         T = self.verify_rows(n)
-        return (T,) if T >= 2 else (1,)
+        if self.adaptive:
+            return tuple(range(1, max(T, 1) + 1))
+        return (max(T, 1),)
 
     def decode_shapes(self, max_num_seqs: int) -> list[DecodeShape]:
         return [DecodeShape(n, T, self.chunk_decode)
@@ -334,8 +339,8 @@ class SpecDecoder:
         if len(r.out) + k + 1 >= r.params.max_new_tokens:
             return True
         drafts = r.drafts[:k]
-        fmt = r.tool_draft
-        return ((fmt is not None and (r.last == fmt.closing or fmt.closing in drafts))
+        closing = getattr(r.tool_draft, 'closing', None)
+        return ((closing is not None and (r.last == closing or closing in drafts))
                 or any(self.sampler.is_stop(r, t) for t in drafts))
 
     def _ends_request(self, r, tokens):
@@ -350,10 +355,18 @@ class SpecDecoder:
 
     def _propose_verified(self, batch, pos, cu, total, k, tv, nacc, seq, states, draft_limit,
                           *, terminal=False):
+        if draft_limit is not None:
+            self.verify_hist[k] += len(batch)
         if terminal:
             return 0, nacc.tolist()
-        self.propose_first(batch, pos, cu, total, k, tv, nacc, seq)
-        return k, nacc.tolist()
+        if draft_limit is None:
+            self.propose_first(batch, pos, cu, total, k, tv, nacc, seq)
+            return k, nacc.tolist()
+        accepted = nacc.tolist()
+        # Counts include the target token. A fully accepted prefix can grow by one.
+        depth = min(draft_limit, min(accepted))
+        self.propose_first(batch, pos, cu, total, depth, tv, nacc, seq)
+        return depth, accepted
 
     def _ngram_context(self, batch: list[Request], T: int) -> list[list[int]] | None:
         k = self.runner.prev_context
@@ -392,7 +405,7 @@ class SpecDecoder:
     def propose_first(self, batch: list[Request], pos: torch.Tensor, cu: torch.Tensor,
                       total_q_blocks: int, k: int, tv: torch.Tensor, nacc: torch.Tensor,
                       seq: torch.Tensor) -> None:
-        T, B = k + 1, len(batch)
+        B, T = tv.shape
         self._bt = self.tables([r.blocks for r in batch])
         bt, seq_lens = self._window(self._bt, seq)
         ids_next,slots,rows=self._first_metadata(tv,nacc)
@@ -404,18 +417,12 @@ class SpecDecoder:
             cu_seqlens=cu, total_q_blocks=total_q_blocks,
             chunk_decode=True,
         )
-        h = self._first_proposal(mb, self.runner.last_hidden, rows)
+        logits, hidden = self.runner.mtp_draft(self.runner.last_hidden, ids_next, mb)
+        ops.gather_rows(self._draft_tokens(logits), rows, out=self.d_drafts[:B, 0])
         if k > 1:
+            h = ops.gather_rows(hidden, rows, out=self.runner.mtp_h[:B])
             self._scratch = self._draft_states(batch)
             self._propose_rest_dev(B, h, k, nacc)
-
-    def _first_proposal(self, batch: Batch, source: torch.Tensor,
-                        selected: torch.Tensor) -> torch.Tensor | None:
-        B = batch.batch_size
-        logits, hidden = self.runner.mtp_draft(source, batch.input_ids, batch)
-        ops.gather_rows(self._draft_tokens(logits), selected, out=self.d_drafts[:B, 0])
-        if batch.tokens_per_req > 2:
-            return ops.gather_rows(hidden, selected, out=self.runner.mtp_h[:B])
 
     def _propose_rest_dev(self, B: int, h: torch.Tensor, k: int, nacc: torch.Tensor,
                           *, start: int = 1) -> None:
@@ -630,10 +637,10 @@ class DFlashDecoder(DSparkScheduling):
     def step_rows(self, n: int) -> tuple[int, ...]:
         if self.inkling_policy is not None and n == 1:
             return self.inkling_policy.widths
-        rows = SpecDecoder.step_rows(self, n)
-        if self.prefix_feedback is not None and rows[0] > 2:
-            return (self.short_width, rows[0])
-        return rows
+        rows = max(self.verify_rows(n), 1)
+        if self.prefix_feedback is not None and rows > 2:
+            return (self.short_width, rows)
+        return (rows,)
 
     def select_verify_rows(self, batch: list[Request]) -> int:
         if self.inkling_policy is not None:

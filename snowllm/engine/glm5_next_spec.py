@@ -11,10 +11,10 @@ from .spec_decode import SpecDecoder
 
 
 class Glm5NextSpecDecoder(SpecDecoder):
-    def __init__(self,runner,sampler,slots,tables,stage,*,num_spec,window=0,sinks=64):
+    def __init__(self,runner,sampler,slots,tables,stage,*,num_spec,window=0,sinks=64,adaptive=False):
         if window:
             raise SnowLLMError("GLM MTP uses its learned sparse selection; mtp_window must be 0")
-        super().__init__(runner,sampler,slots,tables,stage,num_spec=num_spec,window=window,sinks=sinks)
+        super().__init__(runner,sampler,slots,tables,stage,num_spec=num_spec,window=window,sinks=sinks,adaptive=adaptive)
         self.accept_hist = []
 
     def _states(self, requests):

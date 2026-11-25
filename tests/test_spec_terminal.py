@@ -93,6 +93,23 @@ class SpecTerminalTests(unittest.TestCase):
                     if limit:
                         decoder.adaptive.observe.assert_called_once_with([req], 2, [accepted])
 
+    def test_native_adaptive_depth_uses_accepted_rows_and_context_limit(self):
+        from snowllm.engine.glm5_next_spec import Glm5NextSpecDecoder
+        for cls in (SpecDecoder, Glm5NextSpecDecoder):
+            decoder = object.__new__(cls)
+            decoder.adaptive, decoder.num_spec = True, 4
+            decoder.verify_hist = [0] * 5
+            decoder.propose_first = Mock()
+            self.assertEqual(decoder.step_rows(2), (1, 2, 3, 4, 5))
+            for k, kept, cap, expected in ((1, [2, 2], 4, 2), (2, [3, 1], 4, 1),
+                                           (2, [3, 3], 2, 2), (1, [2, 2], 0, 0)):
+                tokens = torch.zeros(2, k + 1, dtype=torch.int64)
+                depth, actual = decoder._propose_verified([None, None], None, None, 0, k,
+                    tokens, torch.tensor(kept), None, None, cap)
+                self.assertEqual((depth, actual), (expected, kept))
+                self.assertEqual(decoder.propose_first.call_args.args[4], expected)
+            self.assertEqual(decoder.verify_hist, [0, 4, 4, 0, 0])
+
     def test_ragged_draft_uses_live_taps_and_compact_block_table(self):
         for kind in (DFlashDecoder, DSparkDecoder):
             decoder = object.__new__(kind)
