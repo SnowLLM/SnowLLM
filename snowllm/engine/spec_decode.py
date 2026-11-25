@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 import torch
@@ -15,7 +16,7 @@ from .forward_context import Batch, DecodeShape, i32, i64, positions
 from .request import Request
 from .host_io import HostArena
 from .dflash_sampling import DFlashSampling
-from .dspark_schedule import PrefixScheduler
+from .dspark_schedule import InklingVerifyPolicy, PrefixScheduler
 
 if TYPE_CHECKING:
     from ..models.qwen3_5.dflash_draft import DFlashDraft
@@ -58,7 +59,7 @@ class DSparkScheduling:
                 r.draft_blocks.extend(self.blocks.alloc(extra))
             return True
         need = (self.max_blocks_per_seq if self.windowed else
-                ops.kv_blocks_for(context_len(r) + rows + self.block, self.runner.block_size))
+                ops.kv_blocks_for(context_len(r) + rows + getattr(self, "cache_lookahead", self.block), self.runner.block_size))
         return self.blocks.ensure(r.draft_blocks, need)
 
     def release(self, r: Request) -> None:
@@ -90,9 +91,10 @@ class DSparkScheduling:
                 selected = ops.gather_rows(taps, i64(rows),
                                            out=self.runner.draft_taps[:len(rows)])
             feat = self.draft.context_feature(selected)
+            seqs, cache_pos = i32(seqs),i32(cache_pos)
+            local = self._local_slots(bt.size(0),seqs,cache_pos) if getattr(self, "local_table", None) is not None else {}
             self.draft.write_context(feat, positions(rope_pos)[0].contiguous(),
-                                     ops.resolve_slots(bt, i32(seqs), i32(cache_pos),
-                                                       self.runner.block_size))
+                                     ops.resolve_slots(bt, seqs, cache_pos, self.runner.block_size), **local)
 
     def _store_proposals(self, batch, drafts, confidence):
         for i, (r, row) in enumerate(zip(batch, drafts)):
@@ -165,6 +167,13 @@ class DSparkScheduling:
     def select_lengths(self, batch: list[Request], max_model_len: int, *, remember=True) -> list[int]:
         limits = [max(0, min(len(r.drafts), max_model_len - r.num_cached - 1,
                              r.params.max_new_tokens - len(r.out) - 1)) for r in batch]
+        if len(batch) == 1 and batch[0].tool_state is not None:
+            r = batch[0]
+            width = len(r.tool_state.tokens(r, min(limits[0], SPEC_MAX_STEP_ROWS - 1)))
+            if width >= 2:
+                if remember:
+                    self.scheduler.reset()
+                return [width + 1]
         confidence = [self.confidence.get(r, []) for r in batch]
         if not all(r in self.confidence for r in batch):
             self.scheduler.reset()
@@ -481,6 +490,7 @@ class SpecDecoder:
 
 
 class DFlashDecoder(DSparkScheduling):
+    inkling_policy: InklingVerifyPolicy | None = None
     prefix_feedback: dict[Request, int] | None = None
     _window = SpecDecoder._window
     _ngram_context = SpecDecoder._ngram_context
@@ -510,53 +520,96 @@ class DFlashDecoder(DSparkScheduling):
                 raise SnowLLMError("DSpark needs a recent window covering its block plus page alignment and nonnegative sinks")
         self.p_min = p_min if self.dspark else 0.0
         self.init_adaptive(adaptive, p_min, self.dspark and "conf_weight" in draft.w)
-        self.width = block + int(self.dspark)
-        if dflash_adaptive and block > 2:
+        if self.geo.inkling and p_min:
+            raise SnowLLMError("Inkling DSpark has no confidence head for --dflash-p-min")
+        self.width = block + int(self.dspark and not self.geo.inkling)
+        self.draft_width = self.geo.block_size if self.geo.inkling else self.width
+        if self.geo.inkling:
+            self.cache_lookahead = self.draft_width
+            self.block = block = self.width - 1
+        self.inkling_policy = None
+        if dflash_adaptive and self.geo.inkling and block > 1 and runner.max_num_seqs == 1 and getattr(runner.model, "search_head", None) is not None:
+            self.inkling_policy = InklingVerifyPolicy(self.width)
+            self.short_width = 2
+            self.prefix_feedback = {}
+            self.verify_hist = [0] * self.width
+        elif dflash_adaptive and block > 2:
             self.short_width = min(3, block - 1)
             self.prefix_feedback = {}
-            self.verify_hist = [0] * block
+            self.verify_hist = [0] * self.width
         self.runner.tap_at = {layer: j for j, layer in enumerate(self.geo.tap_layers)}
         if self.runner.taps.shape[1] != self.geo.num_taps * H:
             raise SnowLLMError(f"the runner was built for {self.runner.num_taps} taps, this draft "
                                f"reads {self.geo.num_taps}")
 
         S = runner.max_num_seqs
-        M = S * self.width
+        M = S * self.draft_width
         self.d_i64 = torch.zeros(3 * M, dtype=torch.int64, device="cuda")
         self.d_i32 = torch.zeros(4 * M, dtype=torch.int32, device="cuda")
         self.d_len = torch.zeros(S, dtype=torch.int32, device="cuda")
         self.draft_tables = TableMirror(S, max_blocks_per_seq, allow_holes=bool(self.cache_window))
         self.d_bt = self.draft_tables.dev
+        self.local_table = self.ring_tables = None
+        pages = getattr(runner, "draft_ring_pages", 0)
+        if pages:
+            physical = [[slot*pages + p%pages for p in range(max_blocks_per_seq)] for slot in range(S)]
+            self.ring_tables = torch.tensor(physical,device="cuda",dtype=torch.int32)
+            self.local_table = torch.zeros_like(self.ring_tables)
+
+        if self.geo.inkling:
+            self.initial_zeros = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
+            self.recurrent = torch.zeros(S, H, dtype=torch.bfloat16, device="cuda")
+            self.last_tap_row = torch.zeros(S, dtype=torch.int64, device="cuda")
         self.d_draft = torch.zeros(S, block if self.dspark else max(block - 1, 1),
                                    dtype=torch.int64, device="cuda")
         self.d_conf = (torch.empty(S, block, dtype=torch.float32, device="cuda")
                        if self.dspark else None)
         self.messages=HostArena()
         self.noise = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
+        self.ctx_rows = (i64([i * self.draft_width + j for i in range(S) for j in range(self.width)])
+                         if self.width < self.draft_width else None)
         self.keep = i64([i * block + t for i in range(S) for t in range(1, block)])
         self.draft_rows = i64([i * self.width + t for i in range(S) for t in range(block)])
-        self.sampling = (DFlashSampling(sampler, self.geo, S, block, runner.geo.vocab_size)
-                         if self.geo.dflash2 and block > 1 else None)
-        self.graphs: dict[int, torch.cuda.CUDAGraph] = {}
-        self.graph_bytes: dict[int, int] = {}
+        self.sampling = None
+        if self.geo.inkling or self.geo.dflash2 and block > 1:
+            self.sampling = DFlashSampling(sampler, self.geo, S, self.width, runner.geo.vocab_size)
+        self.graphs: dict[tuple[int, bool], torch.cuda.CUDAGraph] = {}
+        self.graph_bytes: dict[tuple[int, bool], int] = {}
+
+    def _draft_table(self, batch):
+        table = super()._draft_table(batch)
+        if self.local_table is not None:
+            with self.messages.reading(reuse=True):
+                ids = self.messages.tensor("inkling_ring_slots", [r.slot for r in batch], torch.int32)
+                ops.copy_rows(self.local_table[:len(batch)],self.ring_tables,src_index=ids)
+        return table
+
+    def _local_slots(self, B, seqs, positions):
+        if self.local_table is None:
+            return {}
+        return {"local_slots": ops.resolve_slots(self.local_table[:B], seqs, positions, self.runner.block_size)}
 
     def workspace_bytes(self) -> int:
         arena = self.runner.arena
         if self.graphs or self.runner.graphs:
             raise SnowLLMError('draft workspace must be planned before graph capture')
-        noise = self.noise
+        noise, draft = self.noise, self.draft
+        if self.geo.inkling:
+            import copy
+            self.draft = copy.copy(draft)
+            self.draft.w = self.runner.draft_workspace.draft.w
         frozen = arena.planner.buf
         before = self.runner.arena_bytes
         arena.planner.buf = None
         try:
-            for batch in range(1, self.runner.max_num_seqs + 1):
+            for batch, sampled in self._draft_shapes():
                 with ops.dry_load():
                     self.noise = torch.empty_like(noise, device="meta")
-                    arena.plan(('draft_blocks',batch),batch,
-                        lambda: self._blocks_dev(batch),
+                    arena.plan(('draft_blocks',batch,sampled),batch,
+                        lambda: self._blocks_dev(batch, sampled),
                         lifetimes='uses' if self.runner.plan_activations else 'references')
         finally:
-            self.noise = noise
+            self.noise, self.draft = noise, draft
             arena.planner.buf = frozen
         need = arena.bytes_after(self.runner.arena_after)
         if need > before:
@@ -575,12 +628,19 @@ class DFlashDecoder(DSparkScheduling):
         return self.width if n * self.width <= SPEC_MAX_STEP_ROWS else 0
 
     def step_rows(self, n: int) -> tuple[int, ...]:
+        if self.inkling_policy is not None and n == 1:
+            return self.inkling_policy.widths
         rows = SpecDecoder.step_rows(self, n)
         if self.prefix_feedback is not None and rows[0] > 2:
             return (self.short_width, rows[0])
         return rows
 
     def select_verify_rows(self, batch: list[Request]) -> int:
+        if self.inkling_policy is not None:
+            if len(batch) == 1 and batch[0].params.temperature == 0:
+                return self.inkling_policy.choose(batch[0], self.d_conf[0].tolist())
+            self.inkling_policy.pending = None
+            return self.width
         # Require a longer run of early rejections when shortening saves only one target row.
         threshold = 4 if self.width - self.short_width == 1 else 2
         if all(self.prefix_feedback.get(r, 0) >= threshold or
@@ -589,6 +649,8 @@ class DFlashDecoder(DSparkScheduling):
         return self.width
 
     def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
+        timed = self.inkling_policy is not None and len(batch) == 1 and batch[0].params.temperature == 0
+        start = perf_counter() if timed else None
         if isinstance(T, list):
             b, kept = self.verify_prefixes(batch, T)
             self.runner.linear_advance(b.state_indices, i32(kept), len(batch), max(T), b.cu_seqlens)
@@ -619,7 +681,7 @@ class DFlashDecoder(DSparkScheduling):
             is_prefill=False, num_tokens=B * T,
             state_indices=d_sidx,
             num_accepted=ones,
-            cu_seqlens=cu, total_q_blocks=ops.prefill_q_plan([T] * B)[0],
+            cu_seqlens=cu, total_q_blocks=ops.prefill_q_plan([T] * B)[0] if self.runner.plan_query_tiles else 0,
             chunk_decode=True,
             roll_forward=roll,
             prev_ids=self._ngram_context(batch, T),
@@ -635,6 +697,8 @@ class DFlashDecoder(DSparkScheduling):
         acc, got = nacc.tolist(), tv.tolist()
         keep = []
         for i, r in enumerate(batch):
+            if self.inkling_policy is not None:
+                self.inkling_policy.observe(r, T, acc[i])
             kept = self._accept(r, got[i], acc[i])
             keep.append(kept)
             if not roll:
@@ -645,6 +709,8 @@ class DFlashDecoder(DSparkScheduling):
         if self.prefix_feedback is not None:
             self.verify_hist[T - 1] += B
             for r, kept in zip(batch, keep):
+                if r.tool_state is not None and r.tool_state.suffix is r.drafts:
+                    continue
                 misses = self.prefix_feedback.get(r, 0)
                 self.prefix_feedback[r] = misses + 1 if kept < self.short_width else 0
             if T < self.width:
@@ -654,12 +720,16 @@ class DFlashDecoder(DSparkScheduling):
                     for j in reversed(range(keep[i])):
                         taps[i * self.width + j].copy_(taps[i * T + j])
         self.propose(batch, keep)
+        if start is not None and not batch[0].done:
+            self.inkling_policy.times[T].append(perf_counter() - start)
 
     accept_hist: list = []
     _accept = SpecDecoder._accept
     _note_accept = SpecDecoder._note_accept
 
     def release(self, r: Request) -> None:
+        if self.inkling_policy is not None and self.inkling_policy.pending is not None and self.inkling_policy.pending[0] is r:
+            self.inkling_policy.pending = None
         if self.prefix_feedback is not None:
             self.prefix_feedback.pop(r, None)
         if self.sampling is not None:
@@ -672,37 +742,85 @@ class DFlashDecoder(DSparkScheduling):
                 +[accepted[i] if accepted is not None else 0 for i in range(B)]
                 +[r.last for r in batch]+[r.pos_delta for r in batch])
         self._stage_values(B,values)
-        if self.sampling is not None:
+        if self.geo.inkling and accepted is not None:
+            self._last_taps([i*self.width + max(1,k) - 1 for i,k in enumerate(accepted)])
+        if self.sampling is not None and (not self.geo.inkling or self._sample_inkling(batch)):
             self.sampling.stage(batch)
 
     def _stage_values(self,B,values):
         with self.messages.reading(reuse=True):
             requests=self.messages.tensor('draft_requests',values,torch.int64).view(4,B)
-            m=B*self.width
+            m=B*self.draft_width
             ops.draft_metadata(requests,self.d_i64[:3*m],self.d_i32[:4*m],self.d_len[:B],
-                               self.width,self.geo.mask_token_id)
+                               self.draft_width,self.geo.mask_token_id)
+
+    def _last_taps(self, rows):
+        with self.messages.reading(reuse=True):
+            source = self.messages.tensor("inkling_last_taps", rows, torch.int64)
+            ops.copy_rows(self.last_tap_row[:len(rows)], source)
+
+    def _update_recurrent(self, B):
+        selected = ops.gather_rows(self.runner.taps, self.last_tap_row[:B])
+        ops.copy_rows(self.recurrent[:B], self.draft.recurrent_feature(selected))
 
     def _ctx_dev(self, B: int) -> None:
-        M = B * self.width
+        M = B * self.draft_width
+        rows = B * self.width
         with self.runner.arena.frame():
-            feat = self.draft.context_feature(self.runner.taps[:M])
-            self.draft.write_context(
-                feat, self.d_i64[:M],
-                ops.resolve_slots(self.d_bt[:B], self.d_i32[:M], self.d_i32[M:2 * M],
-                                  self.runner.block_size))
+            pos, seq, cache = self.d_i64[:M], self.d_i32[:M], self.d_i32[M:2*M]
+            if self.ctx_rows is not None:
+                # Target taps use verification strides, while mask positions use checkpoint strides.
+                if B == 1:
+                    pos, seq, cache = pos[:rows], seq[:rows], cache[:rows]
+                else:
+                    index = self.ctx_rows[:rows]
+                    pos, seq, cache = (ops.gather_rows(v, index) for v in (pos, seq, cache))
+            if self.geo.inkling:
+                self._update_recurrent(B)
+            feat = self.draft.context_feature(self.runner.taps[:rows])
+            self.draft.write_context(feat, pos, ops.resolve_slots(self.d_bt[:B], seq, cache,
+                                    self.runner.block_size), **self._local_slots(B, seq, cache))
 
-    def _blocks_dev(self, B: int) -> None:
+    def _draft_shapes(self):
+        for sampled in ((False, True) if self.geo.inkling else (False,)):
+            for batch in range(1, self.runner.max_num_seqs + 1):
+                yield batch, sampled
+
+    def _sample_inkling(self, batch):
+        return self.geo.inkling and any(r.params.temperature > 0 for r in batch)
+
+    def _blocks_dev(self, B: int, sampled=False) -> None:
         arena = self.runner.arena
-        arena.planner.begin(('draft_blocks',B))
+        arena.planner.begin(('draft_blocks',B,sampled))
         arena.reset()
         try:
             with arena.activate():
-                self._blocks_forward(B)
+                self._blocks_forward(B, sampled)
         finally:
             arena.end_plan()
 
-    def _blocks_forward(self, B: int) -> None:
+    def _blocks_forward(self, B: int, sampled=False) -> None:
         blk = self.block
+        if self.geo.inkling:
+            width = self.draft_width
+            m = B * width
+            ids = self.d_i64[m:2*m].view(B,width)
+            anchor = empty(B, dtype=torch.int64, device="cuda")
+            ops.copy_rows(anchor, ids[:,0])
+            target = self.runner.model
+            if ops.drying() is not None:
+                target = getattr(target, "planning_model", target)
+            self.draft.embed_block(target, anchor, self.noise[:m])
+            hidden = self.draft.forward(self.noise[:m], self.d_i64[2*m:3*m],
+                ops.resolve_slots(self.d_bt[:B], self.d_i32[2*m:3*m], self.d_i32[3*m:4*m],
+                                  self.runner.block_size), self.d_bt[:B], self.d_len[:B],
+                initial_zeros=self.initial_zeros[:m],
+                local_table=self.local_table[:B] if self.local_table is not None else None,
+                **self._local_slots(B,self.d_i32[2*m:3*m],self.d_i32[3*m:4*m]))
+            self.draft.propose_recurrent(target,hidden,anchor,self.recurrent[:B],self.d_draft[:B],
+                                         self.initial_zeros, self.sampling if sampled else None,
+                                         self.d_conf[:B] if self.inkling_policy is not None else None)
+            return
         if self.dspark:
             self._dspark_blocks(B)
             return
@@ -755,7 +873,11 @@ class DFlashDecoder(DSparkScheduling):
         confidence = self.d_conf[:len(batch)].tolist() if self.p_min > 0 or self.adaptive else None
         self._store_proposals(batch, drafts, confidence)
         if self.sampling is not None:
-            self.sampling.remember(batch, drafts)
+            if self.geo.inkling and not self._sample_inkling(batch):
+                for r in batch:
+                    self.sampling.release(r)
+            else:
+                self.sampling.remember(batch, drafts)
 
     def _propose_prefixes(self, batch, accepted, lengths):
         live = [r for r in batch if not r.done]
@@ -766,9 +888,10 @@ class DFlashDecoder(DSparkScheduling):
 
     def _draft_blocks(self, batch):
         self._stage_rows(batch, None)
-        graph = self.graphs.get(len(batch))
+        sampled = self._sample_inkling(batch)
+        graph = self.graphs.get((len(batch), sampled))
         if graph is None:
-            self._blocks_dev(len(batch))
+            self._blocks_dev(len(batch), sampled)
             self.runner.n_draft_eager += 1
         else:
             graph.replay()
@@ -778,19 +901,20 @@ class DFlashDecoder(DSparkScheduling):
     def propose(self, batch: list[Request], accepted: list[int]) -> None:
         if all(r.done for r in batch):
             if self.sampling is not None:
-                # DFlash2 and the target share a generator across requests.
+                # Sampled proposals and the target share a generator across requests.
                 self.sampling.draw_uniforms(batch)
             return
         B = len(batch)
         self._draft_table(batch)
         self._stage_rows(batch, accepted)
-        g = self.graphs.get(B)
+        sampled = self._sample_inkling(batch)
+        g = self.graphs.get((B, sampled))
         if g is not None:
             g.replay()
             self.runner.n_draft_replays += 1
         else:
             self._ctx_dev(B)
-            self._blocks_dev(B)
+            self._blocks_dev(B, sampled)
             self.runner.n_draft_eager += 1
         self._proposals(batch)
 
@@ -800,8 +924,11 @@ class DFlashDecoder(DSparkScheduling):
         self._write_ctx(n, [0] * n, list(range(lo, hi)),
                         [p + r.pos_delta for p in range(lo, hi)], bt)
         if propose:
+            if self.geo.inkling:
+                self._last_taps([n-1])
+                self._update_recurrent(1)
             self._stage_rows([r], None)
-            self._blocks_dev(1)
+            self._blocks_dev(1, self._sample_inkling([r]))
             self._proposals([r])
 
     def after_decode(self, batch: list[Request], pos: list[int]) -> None:
@@ -829,25 +956,27 @@ class DFlashDecoder(DSparkScheduling):
 
     def capture(self, runner: "GraphRunner") -> list[int]:
         blk = self.block
-        for B in range(1, runner.max_num_seqs + 1):
+        for B, sampled in (() if runner.budget.full else self._draft_shapes()):
+            key = B, sampled
             if runner.budget.full:
                 break
-            if B in self.graphs or self.verify_rows(B) != self.width:
+            if key in self.graphs or self.verify_rows(B) != self.width:
                 continue
             self.d_bt[:B].zero_()
             self._stage_values(B,[blk]*B+[blk]*B+[self.geo.mask_token_id]*B+[0]*B)
 
-            def walk(B: int = B) -> None:
+            def walk(B=B, sampled=sampled) -> None:
                 if not self.adaptive:
                     self._ctx_dev(B)
-                self._blocks_dev(B)
+                self._blocks_dev(B, sampled)
 
             before = runner.budget.retained_bytes
-            result = runner._try_capture(f"draft graph B={B:2d} M={B*blk:3d}", walk,
-                                         self.graph_bytes.get(B, 0))
+            mode = "sampled draft" if sampled else "draft"
+            result = runner._try_capture(f"{mode} graph B={B:2d} M={B*blk:3d}", walk,
+                                         self.graph_bytes.get(key, 0))
             if result is None:
                 break
-            self.graphs[B] = result[0]
-            self.graph_bytes[B] = runner.budget.retained_bytes - before
+            self.graphs[key] = result[0]
+            self.graph_bytes[key] = runner.budget.retained_bytes - before
         self.draft_tables.forget()
-        return list(self.graphs)
+        return [batch for batch, sampled in self.graphs if not sampled]

@@ -23,6 +23,8 @@ class MtpLookupTests(unittest.TestCase):
                 self.assertEqual(_spec_options(model, k, None, adaptive=True), (True, False, False))
                 self.assertEqual(_spec_options(model, k, None, adaptive=False, lookup=True), (False, True, False))
         self.assertEqual(_spec_options(model, 2, 'fixed.gguf', lookup=True), (False, True, False))
+        self.assertEqual(_spec_options(model, 2, 'adaptive.gguf', adaptive_draft=True, tools=True),
+                         (False, False, True))
         with self.assertRaisesRegex(ValueError, 'positive --num-spec'):
             _spec_options(model, 0, None, adaptive=True)
         model.geo = object()
@@ -30,7 +32,33 @@ class MtpLookupTests(unittest.TestCase):
         with patch('builtins.print') as log:
             self.assertEqual(_spec_options(model, 0, None, lookup=True, tools=True), (False, False, False))
             self.assertIn('--mtp-prompt-lookup', log.call_args_list[0].args[0])
-            self.assertIn('--mtp-tool-draft', log.call_args_list[1].args[0])
+            self.assertIn('--spec-tool-draft', log.call_args_list[1].args[0])
+
+    def test_tool_overlays_use_each_verify_width_and_drop_sampled_q(self):
+        from snowllm.engine import Engine
+        from snowllm.engine.mtp_tool import ToolDraft
+        from snowllm.engine.spec_decode import DSparkScheduling
+
+        engine = Engine.__new__(Engine)
+        sampling = Mock()
+        engine.dflash = SimpleNamespace(sampling=sampling)
+        engine.mtp_prompt_lookup = False
+        rows = []
+        for width in (2, 3):
+            r = Request([0], SamplingParams(temperature=1), out=[10], drafts=[11, 12, 13])
+            fmt = Mock()
+            fmt.new_state.return_value.propose.side_effect = lambda k: [11, 12][:k]
+            r.tool_state = ToolDraft(fmt)
+            rows.append(r)
+        engine._apply_draft_overlays(rows, [3, 4])
+        sampling.release.assert_called_once_with(rows[0])
+        self.assertIs(rows[0].tool_state.suffix, rows[0].drafts)
+        self.assertIsNone(rows[1].tool_state.suffix)
+        schedule = SimpleNamespace(scheduler=Mock())
+        self.assertEqual(DSparkScheduling.select_lengths(schedule, rows[:1], 16, remember=False), [3])
+        schedule.scheduler.reset.assert_not_called()
+        self.assertEqual(DSparkScheduling.select_lengths(schedule, rows[:1], 16), [3])
+        schedule.scheduler.reset.assert_called_once()
 
     def test_tool_sources_restore_text_without_changing_prompt(self):
         from snowllm.engine import Engine
@@ -105,6 +133,19 @@ class MtpLookupTests(unittest.TestCase):
         lookup.overlay(r, 2)
         self.assertEqual(r.drafts, [80, 81])
 
+    def test_greedy_extension_uses_only_committed_history_and_keeps_the_width(self):
+        r = Request(list(range(12)) + [90], SamplingParams(temperature=0),
+                    out=[0, 1, 2, 3, 4], drafts=[5, 91, 92, 93, 94, 95, 96])
+        lookup = MtpLookup(r, 100)
+        lookup.overlay(r, 5, extend=True)
+        self.assertEqual(r.drafts, [5, 6, 7, 8, 9, 95, 96])
+        r.params.temperature = .7
+        r.drafts = [5, 91, 92]
+        sampling = Mock()
+        lookup.overlay(r, 3, sampling, extend=True)
+        self.assertEqual(r.drafts, [5, 91, 92])
+        sampling.release.assert_not_called()
+
     def test_sampled_dflash_overlay_requires_independent_complete_block(self):
         from snowllm.engine.dflash_sampling import DFlashSampling
 
@@ -143,10 +184,10 @@ class MtpLookupTests(unittest.TestCase):
                         lookup_passages=(source,)) for _ in range(3)]
         engine.running = rows.copy()
         rows[2].params.max_new_tokens = 13
-        engine._apply_prompt_lookup(rows, [3, 2, 4])
+        engine._apply_draft_overlays(rows, [3, 2, 4])
         self.assertEqual([r.drafts for r in rows], [[12, 13, 81], [12, 80, 81], [12, 80, 81]])
         self.assertEqual(list(engine._prompt_lookups), rows[:1])
-        engine._apply_prompt_lookup(rows, 4)
+        engine._apply_draft_overlays(rows, 4)
         self.assertEqual([r.drafts for r in rows[:2]], [[12, 13, 14]] * 2)
         rows[0].done = True
         engine._retire_finished()

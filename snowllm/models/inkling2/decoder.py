@@ -11,9 +11,10 @@ from ...checkpoint.gguf.source import GGUFReader
 from ...errors import SnowLLMError
 from ...ops.inkling import (attention, attention_output_supported, capped_logits, controller_tanh_table, converted,
                            dense, input_projections, input_projections_supported, normalize_qkv, normalize_rows,
-                           pack_controller, packed_logits, sigmoid_gate,
+                           pack_compact, pack_controller, pack_search, packed_logits, q8_projections_available, sigmoid_gate,
                            packed_loop_control, qkv_loop_control, prepare_attention_heads, relative_projection, residual_mix_blocks, short_conv, unpacked_linear)
-from ..projection import pack_bf16
+from ..geometry import pad_gemm_n
+from ..projection import pack_bf16, pack_kquant
 from .experts import InklingMoE
 
 
@@ -50,12 +51,21 @@ class InklingCache:
 
 
 class InklingLayer:
-    def __init__(self, rd, cfg, index, controller_tanh, device_map=None):
+    def __init__(self, rd, cfg, index, controller_tanh, device_map=None, compact=False):
         self.controller_tanh = controller_tanh
         self.cfg = cfg
         self.local = cfg["layer_types"][index] == "sliding_attention"
         self.block_start = index % cfg["n_layers_per_attn_res_block"] == 0
         prefix = f"blk.{index}."
+        self.input_names = ("attn_q", "attn_gate", "attn_k", "attn_v", "attn_rel", "attn_sink_proj")
+        if not self.local:
+            self.input_names += ("attn_k_conv_proj", "attn_v_conv_proj")
+        inputs = [rd.gguf.tensors.get(prefix + key + ".weight") for key in self.input_names]
+        hidden = cfg["hidden_size"]
+        self.input_widths = tuple(w.shape[0] for w in inputs if w is not None)
+        self.group_inputs = (all(w is not None and len(w.shape) == 2 and w.shape[1] == hidden
+                                 and w.quant.name in ("Q8_0", "BF16") for w in inputs)
+                             and input_projections_supported(hidden, self.input_widths))
         self.weights = {}
         self.projections = {}
         for name, tensor in rd.gguf.tensors.items():
@@ -66,6 +76,12 @@ class InklingLayer:
                 continue
             if tensor.quant.name not in ("F32", "BF16", "Q8_0"):
                 raise SnowLLMError(f"{name}: unsupported dense Inkling weight {tensor.quant.name}")
+            if (self.group_inputs and key in self.input_names and tensor.quant.name == "Q8_0"
+                    and tensor.shape[0] % 128 == 0 and q8_projections_available()):
+                n, k = tensor.shape
+                self.weights[key] = pack_kquant(rd.raw(name), 8, n, k)
+                self.projections[key] = (n, k, n)
+                continue
             dtype = torch.float32 if tensor.quant.name == "F32" and "_ctrl_" not in key else torch.bfloat16
             weight = rd.tensor(name, dtype)
             if dtype == torch.bfloat16 and weight.size(-1) % 32 == 0 and key in (
@@ -82,15 +98,12 @@ class InklingLayer:
                 down, gates = pack_controller(self.weights.pop(key), self.weights.pop(stem + "forget"),
                                               self.weights.pop(stem + "gain"))
                 self.weights[key], self.weights[stem + "gates"] = down, gates
-        self.input_names = ("attn_q", "attn_gate", "attn_k", "attn_v", "attn_rel", "attn_sink_proj")
-        if not self.local:
-            self.input_names += ("attn_k_conv_proj", "attn_v_conv_proj")
-        self.input_widths = tuple(self.projections[n][2] for n in self.input_names if n in self.projections)
-        self.group_inputs = (len(self.input_widths) == len(self.input_names)
-                             and all(self.projections[n][1] == cfg["hidden_size"] for n in self.input_names)
-                             and input_projections_supported(cfg["hidden_size"], self.input_widths))
+        self.compact_inputs = None
+        if compact and self.group_inputs and all(isinstance(self.weights[key], torch.Tensor) for key in self.input_names):
+            self.compact_inputs = tuple(pack_compact(self.weights[key], self.projections[key][0], hidden)
+                                        for key in self.input_names)
         self.project_attention = self.group_inputs and attention_output_supported(self.projections.get("attn_output"))
-        self.moe = InklingMoE(rd, cfg, index, device_map)
+        self.moe = InklingMoE(rd, cfg, index, device_map, compact=compact)
 
     def linear(self, x, name, prefill):
         weight = self.weights[name]
@@ -110,12 +123,15 @@ class InklingLayer:
         heads, kv, dim = cfg["num_attention_heads"], cfg["num_key_value_heads"], cfg["head_dim"]
         if self.group_inputs:
             weights = tuple(w[n] for n in self.input_names)
-            q, gate, k, v, r, sinks, *dynamic = input_projections(inputs, weights, self.input_widths, prefill)
+            q, gate, k, v, r, sinks, *dynamic = input_projections(inputs, weights, self.input_widths, prefill, self.compact_inputs)
         else:
             sources = (0, 0, 1, 2, 0, 0, 1, 2)
             q, gate, k, v, r, sinks, *dynamic = (
                 self.linear(inputs[i], name, prefill) for i, name in zip(sources, self.input_names))
             sinks = converted(sinks, torch.float32)
+        retained = getattr(state, "retain", None)
+        if retained is not None:
+            ops.copy_batch(retained[:2], (k,v))
         q, r = prepare_attention_heads(
             q.view(-1, heads, dim), r.view(-1, heads, cfg["d_rel"]), k, v, w["attn_q_clip"], w["attn_rel_clip"],
             (w["attn_k_conv"], w["attn_v_conv"]), (None, None) if self.local else dynamic,
@@ -126,9 +142,11 @@ class InklingLayer:
         project = self.project_attention
         y = attention(q, state.k, state.v, relative, sinks, sequences, position, table,
                       cfg["sliding_window"] if self.local else 0,
-                      output_projection=(gate, w["attn_output"], prefill) if project else None)
+                      prefill=prefill, output_projection=(gate, w["attn_output"], prefill) if project else None)
         if not project:
             y = self.linear(sigmoid_gate(y.flatten(1), gate), "attn_output", prefill)
+        if retained is not None:
+            ops.copy_rows(retained[2], y)
         return short_conv(y, w["attn_post_conv"], None,
                           state.history[2], *plan, residual=residual, out_dtype=torch.float32)
 
@@ -154,7 +172,14 @@ class InklingLayer:
         z = mix(blocks, y, w["ffn_res_query"], eps, prefill).squeeze(1)
         if messages is not None:
             z = self.control(z, messages[3], "ffn", prefill)
-        return self.moe(normalize_rows(z, eps, w["ffn_norm"]), prefill,
+        z = normalize_rows(z, eps, w["ffn_norm"])
+        retained = getattr(state, "retain", None)
+        if retained is not None:
+            raw = self.moe(z, prefill)
+            ops.copy_rows(retained[3], raw)
+            return short_conv(raw, w["ffn_post_conv"], None, state.history[3], *plan,
+                              residual=y, out_dtype=torch.bfloat16)
+        return self.moe(z, prefill,
                         post_conv=(w["ffn_post_conv"], state.history[3], plan, y))
 
 
@@ -180,19 +205,42 @@ class InklingTextModel:
             model.planning_model = planned
             return model
 
-    def __init__(self, reader, device_map=None):
+    def __init__(self, reader, device_map=None, fast_draft=False):
         cfg = self.config = config(reader.gguf)
         tokens = reader.gguf.need("tokenizer.ggml.tokens")
         self.chat_channels = {tokens.index("<|message_model|>"): "role", tokens.index("<|end_message|>"): "end",
                               tokens.index("<|content_thinking|>"): "thinking", tokens.index("<|content_text|>"): "text"}
+        self.tool_invoke_id = tokens.index("<|content_invoke_tool_json|>")
         self.geo = InklingGeometry(cfg["hidden_size"], cfg["unpadded_vocab_size"])
         self.embedding = reader.tensor("token_embd.weight")
         self.embed_norm = reader.tensor("token_embd_norm.weight", torch.float32)
-        self.output, self.output_columns, _, _ = pack_bf16(reader.tensor("output.weight")[:self.geo.vocab_size])
+        head = reader.gguf["output.weight"]
+        self.output_columns = pad_gemm_n(self.geo.vocab_size)
+        self.search_head = self.compact_head = None
+        compact = fast_draft and head.quant.name == "BF16"
+        if (q8_projections_available() and head.quant.name == "Q8_0" and head.shape[0] >= self.output_columns
+                and (self.output_columns, self.geo.hidden) == (200064, 2304)):
+            raw = reader.raw(head.name)
+            self.output = pack_kquant(raw, 8, self.output_columns, self.geo.hidden)
+            if fast_draft:
+                from ...checkpoint.gguf.source import dequantize
+                rows, k = self.output_columns, self.geo.hidden
+                dense_head = dequantize(raw[:rows * (k // 32) * 34], "Q8_0", rows * k, torch.bfloat16)
+                self.search_head = pack_search(dense_head.view(rows, k), rows)
+                del dense_head
+            del raw
+        else:
+            dense_head = reader.tensor(head.name)
+            self.output, self.output_columns, _, _ = pack_bf16(dense_head[:self.geo.vocab_size])
+            if fast_draft:
+                self.search_head = pack_search(dense_head, self.output_columns)
+            if compact:
+                self.compact_head = pack_compact(self.output, self.output_columns, self.geo.hidden)
+            del dense_head
         self.norm = reader.tensor("output_norm.weight", torch.float32)
         self.output_query = reader.tensor("output_res_query.weight", torch.float32)
         self.controller_tanh = controller_tanh_table(self.embedding.device)
-        self.layers = [InklingLayer(reader, cfg, i, self.controller_tanh, device_map)
+        self.layers = [InklingLayer(reader, cfg, i, self.controller_tanh, device_map, compact)
                        for i in range(cfg["num_hidden_layers"])]
         loop = cfg["loop_config"]
         self.start, self.end, self.passes = loop["core_start"], loop["core_end"], loop["num_passes"]
@@ -207,9 +255,22 @@ class InklingTextModel:
                 layer.weights["loop_msg_query"] = query.view_as(layer.weights["loop_msg_query"])
 
     def weight_tensors(self):
-        yield from (self.embedding, self.embed_norm, self.output, self.norm, self.output_query, self.controller_tanh)
+        def buffers(weights):
+            for weight in weights:
+                if isinstance(weight, ops.KQuantProjWeight):
+                    yield weight.quant
+                    yield weight.meta
+                else:
+                    yield weight
+        yield from buffers((self.embedding, self.embed_norm, self.output, self.norm, self.output_query, self.controller_tanh))
+        yield from self.search_head or ()
+        yield from self.compact_head or ()
         for layer in self.layers:
-            yield from layer.weights.values()
+            for pair in layer.compact_inputs or ():
+                yield from pair
+            for projection in (layer.moe.gate_up, layer.moe.down):
+                yield from projection.compact or ()
+            yield from buffers(layer.weights.values())
             moe = layer.moe
             yield moe.router
             if moe.packed_router is not None:
@@ -259,7 +320,7 @@ class InklingTextModel:
         cache.position = offset + size
         return logits
 
-    def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill):
+    def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill, *, taps=None, tap_at=None):
         eps = self.config["rms_norm_eps"]
         x = normalize_rows(ops.gather_rows(self.embedding, input_ids), eps, self.embed_norm)
         blocks, bank, pass_messages = [], None, None
@@ -275,12 +336,17 @@ class InklingTextModel:
                     x, blocks = initial, list(initial_blocks)
             if i == self.end:
                 bank, pass_messages = None, None
+            if taps is not None and visit in tap_at:
+                ops.copy_rows(taps[:, tap_at[visit]], converted(x, torch.bfloat16))
             state, table, slots = visit_inputs(visit)
             x = self.layers[i](x, blocks, bank, state, table, position, sequences, slots, plan, prefill,
                                None if pass_messages is None else pass_messages[i - self.start])
         x = mix(blocks, x, self.output_query, eps, prefill).squeeze(1)
-        return normalize_rows(x, eps, self.norm)
+        x = normalize_rows(x, eps, self.norm)
+        if taps is not None and len(self.visits) in tap_at:
+            ops.copy_rows(taps[:, tap_at[len(self.visits)]], x)
+        return x
 
     def logits(self, x):
-        logits = packed_logits(x, self.output, self.output_columns)
+        logits = packed_logits(x, self.output, self.output_columns, self.compact_head)
         return capped_logits(logits, self.geo.vocab_size, self.config["final_logit_softcapping"])

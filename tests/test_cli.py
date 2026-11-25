@@ -593,6 +593,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['num_spec'], 7)
         self.assertTrue(kw['mtp_tool_draft'])
 
+    def test_generic_tool_draft_flag_and_legacy_alias_override_each_other(self):
+        from snowllm.cli import parser
+        p = parser()
+        for disabled, enabled in (('--no-spec-tool-draft', '--mtp-tool-draft'),
+                                  ('--no-mtp-tool-draft', '--spec-tool-draft')):
+            self.assertFalse(p.parse_args(['MODEL', enabled, disabled]).mtp_tool_draft)
+            self.assertTrue(p.parse_args(['MODEL', disabled, enabled]).mtp_tool_draft)
+
     def test_budgets_do_not_change_context_or_chunk(self):
         args, kw = self.launch_options(('--max-model-len', '32K', '--max-num-batched-tokens', '512',
                                         '--max-gpu-mem', '.4', '--max-host-mem', '.5'))

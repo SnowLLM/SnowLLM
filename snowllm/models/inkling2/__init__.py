@@ -16,11 +16,13 @@ def validate_config(cfg):
     ops.select_geometry(GEO_INKLING2_MINI)
 
 
-def load_gguf_weights(reader, cfg, layers, *, device_map, mtp):
+def load_gguf_weights(reader, cfg, layers, *, device_map, mtp, fast_draft=False):
     if tuple(layers) != tuple(range(cfg["num_hidden_layers"])):
         raise SnowLLMError("the fixed Inkling loop requires every weight layer")
-    model = InklingTextModel(reader, device_map)
+    from ...ops.inkling import candidate_tiles
+    fast_draft = fast_draft and bool(candidate_tiles(1, 1, 200064, cfg["hidden_size"], 256))
+    model = InklingTextModel(reader, device_map, fast_draft)
     if not model.embedding.is_meta:
         with ops.dry_load():
-            model.planning_model = InklingTextModel(reader, device_map)
+            model.planning_model = InklingTextModel(reader, device_map, fast_draft)
     return model

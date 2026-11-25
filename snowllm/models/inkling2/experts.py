@@ -6,7 +6,7 @@ import torch
 from ...errors import SnowLLMError
 from ...ops import empty_shaped
 from ..placement import place
-from ...ops.inkling import expert_linear, kquant_expert_linear, pack_kquant_experts
+from ...ops.inkling import expert_linear, kquant_expert_linear, pack_compact, pack_kquant_experts
 
 
 def pack_nvfp4(weight, experts, n, k):
@@ -26,9 +26,10 @@ class ExpertProjection:
     scale: torch.Tensor | None
     meta: torch.Tensor | None = None
     fmt: int = 0
+    compact: tuple | None = None
 
     @classmethod
-    def load(cls, rd, stem, experts, n, k):
+    def load(cls, rd, stem, experts, n, k, compact=False):
         tensor = rd.gguf[stem + ".weight"]
         if tensor.shape != (experts, n, k):
             raise SnowLLMError(f"{tensor.name}: expected {(experts, n, k)}, got {tensor.shape}")
@@ -46,13 +47,13 @@ class ExpertProjection:
         if tensor.quant.name == "BF16" and stem + ".scale" not in rd.gguf:
             weight = empty_shaped(tensor.shape, torch.bfloat16)
             rd.raw(tensor.name, out=weight.view(torch.uint8).reshape(-1))
-            return cls(weight, None)
+            return cls(weight, None, compact=pack_compact(weight, n, k, experts) if compact else None)
         raise SnowLLMError(f"{tensor.name}: unsupported Inkling expert format {tensor.quant.name}")
 
     def __call__(self, x, ids, prefill=False, plan=None):
         if self.meta is not None:
             return kquant_expert_linear(x, self.weight, self.meta, self.fmt, ids, plan)
-        return expert_linear(x, self.weight, self.scale, ids, prefill, plan)
+        return expert_linear(x, self.weight, self.scale, ids, prefill, plan, self.compact)
 
 
 def pack_router(reader, name, weight):
@@ -79,7 +80,7 @@ def pack_router(reader, name, weight):
 
 
 class InklingMoE:
-    def __init__(self, rd, cfg, layer, device_map=None):
+    def __init__(self, rd, cfg, layer, device_map=None, compact=False):
         prefix = f"blk.{layer}."
         hidden, inter = cfg["hidden_size"], cfg["moe_intermediate_size"]
         self.intermediate = inter
@@ -92,9 +93,9 @@ class InklingMoE:
         bias = prefix + "exp_probs_b.bias"
         self.bias = rd.tensor(bias, torch.float32) if bias in rd.gguf else None
         with place(device_map, "experts.gate_up", layer):
-            self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden)
+            self.gate_up = ExpertProjection.load(rd, prefix + "ffn_gate_up_exps", experts, 2 * inter, hidden, compact)
         with place(device_map, "experts.down", layer):
-            self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter)
+            self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter, compact)
 
     def __call__(self, x, prefill=False, *, post_conv=None):
         from ...ops.inkling import combine, expert_plan, route, short_conv, softcapped_swiglu

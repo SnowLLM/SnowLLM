@@ -104,7 +104,7 @@ class DFlashDraft:
                                        device="cuda")
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
-                block_tables: torch.Tensor, seq_lens: torch.Tensor) -> torch.Tensor:
+                block_tables: torch.Tensor, seq_lens: torch.Tensor, *, local_table=None, local_slots=None, initial_zeros=None) -> torch.Tensor:
         M, H = noise.shape
         B = seq_lens.numel()
         blk = M // B
@@ -120,7 +120,7 @@ class DFlashDraft:
         # Keep every query's window, including the oldest partial page.
         views = {False: (block_tables, seq_lens)} if g.num_sliding_layers < g.num_layers else {}
         if g.num_sliding_layers:
-            views[True] = (ops.paged_window_view(block_tables, seq_lens, 0,
+            views[True] = (ops.paged_window_view(block_tables if local_table is None else local_table, seq_lens, 0,
                            g.sliding_window + blk + self.block_size - 2,
                            self.block_size, end_offset=-1)
                            if g.sliding_window else (block_tables, seq_lens))
@@ -130,7 +130,11 @@ class DFlashDraft:
                          device="cuda")
 
         h = noise
-        residual = zeros_like(h)
+        if initial_zeros is None:
+            residual = zeros_like(h)
+        else:
+            residual = empty_like(h)
+            ops.copy_rows(residual, initial_zeros)
         proj = empty(M, d.proj_shape(d.Proj.QKV)[0], dtype=torch.bfloat16, device="cuda")
         q = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
         attn = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
@@ -165,9 +169,10 @@ class DFlashDraft:
             w = self.w["layers"][layer]
             ops.rmsnorm_residual(sub, residual, w["in_norm"], x, self.eps)
             d.proj(d.Proj.QKV, site0(x, w.get("attn_conv")), w["qkv"], sc, proj)
-            d.norm_rope_store(proj,w["q_norm"],w["k_norm"],cos,sin,q,kc,vc,slots,
+            windowed = g.sliding(layer)
+            kv_slots = local_slots if windowed and local_slots is not None else slots
+            d.norm_rope_store(proj,w["q_norm"],w["k_norm"],cos,sin,q,kc,vc,kv_slots,
                               self.eps,self.block_size)
-            windowed = layer < g.num_sliding_layers
             v_bt, v_len = views[windowed]
             d.paged_attn(q.view(M, g.num_heads, g.head_size), v_len, kc, vc, attn,
                          v_bt, plans[windowed], num_slots, ws, scale, blk, self.block_size,
@@ -237,7 +242,7 @@ class NeoXSource:
 
 def load(src: "DraftSource", geo: DFlashGeometry,
          pools: list[tuple[torch.Tensor, torch.Tensor]], arena: ops.Arena,
-         block_size: int) -> DFlashDraft:
+         block_size: int, *, candidate_search=False) -> DFlashDraft:
     if not geo.rope_is_neox_style:
         src=NeoXSource(src,geo.head_size)
     def cu(name: str) -> torch.Tensor:
@@ -248,13 +253,10 @@ def load(src: "DraftSource", geo: DFlashGeometry,
         ctx_rows.append(f"layers.{layer}.self_attn.k_proj.weight")
         ctx_rows.append(f"layers.{layer}.self_attn.v_proj.weight")
 
-    w = {
-        "fc": _proj(src, d.Proj.FC, ["fc.weight"]),
-        "hidden_norm": cu("hidden_norm.weight"),
-        "norm": cu("norm.weight"),
-        "ctx_kv": _proj(src, d.Proj.CTX_KV, ctx_rows),
-        "layers": [],
-    }
+    w = {"norm": cu("norm.weight"), "layers": []}
+    if not geo.inkling:
+        w.update(fc=_proj(src, d.Proj.FC, ["fc.weight"]), hidden_norm=cu("hidden_norm.weight"),
+                 ctx_kv=_proj(src, d.Proj.CTX_KV, ctx_rows))
     if geo.dflash2:
         w["sel_hidden"] = _proj(src, d.Proj.SELECTOR_HIDDEN,
                                 ["candidate_selector.hidden_projection.weight"])
@@ -282,6 +284,9 @@ def load(src: "DraftSource", geo: DFlashGeometry,
                 "proj": _proj(src, d.Proj.CONV, [p + key + ".kernel_projection.weight"]),
                 "base": cu(p + key + ".base_kernel").contiguous(),
             }
+    if geo.inkling:
+        from ..inkling2.dspark import load_inkling
+        return load_inkling(src, w, pools, geo, arena, block_size, candidate_search)
     if geo.dspark:
         from .dspark_draft import DSparkDraft, load_heads
         load_heads(src, geo, w)

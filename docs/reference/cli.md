@@ -85,10 +85,10 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--num-spec` / `--num-speculative-tokens` | `2` | MTP draft tokens per step, or the cap with `--mtp-adaptive`. Use `0` to disable MTP. |
 | `--mtp-adaptive` | Off | Adjust native Qwen3.8-Flash-Next MTP depth during decoding. Set the cap with `--num-spec` (positive integer). |
 | `--mtp-prompt-lookup` | Off | Reuse matching request text and tool results as target-verified drafts. |
-| `--mtp-tool-draft` | Off | Draft tool-call markup from supplied tool definitions during single-request decoding. |
+| `--spec-tool-draft` / `--mtp-tool-draft` | Off | Draft tool-call markup for Flash-Next, Qwen and MiniCPM, or function headers for DeepSeek V4 and LFM2.5. The target verifies every proposed token. |
 | `--dflash` | Unset | DFlash or DSpark draft checkpoint; replaces MTP and shares the memory budget. |
-| `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). DSpark enforces its checkpoint minimum. |
-| `--dflash-adaptive` | Off | Adjust how many tokens the target verifies from each DFlash or DFlash2 block, based on recent acceptance. |
+| `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). Inkling accepts verification widths from 2 through the checkpoint block size and computes the full draft attention block. |
+| `--dflash-adaptive` | Off | Adjust the verification width for DFlash and DFlash2. The Inkling DSpark recipes enable it by default and use draft confidence, observed acceptance and step time for single-request greedy decoding. |
 | `--dflash-p-min` | `0.0` | DSpark confidence threshold; 0 disables early stopping. |
 | `--kv-cache-dtype` | `bf16` | `bf16`, `auto` (bf16) or experimental `int8`. INT8 is [model-dependent](../guides/performance#long-contexts). |
 | `--max-num-batched-tokens` | `8192` | Fixed prefill chunk size, e.g. `2k`. See [tuning](../guides/performance#prefill-chunk-size). |

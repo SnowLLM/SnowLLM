@@ -138,7 +138,8 @@ class SpecTerminalTests(unittest.TestCase):
         decoder._stage_rows = Mock()
         decoder.runner = Mock(n_draft_replays=0)
         graph = Mock()
-        decoder.graphs = {2: graph}
+        decoder.geo = Mock(inkling=False)
+        decoder.graphs = {(2, False): graph}
         decoder._proposals = lambda batch: decoder._store_proposals(batch, [[10], [20]], None)
         done, live = (Request([1], SamplingParams(), done=finished) for finished in (True, False))
         decoder.propose([done, live], [1, 2])

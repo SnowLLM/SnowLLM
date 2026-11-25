@@ -10,3 +10,13 @@ snowllm pi --host 192.168.1.10 --port 8000
 This writes all models from the recipe catalogue to `~/.pi/agent/models.json`, without requiring a running server or a loaded model. Context comes from each recipe's `max_model_len`, or the default when omitted. `--host` defaults to `localhost`; use the inference server's port.
 
 For LAN access, serve with `--host 0.0.0.0`. Model management uses a separate listener; see [Web UI](../webui).
+
+## Manually test agent task completion
+
+Install the Pi CLI, configure its provider as above, and load the model in SnowLLM. From the repository root, run:
+
+```sh
+python tests/manual/pi_agent_task.py --model Qwen3.8-Flash-Next
+```
+
+Use the served model ID. Pi reads an access log in a temporary directory, counts HTTP 5xx responses by path, and writes a JSON report. The test checks the tool execution order, report contents, original input, and normal completion. It runs only when invoked explicitly. Use `--timeout` to adjust the 180-second limit.

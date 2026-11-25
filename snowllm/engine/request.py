@@ -10,7 +10,7 @@ from .. import ops
 from ..metrics import RequestTiming
 
 if TYPE_CHECKING:
-    from .mtp_tool import MtpToolFormat
+    from .mtp_tool import MtpToolFormat, ToolDraft, ToolHeaders
 
 
 @dataclass
@@ -76,7 +76,8 @@ class Request:
     pos_delta: int = 0
     embeds: torch.Tensor | None = None
     embed_rows: list[int] = field(default_factory=list)
-    tool_draft: "MtpToolFormat | None" = field(default=None, repr=False)
+    tool_draft: "MtpToolFormat | ToolHeaders | None" = field(default=None, repr=False)
+    tool_state: "ToolDraft | None" = field(default=None, init=False, repr=False)
     lookup_passages: tuple[list[int], ...] = field(default=(), repr=False)
 
     @property

@@ -16,7 +16,7 @@ import ModelRecipes from '../../reference/ModelRecipes.vue'
 | --- | --- |
 | Qwen3.8-Flash-Next | PLE 查找表按需从磁盘读取，请保留在本地 SSD。 |
 | DeepSeek V4 / V4.1 | 目前仅支持文本；匹配的 Engram 文件需保留在本地 SSD。 |
-| Inkling-2-Mini（GGUF） | 文本推理使用 BF16 KV，支持多请求批处理。 |
+| Inkling-2-Mini（GGUF） | 文本推理使用 BF16 KV，支持多请求批处理。Q4_K_M 和 Q8_K_XL 的 DSpark 配方均搭配 Q8_0 草稿，默认启用提示词查找。单请求贪心解码时，草稿先筛选候选词表块，目标模型自适应选择验证宽度，每轮含锚点最多验证 8 个位置。采样草稿使用全词表打分和拒绝采样。需要降低显存占用时可用 `--no-dflash-adaptive --dflash-block 4`。 |
 | MiniCPM-V 4.7 | 支持单图、多图和高分辨率切片；暂不支持视频和 LES 专家流式加载。 |
 | LFM2.5-8B-A1B | 必须开启 thinking，关闭时 API 返回 HTTP 400。 |
 | MinerU | `mineru-vlm` 仅提供 VLM；`mineru` 提供整套模型，见 [MinerU 接入](../integrations/mineru)。 |

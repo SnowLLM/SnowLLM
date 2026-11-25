@@ -5,8 +5,9 @@ from functools import lru_cache
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import _chk, _chk_rows, _p, _stream, empty_bytes
+from ._common import KQuantProjWeight, _chk, _chk_rows, _p, _stream, empty_bytes, empty_shaped
 from .allocation import empty
+from .metadata import copy_rows
 from .operation import operator
 
 
@@ -117,7 +118,7 @@ def batch_metadata(batch, pages, page_size):
     pos, seq, mapping = (ints(rows) for _ in range(3))
     local = ints(rows) if pages else None
     table = ints(count, pages) if pages else None
-    cu = batch.cu_seqlens if batch.is_prefill else None
+    cu = batch.cu_seqlens if batch.is_prefill or rows != count else None
     if not pos.is_meta:
         check(lib.snowllm_inkling_metadata(_p(batch.positions[0]), _p(batch.slot_mapping), _p(cu),
               _p(batch.state_indices), _p(pos), _p(seq), _p(mapping), _p(local), _p(table),
@@ -168,13 +169,151 @@ def float_projection(x, weight_kn):
     return out
 
 
+def q8_projections_available():
+    return hasattr(lib, "snowllm_inkling_q8_logits")
+
+
+def _packed_buffers(weight, n, k, device):
+    if isinstance(weight, KQuantProjWeight):
+        from .gemm import kquant_bytes
+        if weight.fmt != 8:
+            raise SnowLLMError("Inkling packed dense projections require Q8_0")
+        nq, nm, _ = kquant_bytes(8, n, k)
+        _chk(weight.quant, "Inkling Q8_0 codes", torch.uint8, nq)
+        _chk(weight.meta, "Inkling Q8_0 scales", torch.uint8, nm)
+        if weight.quant.device != device or weight.meta.device != device:
+            raise SnowLLMError("Inkling Q8_0 buffers must share the input device")
+        return weight.quant, weight.meta
+    _chk(weight, "Inkling packed BF16 weight", torch.bfloat16, n * k)
+    if weight.device != device:
+        raise SnowLLMError("Inkling BF16 weight must share the input device")
+    return weight, None
+
+
+def candidate_tiles(batch, rows, columns, hidden, rank):
+    if not hasattr(lib, "snowllm_inkling_candidate_tiles"):
+        return 0
+    return lib.snowllm_inkling_candidate_tiles(batch, rows, columns, hidden, rank)
+
+
+def pack_search(weight, columns):
+    rows, k = weight.shape
+    _chk(weight, "Inkling draft search weights", torch.bfloat16, rows, k)
+    codes = torch.empty(columns // 16, k // 16, 16, 4, dtype=torch.uint8, device=weight.device)
+    scales = torch.empty(columns, dtype=torch.float32, device=weight.device)
+    if not weight.is_meta:
+        check(lib.snowllm_inkling_pack_search(_p(weight), _p(codes), _p(scales), min(rows, columns),
+              columns, k, _stream()), "inkling_pack_search")
+    return codes, scales
+
+
 @operator
-def packed_logits(x, weight, n):
+def search_logits(hidden, table):
+    codes, scales = table
+    rows, k = hidden.shape
+    out = empty(rows, scales.numel(), dtype=torch.float32, device=hidden.device)
+    x = empty(rows, k, dtype=torch.float32, device=hidden.device)
+    abs_x = empty(rows, k, dtype=torch.float32, device=hidden.device)
+    scale = empty(rows, 1, dtype=torch.float32, device=hidden.device)
+    q = empty(rows, k, dtype=torch.int8, device=hidden.device)
+    sums = empty(rows, dtype=torch.int32, device=hidden.device)
+    if not hidden.is_meta:
+        x.copy_(hidden)
+        torch.abs(x, out=abs_x)
+        torch.amax(abs_x, dim=1, keepdim=True, out=scale)
+        scale.div_(127).clamp_min_(1e-20)
+        q.copy_(x.div_(scale).round_().clamp_(-127,127))
+        torch.sum(q, dim=1, dtype=torch.int32, out=sums)
+        check(lib.snowllm_inkling_search_logits(_p(q), _p(codes), _p(scale), _p(sums), _p(scales),
+              _p(out), scales.numel(), rows, k, _stream()), "inkling_search_logits")
+    return out
+
+
+@operator
+def candidate_groups(base, first_fold, padded_bias, offsets, bias, count):
+    rows, n = base.shape
+    device = base.device
+    grouped = empty(rows, n // 32, dtype=torch.float32, device=device)
+    peak = empty(rows, 1, dtype=torch.float32, device=device)
+    best = empty(n // 32, dtype=torch.float32, device=device)
+    values = empty(count, dtype=torch.float32, device=device)
+    tiles = empty(count, dtype=torch.int64, device=device)
+    ids = empty(count, 32, dtype=torch.int64, device=device)
+    selected_bias = empty(count * 32, dtype=torch.float32, device=device)
+    if not base.is_meta:
+        base.add_(padded_bias).add_(first_fold)
+        torch.amax(base.view(rows, -1, 32), dim=2, out=grouped)
+        torch.amax(grouped, dim=1, keepdim=True, out=peak)
+        torch.amax(grouped.sub_(peak), dim=0, out=best)
+        torch.topk(best, count, sorted=False, out=(values, tiles))
+        ids.copy_(tiles[:, None]).mul_(32).add_(offsets)
+        ids.clamp_(max=bias.numel() - 1)
+        torch.index_select(bias, 0, ids.flatten(), out=selected_bias)
+    return tiles, ids.flatten(), selected_bias
+
+
+@operator
+def candidate_token(scores, ids, confidence):
+    from . import argmax
+    row = empty(1, dtype=torch.int64, device=scores.device)
+    token = empty(1, dtype=torch.int64, device=scores.device)
+    argmax(scores, out=row)
+    if not scores.is_meta:
+        torch.index_select(ids, 0, row.view(-1), out=token)
+    if confidence is not None:
+        peak = empty(1, dtype=torch.float32, device=scores.device)
+        if not scores.is_meta:
+            torch.amax(scores, dim=1, out=peak)
+            scores.sub_(peak).exp_()
+            torch.sum(scores, dim=1, out=peak)
+            confidence.copy_(peak.reciprocal_())
+    return token
+
+
+@operator
+def selected_logits(x, weight, n, tiles, vocab):
+    rows, k = x.shape
+    w, meta = _packed_buffers(weight, n, k, x.device)
+    out = empty(rows, tiles.numel() * 32, dtype=torch.float32, device=x.device)
+    if not x.is_meta:
+        check(lib.snowllm_inkling_selected_logits(_p(x), _p(w), _p(meta), _p(tiles), _p(out),
+              rows, tiles.numel(), n, k, vocab, _stream()), "inkling_selected_logits")
+    return out
+
+
+def pack_compact(weight, n, k, experts=1):
+    tiles = weight.numel() // 256
+    packed = empty_shaped((tiles, 384), torch.uint8)
+    tags = empty_shaped((tiles,), torch.uint8)
+    if not weight.is_meta:
+        check(lib.snowllm_inkling_pack_compact(_p(weight), _p(packed), _p(tags), experts, n, k,
+              _stream()), "inkling_pack_compact")
+    return packed, tags
+
+
+def _compact_project(x, weight, compact, plan, out, n):
+    if not x.is_meta:
+        check(lib.snowllm_inkling_compact_project(_p(x), _p(weight), _p(compact[0]), _p(compact[1]),
+              _p(plan), _p(out), x.size(0), n, x.size(-1), _stream()), "inkling_compact_project")
+    return out
+
+
+@operator
+def packed_logits(x, weight, n, compact=None):
     rows, k = x.shape
     _chk(x, "Inkling logits input", torch.bfloat16)
-    _chk(weight, "Inkling packed logits weight", torch.bfloat16, n * k)
+    packed, meta = _packed_buffers(weight, n, k, x.device)
+    if compact is not None and lib.snowllm_inkling_compact_rows(rows, False):
+        out = empty(rows, n, dtype=torch.float32, device=x.device)
+        return _compact_project(x, weight, compact, None, out, n)
+    if meta is not None:
+        out = empty(rows, n, dtype=torch.float32, device=x.device)
+        if not x.is_meta:
+            check(lib.snowllm_inkling_q8_logits(_p(x), _p(packed), _p(meta), _p(out),
+                  rows, n, k, _stream()), "inkling_q8_logits")
+        return out
     size = lib.snowllm_inkling_logits_workspace_bytes(rows, n, k)
-    if size < 0 or x.device != weight.device:
+    if size < 0:
         raise SnowLLMError("incompatible Inkling packed logits tensors")
     workspace = empty(size, dtype=torch.uint8, device=x.device) if size else None
     out = empty(rows, n, dtype=torch.float32, device=x.device)
@@ -375,7 +514,7 @@ bf16_expert_plan = expert_plan
 
 
 @operator
-def expert_linear(x, weight, scales, ids, prefill=False, plan=None):
+def expert_linear(x, weight, scales, ids, prefill=False, plan=None, compact=None):
     tokens, groups, k = x.shape
     tiled = weight.ndim == 5
     if tiled:
@@ -406,6 +545,8 @@ def expert_linear(x, weight, scales, ids, prefill=False, plan=None):
         if not size or (scales is not None and not tiled) or (not down and n != 2 * intermediate) or plan.device != x.device:
             raise SnowLLMError("incompatible Inkling expert plan")
         _chk(plan, "Inkling expert plan", torch.int32, size)
+        if compact is not None and lib.snowllm_inkling_compact_rows(tokens, prefill):
+            return _compact_project(x, weight, compact, plan, out, n)
         if not x.is_meta:
             if scales is None:
                 check(lib.snowllm_inkling_bf16_project(_p(x), _p(weight), _p(plan), _p(out),
@@ -502,24 +643,32 @@ def input_projections_supported(k, widths):
 
 
 @operator
-def input_projections(inputs, weights, widths, prefill):
+def input_projections(inputs, weights, widths, prefill, compact=None):
     rows, k = inputs[0].shape
     device = inputs[0].device
     if len(inputs) != 3 or len(weights) != len(widths) or not input_projections_supported(k, widths):
         raise SnowLLMError("unsupported Inkling attention input projections")
     for x in inputs:
         _chk(x, "Inkling normalized input", torch.bfloat16, rows, k)
-    outputs = []
-    for i, (weight, width) in enumerate(zip(weights, widths)):
-        _chk(weight, "Inkling packed input projection", torch.bfloat16, ((width + 127) // 128) * 128 * k)
-        outputs.append(empty(rows, width, dtype=torch.float32 if i == 5 else torch.bfloat16, device=device))
-    if any(t.device != device for t in (*inputs, *weights)):
+    if any(t.device != device for t in inputs):
         raise SnowLLMError("Inkling attention input projections must share a device")
+    buffers = [_packed_buffers(w, ((n + 127) // 128) * 128, k, device) for w,n in zip(weights, widths)]
+    packed, meta = zip(*buffers)
+    outputs = [empty(rows, width, dtype=torch.float32 if i == 5 else torch.bfloat16, device=device)
+               for i, width in enumerate(widths)]
     if not inputs[0].is_meta:
         def pointers(tensors):
             return (ctypes.c_void_p * len(tensors))(*map(_p, tensors))
-        check(lib.snowllm_inkling_input_projections(pointers(inputs), pointers(weights), pointers(outputs),
-              rows, len(weights), prefill, _stream()), "inkling_input_projections")
+        args = pointers(outputs), rows, len(weights), prefill, _stream()
+        if compact is not None and lib.snowllm_inkling_compact_rows(rows, prefill):
+            codes, tags = zip(*compact)
+            status = lib.snowllm_inkling_compact_inputs(pointers(inputs), pointers(packed), pointers(codes),
+                pointers(tags), pointers(outputs), (ctypes.c_int * len(widths))(*widths), len(widths), rows, _stream())
+        elif any(m is not None for m in meta):
+            status = lib.snowllm_inkling_mixed_input_projections(pointers(inputs), pointers(packed), pointers(meta), *args)
+        else:
+            status = lib.snowllm_inkling_input_projections(pointers(inputs), pointers(packed), *args)
+        check(status, "inkling_input_projections")
     return outputs
 
 
@@ -544,7 +693,7 @@ def dense(x, weight, n, k, columns, prefill):
 
 
 @operator
-def attention(q, k, v, relative, sinks, sequences, positions, table, window=0, *, output_projection=None):
+def attention(q, k, v, relative, sinks, sequences, positions, table, window=0, *, prefill=False, output_projection=None):
     tokens, heads, dim = q.shape
     pages, page_size, kv_heads, kv_dim = k.shape
     if dim != 128 or kv_dim != dim or heads % kv_heads:
@@ -577,7 +726,7 @@ def attention(q, k, v, relative, sinks, sequences, positions, table, window=0, *
     out = empty(q.shape, dtype=q.dtype, device=q.device)
     split = hasattr(lib, "snowllm_inkling_attention_with_workspace")
     size = (lib.snowllm_inkling_attention_workspace_bytes(tokens, batch, heads, kv_heads, page_size, width, window)
-            if split else 0)
+            if split and not prefill else 0)
     size = max(size, output_bytes)
     workspace = empty(size, dtype=torch.uint8, device=q.device) if size else None
     if q.is_meta:
@@ -718,3 +867,88 @@ def short_conv(x, weight, dynamic, history, sequences, positions, cu, slots, *, 
           _p(positions), _p(cu), _p(slots), rows, batch, width, heads, *history.stride()[:2], _stream()),
           "inkling_conv")
     return out
+
+
+@operator
+def draft_mix(taps, alpha, gamma, eps):
+    rows, width = taps.shape
+    hidden = gamma.numel()
+    _chk(taps, "Inkling draft taps", torch.bfloat16, rows, 4*hidden)
+    _chk(alpha, "Inkling tap mixture", torch.float32, 4)
+    _chk(gamma, "Inkling context norm", torch.float32, hidden)
+    out = empty(rows, hidden, device=taps.device, dtype=torch.bfloat16)
+    if not out.is_meta:
+        check(lib.snowllm_inkling_dspark_mix(_p(taps), _p(alpha), _p(gamma), _p(out),
+              rows, hidden, eps, _stream()), "inkling_dspark_mix")
+    return out
+
+
+@operator
+def draft_gates(proj, bias, state):
+    rows, rank = state.shape
+    _chk(state, "Inkling draft recurrent state", torch.bfloat16, rows, rank)
+    _chk(bias, "Inkling joint projection bias", torch.float32, 3*rank)
+    _chk(proj, "Inkling joint projection", torch.float32, rows, 3*rank)
+    latent = empty(rows, rank, device=state.device, dtype=state.dtype)
+    if not latent.is_meta:
+        check(lib.snowllm_inkling_dspark_gates(_p(proj), _p(bias), _p(state), _p(latent),
+              rows, rank, proj.stride(0), _stream()), "inkling_dspark_gates")
+    return latent
+
+
+@operator
+def draft_scores(base, fold, bias, cap):
+    rows, vocab = base.shape[0], bias.numel()
+    _chk_rows(base, "Inkling draft target scores", torch.float32)
+    _chk(fold, "Inkling draft folded scores", torch.float32, rows, fold.size(1))
+    _chk(bias, "Inkling folded bias", torch.float32, vocab)
+    if min(base.size(1),fold.size(1)) < vocab:
+        raise SnowLLMError("Inkling draft scores do not cover the vocabulary")
+    out = empty(rows, vocab, dtype=torch.float32, device=base.device)
+    if not out.is_meta:
+        check(lib.snowllm_inkling_dspark_scores(_p(base), _p(fold), _p(bias), _p(out), rows,
+              vocab, base.stride(0), fold.stride(0), cap, _stream()), "inkling_dspark_scores")
+    return out
+
+
+@operator
+def sample_draft_step(scores, temperature, uniform, slots, candidates, probabilities):
+    batch, width = scores.shape[0], candidates.shape[-1]
+
+    def buffer(*shape, dtype=torch.float32):
+        return empty(*shape, dtype=dtype, device=scores.device)
+
+    values, ids = buffer(batch, width), buffer(batch, width, dtype=torch.int64)
+    centered, probs = buffer(batch, width), buffer(batch, width)
+    scale, cdf = buffer(batch, 1), buffer(batch, width)
+    below = buffer(batch, width, dtype=torch.bool)
+    index, token = buffer(batch, 1, dtype=torch.int64), buffer(batch, 1, dtype=torch.int64)
+    if not scores.is_meta:
+        torch.topk(scores, width, dim=-1, out=(values, ids))
+        torch.sub(values, values[:, :1], out=centered)
+        torch.clamp_min(temperature[:, None], torch.finfo(torch.float32).tiny, out=scale)
+        centered.div_(scale)
+        torch.softmax(centered, -1, out=probs)
+        torch.cumsum(probs, -1, out=cdf)
+        torch.mul(uniform, cdf[:, -1], out=scale[:, 0])
+        torch.lt(cdf, scale, out=below)
+        torch.sum(below, dim=-1, keepdim=True, out=index)
+        index.clamp_max_(width - 1)
+        torch.gather(ids, 1, index, out=token)
+    copy_rows(candidates, ids, dst_index=slots)
+    copy_rows(probabilities, probs, dst_index=slots)
+    return token.view(-1)
+
+
+@operator
+def commit_history(inputs, history, slots, accepted, stride, cu=None):
+    rows, visits, width = inputs.shape
+    _chk(inputs, "Inkling tentative inputs", torch.bfloat16, rows, visits, width)
+    _chk(history, "Inkling convolution history", torch.bfloat16, history.size(0), visits, 3, width)
+    _chk(accepted, "Inkling committed rows", torch.int32, slots.numel())
+    _chk(slots, "Inkling commit slots", torch.int32, slots.numel())
+    if cu is not None:
+        _chk(cu, "Inkling verify offsets", torch.int32, slots.numel()+1)
+    if not history.is_meta:
+        check(lib.snowllm_inkling_history_commit(_p(inputs), _p(history), _p(slots), _p(accepted),
+              _p(cu), slots.numel(), width, visits, stride, _stream()), "inkling_history_commit")

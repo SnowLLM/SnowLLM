@@ -523,6 +523,8 @@ def load_gguf(root: pathlib.Path, layers: range | None = None, mtp: bool = True,
             if reads_raw is not None:
                 extra = (dict(moe_cache_experts=cache_experts, moe_cache_mode=cache_mode,
                               disk_offload=offload) if cache_experts or offload else {})
+                if getattr((kv or {}).get("draft_geo"), "inkling", False) and (kv or {}).get("dflash_adaptive") and cfg.get("model_type") == "inkling2_loop":
+                    extra["fast_draft"] = True
                 m = reads_raw(rd, cfg, want, device_map=dmap, mtp=mtp, **extra)
             else:
                 m = load_weights(GGUFWeightSource(rd, cfg, mtp_rd), cfg, want, False, mtp,

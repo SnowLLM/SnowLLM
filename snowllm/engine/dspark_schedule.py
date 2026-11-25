@@ -2,6 +2,7 @@
 
 import math
 from collections import deque
+from statistics import median
 
 
 def ranked_prefixes(confidence, limits):
@@ -83,3 +84,48 @@ class StepCost:
                 return self.draft + (self.eager[lo] * (hi - rows)
                                      + self.eager[hi] * (rows - lo)) / (hi - lo)
         raise ValueError(f'unprofiled DSpark batch size: {rows}')
+
+
+class InklingVerifyPolicy:
+    def __init__(self, width):
+        self.widths = tuple(sorted({n for n in (2, 3, 4, 5, 6, width) if n <= width}))
+        self.times = {n: deque(maxlen=21) for n in self.widths}
+        self.by_confidence = [[0, 0] for _ in range(10)]
+        self.by_depth = [[[0, 0] for _ in range(10)] for _ in range(width - 1)]
+        self.pending = None
+
+    def choose(self, request, scores):
+        if not request.drafts or not all(math.isfinite(s) for s in scores):
+            self.pending = None
+            return self.widths[-1]
+        self.pending = request, tuple(request.drafts), scores
+        for width, samples in self.times.items():
+            if len(samples) < 2:
+                return width
+        survival = expected = 1.
+        rates = {}
+        for depth, score in enumerate(scores):
+            bucket = min(9, max(0, int(score * 10)))
+            total, hits = self.by_confidence[bucket]
+            prior = (hits + 6 * (0.4 + 0.6 * score)) / (total + 6)
+            total, hits = self.by_depth[depth][bucket]
+            survival *= (hits + 10 * prior) / (total + 10)
+            expected += survival
+            width = depth + 2
+            if width in self.times:
+                rates[width] = expected / median(self.times[width])
+        return max(rates, key=rates.get)
+
+    def observe(self, request, rows, kept):
+        probe, self.pending = self.pending, None
+        if probe is None or probe[0] is not request:
+            return
+        _, predictions, scores = probe
+        for depth in range(min(kept, rows - 1, len(predictions))):
+            if predictions[depth] != request.drafts[depth]:
+                break
+            bucket = min(9, max(0, int(scores[depth] * 10)))
+            hit = int(depth < kept - 1)
+            for counts in (self.by_confidence[bucket], self.by_depth[depth][bucket]):
+                counts[0] += 1
+                counts[1] += hit

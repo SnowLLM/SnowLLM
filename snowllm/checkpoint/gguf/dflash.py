@@ -66,14 +66,18 @@ def find_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
 
 
 def is_dflash(g: GGUF) -> bool:
-    return g.arch == ARCH and "fc.weight" in g and "output_hc_base.weight" not in g
+    return (g.arch == ARCH and "output_hc_base.weight" not in g
+            and ("fc.weight" in g or (g.get("tokenizer.ggml.pre") == "inkling2" and "joint_proj.weight" in g)))
 
 
 def geometry(g: GGUF) -> DFlashGeometry:
     lfm = (g.get('tokenizer.ggml.pre')=='lfm2' and
            int(g.need('{arch}.embedding_length'))==2048 and
            int(g.need('{arch}.attention.head_count'))==32)
-    if "markov_w1.weight" in g and not g.get("{arch}.sample_from_anchor",lfm):
+    inkling = g.get("tokenizer.ggml.pre") == "inkling2" and "joint_proj.weight" in g
+    if inkling and (g.need("{arch}.sample_from_anchor") or not g.need("{arch}.has_markov_context")):
+        raise SnowLLMError("unsupported Inkling DSpark recurrent head")
+    if not inkling and "markov_w1.weight" in g and not g.get("{arch}.sample_from_anchor",lfm):
         raise SnowLLMError("Qwen DSpark currently requires an anchor-first checkpoint")
     n_head = int(g.need("{arch}.attention.head_count"))
     head = int(g.get("{arch}.attention.key_length")
@@ -84,8 +88,9 @@ def geometry(g: GGUF) -> DFlashGeometry:
     if pattern and len(pattern) != layers:
         raise SnowLLMError("DFlash sliding-window pattern must describe every draft layer")
     return DFlashGeometry(
-        is_causal=g.get("{arch}.attention.causal"),
-        target_model_type="lfm2_moe" if lfm else "",
+        is_causal=False if inkling else g.get("{arch}.attention.causal"),
+        target_model_type="inkling2_loop" if inkling else ("lfm2_moe" if lfm else ""),
+        sliding_pattern=tuple(map(bool, pattern)),
         markov_rank=int(g["markov_w1.weight"].shape[1]) if "markov_w1.weight" in g else 0,
         vocab_size=int(g["markov_w1.weight"].shape[0]) if "markov_w1.weight" in g else 0,
         hidden=int(g.need("{arch}.embedding_length")),
@@ -96,7 +101,7 @@ def geometry(g: GGUF) -> DFlashGeometry:
         intermediate=int(g.need("{arch}.feed_forward_length")),
         sliding_window=window,
         num_sliding_layers=(sum(bool(b) for b in pattern) if len(pattern) else layers) if window else 0,
-        tap_layers=taps_in(g.need("{arch}.target_layers")),
+        tap_layers=(tuple(g.need("{arch}.target_layers")) if inkling else taps_in(g.need("{arch}.target_layers"))),
         mask_token_id=int(g.need("tokenizer.ggml.mask_token_id")),
         num_target_layers=0,
         block_size=int(g.need("{arch}.block_size")),

@@ -15,7 +15,6 @@ from jinja2 import TemplateError
 
 from ..engine import Request, SamplingParams
 from ..engine.mtp_lookup import tool_lookup_passages
-from ..engine.mtp_tool import MtpToolFormat
 from ..models import multimodal
 from . import tool_parser
 from .protocol import Common, CompletionRequest
@@ -181,8 +180,9 @@ class Finish:
     finish_reason: str
 
 
-async def _run(prompt: list[int], req: Common,
-               mm: dict | None = None) -> AsyncIterator[tuple[str, Request, bool]]:
+async def _run(
+    prompt: list[int], req: Common, mm: dict | None = None, *, native_tools: dict | None = None,
+) -> AsyncIterator[tuple[str, Request, tool_parser.ToolCall | None]]:
     eng = serving().engine
     tok = serving().tokenizer
     at = stops(req)
@@ -198,7 +198,19 @@ async def _run(prompt: list[int], req: Common,
     out: list[int] = []
     sent = cut = ""
     seen = False
-    async for t in eng.stream(r):
+    stream = eng.stream(r)
+    if native_tools is not None:
+        stream = tool_parser.inkling_tool_frames(stream, channels, serving().model.tool_invoke_id,
+                                                  decode, native_tools, at)
+    async for t in stream:
+        if isinstance(t, tool_parser.ToolCall):
+            if len(cut) > len(sent):
+                yield cut[len(sent):], r, None
+            yield "", r, t
+            committed = cut = sent = ""
+            out.clear()
+            seen = True
+            continue
         if t in stop_ids:
             continue
         if channels and t in channels:
@@ -218,7 +230,7 @@ async def _run(prompt: list[int], req: Common,
         cut, hit = _cut(text, at)
         vis = cut if hit else tool_parser.holdback(cut, *at)[0]
         if len(vis) > len(sent):
-            yield vis[len(sent):], r, hit
+            yield vis[len(sent):], r, None
             seen = True
             sent = vis
         if hit:
@@ -227,15 +239,17 @@ async def _run(prompt: list[int], req: Common,
             eng.abort(r)
             break
     if len(cut) > len(sent) or not seen:
-        yield cut[len(sent):], r, False
+        yield cut[len(sent):], r, None
 
 
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                    types: dict | None, mm: dict | None = None) -> AsyncIterator[object]:
+    model = getattr(serving(), "model", None)
     split = ReasoningSplitter(reasoning, detect_open=not isinstance(req, CompletionRequest)
                               and (serving().think_open_id is not None or
-                                   getattr(getattr(serving(), "model", None), "chat_channels", None)))
-    tp = tool_parser.StreamingToolParser(types) if types is not None else None
+                                   getattr(model, "chat_channels", None)))
+    native_tools = types if getattr(model, "tool_invoke_id", None) is not None else None
+    tp = tool_parser.StreamingToolParser(types) if types is not None and native_tools is None else None
     idx = 0
     r: Request | None = None
 
@@ -244,8 +258,11 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
         if vis:
             yield ContentDelta(vis)
         for c in calls:
-            yield ToolCallDone(idx, new_id("call"), c.name,
-                               json.dumps(c.arguments, ensure_ascii=False))
+            try:
+                arguments = json.dumps(c.arguments, ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError, RecursionError):
+                continue
+            yield ToolCallDone(idx, new_id("call"), c.name, arguments)
             idx += 1
 
     def emit_content(ct: str) -> Iterator[object]:
@@ -253,7 +270,11 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
             return
         yield from emit_split(*(tp.push(ct) if tp else (ct, ())))
 
-    async for text, r, _ in _run(prompt, req, mm):
+    async for text, r, call in _run(prompt, req, mm, native_tools=native_tools):
+        if call is not None:
+            for event in emit_split("", [call]):
+                yield event
+            continue
         rc, ct = split.push(text)
         if rc:
             yield ReasoningDelta(rc)
@@ -399,6 +420,22 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
     return out, images
 
 
+def _developer_as_system(messages: list[dict], model_type: str | None) -> list[dict]:
+    if model_type not in ("inkling2_loop", "minicpmv4_7") or not any(m["role"] == "developer" for m in messages):
+        return messages
+    normalized = [{**m, "role": "system"} if m["role"] == "developer" else m for m in messages]
+    if model_type == "inkling2_loop":
+        return normalized
+    # MiniCPM's template accepts a single leading system message.
+    instructions = [m.get("content") or "" for m in normalized if m["role"] == "system"]
+    if all(isinstance(content, str) for content in instructions):
+        content = "\n\n".join(instructions)
+    else:
+        content = [part for item in instructions
+                   for part in (item if isinstance(item, list) else [{"type": "text", "text": item}])]
+    return [{"role": "system", "content": content}, *(m for m in normalized if m["role"] != "system")]
+
+
 def prompt_with_images(messages: list[dict], kwargs: dict,
                        tools: list[dict] | None = None) -> tuple[list[int], dict | None]:
     """Build the prompt and, when the messages carry an image, its vision tensors."""
@@ -409,6 +446,8 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
     if n > st.limit_mm_per_prompt:
         raise HTTPException(400, f"{n} images in one request exceeds "
                                  f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
+    model_type = getattr(getattr(st, "model", None), "multimodal_config", {}).get("model_type")
+    messages = _developer_as_system(messages, model_type)
     msgs, images = _split_images(messages)
     if not images:
         prompt = chat_prompt(msgs, kwargs, tools)
@@ -429,7 +468,7 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
         if passages:
             mm['lookup_passages'] = passages
     if tools and getattr(engine, 'mtp_tool_draft', False):
-        fmt = MtpToolFormat.from_tools(st.tokenizer, tools, engine.stop_token_ids)
+        fmt = engine.tool_format(st.tokenizer, tools, engine.stop_token_ids)
         if fmt is not None:
             mm['tool_draft'] = fmt
     return prompt, mm or None

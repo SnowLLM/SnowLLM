@@ -10,30 +10,8 @@ from .forward_context import Batch
 from .graphs import GraphCase, GraphInputs
 from .inputs import i32
 from .mtp_lookup import MtpLookup
+from .mtp_tool import ToolDraft
 from .spec_decode import SpecDecoder
-
-
-class _ToolDraft:
-    def __init__(self, fmt):
-        self.parser = fmt.new_state()
-        self.scanned = 0
-        self.suffix = None
-        self.native_depth = 2
-        self.rounds = self.proposed = self.verified = self.accepted = 0
-
-    def propose(self, request, limit):
-        self.parser.advance(request.out[self.scanned:])
-        self.scanned = len(request.out)
-        draft = self.parser.propose(limit)
-        native = request.drafts
-        if len(draft) < 2 or len(draft) <= len(native):
-            self.suffix = None
-            return False
-        if len(native) >= 2:
-            self.native_depth = len(native)
-        self.suffix = request.drafts = draft
-        self.proposed += len(draft)
-        return True
 
 
 class MtpDepth:
@@ -256,7 +234,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
             return False
         state = self.tool_states.get(request)
         if state is None:
-            state = self.tool_states[request] = _ToolDraft(request.tool_draft)
+            state = self.tool_states[request] = ToolDraft(request.tool_draft)
         return state.propose(request, limit)
 
     def propose_rest(self, batch, h, k):
@@ -332,7 +310,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         if sources:
             for request, count in zip(batch, acc):
                 source = sources.get(request)
-                if isinstance(source, _ToolDraft):
+                if isinstance(source, ToolDraft):
                     source.rounds += 1
                     source.verified += k
                     source.accepted += count - 1

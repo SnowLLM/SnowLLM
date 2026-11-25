@@ -173,7 +173,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     _log(f"loading {root.name} ...")
     t0 = time.time()
     from .engine import plan_draft, draft_num_spec, _dspark
-    draft = plan_draft(dflash)
+    draft = plan_draft(dflash, candidate_search=dflash_adaptive)
     draft_kv = dict(draft_resident=draft.device_bytes) if _dspark(draft.geo) else {}
     kv = dict(ctx=max_model_len, slots=max_num_seqs,
               util=gpu_memory_utilization,
@@ -367,9 +367,11 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         stages = getattr(g, "stack", g).num_layers
         p_min = getattr(engine.dflash, "p_min", 0.0)
         cut = f", cut at confidence {p_min}" if p_min else ", whole block every step"
-        if getattr(engine.dflash, "prefix_feedback", None) is not None:
-            cut = f", adaptive verification K={engine.dflash.short_width - 1}/{engine.dflash.block - 1}"
-        _log(f"dflash: block {engine.dflash.block}{cut}, {pool.total} draft KV blocks "
+        if policy := getattr(engine.dflash, "inkling_policy", None):
+            cut = ", adaptive greedy verification K=" + "/".join(str(n - 1) for n in policy.widths)
+        elif getattr(engine.dflash, "prefix_feedback", None) is not None:
+            cut = f", adaptive verification K={engine.dflash.short_width - 1}/{engine.dflash.width - 1}"
+        _log(f"dflash: block {engine.dflash_block}{cut}, {pool.total} draft KV blocks "
              f"({engine._dflash_pool_bytes(pool.total) / (1 << 30):.1f} GiB in {stages} pools of "
              f"its own) -- held back from the context above, not taken on top of it")
     if engine.cache is None:
@@ -483,8 +485,8 @@ def parser() -> argparse.ArgumentParser:
                    help='Adapt Flash-Next MTP depth from verification feedback, up to a positive --num-spec.')
     g.add_argument("--mtp-prompt-lookup", action=argparse.BooleanOptionalAction, default=False,
                    help='Reuse matching request text and tool results with MTP, DFlash or DSpark.')
-    g.add_argument("--mtp-tool-draft", action=argparse.BooleanOptionalAction, default=False,
-                   help='Draft tool-call markup when adaptive Flash-Next MTP is active.')
+    g.add_argument("--spec-tool-draft", "--mtp-tool-draft", dest="mtp_tool_draft", action=argparse.BooleanOptionalAction, default=False,
+                   help='Draft registered tool-call formats with adaptive MTP, DFlash or DSpark.')
     g.add_argument("--dflash", metavar="PATH", default=None,
                    help='Draft checkpoint for DFlash or DSpark; replaces MTP.')
     g.add_argument("--dflash-block", type=int, default=0, metavar="N",
@@ -492,7 +494,7 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--dflash-p-min", type=float, default=DEFAULT_DSPARK_P_MIN, metavar="P",
                    help='DSpark confidence threshold; 0 disables early stopping.')
     g.add_argument("--dflash-adaptive", action=argparse.BooleanOptionalAction, default=False,
-                   help="Shorten DFlash/DFlash2 target verification when few draft tokens are accepted.")
+                   help="Adapt DFlash verification width; on Inkling DSpark, enable greedy candidate search and compact BF16 verification.")
     g.add_argument("--dspark-adaptive", action=argparse.BooleanOptionalAction, default=False,
                    help='Profile DSpark step costs at startup and schedule confidence prefixes.')
     g.add_argument("--kv-cache-dtype", choices=("bf16", "auto", "int8"), default="bf16",
