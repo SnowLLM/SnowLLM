@@ -1,0 +1,88 @@
+{
+  "schema": 3,
+  "id": "mineru",
+  "model": "MinerU",
+  "type": "mineru",
+  "family": "MinerU",
+  "serve_as": "MinerU",
+  "runtime": "mineru",
+  "recommended": {
+    "mode": "fixed",
+    "preset": "bf16-aux-none"
+  },
+  "presets": {
+    "bf16-aux-none": {
+      "summary": "MinerU vision and auxiliary models served by the shared inference engine.",
+      "variant": "bf16-aux",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 8192,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 512,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "bf16": {
+      "repo": "opendatalab/MinerU2.5-Pro-2605-1.2B"
+    },
+    "auxiliary": {
+      "repo": "opendatalab/MinerU-4_models_torch",
+      "revision": "2b3afb86f4d23fa623f6b2f4b2279ed4ef93a89d",
+      "subdir": "small-models",
+      "include": [
+        "Layout/*",
+        "MFR/*",
+        "OCR/*",
+        "Table/*"
+      ]
+    }
+  },
+  "variants": {
+    "bf16-aux": {
+      "precision": "BF16 + original auxiliary weights",
+      "dir": "MinerU-4.1",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "bf16",
+      "revision": "08aaea840498d49ce16247b6263196cf02814885",
+      "include": [
+        "*.json",
+        "*.jinja",
+        "*.txt",
+        "*.safetensors"
+      ],
+      "sources": [
+        "auxiliary"
+      ],
+      "specs": [
+        "none"
+      ],
+      "download_bytes": {
+        "none": 3222892908
+      }
+    }
+  },
+  "specs": {
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "mineru": {
+      "preset": "bf16-aux-none",
+      "defaults": {
+        "kv_cache_dtype": null
+      },
+      "requires": "0.3.22",
+      "status": "supported",
+      "spec_label": "none"
+    }
+  }
+}

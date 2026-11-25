@@ -24,7 +24,7 @@ class RecipeCompatibilityTests(unittest.TestCase):
     def test_bundled_recipe_order_matches_the_website_catalogue(self):
         book = builder.recipes()
         ids = [row['id'] for row in book]
-        self.assertEqual([row.id for row in recipes.catalogue(bundle=True)], ids)
+        self.assertEqual([row.id for row in recipes.catalogue(bundle=True) if "model_id" not in row.raw], ids)
         self.assertEqual(ids[:3], [
             'qwen3.8-flash-next-q3-k-xl-ud3.1',
             'qwen3.8-flash-next-q3-k-xl-dflash2-ud3.1',
@@ -33,6 +33,39 @@ class RecipeCompatibilityTests(unittest.TestCase):
         self.assertEqual({r['model'] for r in book if r['type'] == 'qwen35dense'},
                          {'Qwen3.6-27B', 'Qwen3.8-27B'})
         self.assertEqual({r['type'] for r in book if r['model'].endswith('-27B')}, {'qwen35dense'})
+
+    def test_v3_legacy_ids_preserve_sources_and_runtime_defaults(self):
+        book = recipes.catalogue(bundle=True)
+        old = [recipes.Recipe(row) for row in builder.recipes()]
+        self.assertEqual({r.id for r in old}, {r.id for r in book if 'model_id' not in r.raw})
+        for previous in old:
+            with self.subTest(recipe=previous.id):
+                current = recipes.find(previous.id, book)
+                for field in ('dir', 'bytes', 'runtime', 'requires', 'defaults', 'serve_as', 'precision'):
+                    self.assertEqual(getattr(current, field), getattr(previous, field))
+                self.assertEqual(recipes.source_digest(current), recipes.source_digest(previous))
+
+    def test_v3_memory_tiers_and_explicit_presets(self):
+        book = recipes.catalogue(bundle=True)
+        for model, memory, preset in (
+            ('qwen3.8-flash-next', 128, 'iq4-mtp-adaptive'),
+            ('qwen3.8-flash-next', 96, 'q3-mtp-adaptive'),
+            ('minicpm-v-4.7-35b-a3b', 64, 'q4-k-m-dspark'),
+            ('minicpm-v-4.7-35b-a3b', 32, 'mix-q3gud-im-dspark-32g'),
+            ('inkling-2-mini', 64, 'ud-q8-k-xl-dspark'),
+            ('inkling-2-mini', 32, 'ud-q4-k-m-dspark'),
+            ('lfm2.5-8b-a1b', 16, 'q4-k-m-dspark'),
+        ):
+            with self.subTest(model=model, memory=memory):
+                picked = recipes.find(model, book, memory_gib=memory)
+                self.assertIs(picked, recipes.find(f'b/{model}:{preset}', book, memory_gib=1))
+        with self.assertRaisesRegex(SnowLLMError, 'system RAM'):
+            recipes.find('qwen3.8-flash-next', book, memory_gib=32)
+        presets = [r for r in book if 'preset' in r.raw and r.spec != 'none']
+        self.assertEqual(len(presets), 20)
+        for r in presets:
+            self.assertTrue(r.defaults['mtp_prompt_lookup'] and r.defaults['mtp_tool_draft'], r.id)
+            self.assertTrue(any(r.defaults.get(k) for k in ('dspark_adaptive', 'dflash_adaptive', 'mtp_adaptive')), r.id)
 
     def test_published_sources_reject_mutable_or_missing_revisions(self):
         for update in ({'revision': 'main'}, {'revision': ''},

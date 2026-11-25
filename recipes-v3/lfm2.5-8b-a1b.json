@@ -1,0 +1,172 @@
+{
+  "schema": 3,
+  "id": "lfm2.5-8b-a1b",
+  "model": "LFM2.5-8B-A1B",
+  "type": "lfm",
+  "family": "LFM",
+  "serve_as": "LFM2.5-8B-A1B",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "q8-0-dspark",
+      "q4-k-m-dspark"
+    ],
+    "min_system_gib": {
+      "q8-0-dspark": 32,
+      "q4-k-m-dspark": 16
+    }
+  },
+  "presets": {
+    "q8-0-dspark": {
+      "summary": "LFM2.5-8B-A1B official Q8_0 with its Q8_0 DSpark draft.",
+      "note": "Downloads the target into the model directory and the Q8_0 DSpark draft into dspark/.",
+      "variant": "q8-0",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 9
+      },
+      "inference": {
+        "max_model_len": 128000,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 512,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "q4-k-m-dspark": {
+      "summary": "LFM2.5-8B-A1B official Q4_K_M with its Q8_0 DSpark draft.",
+      "note": "Downloads the target into the model directory and the Q8_0 DSpark draft into dspark/.",
+      "variant": "q4-k-m",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 9
+      },
+      "inference": {
+        "max_model_len": 8192,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 512,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "LiquidAI/LFM2.5-8B-A1B-GGUF"
+    },
+    "dspark": {
+      "repo": "LiquidAI/LFM2.5-8B-A1B-DSpark-GGUF",
+      "subdir": "dspark",
+      "include": [
+        "LFM2.5-8B-A1B-DSpark-Q8_0.gguf"
+      ],
+      "revision": "7ba04ee5ff05a4baf2681fe5ddda6d736581ccdf"
+    }
+  },
+  "variants": {
+    "q4-k-m": {
+      "precision": "Q4_K_M",
+      "dir": "LFM2.5-8B-A1B-Q4_K_M",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "49c14831707011e64d70b2ebd8462ba08d608434",
+      "include": [
+        "LFM2.5-8B-A1B-Q4_K_M.gguf"
+      ],
+      "specs": [
+        "dspark"
+      ],
+      "download_bytes": {
+        "dspark": 5512055872
+      }
+    },
+    "q8-0": {
+      "precision": "Q8_0",
+      "dir": "LFM2.5-8B-A1B-Q8_0",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "49c14831707011e64d70b2ebd8462ba08d608434",
+      "include": [
+        "LFM2.5-8B-A1B-Q8_0.gguf"
+      ],
+      "specs": [
+        "dspark"
+      ],
+      "download_bytes": {
+        "dspark": 9366686784
+      }
+    }
+  },
+  "specs": {
+    "dspark": {
+      "sources": [
+        "dspark"
+      ],
+      "defaults": {
+        "dflash": "@model/dspark",
+        "num_spec": 0,
+        "mtp_prompt_lookup": true,
+        "dspark_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0,
+            1,
+            4,
+            8,
+            9
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dspark_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    }
+  },
+  "legacy_ids": {
+    "lfm2.5-8b-a1b-q4-k-m-dspark": {
+      "preset": "q4-k-m-dspark",
+      "defaults": {
+        "dspark_adaptive": null,
+        "kv_cache_dtype": null,
+        "max_model_len": 128000,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 151,
+      "requires": "0.3.21",
+      "spec_label": "DSpark"
+    },
+    "lfm2.5-8b-a1b-q8-0-dspark": {
+      "preset": "q8-0-dspark",
+      "defaults": {
+        "dspark_adaptive": null,
+        "kv_cache_dtype": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 153,
+      "requires": "0.3.21",
+      "spec_label": "DSpark"
+    }
+  }
+}

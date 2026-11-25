@@ -103,9 +103,9 @@ class PublicWheelInputTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'snowllm').mkdir()
         (self.root / 'snowllm/__init__.py').write_text('VALUE = 1\n')
-        (self.root / 'recipes').mkdir()
-        (self.root / 'recipes/example.json').write_text('{"id": "example", "repo": "a/b"}\n')
-        (self.root / 'MANIFEST.in').write_text('recursive-include recipes *.json\n')
+        (self.root / 'recipes-v3').mkdir()
+        (self.root / 'recipes-v3/example.json').write_text('{"id": "example", "repo": "a/b"}\n')
+        (self.root / 'MANIFEST.in').write_text('recursive-include recipes-v3 *.json\n')
         (self.root / 'scripts').mkdir()
         shutil.copy2(ROOT / 'scripts/build-wheel.sh', self.root / 'scripts/build-wheel.sh')
         shutil.copy2(ROOT / 'scripts/check-public-wheel.py', self.root / 'scripts/check-public-wheel.py')
@@ -188,7 +188,7 @@ class PublicWheelInputTests(unittest.TestCase):
         self.assertIn('uncommitted changes or untracked files', result.stderr)
 
     def test_modified_recipe_blocks_build(self):
-        (self.root / 'recipes/example.json').write_text('{"id": "changed", "repo": "a/b"}\n')
+        (self.root / 'recipes-v3/example.json').write_text('{"id": "changed", "repo": "a/b"}\n')
         result = self.build()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('uncommitted changes or untracked files', result.stderr)
@@ -241,13 +241,13 @@ class BundledRecipeWheelTests(unittest.TestCase):
             source = base / 'source'
             shutil.copytree(ROOT / 'snowllm', source / 'snowllm',
                             ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-            shutil.copytree(ROOT / 'recipes', source / 'recipes')
+            shutil.copytree(ROOT / 'recipes-v3', source / 'recipes-v3')
             (source / 'benchmarks/data').mkdir(parents=True)
             shutil.copyfile(ROOT / 'benchmarks/data/pg19_context_bench.txt',
                             source / 'benchmarks/data/pg19_context_bench.txt')
             for name in ('pyproject.toml', 'MANIFEST.in', 'README.md', 'CHANGELOG.md', 'LICENSE'):
                 shutil.copyfile(ROOT / name, source / name)
-            expected = {path.name: json.loads(path.read_text()) for path in (source / 'recipes').glob('*.json')}
+            expected = {path.name: json.loads(path.read_text()) for path in (source / 'recipes-v3').glob('*.json')}
             result = subprocess.run([sys.executable, '-c',
                 'from setuptools.build_meta import build_sdist; build_sdist("sdist")'],
                 cwd=source, capture_output=True, text=True)
@@ -277,13 +277,14 @@ from snowllm.hub import recipes
 from snowllm.benchmark.context import _CORPUS_PATH
 assert _CORPUS_PATH.is_relative_to(sys.argv[1]) and _CORPUS_PATH.is_file()
 with patch.object(recipes, 'recipes_source', side_effect=AssertionError('server config')):
-    print(json.dumps([r.raw for r in recipes.catalogue(bundle=True)]))
+    print(json.dumps([r.raw for r in recipes.catalogue(bundle=True) if 'preset' in r.raw or 'model_id' not in r.raw]))
 '''
                     result = subprocess.run([sys.executable, '-I', '-c', code, str(installed)],
                                             cwd=base, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual({r['id'] for r in json.loads(result.stdout)},
-                                     {r['id'] for r in expected.values()})
+                                     {i for m in expected.values() for i in m['legacy_ids']} |
+                                     {m['id'] + ':' + k for m in expected.values() for k in m['presets']})
 
 
 if __name__ == '__main__':

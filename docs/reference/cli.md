@@ -8,6 +8,12 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 
 Defaults come from the CLI parser; recipes or model architectures may adjust them. Explicit flags take precedence except when the capacity planner selects one to calculate, as described below.
 
+## Model recipes
+
+`snowllm pull inkling-2-mini` and `snowllm inkling-2-mini` select the same preset for the installed system RAM. To prepare a download for a different machine, pass `--recipe-memory 32` to both commands. This value is in GiB. The runtime memory planner still checks available RAM and VRAM at load time.
+
+`snowllm recipes --bundle` lists the names included in the wheel. Use `MODEL:PRESET` to pin a choice, for example `qwen3.8-flash-next:iq4-mtp-adaptive`. Additional supported variant and draft combinations appear as `MODEL:VARIANT:DRAFT`. Explicit CLI options override the selected preset. The [v3 catalogue](https://snowllm.dev/recipe-v3.json) lists variants, supported draft parameters, recommended memory tiers and inference defaults. Previous recipe IDs continue to select their original configurations.
+
 ## Serving
 
 | Option | Default | Description |
@@ -83,9 +89,9 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | Option | Default | Description |
 | --- | --- | --- |
 | `--num-spec` / `--num-speculative-tokens` | `2` | MTP draft tokens per step, or the cap with `--mtp-adaptive`. Use `0` to disable MTP. |
-| `--mtp-adaptive` | Off | Adjust native Qwen3.8-Flash-Next MTP depth during decoding. Set the cap with `--num-spec` (positive integer). |
+| `--mtp-adaptive` | Off | Adjust native MTP depth on Qwen3.6, Qwen3.8 and GLM-5.3-Flash from target verification feedback. Set the cap with `--num-spec` (positive integer). |
 | `--mtp-prompt-lookup` | Off | Reuse matching request text and tool results as target-verified drafts. |
-| `--spec-tool-draft` | Off | Draft tool-call markup for Flash-Next, Qwen and MiniCPM, or function headers for DeepSeek V4 and LFM2.5. The target verifies every proposed token. |
+| `--spec-tool-draft` | Off | Draft tool-call markup for Flash-Next, Qwen and MiniCPM, or tool headers for DeepSeek V4, LFM2.5, GLM-5.3-Flash and Inkling-2-Mini. The target verifies every proposed token. |
 | `--dflash` | Unset | DFlash or DSpark draft checkpoint; replaces MTP and shares the memory budget. |
 | `--dflash-block` | `0` | Draft block size; `0` uses the engine default (DFlash: `8`; DSpark: checkpoint size). Inkling accepts verification widths from 2 through the checkpoint block size and computes the full draft attention block. |
 | `--dflash-adaptive` | Off | Adjust the verification width for DFlash and DFlash2. The Inkling DSpark recipes enable it by default and use draft confidence, observed acceptance and step time for single-request greedy decoding. |

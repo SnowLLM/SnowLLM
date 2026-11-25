@@ -27,6 +27,7 @@ __pycache__/
 /web/install.sh
 /web/recipe.json
 /web/recipe-v2.json
+/web/recipe-v3.json
 /web/recipes/
 /web/benchmarks.json
 

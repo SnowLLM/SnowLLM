@@ -1,0 +1,140 @@
+{
+  "schema": 3,
+  "id": "glm-5.3-flash",
+  "model": "GLM-5.3-Flash",
+  "type": "glm",
+  "family": "GLM",
+  "serve_as": "GLM-5.3-Flash",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "ud-iq2-xxs-mtp",
+      "ud-iq2-xxs-none"
+    ],
+    "min_system_gib": {
+      "ud-iq2-xxs-mtp": 128,
+      "ud-iq2-xxs-none": 128
+    }
+  },
+  "presets": {
+    "ud-iq2-xxs-mtp": {
+      "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with adaptive MTP (up to 2 draft tokens).",
+      "note": "Vision is not supported. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
+      "variant": "ud-iq2-xxs",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 227328,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16",
+        "device_map": "auto",
+        "max_gpu_mem_util": 0.95,
+        "max_host_mem_util": 0.75
+      }
+    },
+    "ud-iq2-xxs-none": {
+      "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
+      "note": "Vision is not supported. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
+      "variant": "ud-iq2-xxs",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 227328,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16",
+        "device_map": "auto",
+        "max_gpu_mem_util": 0.95,
+        "max_host_mem_util": 0.75
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "unsloth/GLM-5.3-Flash-GGUF"
+    }
+  },
+  "variants": {
+    "ud-iq2-xxs": {
+      "precision": "UD-IQ2_XXS",
+      "dir": "GLM-5.3-Flash-UD-IQ2_XXS",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "a38483c8cd5df544f53d70fb281afe97369d5ab6",
+      "include": [
+        "UD-IQ2_XXS/*.gguf"
+      ],
+      "specs": [
+        "mtp",
+        "none"
+      ],
+      "download_bytes": {
+        "mtp": 101844951904,
+        "none": 101844951904
+      }
+    }
+  },
+  "specs": {
+    "mtp": {
+      "parameters": {
+        "num_spec": {
+          "type": "integer",
+          "min": 1,
+          "max": 2
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      },
+      "defaults": {
+        "mtp_prompt_lookup": true,
+        "mtp_adaptive": true,
+        "mtp_tool_draft": true
+      }
+    },
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "glm5.3-flash-iq2-xxs-mtp": {
+      "preset": "ud-iq2-xxs-mtp",
+      "defaults": {
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 148,
+      "requires": "0.3.14",
+      "spec_label": "MTP k=2"
+    },
+    "glm5.3-flash-iq2-xxs": {
+      "preset": "ud-iq2-xxs-none",
+      "priority": 148,
+      "requires": "0.3.14",
+      "spec_label": "none"
+    }
+  }
+}

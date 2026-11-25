@@ -14,7 +14,7 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 ```json
 {
   "models_dir": "D:/Models",
-  "recipes_url": "https://snowllm.dev/recipe-v2.json",
+  "recipes_url": "https://snowllm.dev/recipe-v3.json",
   "library_path": null
 }
 ```
@@ -64,7 +64,8 @@ Windows 在新位置的文件创建前，继续使用已有的 `~/.config/snowll
 | SnowLLM 版本 | 默认目录 |
 | --- | --- |
 | 0.3.13 | `https://snowllm.dev/recipe.json` |
-| 0.3.15 及以上 | `https://snowllm.dev/recipe-v2.json` |
+| 0.3.15–0.3.x | `https://snowllm.dev/recipe-v2.json` |
+| 0.4.0.dev1+ | `https://snowllm.dev/recipe-v3.json` |
 
 0.3.15 会自动切换到新默认地址，自定义地址保持不变。旧版出现目录错误时，可运行 `snowllm recipes --refresh` 更新缓存。
 

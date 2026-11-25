@@ -24,6 +24,7 @@ from ..config import models_directory, models_directories, recipes_source
 from ..errors import SnowLLMError
 from .._version import __version__
 from ..defaults import DEFAULT_CONTEXT_TARGET, DEFAULT_MAX_NUM_SEQS
+from .model_recipes import expand, recommended
 from .download import DEFAULT_JOBS, PART_SUFFIX, USER_AGENT, Blob, fetch, forget, held, human
 
 from ..config import DEFAULT_RECIPES_URL
@@ -34,7 +35,7 @@ BUNDLE_HELP = ("To view recipes bundled with this wheel, use `snowllm recipes --
                "use `b/RECIPE` to pull or run a bundled recipe.")
 DEFAULT_CONTEXT = DEFAULT_CONTEXT_TARGET
 DEFAULT_SLOTS = DEFAULT_MAX_NUM_SEQS
-SCHEMA = 2
+SCHEMA = 3
 MANIFEST = "snowllm-recipe.json"
 _PROFILE_DIR = ".snowllm-recipes"
 SETTABLE = ("num_spec", "mtp_adaptive", "mtp_prompt_lookup", "mtp_tool_draft", "max_model_len", "max_num_seqs", "max_num_batched_tokens", "device_map",
@@ -255,7 +256,7 @@ def on_disk(root: pathlib.Path | None = None) -> list[Recipe]:
 def _bundled_entries() -> list[dict]:
     directory = pathlib.Path(__file__).with_name("bundle")
     if not directory.is_dir():
-        directory = pathlib.Path(__file__).resolve().parents[2] / "recipes"
+        directory = pathlib.Path(__file__).resolve().parents[2] / "recipes-v3"
     try:
         entries = [json.loads(path.read_text(encoding="utf-8"))
                    for path in sorted(directory.glob("*.json"))]
@@ -263,7 +264,7 @@ def _bundled_entries() -> list[dict]:
         raise SnowLLMError(f"bundled recipes: {exc}") from exc
     if not entries:
         raise SnowLLMError("no bundled recipes found; reinstall snowllm")
-    return entries
+    return _model_entries(entries, "bundled recipes")
 
 
 def catalogue_for_display(book: list[Recipe], url: str, *, bundle: bool) -> list[tuple[Recipe, str | None]]:
@@ -325,25 +326,41 @@ def catalogue(url: str | None = None, refresh: bool = False, *, bundle: bool = F
     return _catalogue(raw, url)
 
 
+def _model_entries(models, source):
+    rows = []
+    for model in models:
+        try:
+            if model['schema'] != 3:
+                raise ValueError('expected a v3 model recipe')
+            rows.extend(expand(model))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SnowLLMError(f"{source}: invalid model recipe {model.get('id')!r}: {exc}") from exc
+    return rows
+
+
 def _catalogue(raw: dict, url: str, *, bundle: bool = False) -> list[Recipe]:
     if int(raw.get("schema", 0)) > SCHEMA:
         raise SnowLLMError(
             f"{url} is schema {raw['schema']}, this snowllm understands {SCHEMA}. "
             f"Upgrade: pip install --upgrade snowllm")
-    out = [Recipe(r, bundle=bundle) for r in raw.get("recipes", [])]
+    entries = _model_entries(raw["models"], url) if "models" in raw else raw.get("recipes", [])
+    out = [Recipe(r, bundle=bundle) for r in entries]
     seen = {r.id for r in out}
     if len(seen) != len(out):
         raise SnowLLMError(f"{url} lists the same recipe id twice")
     return out
 
 
-def find(name: str, recipes: list[Recipe]) -> Recipe:
+def find(name: str, recipes: list[Recipe], *, memory_gib=None) -> Recipe:
     if name.startswith("b/"):
         recipes = [r for r in recipes if r.bundle]
         name = name[2:]
     for r in recipes:
         if name in (r.id, r.ref):
             return r
+    candidates = [r for r in recipes if r.raw.get('model_id') == name.lower()]
+    if candidates:
+        return recommended(name, candidates, memory_gib)
     near = [r.id for r in recipes if name.lower() in r.id.lower()]
     if len(near) == 1:
         return next(r for r in recipes if r.id == near[0])
@@ -442,10 +459,12 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
                   for b in blobs],
     }
-    adaptive = recipe.defaults.get("mtp_adaptive")
+    profile = recipe.defaults.get("mtp_adaptive") or "model_id" in recipe.raw
+    receipt.update({k: recipe.raw[k] for k in ("model_id", "preset", "parameters", "recommend_order",
+                                               "min_system_gib") if k in recipe.raw})
     primary = dest / MANIFEST
     path = primary
-    if adaptive:
+    if profile:
         path = _profile_receipt(recipe, dest)
         path.parent.mkdir(exist_ok=True)
     encoded = json.dumps(receipt, indent=2) + "\n"
@@ -455,10 +474,10 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
-    if not adaptive:
+    if not profile:
         return
 
-    # The adaptive profile shares its weights directory with a fixed-depth installation.
+    # Presets sharing weights retain separate receipts and the existing primary profile.
     try:
         with primary.open("x", encoding="utf-8") as stream:
             stream.write(encoded)
@@ -649,7 +668,16 @@ def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout)
     directories = models_roots(root)
     label = str(directories[0]) if len(directories) == 1 else '; '.join(map(str, directories))
     print(term.paint(f"Models root: {label}", term.DIM, stream=stream), file=stream)
-    book = sorted(recipes, key=lambda r: (-r.priority, r.id))
+    presets = [r for r in recipes if 'model_id' in r.raw]
+    if presets:
+        for model in dict.fromkeys(r.raw['model_id'] for r in presets):
+            try:
+                selected = find(model, presets)
+            except SnowLLMError:
+                continue
+            print(f"  {model} -> {selected.ref}", file=stream)
+        print(file=stream)
+    book = sorted(presets or recipes, key=lambda r: (-r.priority, r.id))
     by_id = {r.id: r for r in book}
     picks = []
     for use, ids in RECOMMENDED:
@@ -674,7 +702,7 @@ def show(recipes: list[Recipe], root: pathlib.Path, stream: TextIO = sys.stdout)
     print(file=stream)
 
 
-def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
+def choose(recipes: list[Recipe], root: pathlib.Path, *, memory_gib=None) -> Recipe:
     for i, r in enumerate(recipes, 1):
         here = "  (already downloaded)" if installed(r, root) else ""
         size = human(r.bytes) if r.bytes else "?"
@@ -691,8 +719,15 @@ def choose(recipes: list[Recipe], root: pathlib.Path) -> Recipe:
     if answer.isdigit() and 1 <= int(answer) <= len(recipes):
         return recipes[int(answer) - 1]
     if answer.startswith("b/"):
-        return find(answer, catalogue(bundle=True))
-    return find(answer, recipes)
+        return find(answer, catalogue(bundle=True), memory_gib=memory_gib)
+    return find(answer, recipes, memory_gib=memory_gib)
+
+
+def positive_gib(text):
+    size = int(text)
+    if size <= 0:
+        raise argparse.ArgumentTypeError('system RAM must be a positive number of GiB')
+    return size
 
 
 def _parser(cmd: str) -> argparse.ArgumentParser:
@@ -716,6 +751,8 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
     if cmd == "recipes":
         p.add_argument("--json", action="store_true", help="print the catalogue as JSON")
         return p
+    p.add_argument("--recipe-memory", type=positive_gib, metavar="GiB",
+                   help="select a recommended preset for this system RAM capacity")
     p.add_argument("recipe", nargs="?", metavar="RECIPE",
                    help="which one; omit it to pick from a list")
     p.add_argument("--dir", metavar="DIR", default=None,
@@ -755,7 +792,8 @@ def main(cmd: str, argv: list[str]) -> int:
                 show(recipes, roots)
             return 0
 
-        recipe = find(name, recipes) if name else choose(recipes, roots)
+        recipe = (find(name, recipes, memory_gib=a.recipe_memory) if name else
+                  choose(recipes, roots, memory_gib=a.recipe_memory))
         dest = pathlib.Path(a.dir).expanduser() if a.dir else recipe.path(root)
         if not recipe.servable and not a.dry_run:
             print(f"{term.stamp()} {why(recipe)}\n{term.stamp()} the weights download either way.",
@@ -778,7 +816,7 @@ def checkpoint(name: str) -> pathlib.Path:
     return locate(name)[0]
 
 
-def locate(name: str, *, bundle: bool = False) -> tuple[pathlib.Path, "Recipe | None"]:
+def locate(name: str, *, bundle: bool = False, memory_gib=None) -> tuple[pathlib.Path, "Recipe | None"]:
     if name.startswith("b/"):
         bundle = True
         name = name[2:]
@@ -792,7 +830,7 @@ def locate(name: str, *, bundle: bool = False) -> tuple[pathlib.Path, "Recipe | 
 
     roots = models_roots()
     root = roots[0]
-    recipe = find(name, catalogue(bundle=bundle))
+    recipe = find(name, catalogue(bundle=bundle), memory_gib=memory_gib)
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
     dest = installed(recipe, roots)

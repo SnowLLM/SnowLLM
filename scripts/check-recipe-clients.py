@@ -10,7 +10,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-CLIENTS = ('0.3.13',)
+CLIENTS = ('0.3.13', '0.3.27')
 PROBE = '''
 import json, pathlib, sys
 sys.path.insert(0, sys.argv[1])
@@ -51,7 +51,7 @@ def check(wheels, web):
                 if any(Path(name).is_absolute() or '..' in Path(name).parts for name in archive.namelist()):
                     raise ValueError('invalid published wheel path')
                 archive.extractall(source)
-            catalogue = web/'recipes'/f'{client}.json'
+            catalogue = web/'recipes'/f'{client}.json' if client == '0.3.13' else current_catalogue
             result = subprocess.run([sys.executable, '-c', PROBE, str(source), client,
                                      str(catalogue.resolve()), str(current_catalogue.resolve())], env=env, cwd=base,
                                     capture_output=True, text=True)
@@ -66,7 +66,7 @@ def check(wheels, web):
                 if result.returncode:
                     raise ValueError(f'the unversioned catalogue broke 0.3.13:\n{result.stderr}')
         from snowllm.hub import recipes
-        book = recipes.catalogue(str(current_catalogue))
+        book = recipes.catalogue(str(web / "recipe-v3.json"))
         print(f'current client: {len(book)} recipes, schema {recipes.SCHEMA} PASS')
 
 

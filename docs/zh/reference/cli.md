@@ -8,6 +8,12 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 
 默认值来自 CLI 解析器，方案或模型架构可能调整它们。显式参数优先，但容量规划器可能按下述规则选择其中一项重新计算。
 
+## 模型配方
+
+`snowllm pull inkling-2-mini` 与 `snowllm inkling-2-mini` 按整机物理内存选择同一预设。给另一台机器准备模型时，可在两个命令中都传 `--recipe-memory 32`，单位为 GiB。启动时内存规划器仍会检查实际可用的 RAM 与显存。
+
+`snowllm recipes --bundle` 列出 wheel 内置的名称。可以用 `模型ID:预设名` 固定配置，例如 `qwen3.8-flash-next:iq4-mtp-adaptive`。其他支持的量化与草稿组合以 `模型ID:量化变体:草稿` 列出。显式 CLI 参数覆盖预设。[v3 在线目录](https://snowllm.dev/recipe-v3.json) 列出量化变体、支持的草稿参数、推荐内存档位及推理默认值。原有配方 ID 继续对应原配置。
+
 ## 服务 {#serving}
 
 | 选项 | 默认值 | 说明 |
@@ -81,9 +87,9 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--num-spec` / `--num-speculative-tokens` | `2` | 每步 MTP 草稿 token 数，启用 `--mtp-adaptive` 后表示上限。设为 `0` 可禁用 MTP。 |
-| `--mtp-adaptive` | 关闭 | 根据验证结果调整 Qwen3.8-Flash-Next 的原生 MTP 草稿长度。`--num-spec` 设置上限（正整数）。 |
+| `--mtp-adaptive` | 关闭 | 根据目标模型的验证结果调整 Qwen3.6、Qwen3.8 和 GLM-5.3-Flash 的原生 MTP 草稿长度。`--num-spec` 设置上限（正整数）。 |
 | `--mtp-prompt-lookup` | 关闭 | 复用当前请求文本和工具返回内容作为草稿，交由目标模型验证。 |
-| `--spec-tool-draft` | 关闭 | 为 Flash-Next、Qwen 和 MiniCPM 起草工具调用标记，为 DeepSeek V4 和 LFM2.5 起草函数头。每个候选 token 均由目标模型验证。 |
+| `--spec-tool-draft` | 关闭 | 为 Flash-Next、Qwen 和 MiniCPM 起草工具调用标记，为 DeepSeek V4、LFM2.5、GLM-5.3-Flash 和 Inkling-2-Mini 起草工具调用头。每个候选 token 均由目标模型验证。 |
 | `--dflash` | 未设置 | DFlash 或 DSpark 草稿模型目录；替代 MTP 并共享内存预算。 |
 | `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置。Inkling 可选 2 到草稿块大小之间的验证宽度，草稿注意力始终使用完整块。 |
 | `--dflash-adaptive` | 关闭 | 调整 DFlash 或 DFlash2 的验证宽度。Inkling DSpark 配方默认开启此项，单请求贪心解码时根据草稿置信度、实际接受情况和耗时选择宽度。 |

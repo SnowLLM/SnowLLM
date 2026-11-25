@@ -1,2 +1,2 @@
-recursive-include recipes *.json
+recursive-include recipes-v3 *.json
 include benchmarks/data/pg19_context_bench.txt

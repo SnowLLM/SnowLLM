@@ -158,7 +158,7 @@ def check_catalogue() -> None:
          "CATALOGUE_URL alias in snowllm/hub/recipes.py")
     url = need(r'^DEFAULT_RECIPES_URL = "https://([^/]+)/([^"]+)"$', CONFIG,
                "DEFAULT_RECIPES_URL in snowllm/config.py")
-    out = need(r'^OUT = ROOT / "web" / "([^"]+)"$', BUILDER, "OUT in scripts/build-recipes.py")
+    out = need(r'OUT\.with_name\("([^"]+)"\)', BUILDER, "OUT in scripts/build-recipes.py")
     if url:
         domain = (ROOT / "web" / "CNAME").read_text().strip()
         if url.group(1) != domain:

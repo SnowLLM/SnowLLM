@@ -1,0 +1,200 @@
+{
+  "schema": 3,
+  "id": "qwen3.8-27b",
+  "model": "Qwen3.8-27B",
+  "type": "qwen35dense",
+  "family": "Qwen",
+  "serve_as": "Qwen3.8-27B",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "ud-q4-k-xl-dflash2",
+      "ud-q4-k-xl-mtp"
+    ],
+    "min_system_gib": {
+      "ud-q4-k-xl-dflash2": 64,
+      "ud-q4-k-xl-mtp": 32
+    }
+  },
+  "presets": {
+    "ud-q4-k-xl-dflash2": {
+      "summary": "Qwen3.8-27B in UD-Q4_K_XL with a Q8_0 DFlash 2 drafter.",
+      "note": "Shares target weights with qwen3.8-27b-q4-k-xl. Older BF16 model.safetensors files in dflash2/ are not needed.",
+      "variant": "ud-q4-k-xl",
+      "draft": "dflash2",
+      "draft_params": {
+        "dflash_block": 0
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "ud-q4-k-xl-mtp": {
+      "summary": "Qwen3.8-27B in UD-Q4_K_XL with vision and adaptive MTP (up to 2 draft tokens).",
+      "note": "For the separate DFlash 2 drafter, use qwen3.8-27b-q4-k-xl-dflash2.",
+      "variant": "ud-q4-k-xl",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "unsloth/Qwen3.8-27B-GGUF"
+    },
+    "processor": {
+      "repo": "Qwen/Qwen3.8-27B",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ],
+      "revision": "37561816e66b5b9153b1b64c10968c18c1e6f4a0"
+    },
+    "dflash2": {
+      "repo": "z-lab/Qwen3.8-27B-DFlash2-GGUF",
+      "revision": "2d9571f8ce46e151f61c6499c99dee6079e1d610",
+      "subdir": "dflash2",
+      "include": [
+        "Qwen3.8-27B-DFlash2-Q8_0.gguf"
+      ]
+    }
+  },
+  "variants": {
+    "ud-q4-k-xl": {
+      "precision": "UD-Q4_K_XL",
+      "dir": "Qwen3.8-27B-UD-Q4_K_XL",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+      "include": [
+        "Qwen3.8-27B-UD-Q4_K_XL.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "sources": [
+        "processor"
+      ],
+      "specs": [
+        "dflash2",
+        "mtp"
+      ],
+      "download_bytes": {
+        "dflash2": 20546740167,
+        "mtp": 18490325351
+      }
+    }
+  },
+  "specs": {
+    "dflash2": {
+      "sources": [
+        "dflash2"
+      ],
+      "defaults": {
+        "dflash": "@model/dflash2",
+        "mtp_prompt_lookup": true,
+        "dflash_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dflash_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "mtp": {
+      "parameters": {
+        "num_spec": {
+          "type": "integer",
+          "min": 1,
+          "max": 2
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      },
+      "defaults": {
+        "mtp_prompt_lookup": true,
+        "mtp_adaptive": true,
+        "mtp_tool_draft": true
+      }
+    }
+  },
+  "legacy_ids": {
+    "qwen3.8-27b-q4-k-xl-dflash2": {
+      "preset": "ud-q4-k-xl-dflash2",
+      "defaults": {
+        "dflash_adaptive": null,
+        "dflash_block": null,
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 70,
+      "requires": "0.3.0"
+    },
+    "qwen3.8-27b-q4-k-xl": {
+      "preset": "ud-q4-k-xl-mtp",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null,
+        "num_spec": null
+      },
+      "priority": 70,
+      "requires": "0.3.0",
+      "spec_label": "MTP k=2"
+    }
+  }
+}

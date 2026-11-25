@@ -1,0 +1,118 @@
+{
+  "schema": 3,
+  "id": "deepseek-v4-flash-0731",
+  "model": "DeepSeek-V4-Flash-0731",
+  "type": "deepseek",
+  "family": "DeepSeek",
+  "serve_as": "DeepSeek-V4-Flash-0731",
+  "recommended": {
+    "mode": "fixed",
+    "preset": "iq2-xxs-dspark"
+  },
+  "presets": {
+    "iq2-xxs-dspark": {
+      "summary": "DeepSeek-V4-Flash with adaptive DSpark, one request, a 409600-token context and 8192-token prefill chunks.",
+      "note": "Uses automatic weight offload at 95% GPU memory utilization, with no prefix-cache reservation. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
+      "variant": "iq2-xxs",
+      "draft": "dspark",
+      "draft_params": {
+        "dspark_adaptive": true,
+        "dflash_block": 0
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16",
+        "device_map": "auto",
+        "max_gpu_mem_util": 0.95,
+        "prefix_memory_ratio": 0.0,
+        "max_host_mem_util": 0.75
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF"
+    },
+    "dspark": {
+      "repo": "unsloth/DeepSeek-V4-Flash-0731-GGUF",
+      "revision": "fbbb5b93fb787c21338159b0af3318bb3f4d9768",
+      "include": [
+        "dspark-DeepSeek-V4-Flash-0731-Q8_0.gguf"
+      ]
+    }
+  },
+  "variants": {
+    "iq2-xxs": {
+      "precision": "IQ2_XXS",
+      "dir": "DeepSeek-V4-Flash-0731-UD-IQ2_XXS",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "fbbb5b93fb787c21338159b0af3318bb3f4d9768",
+      "include": [
+        "UD-IQ2_XXS/*.gguf"
+      ],
+      "specs": [
+        "dspark"
+      ],
+      "download_bytes": {
+        "dspark": 101756794368
+      }
+    }
+  },
+  "specs": {
+    "dspark": {
+      "sources": [
+        "dspark"
+      ],
+      "defaults": {
+        "dflash": "@model",
+        "mtp_prompt_lookup": true,
+        "dspark_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dspark_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dflash_block": {
+          "values": [
+            0
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    }
+  },
+  "legacy_ids": {
+    "deepseek-v4-flash-iq2-xxs-400k": {
+      "preset": "iq2-xxs-dspark",
+      "defaults": {
+        "dflash_block": null,
+        "kv_cache_dtype": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 150,
+      "requires": "0.3.14",
+      "spec_label": "DSpark"
+    }
+  }
+}

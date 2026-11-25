@@ -14,7 +14,7 @@ Windows keeps an existing `~/.config/snowllm/config.json` until the new-location
 ```json
 {
   "models_dir": "D:/Models",
-  "recipes_url": "https://snowllm.dev/recipe-v2.json",
+  "recipes_url": "https://snowllm.dev/recipe-v3.json",
   "library_path": null
 }
 ```
@@ -77,7 +77,8 @@ downloads directly into that checkpoint directory, overriding the list.
 | SnowLLM version | Default catalogue |
 | --- | --- |
 | 0.3.13 | `https://snowllm.dev/recipe.json` |
-| 0.3.15 and later | `https://snowllm.dev/recipe-v2.json` |
+| 0.3.15–0.3.x | `https://snowllm.dev/recipe-v2.json` |
+| 0.4.0.dev1+ | `https://snowllm.dev/recipe-v3.json` |
 
 Version 0.3.15 automatically switches saved default URLs to the new catalogue; custom URLs are preserved. On older clients, run `snowllm recipes --refresh` to clear catalogue errors caused by cached data.
 

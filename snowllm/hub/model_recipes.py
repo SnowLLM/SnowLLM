@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: Apache-2.0
+import re
+import sys
+from pathlib import Path
+
+from ..errors import SnowLLMError
+
+
+def system_memory_gib():
+    from .._platform import WINDOWS, host_total
+    if WINDOWS:
+        import ctypes
+        kib = ctypes.c_ulonglong()
+        if ctypes.windll.kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(kib)):
+            return kib.value / (1 << 20)
+    else:
+        try:
+            data = Path('/run/udev/data/+dmi:id').read_text()
+            sizes = re.findall(r'^E:MEMORY_DEVICE_\d+_SIZE=(\d+)$', data, re.M)
+            total = sum(map(int, sizes))
+            if total:
+                return total / (1 << 30)
+        except OSError:
+            pass
+    return round(host_total() / (1 << 30))
+
+
+def validate_parameter(name, value, rule):
+    if 'values' in rule:
+        valid = any(type(value) is type(v) and value == v for v in rule['values'])
+    else:
+        valid = (rule['type'] == 'integer' and type(value) is int and rule['min'] <= value <= rule['max'])
+    if not valid:
+        raise SnowLLMError(f"{name}={value!r} is outside the recipe range {rule}")
+
+
+def expand(model):
+    presets, variants, specs = model['presets'], model['variants'], model['specs']
+    rule = model['recommended']
+    if rule['mode'] == 'fixed':
+        candidates, tiers = [rule['preset']], {}
+    elif rule['mode'] == 'by_memory':
+        candidates, tiers = rule['candidates'], rule['min_system_gib']
+        if set(candidates) != set(tiers):
+            raise ValueError('each memory candidate needs a system RAM tier')
+    else:
+        raise ValueError(f"unknown recommendation mode {rule['mode']}")
+    if not candidates or not set(candidates) <= presets.keys() or len(set(candidates)) != len(candidates):
+        raise ValueError('invalid recommended presets')
+
+    def resolve(key, variant, draft, preset, alias):
+        v, s = variants[variant], specs[draft]
+        if draft not in v['specs']:
+            raise ValueError(f"{variant} does not support {draft}")
+        raw = {k: model[k] for k in ('model', 'type', 'family', 'serve_as', 'runtime') if k in model}
+        if 'local_files' in v:
+            raw.update(repo='TBD', include=v['local_files'])
+        else:
+            raw.update(model['sources'][v['source']], revision=v['revision'],
+                       include=v['include'] + s.get('include', []), exclude=v.get('exclude', []))
+        raw['sources'] = [model['sources'][n] for n in v.get('sources', []) + s.get('sources', [])]
+        defaults = (model.get('defaults', {}) | v.get('defaults', {}) | s.get('defaults', {})
+                    | preset.get('draft_params', {}) | preset.get('inference', {}) | alias.get('defaults', {}))
+        raw.update(id=key, precision=v['precision'], dir=alias.get('dir', v['dir']),
+                   modalities=v['modalities'], spec=alias.get('spec_label', draft), bytes=v.get('download_bytes', {}).get(draft, 0),
+                   defaults={k: value for k, value in defaults.items() if value is not None})
+        raw.update({k: preset[k] for k in ('summary', 'note') if k in preset})
+        raw.update({k: alias[k] for k in ('priority', 'status', 'requires') if k in alias})
+        return raw
+
+    for name, preset in presets.items():
+        draft = preset['draft']
+        parameters = specs[draft].get('parameters', {})
+        for k, v in preset['draft_params'].items():
+            validate_parameter(k, v, parameters[k])
+        row = resolve(model['id'] + ':' + name, preset['variant'], draft, preset, {})
+        row.update(model_id=model['id'], preset=name, parameters=parameters)
+        if name in candidates:
+            tier = tiers.get(name, 0)
+            row.update(recommend_order=candidates.index(name), min_system_gib=tier)
+        yield row
+    covered = {(p['variant'], p['draft']) for p in presets.values()}
+    for variant, config in variants.items():
+        for draft in config['specs']:
+            if (variant, draft) in covered:
+                continue
+            key = f"{model['id']}:{variant}:{draft}"
+            row = resolve(key, variant, draft, {}, {})
+            row.update(model_id=model['id'], parameters=specs[draft].get('parameters', {}))
+            yield row
+    for key, alias in model.get('legacy_ids', {}).items():
+        preset = presets[alias['preset']] if 'preset' in alias else {}
+        yield resolve(key, preset.get('variant', alias.get('variant')), preset.get('draft', alias.get('spec')),
+                      preset, alias)
+
+
+def recommended(name, candidates, memory_gib=None):
+    ordered = sorted((r for r in candidates if 'recommend_order' in r.raw),
+                     key=lambda r: r.raw['recommend_order'])
+    for r in ordered:
+        tier = r.raw['min_system_gib']
+        if isinstance(tier, dict):
+            tier = tier.get(sys.platform, tier['default'])
+        if not tier:
+            return r
+        if memory_gib is None:
+            memory_gib = system_memory_gib()
+        if memory_gib >= tier:
+            return r
+    raise SnowLLMError(f"No recommended {name} preset for {memory_gib:g} GiB system RAM. "
+                       f"Select a preset explicitly using {name}:PRESET.")

@@ -1,0 +1,73 @@
+{
+  "schema": 3,
+  "id": "mineru-vlm",
+  "model": "MinerU VLM",
+  "type": "mineru",
+  "family": "MinerU",
+  "serve_as": "MinerU-VLM",
+  "recommended": {
+    "mode": "fixed",
+    "preset": "bf16-none"
+  },
+  "presets": {
+    "bf16-none": {
+      "summary": "MinerU vision-language model only, served through the OpenAI-compatible API.",
+      "variant": "bf16",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 8192,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 512,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "bf16": {
+      "repo": "opendatalab/MinerU2.5-Pro-2605-1.2B"
+    }
+  },
+  "variants": {
+    "bf16": {
+      "precision": "BF16",
+      "dir": "MinerU2.5-Pro-2605-1.2B",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "bf16",
+      "revision": "08aaea840498d49ce16247b6263196cf02814885",
+      "include": [
+        "*.json",
+        "*.jinja",
+        "*.txt",
+        "*.safetensors"
+      ],
+      "specs": [
+        "none"
+      ],
+      "download_bytes": {
+        "none": 2328011610
+      }
+    }
+  },
+  "specs": {
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "mineru-vlm": {
+      "preset": "bf16-none",
+      "defaults": {
+        "kv_cache_dtype": null
+      },
+      "requires": "0.3.22",
+      "status": "supported",
+      "spec_label": "none"
+    }
+  }
+}

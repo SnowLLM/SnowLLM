@@ -1,6 +1,13 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.4.0.dev1 — 2026-11-25
+
+- Model recipes now select a complete preset by installed system RAM. Use a model ID with `snowllm pull MODEL` or `snowllm MODEL`, or select a preset with `MODEL:PRESET`. The v3 catalogue and wheel retain the existing recipe IDs.
+  模型配方按整机内存选择量化、草稿和推理预设，也可用 `模型ID:预设名` 显式选择。v3 在线目录与内置目录均支持旧配方 ID。
+- Enable adaptive native MTP for Qwen3.6, Qwen3.8-27B and GLM-5.3-Flash. Speculative presets enable prompt lookup and tool-call drafting, including the native Inkling and GLM tool formats.
+  Qwen3.6、Qwen3.8-27B 和 GLM-5.3-Flash 新增原生自适应 MTP。投机预设默认开启提示词查找和工具调用草稿，支持 Inkling 与 GLM 的原生工具格式。
+
 ## 0.3.27 — 2026-11-25
 
 - Add DSpark recipes for Inkling-2-Mini UD-Q4_K_M and UD-Q8_K_XL with adaptive verification and prompt lookup. Pin SnowLLM-Kernels to `0.3.17.dev20`.

@@ -1,0 +1,267 @@
+{
+  "schema": 3,
+  "id": "minicpm-v-4.7-35b-a3b",
+  "model": "MiniCPM-V-4.7-35B-A3B",
+  "type": "minicpm",
+  "family": "MiniCPM",
+  "serve_as": "MiniCPM-V-4.7-35B-A3B",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "q4-k-m-dspark",
+      "mix-q3gud-im-dspark",
+      "mix-q3gud-im-dspark-32g"
+    ],
+    "min_system_gib": {
+      "q4-k-m-dspark": 64,
+      "mix-q3gud-im-dspark": 48,
+      "mix-q3gud-im-dspark-32g": 32
+    }
+  },
+  "presets": {
+    "q4-k-m-dspark": {
+      "summary": "MiniCPM-V 4.7 with vision support and a Q8 DSpark drafter.",
+      "note": "Shares target weights and the vision projector with the recipe without DSpark.",
+      "variant": "q4-k-m",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "mtp_window": 2048
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "mix-q3gud-im-dspark": {
+      "summary": "MiniCPM-V 4.7 with mixed Q3 expert weights, vision support and a Q8 DSpark drafter.",
+      "note": "Uses the official importance-matrix mixed Q3 checkpoint and retains the Q8 DSpark drafter.",
+      "variant": "mix-q3gud-im",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "mtp_window": 2048
+      },
+      "inference": {
+        "max_model_len": 170000,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "mix-q3gud-im-dspark-32g": {
+      "summary": "MiniCPM-V 4.7 mixed Q3 with DSpark and a 132K BF16 context for 32 GiB RAM.",
+      "note": "Windows Radeon 780M profile for 32 GiB RAM, 16 GiB BIOS UMA and a 32 GiB page file; shares the base recipe's model files.",
+      "variant": "mix-q3gud-im",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "mtp_window": 2048
+      },
+      "inference": {
+        "max_model_len": 135168,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 4096,
+        "kv_cache_dtype": "bf16",
+        "max_gpu_mem_util": 0.94,
+        "max_host_mem_gib": 7,
+        "host_alloc": false,
+        "prefix_memory_ratio": 0,
+        "enforce_eager": false,
+        "limit_mm_per_prompt": 1
+      },
+      "when": {
+        "os": "windows",
+        "gpu": "Radeon 780M",
+        "min_system_ram_gib": 32,
+        "min_uma_carveout_gib": 16,
+        "min_pagefile_gib": 32
+      }
+    },
+    "q4-k-m-none": {
+      "summary": "MiniCPM-V 4.7 with vision support and speculative decoding disabled.",
+      "variant": "q4-k-m",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-gguf"
+    },
+    "chat-template": {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B",
+      "revision": "896c2d454672476a7b45dcc5e3f0c700a0218577",
+      "include": [
+        "chat_template.jinja"
+      ]
+    },
+    "dspark": {
+      "repo": "openbmb/MiniCPM-V-4.7-35B-A3B-DSpark-gguf",
+      "revision": "2c8f6931e5fba8a01bcc74b2964f330c62056b5e",
+      "subdir": "dspark",
+      "include": [
+        "dspark-MiniCPM-V-4_7-35B-A3B-Q8_0.gguf"
+      ]
+    }
+  },
+  "variants": {
+    "mix-q3gud-im": {
+      "precision": "mix_q3gud_im",
+      "dir": "MiniCPM-V-4.7-35B-A3B-mix_q3gud_im",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+      "include": [
+        "MiniCPM-V-4_7-35B-A3B-mix_q3gud_im.gguf",
+        "mmproj-model-f16.gguf"
+      ],
+      "sources": [
+        "chat-template"
+      ],
+      "specs": [
+        "dspark"
+      ],
+      "download_bytes": {
+        "dspark": 17048100913
+      }
+    },
+    "q4-k-m": {
+      "precision": "Q4_K_M",
+      "dir": "MiniCPM-V-4.7-35B-A3B-Q4_K_M",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "8ad0085a71c3fbff8c2aa2eadf31b3037ac55da7",
+      "include": [
+        "MiniCPM-V-4_7-35B-A3B-Q4_K_M.gguf",
+        "mmproj-model-f16.gguf"
+      ],
+      "sources": [
+        "chat-template"
+      ],
+      "specs": [
+        "dspark",
+        "none"
+      ],
+      "download_bytes": {
+        "dspark": 22710411025,
+        "none": 22285838097
+      }
+    }
+  },
+  "specs": {
+    "dspark": {
+      "sources": [
+        "dspark"
+      ],
+      "defaults": {
+        "dflash": "@model/dspark",
+        "num_spec": 0,
+        "mtp_prompt_lookup": true,
+        "dspark_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0,
+            1,
+            4,
+            8
+          ]
+        },
+        "mtp_window": {
+          "values": [
+            2048
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dspark_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark-32g": {
+      "preset": "mix-q3gud-im-dspark-32g",
+      "defaults": {
+        "dspark_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 154,
+      "requires": "0.3.24",
+      "spec_label": "DSpark"
+    },
+    "minicpm-v4.7-35b-a3b-mix-q3gud-im-dspark": {
+      "preset": "mix-q3gud-im-dspark",
+      "defaults": {
+        "dspark_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 154,
+      "requires": "0.3.24",
+      "spec_label": "DSpark"
+    },
+    "minicpm-v4.7-35b-a3b-q4-k-m-dspark": {
+      "preset": "q4-k-m-dspark",
+      "defaults": {
+        "dspark_adaptive": null,
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 156,
+      "requires": "0.3.24",
+      "spec_label": "DSpark"
+    },
+    "minicpm-v4.7-35b-a3b-q4-k-m": {
+      "preset": "q4-k-m-none",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null
+      },
+      "priority": 155,
+      "requires": "0.3.11",
+      "spec_label": "none"
+    }
+  }
+}

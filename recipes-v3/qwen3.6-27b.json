@@ -1,0 +1,177 @@
+{
+  "schema": 3,
+  "id": "qwen3.6-27b",
+  "model": "Qwen3.6-27B",
+  "type": "qwen35dense",
+  "family": "Qwen",
+  "serve_as": "Qwen3.6-27B",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "fp8-mtp",
+      "q4-k-s-mtp"
+    ],
+    "min_system_gib": {
+      "fp8-mtp": 64,
+      "q4-k-s-mtp": 32
+    }
+  },
+  "presets": {
+    "fp8-mtp": {
+      "summary": "Qwen3.6-27B in FP8 with vision and adaptive MTP (up to 2 draft tokens).",
+      "variant": "fp8",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "q4-k-s-mtp": {
+      "summary": "Qwen3.6-27B in Q4_K_S with vision and adaptive MTP (up to 2 draft tokens).",
+      "variant": "q4-k-s",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "fp8": {
+      "repo": "Qwen/Qwen3.6-27B-FP8"
+    },
+    "gguf": {
+      "repo": "unsloth/Qwen3.6-27B-MTP-GGUF"
+    },
+    "processor": {
+      "repo": "Qwen/Qwen3.6-27B",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ],
+      "revision": "8f33b98937c6031bb49e713dee3e8e185aafd26f"
+    }
+  },
+  "variants": {
+    "fp8": {
+      "precision": "FP8",
+      "dir": "Qwen3.6-27B-FP8",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "fp8",
+      "revision": "a56219b8202864dc6d3e565be5ff1eea01f54cb4",
+      "include": [
+        "*"
+      ],
+      "exclude": [
+        ".gitattributes"
+      ],
+      "specs": [
+        "mtp"
+      ],
+      "download_bytes": {
+        "mtp": 30890039330
+      }
+    },
+    "q4-k-s": {
+      "precision": "Q4_K_S",
+      "dir": "Qwen3.6-27B-Q4_K_S",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace",
+      "include": [
+        "Qwen3.6-27B-Q4_K_S.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "sources": [
+        "processor"
+      ],
+      "specs": [
+        "mtp"
+      ],
+      "download_bytes": {
+        "mtp": 17052504519
+      }
+    }
+  },
+  "specs": {
+    "mtp": {
+      "parameters": {
+        "num_spec": {
+          "type": "integer",
+          "min": 1,
+          "max": 2
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      },
+      "defaults": {
+        "mtp_prompt_lookup": true,
+        "mtp_adaptive": true,
+        "mtp_tool_draft": true
+      }
+    }
+  },
+  "legacy_ids": {
+    "qwen3.6-27b-fp8": {
+      "preset": "fp8-mtp",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null,
+        "num_spec": null
+      },
+      "priority": 20,
+      "spec_label": "MTP k=2"
+    },
+    "qwen3.6-27b-q4-k-s": {
+      "preset": "q4-k-s-mtp",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null,
+        "num_spec": null
+      },
+      "priority": 20,
+      "requires": "0.3.0",
+      "spec_label": "MTP k=2"
+    }
+  }
+}

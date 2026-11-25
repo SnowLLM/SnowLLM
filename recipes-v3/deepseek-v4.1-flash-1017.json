@@ -1,0 +1,165 @@
+{
+  "schema": 3,
+  "id": "deepseek-v4.1-flash-1017",
+  "model": "DeepSeek-V4.1-Flash-1017",
+  "type": "deepseek",
+  "family": "DeepSeek",
+  "serve_as": "DeepSeek-V4.1-Flash-1017",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "vq-q4-k-dspark",
+      "vq-q4-k-none"
+    ],
+    "min_system_gib": {
+      "vq-q4-k-dspark": {
+        "default": 128,
+        "win32": 192
+      },
+      "vq-q4-k-none": {
+        "default": 128,
+        "win32": 192
+      }
+    }
+  },
+  "presets": {
+    "vq-q4-k-dspark": {
+      "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
+      "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Vision is not enabled.",
+      "variant": "vq-q4-k",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 5
+      },
+      "inference": {
+        "max_model_len": 8192,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16",
+        "prefix_memory_ratio": 0.08,
+        "device_map": "auto",
+        "max_gpu_mem_util": 0.94,
+        "max_host_mem_util": 0.75
+      }
+    },
+    "vq-q4-k-none": {
+      "summary": "DeepSeek-V4.1-Flash-1017 text inference with VQ + Q4_K weights, one request and an 8192-token context.",
+      "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Vision is not enabled.",
+      "variant": "vq-q4-k",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 8192,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16",
+        "prefix_memory_ratio": 0.08,
+        "device_map": "auto",
+        "max_gpu_mem_util": 0.94,
+        "max_host_mem_util": 0.75
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "Baekpica/DeepSeek-V4.1-Flash-1017-VQ-GGUF"
+    }
+  },
+  "variants": {
+    "vq-q4-k": {
+      "precision": "VQ + Q4_K",
+      "dir": "DeepSeek-V4.1-Flash-1017-vq8sh14-q4k-mtpnative",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "f81ee2e9801fcc58fd51ae75dd827467ffc0b9e5",
+      "include": [
+        "DeepSeek-V4.1-Flash-vq8sh14-q4k-mtpnative.gguf.part??-of-40",
+        "DeepSeek-V4.1-Flash.vision.gguf",
+        "deepseek-engram/*.safetensors",
+        "SHA256SUMS",
+        "README.md",
+        "RECIPE.md",
+        "SOURCE.md",
+        "LICENSE",
+        "LICENSE-DeepSeek"
+      ],
+      "specs": [
+        "dspark",
+        "none"
+      ],
+      "download_bytes": {
+        "dspark": 317600818409,
+        "none": 317600818409
+      }
+    }
+  },
+  "specs": {
+    "dspark": {
+      "defaults": {
+        "dflash": "@model",
+        "num_spec": 0,
+        "mtp_prompt_lookup": true,
+        "dspark_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0,
+            5
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dspark_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "deepseek-v4.1-flash-1017-vq-q4-k-dspark": {
+      "preset": "vq-q4-k-dspark",
+      "defaults": {
+        "dspark_adaptive": null,
+        "kv_cache_dtype": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 149,
+      "requires": "0.3.19",
+      "status": "supported",
+      "spec_label": "DSpark"
+    },
+    "deepseek-v4.1-flash-1017-vq-q4-k": {
+      "preset": "vq-q4-k-none",
+      "defaults": {
+        "kv_cache_dtype": null
+      },
+      "priority": 149,
+      "requires": "0.3.19",
+      "status": "supported",
+      "spec_label": ""
+    }
+  }
+}

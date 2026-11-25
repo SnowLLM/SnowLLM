@@ -11,7 +11,7 @@ from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from snowllm.hub.recipes import RECIPE_TYPES, SCHEMA, SETTABLE, recipe_rank, version as parts
+from snowllm.hub.recipes import RECIPE_TYPES, SCHEMA, SETTABLE, _catalogue, recipe_rank, version as parts
 
 SOURCE = ROOT / "recipes"
 OUT = ROOT / "web" / "recipe-v2.json"
@@ -290,6 +290,11 @@ def main() -> None:
     if problems:
         sys.exit(f"\nbuild-recipes.py: {len(problems)} problem(s) in {SOURCE.relative_to(ROOT)}/")
 
+    models = [json.loads(path.read_text()) for path in sorted((ROOT / "recipes-v3").glob("*.json"))]
+    payload = {"schema": SCHEMA, "models": models}
+    rows = _catalogue(payload, "recipes-v3")
+    if not models or {r.id for r in rows if 'model_id' not in r.raw} != {r['id'] for r in book}:
+        sys.exit("v3 model recipes must preserve the legacy recipe IDs")
     if a.check:
         print(f"build-recipes.py: {len(book)} recipe(s) in {SOURCE.relative_to(ROOT)}/ "
               f"are well formed")
@@ -301,7 +306,8 @@ def main() -> None:
         for src in r.get("sources", ()):
             src["url"] = url_of(src["repo"], src.get("revision", "main"))
     stamp = updated()
-    OUT.write_text(json.dumps({"schema": SCHEMA, "version": VERSION, "updated": stamp,
+    OUT.with_name("recipe-v3.json").write_text(json.dumps(payload, indent=2) + "\n")
+    OUT.write_text(json.dumps({"schema": 2, "version": VERSION, "updated": stamp,
                                "recipe_types": RECIPE_TYPES, "recipes": book}, indent=2) + "\n")
     destination = OUT.parent / "recipes"
     destination.mkdir(parents=True, exist_ok=True)

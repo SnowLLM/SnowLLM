@@ -9,6 +9,8 @@ on:
       - package.json
       - package-lock.json
       - recipes/**
+      - recipes-v3/**
+      - snowllm/hub/model_recipes.py
       - benchmarks/runs/*.json
       - benchmarks/runs/*.json.outdated
       - install.sh
@@ -66,6 +68,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_recipe_compatibility.py
           python -m pip download --no-deps --only-binary=:all: -d "$RUNNER_TEMP/recipe-clients" "snowllm==0.3.13"
+          python -m pip download --no-deps --only-binary=:all: -d "$RUNNER_TEMP/recipe-clients" "snowllm==0.3.27"
           python scripts/check-recipe-clients.py "$RUNNER_TEMP/recipe-clients"
 
       - name: Benchmark HTML preserves every measurement

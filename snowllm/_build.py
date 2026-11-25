@@ -8,7 +8,7 @@ from setuptools.command.build_py import build_py
 class BundleRecipes(build_py):
     def run(self):
         super().run()
-        source = Path(__file__).resolve().parent.parent / "recipes"
+        source = Path(__file__).resolve().parent.parent / "recipes-v3"
         files = sorted(source.glob("*.json"))
         if not files:
             raise FileNotFoundError(f"no recipes to bundle in {source}")

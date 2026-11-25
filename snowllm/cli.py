@@ -419,6 +419,9 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("model", nargs="?", metavar="PATH", default=argparse.SUPPRESS,
                    help='Checkpoint directory or downloaded recipe.')
     g.add_argument("--model", dest="model_flag", metavar="PATH", help=argparse.SUPPRESS)
+    from .hub.recipes import positive_gib
+    g.add_argument("--recipe-memory", type=positive_gib, metavar="GiB",
+                   help="Select a preset for this system RAM capacity.")
     g.add_argument("--bundle", action="store_true",
                    help="Use recipes bundled with this wheel (also available as b/RECIPE).")
     g.add_argument('--target', type=str.lower, choices=('gpu', 'npu'), default='gpu',
@@ -482,7 +485,7 @@ def parser() -> argparse.ArgumentParser:
                    metavar="K", dest="num_spec",
                    help='MTP draft tokens per step; 0 disables MTP.')
     g.add_argument("--mtp-adaptive", action=argparse.BooleanOptionalAction, default=None,
-                   help='Adapt Flash-Next MTP depth from verification feedback, up to a positive --num-spec.')
+                   help='Adapt native MTP depth from verification feedback, up to a positive --num-spec.')
     g.add_argument("--mtp-prompt-lookup", action=argparse.BooleanOptionalAction, default=False,
                    help='Reuse matching request text and tool results with MTP, DFlash or DSpark.')
     g.add_argument("--spec-tool-draft", "--mtp-tool-draft", dest="mtp_tool_draft", action=argparse.BooleanOptionalAction, default=False,
@@ -555,7 +558,7 @@ def _equivalent_command(p, a, model, recipe):
         command[1] = ('b/' if recipe.bundle else '') + recipe.id
     for action in p._actions:
         if not action.option_strings or action.dest in (
-                'model_flag', 'bundle', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
+                'model_flag', 'bundle', 'recipe_memory', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
             continue
         value = values.get(action.dest)
         if value is None or (value == action.default and action.dest not in important):
@@ -611,7 +614,7 @@ def prepare(argv, *, managed=False):
 
     from .hub import recipes
     try:
-        found, recipe = recipes.locate(model, bundle=a.bundle)
+        found, recipe = recipes.locate(model, bundle=a.bundle, memory_gib=a.recipe_memory)
         model = str(found)
     except SnowLLMError as e:
         p.exit(2, f"{term.paint('snowllm:', term.BOLD, term.RED, stream=sys.stderr)} {e}\n")
@@ -620,6 +623,14 @@ def prepare(argv, *, managed=False):
 
     unset = object()
     given = p.parse_args(argv, namespace=argparse.Namespace(**dict.fromkeys(recipes.SETTABLE, unset)))
+    for key, rule in (getattr(recipe, 'raw', {}) or {}).get('parameters', {}).items():
+        value = getattr(given, key, unset)
+        if value is not unset and not (key == 'num_spec' and value == 0):
+            from .hub.model_recipes import validate_parameter
+            try:
+                validate_parameter(key, value, rule)
+            except SnowLLMError as e:
+                p.error(str(e))
     if recipe and recipe.defaults:
         def _at(v: object) -> object:
             return model + v[len("@model"):] if isinstance(v, str) and v.startswith("@model") \

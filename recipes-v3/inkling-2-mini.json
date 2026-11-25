@@ -1,0 +1,203 @@
+{
+  "schema": 3,
+  "id": "inkling-2-mini",
+  "model": "Inkling-2-Mini",
+  "type": "inkling",
+  "family": "Inkling",
+  "serve_as": "Inkling-2-Mini",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "ud-q8-k-xl-dspark",
+      "ud-q4-k-m-dspark"
+    ],
+    "min_system_gib": {
+      "ud-q8-k-xl-dspark": 64,
+      "ud-q4-k-m-dspark": 32
+    }
+  },
+  "presets": {
+    "ud-q8-k-xl-dspark": {
+      "summary": "Inkling-2-Mini text inference with the Unsloth UD-Q8_K_XL target and Q8_0 recurrent block draft.",
+      "variant": "ud-q8-k-xl",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "dflash_adaptive": true,
+        "mtp_prompt_lookup": true
+      },
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 4096,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "ud-q4-k-m-dspark": {
+      "summary": "Inkling-2-Mini text inference with the Unsloth UD-Q4_K_M target and Q8_0 recurrent block draft.",
+      "variant": "ud-q4-k-m",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "dflash_adaptive": true,
+        "mtp_prompt_lookup": true
+      },
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 4096,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "ud-q4-k-m-none": {
+      "summary": "Inkling-2-Mini UD-Q4_K_M GGUF for text generation with BF16 KV.",
+      "variant": "ud-q4-k-m",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "ud-q8-k-xl-none": {
+      "summary": "Inkling-2-Mini UD-Q8_K_XL GGUF for text generation with BF16 KV.",
+      "variant": "ud-q8-k-xl",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "gguf": {
+      "repo": "unsloth/Inkling-2-Mini-GGUF"
+    },
+    "dspark": {
+      "repo": "unsloth/Inkling-2-Mini-GGUF",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "subdir": "dspark",
+      "include": [
+        "dspark-Inkling-2-Mini-Q8_0.gguf"
+      ]
+    }
+  },
+  "variants": {
+    "ud-q4-k-m": {
+      "precision": "UD-Q4_K_M",
+      "dir": "Inkling-2-Mini-UD-Q4_K_M",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "include": [
+        "Inkling-2-Mini-UD-Q4_K_M.gguf"
+      ],
+      "specs": [
+        "dspark",
+        "none"
+      ],
+      "download_bytes": {
+        "dspark": 17114434560,
+        "none": 16610544608
+      }
+    },
+    "ud-q8-k-xl": {
+      "precision": "UD-Q8_K_XL",
+      "dir": "Inkling-2-Mini-UD-Q8_K_XL",
+      "modalities": [
+        "text"
+      ],
+      "source": "gguf",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "include": [
+        "Inkling-2-Mini-UD-Q8_K_XL.gguf"
+      ],
+      "specs": [
+        "dspark",
+        "none"
+      ],
+      "download_bytes": {
+        "dspark": 23371342848,
+        "none": 22867452896
+      }
+    }
+  },
+  "specs": {
+    "dspark": {
+      "sources": [
+        "dspark"
+      ],
+      "defaults": {
+        "dflash": "@model/dspark",
+        "mtp_prompt_lookup": true,
+        "dflash_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "type": "integer",
+          "min": 2,
+          "max": 8
+        },
+        "dflash_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "inkling-2-mini-ud-q4-k-m-dspark": {
+      "preset": "ud-q4-k-m-dspark",
+      "defaults": {
+        "mtp_tool_draft": null
+      },
+      "requires": "0.3.27",
+      "spec_label": "DSpark"
+    },
+    "inkling-2-mini-ud-q4-k-m": {
+      "preset": "ud-q4-k-m-none",
+      "requires": "0.3.26",
+      "spec_label": "none"
+    },
+    "inkling-2-mini-ud-q8-k-xl-dspark": {
+      "preset": "ud-q8-k-xl-dspark",
+      "defaults": {
+        "mtp_tool_draft": null
+      },
+      "requires": "0.3.27",
+      "spec_label": "DSpark"
+    },
+    "inkling-2-mini-ud-q8-k-xl": {
+      "preset": "ud-q8-k-xl-none",
+      "requires": "0.3.26",
+      "spec_label": "none"
+    }
+  }
+}

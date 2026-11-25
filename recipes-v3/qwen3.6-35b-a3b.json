@@ -1,0 +1,358 @@
+{
+  "schema": 3,
+  "id": "qwen3.6-35b-a3b",
+  "model": "Qwen3.6-35B-A3B",
+  "type": "qwen35moe",
+  "family": "Qwen",
+  "serve_as": "Qwen3.6-35B-A3B",
+  "recommended": {
+    "mode": "by_memory",
+    "candidates": [
+      "fp8-dflash",
+      "q4-k-xl-dflash"
+    ],
+    "min_system_gib": {
+      "fp8-dflash": 96,
+      "q4-k-xl-dflash": 64
+    }
+  },
+  "presets": {
+    "fp8-dflash": {
+      "summary": "Qwen3.6-35B-A3B in FP8 with an external DFlash drafter.",
+      "variant": "fp8",
+      "draft": "dflash",
+      "draft_params": {
+        "dflash_block": 0
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "q4-k-xl-dflash": {
+      "summary": "Qwen3.6-35B-A3B in UD-Q4_K_XL with an external DFlash drafter.",
+      "variant": "q4-k-xl",
+      "draft": "dflash",
+      "draft_params": {
+        "dflash_block": 0
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "fp8-mtp": {
+      "summary": "Qwen3.6-35B-A3B in FP8 with adaptive MTP (up to 2 draft tokens).",
+      "variant": "fp8",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "fp8-none": {
+      "summary": "Qwen3.6-35B-A3B in FP8 with speculative decoding disabled.",
+      "variant": "fp8",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "q4-k-xl-mtp": {
+      "summary": "Qwen3.6-35B-A3B in UD-Q4_K_XL with vision and an embedded MTP head with adaptive depth (up to 2 draft tokens).",
+      "note": "Uses the MTP GGUF release in a separate directory from the plain recipe.",
+      "variant": "q4-k-xl-mtp-head",
+      "draft": "mtp",
+      "draft_params": {
+        "num_spec": 2
+      },
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "q4-k-xl-none": {
+      "summary": "Qwen3.6-35B-A3B in UD-Q4_K_XL with vision; MTP is not included.",
+      "note": "For speculative decoding, use the MTP or DFlash recipe.",
+      "variant": "q4-k-xl",
+      "draft": "none",
+      "draft_params": {},
+      "inference": {
+        "max_model_len": 409600,
+        "max_num_seqs": 4,
+        "max_num_batched_tokens": 8192,
+        "kv_cache_dtype": "bf16"
+      }
+    }
+  },
+  "sources": {
+    "fp8": {
+      "repo": "Qwen/Qwen3.6-35B-A3B-FP8"
+    },
+    "dflash": {
+      "repo": "z-lab/Qwen3.6-35B-A3B-DFlash",
+      "revision": "f181eece646affea2c38b2765f1aaa01a9734ccd",
+      "subdir": "dflash",
+      "include": [
+        "config.json",
+        "model.safetensors"
+      ]
+    },
+    "gguf": {
+      "repo": "unsloth/Qwen3.6-35B-A3B-GGUF"
+    },
+    "processor": {
+      "repo": "Qwen/Qwen3.6-35B-A3B",
+      "include": [
+        "preprocessor_config.json",
+        "video_preprocessor_config.json"
+      ],
+      "revision": "345d467b117d1fd5eda9b879a5988de9ae5f47a7"
+    },
+    "gguf-mtp": {
+      "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
+    }
+  },
+  "variants": {
+    "fp8": {
+      "precision": "FP8",
+      "dir": "Qwen3.6-35B-A3B-FP8",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "fp8",
+      "revision": "c653bba46dfa06e9658dcc0b0dc87fe4685f14a2",
+      "include": [
+        "*"
+      ],
+      "exclude": [
+        ".gitattributes"
+      ],
+      "specs": [
+        "dflash",
+        "mtp",
+        "none"
+      ],
+      "download_bytes": {
+        "dflash": 38264834994,
+        "mtp": 37493014098,
+        "none": 37493014098
+      }
+    },
+    "q4-k-xl": {
+      "precision": "Q4_K_XL",
+      "dir": "Qwen3.6-35B-A3B-UD-Q4_K_XL",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "a483e9e6cbd595906af30beda3187c2663a1118c",
+      "include": [
+        "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "sources": [
+        "processor"
+      ],
+      "specs": [
+        "dflash",
+        "none"
+      ],
+      "download_bytes": {
+        "dflash": 24035100455,
+        "none": 23263279559
+      }
+    },
+    "q4-k-xl-mtp-head": {
+      "precision": "Q4_K_XL",
+      "dir": "Qwen3.6-35B-A3B-UD-Q4_K_XL-MTP",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf-mtp",
+      "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d",
+      "include": [
+        "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "sources": [
+        "processor"
+      ],
+      "specs": [
+        "mtp"
+      ],
+      "download_bytes": {
+        "mtp": 23756486311
+      }
+    }
+  },
+  "specs": {
+    "dflash": {
+      "sources": [
+        "dflash"
+      ],
+      "defaults": {
+        "dflash": "@model/dflash",
+        "mtp_prompt_lookup": true,
+        "dflash_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dflash_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "mtp": {
+      "parameters": {
+        "num_spec": {
+          "type": "integer",
+          "min": 1,
+          "max": 2
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      },
+      "defaults": {
+        "mtp_prompt_lookup": true,
+        "mtp_adaptive": true,
+        "mtp_tool_draft": true
+      }
+    },
+    "none": {
+      "defaults": {
+        "num_spec": 0
+      }
+    }
+  },
+  "legacy_ids": {
+    "qwen3.6-35b-a3b-fp8-dflash": {
+      "preset": "fp8-dflash",
+      "dir": "Qwen3.6-35B-A3B-FP8-DFlash",
+      "defaults": {
+        "dflash_adaptive": null,
+        "dflash_block": null,
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 160
+    },
+    "qwen3.6-35b-a3b-fp8-mtp": {
+      "preset": "fp8-mtp",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 159
+    },
+    "qwen3.6-35b-a3b-fp8": {
+      "preset": "fp8-none",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null
+      },
+      "priority": 160
+    },
+    "qwen3.6-35b-a3b-q4-k-xl-dflash": {
+      "preset": "q4-k-xl-dflash",
+      "defaults": {
+        "dflash_adaptive": null,
+        "dflash_block": null,
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 158,
+      "requires": "0.3.0"
+    },
+    "qwen3.6-35b-a3b-q4-k-xl-mtp": {
+      "preset": "q4-k-xl-mtp",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null,
+        "mtp_adaptive": null,
+        "mtp_prompt_lookup": null,
+        "mtp_tool_draft": null
+      },
+      "priority": 157,
+      "requires": "0.3.0",
+      "spec_label": "MTP k=2"
+    },
+    "qwen3.6-35b-a3b-q4-k-xl": {
+      "preset": "q4-k-xl-none",
+      "defaults": {
+        "kv_cache_dtype": null,
+        "max_model_len": null,
+        "max_num_batched_tokens": null
+      },
+      "priority": 158,
+      "requires": "0.3.0",
+      "spec_label": "none"
+    }
+  }
+}
