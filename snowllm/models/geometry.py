@@ -345,6 +345,14 @@ class DFlashGeometry:
     is_causal: bool | None = None
     target_model_type: str = ""
     rope_is_neox_style: bool = True
+    sliding_pattern: tuple[bool, ...] = ()
+
+    @property
+    def inkling(self):
+        return self.target_model_type == "inkling2_loop"
+
+    def sliding(self, layer):
+        return self.sliding_pattern[layer] if self.sliding_pattern else layer < self.num_sliding_layers
 
     @classmethod
     def from_config(cls, cfg: dict) -> "DFlashGeometry":
@@ -420,7 +428,7 @@ class DFlashGeometry:
         return self.conv_taps > 0
 
     def causal(self, layer: int) -> bool:
-        return self.is_causal if self.is_causal is not None else layer < self.num_sliding_layers
+        return self.is_causal if self.is_causal is not None else self.sliding(layer)
 
     @property
     def dspark(self) -> bool:

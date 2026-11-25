@@ -134,7 +134,7 @@ class InklingExpertsTest(unittest.TestCase):
                                              (random(width, 64) * .125).bfloat16(),
                                              (random(width, 64) * .125).bfloat16())
                              for _ in range(3)))
-        for rows in (1, 2):
+        for rows in (1, 2, 4, 5, 8):
             history, current = (random(rows, width).bfloat16() for _ in range(2))
             messages = residual_mix_blocks([history], current, queries.flatten(0, 1), eps, False)
             inputs = random(rows, 3, width).unbind(1)
@@ -145,6 +145,9 @@ class InklingExpertsTest(unittest.TestCase):
                 grouped = qkv_loop_control(inputs, msg, downs, gates, table, eps, False)
                 for result, x, m, down, gate in zip(grouped, inputs, msg, downs, gates):
                     self.assertTrue(torch.equal(result, packed_loop_control(x, m, down, gate, table, eps, False)))
+                    serial = torch.cat([packed_loop_control(x[i:i+1], m[i:i+1], down, gate, table, eps, False)
+                                        for i in range(rows)])
+                    torch.testing.assert_close(result, serial, rtol=0, atol=0)
 
     def test_prefill_residual_blocks_and_controller(self):
         from snowllm._capi import check, lib
@@ -218,26 +221,34 @@ class InklingExpertsTest(unittest.TestCase):
 
     @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")
     def test_grouped_prefill(self):
+        self.check_grouped_projections((769, 2049), prefill=True)
+
+    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")
+    def test_grouped_verification(self):
+        self.check_grouped_projections((1, 2, 3, 4, 5, 8), prefill=False)
+
+    def check_grouped_projections(self, row_counts, *, prefill):
         from snowllm.ops.inkling import expert_plan
 
         generator = torch.Generator(device="cuda").manual_seed(31)
         for layer in (0, 20):
             with GGUFReader(pathlib.Path(os.environ["SNOWLLM_INKLING_GGUF"])) as reader:
                 moe = InklingMoE(reader, config(reader.gguf), layer)
-            for rows in (769, 2049):
+            for rows in row_counts:
                 with self.subTest(rows=rows, layer=layer):
                     ids = torch.randint(128, (rows, 8), device="cuda", dtype=torch.int32, generator=generator)
-                    ids[:17] = 0
+                    ids[:min(17, rows // 2)] = 0
                     ids[-1, :2] = -1
                     ids[-1, 2] = 128
                     packed = moe.gate_up.scale is not None
-                    plan = expert_plan(ids, 128, 2304, 1152, True, packed=packed)
-                    self.assertIsNotNone(plan)
-                    self.assertIsNone(expert_plan(ids, 128, 2304, 1152, False, packed=packed))
+                    plan = expert_plan(ids, 128, 2304, 1152, prefill, packed=packed)
+                    if prefill:
+                        self.assertIsNotNone(plan)
+                        self.assertIsNone(expert_plan(ids, 128, 2304, 1152, False, packed=packed))
                     for proj, groups, k in ((moe.gate_up, 1, 2304), (moe.down, 8, 1152)):
                         x = torch.randn(rows, groups, k, device="cuda", dtype=torch.bfloat16, generator=generator)
                         expected = proj(x, ids, True)
-                        actual = proj(x, ids, True, plan)
+                        actual = proj(x, ids, prefill, plan)
                         self.assertTrue(torch.equal(actual, expected))
 
     @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the model file")

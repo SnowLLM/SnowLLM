@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
+from collections import deque
 from copy import copy
+from functools import partial
 
 
 class MtpToolFormat:
@@ -146,3 +148,101 @@ class _MtpToolState:
             draft.append(first)
             state._consume(first)
         return draft
+
+
+class ToolDraft:
+    def __init__(self, fmt):
+        self.parser = fmt.new_state()
+        self.scanned = 0
+        self.suffix = None
+        self.native_depth = 2
+        self.rounds = self.proposed = self.verified = self.accepted = 0
+
+    def tokens(self, request, limit):
+        self.parser.advance(request.out[self.scanned:])
+        self.scanned = len(request.out)
+        return self.parser.propose(limit)
+
+    def propose(self, request, limit):
+        draft = self.tokens(request, limit)
+        native = request.drafts
+        if len(draft) < 2 or len(draft) <= len(native):
+            self.suffix = None
+            return False
+        if len(native) >= 2:
+            self.native_depth = len(native)
+        self.suffix = request.drafts = draft
+        self.proposed += len(draft)
+        return True
+
+    def overlay(self, request, width, limit, sampling):
+        draft = self.tokens(request, limit)
+        if len(draft) < 2:
+            return False
+        if sampling is not None and request.params.temperature > 0:
+            if len(draft) != width:
+                return False
+            # A deterministic tool proposal has point-mass q, even when the IDs match.
+            sampling.release(request)
+        self.suffix = request.drafts = draft + request.drafts[len(draft):]
+        return True
+
+
+class ToolHeaders:
+    def __init__(self, openings):
+        self.openings = openings
+
+    def new_state(self):
+        return _HeaderState(self.openings)
+
+
+class _HeaderState:
+    def __init__(self, openings):
+        self.openings = openings
+        self.recent = deque(maxlen=max(map(len, openings)))
+        self.choices = ()
+
+    def advance(self, tokens):
+        for token in tokens:
+            self.recent.append(token)
+            self.choices = tuple(row[1:] for row in self.choices if row and row[0] == token)
+            for opening, choices in self.openings.items():
+                if tuple(self.recent)[-len(opening):] == opening:
+                    self.choices = choices
+                    break
+
+    def propose(self, limit):
+        draft = []
+        for column in zip(*self.choices):
+            if len(draft) >= limit or len(set(column)) != 1:
+                break
+            draft.append(column[0])
+        return draft
+
+
+def _headers(formats, tokenizer, tools, eos_ids):
+    names = []
+    for tool in tools:
+        if not isinstance(tool, dict) or tool.get('type', 'function') != 'function':
+            return None
+        function = tool.get('function', tool)
+        name = function.get('name') if isinstance(function, dict) else None
+        if not isinstance(name, str) or not all(part.isidentifier() for part in name.split('.')):
+            return None
+        names.append(name)
+    openings = {}
+    for marker, header in formats:
+        opening = tuple(tokenizer.encode(marker, add_special_tokens=False))
+        rows = [tuple(tokenizer.encode(marker + header.format(name=n), add_special_tokens=False)) for n in names]
+        if opening and rows and all(row[:len(opening)] == opening and len(row) > len(opening) for row in rows):
+            openings[opening] = tuple(row[len(opening):] for row in rows)
+    return ToolHeaders(openings) if openings else None
+
+
+TOOL_DRAFT_FORMATS = {
+    **dict.fromkeys(('qwen4_exp', 'qwen4_exp_text', 'qwen3_5', 'qwen3_5_text',
+                     'qwen3_5_moe', 'qwen3_5_moe_text', 'minicpmv4_7'), MtpToolFormat.from_tools),
+    'lfm2_moe': partial(_headers, (('<|tool_call_start|>', '[{name}('),)),
+    'deepseek_v4': partial(_headers, (('<｜DSML｜tool_calls>\n', '<｜DSML｜invoke name="{name}">\n'),
+                                      ('<｜DSML｜ calls>\n', '<｜DSML｜ invoke name="{name}">\n'))),
+}

@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.3.27 — 2026-11-25
+
+- Add DSpark recipes for Inkling-2-Mini UD-Q4_K_M and UD-Q8_K_XL with adaptive verification and prompt lookup. Pin SnowLLM-Kernels to `0.3.17.dev20`.
+  Inkling-2-Mini 的 UD-Q4_K_M 和 UD-Q8_K_XL 新增 DSpark 配方，支持自适应验证和提示词查找。内核依赖固定为 `0.3.17.dev20`。
+- Support optional tool-call drafting with adaptive DFlash and DSpark.
+  自适应 DFlash 和 DSpark 支持按需开启工具调用草稿。
+- Parse native Inkling tool calls, adapt developer messages for Inkling and MiniCPM-V 4.7, and reject non-finite JSON numbers in tool arguments. Add a manual Pi regression that reads a log and writes a report.
+  支持解析 Inkling 原生工具调用，适配 Inkling 和 MiniCPM-V 4.7 的 developer 消息，并拒绝工具参数中的非有限 JSON 数值。新增手动 Pi 回归，验证读取日志和写入报告。
+
 ## 0.3.26 — 2026-11-24
 
 - Add Inkling-2-Mini UD-Q8_K_XL and UD-Q4_K_M GGUF text generation with batched requests, BF16 KV, decode graphs and prefix caching. SnowLLM now pins SnowLLM-Kernels `0.3.17.dev10`.

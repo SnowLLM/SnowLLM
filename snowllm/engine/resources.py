@@ -109,6 +109,8 @@ def draft_table_blocks(geo, context, block, block_size):
     if isinstance(geo, DSparkGeometry) and geo.stack.v41:
         # A page-aligned history can start before the sliding window's first token.
         context = geo.stack.sliding_window + block_size - 1
+    if getattr(geo, "inkling", False):
+        block = geo.block_size
     return ops.kv_blocks_for(context + block, block_size)
 
 
@@ -130,20 +132,23 @@ def draft_cache_policy(geo, window, sinks, block_size, context):
     return draft_cache_window(geo), 0
 
 
-def allocate_draft_pool(geo, blocks, block_size, slabs):
+def allocate_draft_pool(geo, blocks, block_size, slabs, *, sliding_pools=None):
     from ..models.geometry import DSparkGeometry
     if isinstance(geo, DSparkGeometry):
         from ..models.deepseek_v4.pools import create_cache
         return create_cache(geo.stack, blocks, {}, block_size, slabs=slabs)
-    planes = [slabs.take(blocks * block_size * geo.kv_dim * 2).span().view(torch.bfloat16)
-              for _ in range(2*geo.num_layers)]
-    return [(planes[2*i], planes[2*i+1]) for i in range(geo.num_layers)]
+    local = iter(sliding_pools) if sliding_pools is not None else None
+    def pair():
+        size = blocks * block_size * geo.kv_dim * 2
+        return tuple(slabs.take(size).span().view(torch.bfloat16) for _ in range(2))
+    return [next(local) if local is not None and geo.sliding(i) else pair() for i in range(geo.num_layers)]
 
 
-def draft_pool_bytes(geo, blocks, block_size):
+def draft_pool_bytes(geo, blocks, block_size, *, separate_sliding=False):
     if geo is None:
         return 0
-    resource = Resource(lambda slabs: allocate_draft_pool(geo, blocks, block_size, slabs))
+    local = [None]*geo.num_sliding_layers if separate_sliding else None
+    resource = Resource(lambda slabs: allocate_draft_pool(geo, blocks, block_size, slabs, sliding_pools=local))
     return resource.bytes_for()
 
 

@@ -299,6 +299,8 @@ class BaseRunner:
         if self.draft_geo is None:
             return 0
         width = self.num_spec if isinstance(self.draft_geo, DSparkGeometry) else self.T
+        if getattr(self.draft_geo, "inkling", False):
+            width = self.draft_geo.block_size
         if self.draft_window:
             history = min(self.draft_window + self.draft_sink_blocks * self.block_size, self.ctx_cap)
             each = ops.kv_blocks_for(history + self.T + width + self.block_size - 1, self.block_size)

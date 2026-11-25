@@ -83,10 +83,10 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | `--num-spec` / `--num-speculative-tokens` | `2` | 每步 MTP 草稿 token 数，启用 `--mtp-adaptive` 后表示上限。设为 `0` 可禁用 MTP。 |
 | `--mtp-adaptive` | 关闭 | 根据验证结果调整 Qwen3.8-Flash-Next 的原生 MTP 草稿长度。`--num-spec` 设置上限（正整数）。 |
 | `--mtp-prompt-lookup` | 关闭 | 复用当前请求文本和工具返回内容作为草稿，交由目标模型验证。 |
-| `--mtp-tool-draft` | 关闭 | 单请求解码时，根据工具定义起草调用标记。 |
+| `--spec-tool-draft` / `--mtp-tool-draft` | 关闭 | 为 Flash-Next、Qwen 和 MiniCPM 起草工具调用标记，为 DeepSeek V4 和 LFM2.5 起草函数头。每个候选 token 均由目标模型验证。 |
 | `--dflash` | 未设置 | DFlash 或 DSpark 草稿模型目录；替代 MTP 并共享内存预算。 |
-| `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置且限制最小值。 |
-| `--dflash-adaptive` | 关闭 | 根据近期接受率调整 DFlash 或 DFlash2 每个草稿块的验证长度。 |
+| `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置。Inkling 可选 2 到草稿块大小之间的验证宽度，草稿注意力始终使用完整块。 |
+| `--dflash-adaptive` | 关闭 | 调整 DFlash 或 DFlash2 的验证宽度。Inkling DSpark 配方默认开启此项，单请求贪心解码时根据草稿置信度、实际接受情况和耗时选择宽度。 |
 | `--dflash-p-min` | `0.0` | DSpark 置信度阈值；`0` 禁用提前停止。 |
 | `--kv-cache-dtype` | `bf16` | `bf16`、`auto`（bf16）或实验性 `int8`。INT8 的支持[依赖模型](../guides/performance#long-contexts)。 |
 | `--max-num-batched-tokens` | `8192` | 固定预填充分块大小，如 `2k`。见[调优指南](../guides/performance#prefill-chunk-size)。 |

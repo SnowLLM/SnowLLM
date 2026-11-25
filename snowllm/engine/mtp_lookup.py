@@ -75,21 +75,21 @@ class MtpLookup:
             latest[token] = pos
             history.append(token)
 
-    def _raw_positions(self):
+    def _positions(self, at, min_match, min_tail):
         end = len(self.tokens) - 1
-        at = self.previous[end]
         for _ in range(64):
-            if at < 11:
+            if at < min_match - 1:
                 break
-            if end - at >= 3:
+            if end - at >= min_tail:
                 yield self.tokens, at
             at = self.previous[at]
 
-    def _match(self, positions, prefix, limit, first):
-        best, matches = 12, []
+    def _match(self, positions, prefix, limit, first, *, history=None, min_match=12, min_take=3):
+        history = self.tokens if history is None else history
+        best, matches = min_match, []
         for passage, at in positions:
             length = 1
-            while length < min(prefix, at + 1) and passage[at-length] == self.tokens[-length-1]:
+            while length < min(prefix, at + 1) and passage[at-length] == history[-length-1]:
                 length += 1
             if length >= best:
                 if length > best:
@@ -106,13 +106,14 @@ class MtpLookup:
                 break
             result.append(token)
             matches = [m for m in matches if depth < len(m) and m[depth] == token]
-        return result if len(result) >= 3 else []
+        return result if len(result) >= min_take else []
 
     def continuation(self, limit, first=None):
         if limit < 3:
             return []
         if len(self.tokens) >= 15:
-            draft = self._match(self._raw_positions(), 32, limit, first)
+            positions = self._positions(self.previous[-1], min_match=12, min_tail=3)
+            draft = self._match(positions, 32, limit, first)
             if draft:
                 return draft
         # A normalized source must match committed output wholly within the same file.
@@ -126,7 +127,18 @@ class MtpLookup:
         self.output_length = len(request.out)
         return self.continuation(limit, first)
 
-    def overlay(self, request, k, sampling=None):
+    def _extend(self, row, width):
+        history = list(self.tokens[-16:])
+        for pos in range(1, width):
+            history.append(row[pos - 1])
+            positions = self._positions(self.latest[history[-1]], min_match=6, min_tail=1)
+            tail = self._match(positions, min(len(history), 16),
+                               width - pos, None, history=history, min_match=6, min_take=1)
+            if tail:
+                row[pos:pos + len(tail)] = tail
+                break
+
+    def overlay(self, request, k, sampling=None, *, extend=False):
         width = min(k, len(request.drafts))
         if width < 2:
             return
@@ -141,6 +153,8 @@ class MtpLookup:
             request.drafts = draft
         elif draft:
             request.drafts[:len(draft)] = draft
+        elif extend:
+            self._extend(request.drafts, width)
 
     def propose(self, request, limit, used_suffix):
         self.suffix = None

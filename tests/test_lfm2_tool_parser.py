@@ -67,6 +67,25 @@ class LFMToolParserTests(unittest.TestCase):
                     self.assertEqual(parse_tool_calls(text, None), ("", []))
                     self.assertEqual(self.stream(text), ("", []))
 
+    def test_nonfinite_numbers_in_tagged_arguments(self):
+        for template in (
+                "<tool_call><function=f><parameter=x>\n%s\n</parameter></function></tool_call>",
+                "<tool_call>f<arg_key>x</arg_key><arg_value>%s</arg_value></tool_call>",
+                '<｜DSML｜tool_calls><invoke name="f"><parameter name="x" string="false">%s'
+                '</parameter></invoke></｜DSML｜tool_calls>'):
+            for value in ("NaN", "Infinity", "-Infinity", "1e400", '{"nested":[-1e400]}'):
+                with self.subTest(template=template, value=value):
+                    text = template % value + template % '["NaN",1.25]'
+                    expected = ("", [ToolCall("f", {"x": ["NaN", 1.25]})])
+                    self.assertEqual(parse_tool_calls(text, None), expected)
+                    self.assertEqual(self.stream(text), expected)
+            self.assertEqual(parse_tool_calls(template % "NaN", {"f": {"x": "string"}}),
+                             ("", [ToolCall("f", {"x": "NaN"})]))
+
+    def test_untyped_free_text_with_numeric_prefix(self):
+        text = "<tool_call><function=f><parameter=x>\n1e400 entries\n</parameter></function></tool_call>"
+        self.assertEqual(self.stream(text), ("", [ToolCall("f", {"x": "1e400 entries"})]))
+
     def test_existing_qwen_and_tagged_formats(self):
         for body in ('<function=f><parameter=x>\n2\n</parameter>',
                      'f<arg_key>x</arg_key><arg_value>2</arg_value>'):

@@ -61,6 +61,33 @@ class InklingAttentionTest(unittest.TestCase):
                 empty = (expected == 0).all(-1)
                 self.assertTrue((actual[empty] == 0).all().item())
 
+    def test_masked_values_do_not_change_visible_rows(self):
+        gen = torch.Generator(device="cuda").manual_seed(995)
+        def matrix(*shape):
+            return torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=gen)
+
+        for rows in (8, 32):
+            with self.subTest(rows=rows):
+                start = 16
+                positions = torch.arange(start, start + rows, dtype=torch.int32, device="cuda")
+                seq = torch.zeros_like(positions)
+                table = torch.arange((start + rows + 15) // 16, dtype=torch.int32, device="cuda")[None]
+                q = matrix(rows, 24, 128)
+                k, v = (matrix(table.numel(), 16, 8, 128) for _ in range(2))
+                args = matrix(rows, 24, 32), matrix(rows, 24).float(), seq, positions, table, 16
+                expected = attention(q, k, v, *args)
+                def check_mask(indices, kept):
+                    changed = v.clone().flatten(0, 1)
+                    changed[indices].neg_()
+                    actual = attention(q, k, changed.view_as(v), *args)
+                    self.assertTrue(torch.equal(actual[kept], expected[kept]))
+                    changed[indices].fill_(float("nan"))
+                    actual = attention(q, k, changed.view_as(v), *args)
+                    self.assertTrue(torch.equal(actual[kept], expected[kept]))
+
+                check_mask(slice(start + 3, start + rows), slice(0, 3))
+                check_mask(slice(0, 4), slice(3, None))
+
     def test_gated_output_projection(self):
         from snowllm.models.projection import pack_bf16
         from snowllm.ops.inkling import dense, sigmoid_gate
@@ -97,6 +124,30 @@ class InklingAttentionTest(unittest.TestCase):
     def test_split_decode_with_ring_and_sink(self):
         self.check_attention([1, 0], [8192, -1], width=65, extent=1024, windows=(1024, 0),
                              seed=132, bias_dtype=torch.bfloat16)
+
+    def test_grouped_global_verify_preserves_row_partitions(self):
+        device = "cuda"
+        gen = torch.Generator(device=device).manual_seed(141)
+
+        def matrix(*shape):
+            return torch.randn(shape, device=device, dtype=torch.bfloat16, generator=gen)
+
+        rows, pages = 8, 132
+        q, bias, sinks = matrix(rows, 24, 128), matrix(rows, 24, 1024), matrix(rows, 24).float()
+        k, v = (matrix(pages, 16, 8, 128) for _ in range(2))
+        seq = torch.zeros(rows, device=device, dtype=torch.int32)
+        positions = torch.arange(2045, 2045 + rows, device=device, dtype=torch.int32)
+        table = torch.randperm(pages, device=device, generator=gen).int()[None]
+        v[table[0, 128].item(), 2].fill_(float("nan"))
+        for live_rows in (3, 5, 8):
+            with self.subTest(live_rows=live_rows):
+                def attend(row):
+                    return attention(q[row], k, v, bias[row], sinks[row], seq[row], positions[row], table)
+
+                actual = attend(slice(0, live_rows))
+                expected = torch.cat([attend(slice(i, i + 1)) for i in range(live_rows)])
+                torch.testing.assert_close(actual, expected, atol=0, rtol=0, equal_nan=True)
+                self.assertTrue(torch.isfinite(actual[:min(live_rows, 5)]).all().item())
 
     def test_single_decode_sliding_window(self):
         for position in (8192, 8207):

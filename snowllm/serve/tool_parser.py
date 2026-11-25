@@ -3,6 +3,7 @@
 
 import ast
 import json
+import math
 import re
 from dataclasses import dataclass
 
@@ -32,6 +33,67 @@ _FORMATS = ((_DSML_FUNC, _DSML_PARAM), (_FUNC, _PARAM), (_TAGGED_FUNC, _TAGGED_P
 class ToolCall:
     name: str
     arguments: dict
+
+
+def _load_finite_json(raw: str) -> object:
+    nonfinite = False
+
+    def number(text: str) -> float:
+        nonlocal nonfinite
+        value = float(text)
+        if not math.isfinite(value):
+            nonfinite = True
+        return value
+
+    # Validate after parsing so unquoted tool text like "1e400 entries" still falls back to a string.
+    value = json.loads(raw, parse_float=number, parse_constant=number)
+    if nonfinite:
+        raise OverflowError("tool argument must be a finite JSON number")
+    return value
+
+
+def _inkling_call(frame, invoke_id, decode, tools, stops):
+    if invoke_id not in frame:
+        return None
+    divider = frame.index(invoke_id)
+    name = decode(frame[1:divider])
+    if name not in tools:
+        return None
+    if stops:
+        text = decode(frame[1:])
+        if any(stop and stop in text for stop in stops):
+            return None
+    try:
+        value = _load_finite_json(decode(frame[divider + 1:]))
+    except (ValueError, OverflowError, RecursionError):
+        return None
+    if isinstance(value, dict) and value.get("name") == name and isinstance(value.get("args"), dict):
+        return ToolCall(name, value["args"])
+    return None
+
+
+async def inkling_tool_frames(tokens, channels, invoke_id, decode, tools, stops):
+    # A named assistant frame is a tool call only once its JSON channel closes.
+    frame = []
+    async for token in tokens:
+        channel = channels.get(token)
+        if frame and channel is None:
+            frame.append(token)
+            continue
+        if frame:
+            call = _inkling_call(frame, invoke_id, decode, tools, stops) if channel == "end" else None
+            if call is None:
+                for buffered in frame:
+                    yield buffered
+            else:
+                yield call
+            frame.clear()
+        if channel == "role":
+            frame.append(token)
+        else:
+            yield token
+    for buffered in frame:
+        yield buffered
 
 
 def holdback(buf: str, *markers: str) -> tuple[str, str]:
@@ -64,8 +126,8 @@ def _convert(raw: str, typ: str) -> object:
     if typ == "string":
         return raw
     try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+        return _load_finite_json(raw)
+    except ValueError:
         return raw
 
 
@@ -106,11 +168,11 @@ def _literal(node: ast.AST) -> object:
 
 def _parse_calls(body: str, types: dict[str, dict[str, str]] | None,
                  block: re.Pattern) -> list[ToolCall]:
-    if block is not _LFM_BLOCK:
-        call = _parse_block(body, types)
-        return [call] if call else []
-    body = body.removeprefix(LFM_OPEN).removesuffix("<|tool_call_end|>").strip()
     try:
+        if block is not _LFM_BLOCK:
+            call = _parse_block(body, types)
+            return [call] if call else []
+        body = body.removeprefix(LFM_OPEN).removesuffix("<|tool_call_end|>").strip()
         expr = ast.parse(body, mode="eval").body
         if not isinstance(expr, ast.List):
             return []
@@ -132,7 +194,7 @@ def _parse_calls(body: str, types: dict[str, dict[str, str]] | None,
                 args[kw.arg] = _literal(kw.value)
             calls.append(ToolCall(name, args))
         return calls
-    except (SyntaxError, ValueError, TypeError, RecursionError):
+    except (SyntaxError, ValueError, TypeError, OverflowError, RecursionError):
         return []
 
 

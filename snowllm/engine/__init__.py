@@ -15,6 +15,7 @@ from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, DEFAULT_PREFILL_C
 from ..models.geometry import DeepSeekV4Geometry, DFlashGeometry, Glm5NextGeometry, Qwen4ExpGeometry
 from .block_manager import BlockAllocator, StateSlots
 from .mtp_lookup import MtpLookup
+from .mtp_tool import TOOL_DRAFT_FORMATS, ToolDraft
 from .forward_context import Batch, plain_decode_shapes
 from .prefix_cache import CKPT_EVERY, Entry, PrefixCache, thin
 from .request import Request, SamplingParams
@@ -31,7 +32,7 @@ from .spec_decode import SPEC_MAX_STEP_ROWS, DFlashDecoder, DSparkScheduling, Sp
 MIN_PLE_FIRST_CHUNK = 128
 
 if TYPE_CHECKING:
-    from .mtp_tool import MtpToolFormat
+    from .mtp_tool import MtpToolFormat, ToolHeaders
     from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
     from ..models.glm5_next.layers import Glm5NextForConditionalGeneration
@@ -142,7 +143,15 @@ def _draft_geometry(path: str) -> DFlashGeometry:
 def _check_dflash_target(model: "TargetModel", draft: DraftGeometry) -> None:
     geo = model.geo
     if getattr(draft,'target_model_type','') and draft.target_model_type!=model.config.get('model_type'):
-        raise SnowLLMError('this DSpark draft requires a matching LFM2-MoE target')
+        raise SnowLLMError(f'this DSpark draft requires a {draft.target_model_type} target')
+    if getattr(draft, 'inkling', False):
+        if (draft.hidden != geo.hidden or draft.vocab_size != geo.vocab_size
+                or any(i < 0 or i > len(model.visits) for i in draft.tap_layers)
+                or len(set(draft.tap_layers)) != draft.num_taps):
+            raise SnowLLMError('Inkling DSpark vocabulary, hidden width or loop visits differ from target')
+        return
+    if getattr(model, "config", {}).get("model_type") == "inkling2_loop":
+        raise SnowLLMError("Inkling speculation requires its paired DSpark draft")
     if _dspark(draft):
         from ..checkpoint.gguf import dspark as dspark_gguf
         if not isinstance(geo, DeepSeekV4Geometry):
@@ -186,6 +195,10 @@ def draft_block(geo: DraftGeometry, block: int) -> int:
         if geo.stack.v41 and block not in (0, geo.block_size):
             raise SnowLLMError(f"native V4.1 DSpark requires its checkpoint block size {geo.block_size}")
         return max(block or 0, geo.block_size)
+    if getattr(geo, "inkling", False):
+        if block and not 2 <= block <= geo.block_size:
+            raise SnowLLMError(f"Inkling DSpark verification width must be between 2 and {geo.block_size}")
+        return block or geo.block_size
     if geo is not None and geo.dspark:
         if block not in (0, 1, 4, 8, 9, 15) or block > geo.block_size:
             raise SnowLLMError("DSpark block must be 1, 4, 8, 9 or 15 and fit the checkpoint")
@@ -202,12 +215,12 @@ class DraftPlan:
     host_load_peak_bytes: int = 0
 
 
-def plan_draft(path: str | None, geo: DraftGeometry = None) -> DraftPlan:
+def plan_draft(path: str | None, geo: DraftGeometry = None, *, candidate_search=False) -> DraftPlan:
     if not path:
         return DraftPlan(None)
     print('[planner] measuring draft weights and workspace', flush=True)
     geo = _draft_geometry(path) if geo is None else geo
-    weights = _dspark_weight_plan(path, geo) if _dspark(geo) else _dflash_weight_plan(path, geo)
+    weights = _dspark_weight_plan(path, geo) if _dspark(geo) else _dflash_weight_plan(path, geo, candidate_search)
     return DraftPlan(geo, *weights)
 
 
@@ -259,7 +272,7 @@ def _draft_source(path: str, dry: bool = True) -> "DraftSource | None":
     return dflash_gguf.DictDraftSource(sd)
 
 
-def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int, DraftWorkspace | None]:
+def _dflash_weight_plan(path: str, geo: DFlashGeometry, candidate_search=False) -> tuple[int, int, DraftWorkspace | None]:
     from .. import ops
     from ..models.qwen3_5 import dflash_draft
 
@@ -270,7 +283,7 @@ def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int, Draft
     try:
         with ops.dry_load() as d:
             draft = dflash_draft.load(src, geo, [(none, none)] * geo.num_layers,
-                                      ops.Arena(), ops.KV_BLOCK_SIZES[0])
+                                      ops.Arena(), ops.KV_BLOCK_SIZES[0], candidate_search=candidate_search)
             sizes = d.device, d.peak_device
         return *sizes, dflash_draft.Workspace(draft)
     finally:
@@ -279,7 +292,7 @@ def _dflash_weight_plan(path: str, geo: DFlashGeometry) -> tuple[int, int, Draft
 
 def draft_num_spec(geo: DraftGeometry, block: int) -> int:
     b = draft_block(geo, block)
-    return b if _dspark(geo) or geo.dspark else b - 1
+    return b if _dspark(geo) or (geo.dspark and not geo.inkling) else b - 1
 
 
 def draft_carve_out(path: str | None, block: int, max_num_seqs: int,
@@ -359,7 +372,7 @@ def carve_out_need(model: "TargetModel", cfg: dict, kv: dict, budget: int,
     return got
 
 
-def _spec_options(model, num_spec, draft_path, *, adaptive=None, lookup=False, tools=False):
+def _spec_options(model, num_spec, draft_path, *, adaptive=None, lookup=False, tools=False, adaptive_draft=False):
     flash_next = isinstance(model.geo, Qwen4ExpGeometry)
     native_mtp = not draft_path and num_spec > 0 and getattr(model, "mtp", None) is not None
     if adaptive is None:
@@ -369,8 +382,8 @@ def _spec_options(model, num_spec, draft_path, *, adaptive=None, lookup=False, t
     if lookup and not (native_mtp or draft_path):
         print('[snowllm] Disabling --mtp-prompt-lookup: no speculative decoder.', flush=True)
         lookup = False
-    if tools and not adaptive:
-        print('[snowllm] Disabling --mtp-tool-draft: adaptive Flash-Next MTP is off.', flush=True)
+    if tools and not (adaptive or adaptive_draft):
+        print('[snowllm] Disabling --spec-tool-draft: adaptive speculation is off.', flush=True)
         tools = False
     return adaptive, lookup, tools
 
@@ -394,13 +407,11 @@ class Engine:
                  mtp_adaptive: bool | None = None,
                  mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
                  dflash_adaptive: bool = False) -> None:
-        mtp_adaptive, mtp_prompt_lookup, mtp_tool_draft = _spec_options(
-            model, num_spec, dflash_path, adaptive=mtp_adaptive, lookup=mtp_prompt_lookup, tools=mtp_tool_draft)
-        draft_plan = plan_draft(dflash_path) if draft_plan is None else draft_plan
+        draft_plan = plan_draft(dflash_path, candidate_search=dflash_adaptive) if draft_plan is None else draft_plan
         self.dflash_geo = draft_plan.geo
         if dflash_adaptive and not (dflash_path and isinstance(self.dflash_geo, DFlashGeometry)
-                                    and not self.dflash_geo.dspark):
-            raise ValueError('--dflash-adaptive requires a DFlash or DFlash2 checkpoint')
+                                    and (not self.dflash_geo.dspark or self.dflash_geo.inkling)):
+            raise ValueError('--dflash-adaptive requires a DFlash, DFlash2 or Inkling DSpark checkpoint')
         if dspark_adaptive and not (_dspark(self.dflash_geo)
                                     or getattr(self.dflash_geo, 'dspark', False)):
             raise ValueError('--dspark-adaptive requires a DSpark checkpoint')
@@ -416,6 +427,9 @@ class Engine:
         self.max_blocks = ops.kv_blocks_for(max_model_len, ops.KV_BLOCK_SIZES[0])
         mpt = "auto" if prefill_chunk == "auto" else min(int(prefill_chunk), max_model_len)
         self.dflash_block = dflash_block = draft_block(self.dflash_geo, dflash_block)
+        mtp_adaptive, mtp_prompt_lookup, mtp_tool_draft = _spec_options(
+            model, num_spec, dflash_path, adaptive=mtp_adaptive, lookup=mtp_prompt_lookup, tools=mtp_tool_draft,
+            adaptive_draft=dspark_adaptive or (dflash_adaptive and dflash_block > 2))
         cls = _runner_for(model)
         draft_peak = draft_plan.load_peak_bytes
         draft_resident = (draft_plan.device_bytes
@@ -469,7 +483,11 @@ class Engine:
                                              if isinstance(self.dflash, DFlashDecoder) else 0)
             self.mtp_adaptive = mtp_adaptive
             self.mtp_prompt_lookup = mtp_prompt_lookup
-            self.mtp_tool_draft = mtp_tool_draft
+            model_type = model.config.get('model_type')
+            self.tool_format = TOOL_DRAFT_FORMATS.get(model_type)
+            if mtp_tool_draft and self.tool_format is None:
+                print(f"[snowllm] Disabling --spec-tool-draft: no tool format registered for {model_type!r}.", flush=True)
+            self.mtp_tool_draft = mtp_tool_draft and self.tool_format is not None
             self.spec = self.dflash or (
                 getattr(self.runner,"spec_decoder_type",SpecDecoder)(self.runner, self.sampler, self.slots, self.tables, self.stage,
                             num_spec=self.num_spec, window=mtp_window, sinks=mtp_sinks,
@@ -588,7 +606,8 @@ class Engine:
         return draft_num_spec(self.dflash_geo, self.dflash_block)
 
     def _dflash_pool_bytes(self, blocks: int) -> int:
-        return draft_pool_bytes(self.dflash_geo, blocks, self.runner.block_size)
+        return draft_pool_bytes(self.dflash_geo, blocks, self.runner.block_size,
+            separate_sliding=bool(getattr(self.runner, "draft_ring_pages", 0)))
 
     def _build_dspark(self, path: str, block: int, max_model_len: int,
                       p_min: float = 0.0, adaptive: bool = False) -> DSparkDecoder:
@@ -627,18 +646,21 @@ class Engine:
             raise ValueError(f"no DFlash draft at {path}: expected a .gguf or .safetensors file, "
                              f"or a directory holding one")
         g = self.dflash_geo
-        per_seq = ops.kv_blocks_for(max_model_len + block, self.runner.block_size)
+        per_seq = draft_table_blocks(g, max_model_len, block, self.runner.block_size)
         need = self.dflash_blocks
         page = self.runner.block_size
         def allocate(slabs, blocks):
-            pools = allocate_draft_pool(g, blocks, page, slabs)
+            ring = getattr(self.runner, "draft_ring", None)
+            local = [(k.flatten(),v.flatten()) for k,v in ring] if ring is not None else None
+            pools = allocate_draft_pool(g, blocks, page, slabs, sliding_pools=local)
             if self.dflash is not None:
                 self.dflash.draft.pools = pools
             return pools
         self._draft_pool = self.runner.resources.add(allocate)
         pools = self._draft_pool.allocate(need)
         try:
-            draft = dflash_draft.load(src, g, pools, self.runner.arena, self.runner.block_size)
+            draft = dflash_draft.load(src, g, pools, self.runner.arena, self.runner.block_size,
+                                      candidate_search=dflash_adaptive)
         finally:
             src.close()
         self._draft_pool.bindings = ((draft, ('pools',)),)
@@ -652,7 +674,7 @@ class Engine:
             rope_factor: float | None = None, mrope: torch.Tensor | None = None, pos_delta: int = 0,
             embeds: torch.Tensor | None = None,
             embed_rows: list[int] | None = None, queue: bool = True,
-            system_prefix_len: int = 0, tool_draft: "MtpToolFormat | None" = None,
+            system_prefix_len: int = 0, tool_draft: "MtpToolFormat | ToolHeaders | None" = None,
             lookup_passages: tuple[list[int], ...] = ()) -> Request:
         p = params or SamplingParams()
         rope_factor = self.default_rope_factor if rope_factor is None else rope_factor
@@ -668,6 +690,8 @@ class Engine:
                     pos_delta=pos_delta, embeds=embeds, embed_rows=list(embed_rows or []),
                     system_prefix_len=system_prefix_len, tool_draft=tool_draft,
                     lookup_passages=lookup_passages)
+        if tool_draft is not None and self.dflash is not None:
+            r.tool_state = ToolDraft(tool_draft)
         if queue:
             self.waiting.append(r)
         return r
@@ -1091,8 +1115,8 @@ class Engine:
             if T:
                 batch = self._decodable_batch(self.spec.rows_needed(T))
         if T:
-            if self.mtp_prompt_lookup and not self.mtp_adaptive:
-                self._apply_prompt_lookup(batch, T)
+            if not self.mtp_adaptive and (self.mtp_prompt_lookup or self.mtp_tool_draft):
+                self._apply_draft_overlays(batch, T)
             if draft_limit is None:
                 self.spec.verify_step(batch, T)
             else:
@@ -1104,7 +1128,7 @@ class Engine:
         self._retire_finished()
         return emitted, rows
 
-    def _apply_prompt_lookup(self, batch: list[Request], widths: int | list[int]) -> None:
+    def _apply_draft_overlays(self, batch: list[Request], widths: int | list[int]) -> None:
         sampling = getattr(self.dflash, 'sampling', None)
         if isinstance(widths, int):
             widths = [widths] * len(batch)
@@ -1112,10 +1136,17 @@ class Engine:
             k = rows - 1
             if k < 2 or len(request.drafts) < 2 or len(request.out) + 1 >= request.params.max_new_tokens:
                 continue
+            if request.tool_state is not None:
+                limit = min(k, request.params.max_new_tokens - len(request.out) - 1)
+                if request.tool_state.overlay(request, k, limit, sampling):
+                    continue
+            if not self.mtp_prompt_lookup:
+                continue
             lookup = self._prompt_lookups.get(request)
             if lookup is None:
                 lookup = self._prompt_lookups[request] = MtpLookup(request, self.runner.geo.vocab_size)
-            lookup.overlay(request, k, sampling)
+            extend = self.dflash is not None and getattr(getattr(self.dflash, "geo", None), "inkling", False)
+            lookup.overlay(request, k, sampling, extend=extend)
 
     def _decode(self) -> int:
         batch = self._decodable_batch(1)

@@ -49,6 +49,24 @@ class ToolDraftTests(unittest.TestCase):
         state.advance(self.enc(text))
         return state
 
+    def test_registered_header_formats_only_propose_after_committed_opening(self):
+        for model, marker, header in (
+                ('deepseek_v4', '<｜DSML｜ calls>\n', '<｜DSML｜ invoke name="list_names">\n'),
+                ('deepseek_v4', '<｜DSML｜tool_calls>\n', '<｜DSML｜invoke name="list_names">\n'),
+                ('lfm2_moe', '<|tool_call_start|>', '[list_names(')):
+            fmt = module.TOOL_DRAFT_FORMATS[model](self.tok, self.tools, ())
+            state = fmt.new_state()
+            ids = self.enc(marker)
+            state.advance(ids[:-1])
+            self.assertEqual(state.propose(8), [])
+            state.advance(ids[-1:])
+            expected = self.enc(marker + header)[len(ids):]
+            self.assertEqual(state.propose(8), expected[:8])
+            state.advance(expected[:3])
+            self.assertEqual(state.propose(8), expected[3:11])
+            state.advance(self.enc('!'))
+            self.assertEqual(state.propose(8), [])
+
     def test_open_required_and_first_native_boundary(self):
         for text in ('', 'example <tool', '<function=list_names>', 'just plain text'):
             self.assertEqual(self.advanced(text).propose(7), [])

@@ -822,12 +822,35 @@ if hasattr(lib, "snowllm_inkling_prepare_heads"):
 if hasattr(lib, "snowllm_inkling_combine_post_conv_supported"):
     _SIGS.extend((("snowllm_inkling_combine_post_conv_supported", c_int, [c_int]*4),
                   ("snowllm_inkling_combine_post_conv", c_int, [P]*8 + [c_int]*2 + [c_int64]*2 + [S])))
+if hasattr(lib, "snowllm_inkling_dspark_mix"):
+    _SIGS.extend([
+        ("snowllm_inkling_dspark_mix", c_int, [P]*4 + [c_int]*2 + [c_float, S]),
+        ("snowllm_inkling_dspark_gates", c_int, [P]*4 + [c_int]*3 + [S]),
+        ("snowllm_inkling_dspark_scores", c_int, [P]*4 + [c_int]*4 + [c_float, S]),
+        ("snowllm_inkling_history_commit", c_int, [P]*5 + [c_int]*4 + [S]),
+    ])
 if hasattr(lib, "snowllm_inkling_post_conv"):
     _SIGS.append(("snowllm_inkling_post_conv", c_int, [P]*9 + [c_int]*3 + [c_int64]*2 + [c_int, S]))
 if hasattr(lib, "snowllm_inkling_route_packed"):
     _SIGS.extend([
         ("snowllm_inkling_router_splits", c_int, [c_int]*5),
         ("snowllm_inkling_route_packed", c_int, [P]*6 + [c_int]*5 + [c_float, S]),
+    ])
+if hasattr(lib, "snowllm_inkling_candidate_tiles"):
+    _SIGS.extend([
+        ("snowllm_inkling_candidate_tiles", c_int, [c_int]*5),
+        ("snowllm_inkling_compact_rows", c_int, [c_int]*2),
+        ("snowllm_inkling_pack_search", c_int, [P]*3 + [c_int]*3 + [S]),
+        ("snowllm_inkling_search_logits", c_int, [P]*6 + [c_int]*3 + [S]),
+        ("snowllm_inkling_selected_logits", c_int, [P]*5 + [c_int]*5 + [S]),
+        ("snowllm_inkling_pack_compact", c_int, [P]*3 + [c_int]*3 + [S]),
+        ("snowllm_inkling_compact_project", c_int, [P]*6 + [c_int]*3 + [S]),
+        ("snowllm_inkling_compact_inputs", c_int, [P]*6 + [c_int]*2 + [S]),
+    ])
+if hasattr(lib, "snowllm_inkling_q8_logits"):
+    _SIGS.extend([
+        ("snowllm_inkling_q8_logits", c_int, [P]*4 + [c_int]*3 + [S]),
+        ("snowllm_inkling_mixed_input_projections", c_int, [P]*4 + [c_int]*3 + [S]),
     ])
 if hasattr(lib, "snowllm_inkling_input_projections"):
     _SIGS.extend([

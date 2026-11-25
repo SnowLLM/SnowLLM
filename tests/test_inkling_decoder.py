@@ -41,6 +41,41 @@ class InklingDecoderTest(unittest.TestCase):
                 expected = dense(inputs[sources[j]], *weights[j], False)
                 torch.testing.assert_close(result, expected.float() if j == 5 else expected, atol=0, rtol=0)
 
+    @unittest.skipUnless(os.getenv("SNOWLLM_INKLING_GGUF"), "set SNOWLLM_INKLING_GGUF to the Inkling GGUF")
+    def test_packed_q8_matches_expanded_weights(self):
+        from snowllm.checkpoint.gguf.source import GGUFReader
+        from snowllm.models.projection import pack_bf16, pack_kquant
+        from snowllm.ops.inkling import input_projections, packed_logits
+
+        generator = torch.Generator(device="cuda").manual_seed(493)
+        with GGUFReader(Path(os.environ["SNOWLLM_INKLING_GGUF"])) as rd:
+            def pack(name):
+                weight = rd.tensor(name)
+                bf16, n, k, rows = pack_bf16(weight)
+                if rd.gguf[name].quant.name == "Q8_0" and rows % 128 == 0:
+                    return bf16, pack_kquant(rd.raw(name), 8, n, k), rows
+                return bf16, bf16, rows
+
+            if rd.gguf["output.weight"].quant.name != "Q8_0":
+                self.skipTest("requires a Q8_0 output head")
+            vocab = rd.gguf.need("{arch}.vocab_size_unpadded")
+            expanded, n, k, _ = pack_bf16(rd.tensor("output.weight")[:vocab])
+            compact = pack_kquant(rd.raw("output.weight"), 8, n, k)
+            x = torch.randn(5, k, device="cuda", dtype=torch.bfloat16, generator=generator)
+            torch.testing.assert_close(packed_logits(x, expanded, n)[:, :vocab],
+                                       packed_logits(x, compact, n)[:, :vocab], atol=0, rtol=0)
+            del expanded, compact
+            names = ("q", "gate", "k", "v", "rel", "sink_proj", "k_conv_proj", "v_conv_proj")
+            names = [f"blk.0.attn_{key}.weight" for key in names]
+            expanded, mixed, widths = zip(*(pack(name) for name in names if name in rd.gguf))
+            for rows, prefill in ((5, False), (256, True)):
+                inputs = tuple(torch.randn(rows, k, device="cuda", dtype=torch.bfloat16, generator=generator)
+                               for _ in range(3))
+                expected = input_projections(inputs, expanded, widths, prefill)
+                actual = input_projections(inputs, mixed, widths, prefill)
+                for result, reference in zip(actual, expected):
+                    torch.testing.assert_close(result, reference, atol=0, rtol=0)
+
     def test_attention_clip_and_norm_rounding(self):
         from snowllm.ops.inkling import normalize_rows
 
@@ -100,11 +135,17 @@ class InklingDecoderTest(unittest.TestCase):
         self.assertEqual(chunked[-1].argmax().item(), logits[-1].argmax().item())
         # llama.cpp b12648, Unsloth UD-Q4_K_M and UD-Q8_K_XL, greedy decoding.
         expected = [200001, 200008, 371, 150409, 171960, 149878, 150744, 169292]
+        verify_cache = model.cache(capacity=64, chunk_size=32)
+        model.forward(ids, verify_cache)
+        block = torch.tensor(expected[:4], device="cuda")
+        verified = model.forward(block, verify_cache, prefill=False)
         for i, token in enumerate(expected):
             predicted = logits[-1].argmax().view(1)
             self.assertEqual(predicted.item(), token, f"greedy token {i}")
             if i + 1 < len(expected):
                 logits = model.forward(predicted, cache)
+                if i < len(block):
+                    torch.testing.assert_close(verified[i], logits[0], rtol=0, atol=0)
 
 
 if __name__ == "__main__":

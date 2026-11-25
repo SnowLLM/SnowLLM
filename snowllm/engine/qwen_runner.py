@@ -258,7 +258,7 @@ class QwenRunner(GraphRunner):
             roll_forward=self.roll_forward if T > 1 else False,
             num_accepted=self.d_nacc[:B] if T > 1 else None,
             cu_seqlens=self.d_cu[(B,T)] if T > 1 else None,
-            total_q_blocks=ops.prefill_q_plan([T]*B)[0] if T > 1 else 0,
+            total_q_blocks=ops.prefill_q_plan([T]*B)[0] if T > 1 and self.plan_query_tiles else 0,
             chunk_decode=chunk if T > 1 else False)
 
     def set_rope(self, inv_freq: torch.Tensor, mscale: float) -> None:

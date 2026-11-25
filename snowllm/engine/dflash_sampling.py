@@ -15,7 +15,8 @@ class DFlashSampling:
         self.temperature = torch.zeros(max_seqs, dtype=torch.float32, device="cuda")
         self.slots = torch.arange(max_seqs, dtype=torch.int32, device="cuda")
         self.uniform = torch.zeros(max_seqs, self.length, dtype=torch.float32, device="cuda")
-        self.candidates = torch.empty(max_seqs, self.length, geo.selector_top_k,
+        width = min(16, vocab) if geo.inkling else geo.selector_top_k
+        self.candidates = torch.empty(max_seqs, self.length, width,
                                       dtype=torch.int64, device="cuda")
         self.q = torch.empty_like(self.candidates, dtype=torch.float32)
         rows = max_seqs * block
