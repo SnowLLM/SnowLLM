@@ -14,6 +14,15 @@ Defaults come from the CLI parser; recipes or model architectures may adjust the
 
 `snowllm recipes --bundle` lists the names included in the wheel. Use `MODEL:PRESET` to pin a choice, for example `qwen3.8-flash-next:iq4-mtp-adaptive`. Additional supported variant and draft combinations appear as `MODEL:VARIANT:DRAFT`. Explicit CLI options override the selected preset. The [v3 catalogue](https://snowllm.dev/recipe-v3.json) lists variants, supported draft parameters, recommended memory tiers and inference defaults. Previous recipe IDs continue to select their original configurations.
 
+In a v3 model recipe, a draft with its own checkpoint sources and no files required from the target weights is shared by all weight variants. The `none` method is also shared when defined. A variant lists native or package-specific methods in `specs` and can opt out of a method in `exclude_specs`. A spec can set `checkpoint` to a key in the model's `sources`. The source supplies the repository, revision, files and install subdirectory. Set `spec_label` to a qualified name such as `DFlash2@san-digital` to expose the checkpoint in the CLI and WebUI.
+
+Qwen3.8 Flash Next offers `DFlash2@incoai` (original, default cap 8) and `DFlash2@san-digital` (continued training, default cap 16). Both enable adaptive drafting. Use `--dflash-block` or the WebUI draft block size field to set any integer cap from 1 up to the selected checkpoint's limit. The cap includes the anchor, so a cap of 12 allows up to 11 draft candidates. An explicit 0 selects the engine default of 8.
+
+```sh
+snowllm pull b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital
+snowllm b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital --dflash-block 12
+```
+
 ## Serving
 
 | Option | Default | Description |

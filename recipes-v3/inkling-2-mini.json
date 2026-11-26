@@ -99,10 +99,6 @@
       "include": [
         "Inkling-2-Mini-UD-Q4_K_M.gguf"
       ],
-      "specs": [
-        "dspark",
-        "none"
-      ],
       "download_bytes": {
         "dspark": 17114434560,
         "none": 16610544608
@@ -118,10 +114,6 @@
       "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
       "include": [
         "Inkling-2-Mini-UD-Q8_K_XL.gguf"
-      ],
-      "specs": [
-        "dspark",
-        "none"
       ],
       "download_bytes": {
         "dspark": 23371342848,

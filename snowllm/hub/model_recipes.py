@@ -34,8 +34,33 @@ def validate_parameter(name, value, rule):
         raise SnowLLMError(f"{name}={value!r} is outside the recipe range {rule}")
 
 
+def draft_specs(model):
+    specs = model['specs'].copy()
+    for name, spec in specs.items():
+        if 'checkpoint' in spec:
+            checkpoint = spec['checkpoint']
+            subdir = model['sources'][checkpoint].get('subdir')
+            sources = list(dict.fromkeys([*spec.get('sources', []), checkpoint]))
+            defaults = {**spec.get('defaults', {}), 'dflash': f'@model/{subdir}' if subdir else '@model'}
+            specs[name] = {**spec, 'sources': sources, 'defaults': defaults}
+    return specs
+
+
+def variant_specs(specs, variant):
+    shared = [name for name, spec in specs.items()
+              if name == 'none' or (spec.get('sources') and not spec.get('include')
+                                    and spec.get('defaults', {}).get('dflash'))]
+    local = variant.get('specs', [])
+    excluded = variant.get('exclude_specs', [])
+    unknown = (set(local) | set(excluded)) - specs.keys()
+    if unknown:
+        raise ValueError(f"unknown draft methods: {sorted(unknown)}")
+    return [name for name in dict.fromkeys([*local, *shared]) if name not in excluded]
+
+
 def expand(model):
-    presets, variants, specs = model['presets'], model['variants'], model['specs']
+    presets, variants, specs = model['presets'], model['variants'], draft_specs(model)
+    supported = {name: variant_specs(specs, variant) for name, variant in variants.items()}
     rule = model['recommended']
     if rule['mode'] == 'fixed':
         candidates, tiers = [rule['preset']], {}
@@ -50,7 +75,7 @@ def expand(model):
 
     def resolve(key, variant, draft, preset, alias):
         v, s = variants[variant], specs[draft]
-        if draft not in v['specs']:
+        if draft not in supported[variant]:
             raise ValueError(f"{variant} does not support {draft}")
         raw = {k: model[k] for k in ('model', 'type', 'family', 'serve_as', 'runtime') if k in model}
         if 'local_files' in v:
@@ -59,8 +84,12 @@ def expand(model):
             raw.update(model['sources'][v['source']], revision=v['revision'],
                        include=v['include'] + s.get('include', []), exclude=v.get('exclude', []))
         raw['sources'] = [model['sources'][n] for n in v.get('sources', []) + s.get('sources', [])]
-        defaults = (model.get('defaults', {}) | v.get('defaults', {}) | s.get('defaults', {})
-                    | preset.get('draft_params', {}) | preset.get('inference', {}) | alias.get('defaults', {}))
+        base = model.get('defaults', {}) | v.get('defaults', {}) | s.get('defaults', {})
+        defaults = base | preset.get('draft_params', {}) | preset.get('inference', {}) | alias.get('defaults', {})
+        if not alias:
+            raw['base_defaults'] = {k: value for k, value in base.items() if value is not None}
+            if 'spec_label' in s:
+                raw['spec_label'] = s['spec_label']
         raw.update(id=key, precision=v['precision'], dir=alias.get('dir', v['dir']),
                    modalities=v['modalities'], spec=alias.get('spec_label', draft), bytes=v.get('download_bytes', {}).get(draft, 0),
                    defaults={k: value for k, value in defaults.items() if value is not None})
@@ -74,19 +103,20 @@ def expand(model):
         for k, v in preset['draft_params'].items():
             validate_parameter(k, v, parameters[k])
         row = resolve(model['id'] + ':' + name, preset['variant'], draft, preset, {})
-        row.update(model_id=model['id'], preset=name, parameters=parameters)
+        row.update(model_id=model['id'], variant=preset['variant'], preset=name, parameters=parameters,
+                   inference=preset['inference'], draft_params=preset['draft_params'])
         if name in candidates:
             tier = tiers.get(name, 0)
             row.update(recommend_order=candidates.index(name), min_system_gib=tier)
         yield row
     covered = {(p['variant'], p['draft']) for p in presets.values()}
-    for variant, config in variants.items():
-        for draft in config['specs']:
+    for variant, methods in supported.items():
+        for draft in methods:
             if (variant, draft) in covered:
                 continue
             key = f"{model['id']}:{variant}:{draft}"
             row = resolve(key, variant, draft, {}, {})
-            row.update(model_id=model['id'], parameters=specs[draft].get('parameters', {}))
+            row.update(model_id=model['id'], variant=variant, parameters=specs[draft].get('parameters', {}))
             yield row
     for key, alias in model.get('legacy_ids', {}).items():
         preset = presets[alias['preset']] if 'preset' in alias else {}

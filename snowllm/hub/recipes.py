@@ -348,6 +348,26 @@ def _catalogue(raw: dict, url: str, *, bundle: bool = False) -> list[Recipe]:
     seen = {r.id for r in out}
     if len(seen) != len(out):
         raise SnowLLMError(f"{url} lists the same recipe id twice")
+    if 'models' in raw:
+        # Older v3 feeds have no byte count for newly inherited combinations.
+        missing = {r.id: r for r in out if r.raw.get('variant') and not r.bytes and r.repo != 'TBD'}
+        # The initial official v3 feed listed only the preset's block size for DFlash.
+        fixed_blocks = {r.id: r for r in out if url == CATALOGUE_URL and r.spec in ('dflash', 'dflash2')
+                        and r.raw.get('parameters', {}).get('dflash_block') in ({'values': [0]}, {'values': [4]})}
+        if missing or fixed_blocks:
+            try:
+                packaged = _bundled_entries()
+            except SnowLLMError:
+                packaged = []
+            for entry in packaged:
+                recipe = missing.get(entry['id']) or fixed_blocks.get(entry['id'])
+                if not recipe or source_digest(recipe) != source_digest(Recipe(entry)):
+                    continue
+                if recipe.id in missing and entry.get('bytes'):
+                    recipe.bytes = recipe.raw['bytes'] = entry['bytes']
+                block_rule = entry.get('parameters', {}).get('dflash_block')
+                if recipe.id in fixed_blocks and block_rule and block_rule.get('type') == 'integer':
+                    recipe.raw['parameters'] = {**recipe.raw['parameters'], 'dflash_block': block_rule}
     return out
 
 
@@ -358,6 +378,15 @@ def find(name: str, recipes: list[Recipe], *, memory_gib=None) -> Recipe:
     for r in recipes:
         if name in (r.id, r.ref):
             return r
+    parts = name.casefold().split(':')
+    if len(parts) == 3 and '@' in parts[2]:
+        model, variant, label = parts
+        matches = [r for r in recipes if r.raw.get('model_id') == model and r.raw.get('variant') == variant
+                   and r.raw.get('spec_label', '').casefold() == label]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            raise SnowLLMError(f"{name!r} matches multiple recipes: {', '.join(r.ref for r in matches)}")
     candidates = [r for r in recipes if r.raw.get('model_id') == name.lower()]
     if candidates:
         return recommended(name, candidates, memory_gib)
@@ -460,8 +489,8 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
                   for b in blobs],
     }
     profile = recipe.defaults.get("mtp_adaptive") or "model_id" in recipe.raw
-    receipt.update({k: recipe.raw[k] for k in ("model_id", "preset", "parameters", "recommend_order",
-                                               "min_system_gib") if k in recipe.raw})
+    receipt.update({k: recipe.raw[k] for k in ("model_id", "variant", "spec", "spec_label", "preset", "parameters", "recommend_order",
+                                               "min_system_gib", "base_defaults", "inference", "draft_params") if k in recipe.raw})
     primary = dest / MANIFEST
     path = primary
     if profile:
@@ -679,7 +708,7 @@ def _rows(recipes: list[Recipe], root: pathlib.Path) -> list[tuple[str, ...]]:
     for r in recipes:
         rows.append((r.ref, r.precision, human(r.bytes) if r.bytes else "-",
                      str(r.defaults.get("max_model_len", DEFAULT_CONTEXT)),
-                     str(r.defaults.get("max_num_seqs", DEFAULT_SLOTS)), r.spec or "-",
+                     str(r.defaults.get("max_num_seqs", DEFAULT_SLOTS)), r.raw.get('spec_label', r.spec) or "-",
                      r.state, _on_disk(r, root), _where(r, root)))
     return rows
 
@@ -846,13 +875,15 @@ def checkpoint(name: str) -> pathlib.Path:
     return locate(name)[0]
 
 
-def locate(name: str, *, bundle: bool = False, memory_gib=None) -> tuple[pathlib.Path, "Recipe | None"]:
+def locate(name: str, *, bundle: bool = False, memory_gib=None, preset=None) -> tuple[pathlib.Path, "Recipe | None"]:
     if name.startswith("b/"):
         bundle = True
         name = name[2:]
     else:
         here = pathlib.Path(name).expanduser()
         if here.is_dir():
+            if preset is not None:
+                raise SnowLLMError("preset selection requires a model recipe")
             return here, None
     here = pathlib.Path(name).expanduser()
     if os.sep in name or name.startswith("~"):
@@ -860,7 +891,20 @@ def locate(name: str, *, bundle: bool = False, memory_gib=None) -> tuple[pathlib
 
     roots = models_roots()
     root = roots[0]
-    recipe = find(name, catalogue(bundle=bundle), memory_gib=memory_gib)
+    book = catalogue(bundle=bundle)
+    recipe = find(name, book, memory_gib=memory_gib)
+    if preset is False:
+        if 'base_defaults' not in recipe.raw:
+            raise SnowLLMError(f"{recipe.id} has no separate variant and draft defaults")
+        recipe = Recipe({**recipe.raw, 'defaults': recipe.raw['base_defaults']}, bundle=recipe.bundle)
+    elif preset is not None:
+        base = next((r for r in book if r.raw.get('model_id') == recipe.raw.get('model_id')
+                     and r.raw.get('preset') == preset), None)
+        if base is None or 'inference' not in base.raw or 'base_defaults' not in recipe.raw:
+            raise SnowLLMError(f"cannot apply preset {preset!r} to {recipe.id}")
+        draft = base.raw['draft_params'] if base.spec == recipe.spec else {}
+        defaults = recipe.raw['base_defaults'] | draft | base.raw['inference']
+        recipe = Recipe({**recipe.raw, 'defaults': defaults}, bundle=recipe.bundle)
     if not recipe.servable:
         raise SnowLLMError(why(recipe))
     dest = installed(recipe, roots)

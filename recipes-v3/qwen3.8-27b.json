@@ -87,7 +87,6 @@
         "processor"
       ],
       "specs": [
-        "dflash2",
         "mtp"
       ],
       "download_bytes": {
@@ -109,8 +108,12 @@
       },
       "parameters": {
         "dflash_block": {
-          "values": [
-            0
+          "type": "integer",
+          "min": 0,
+          "max": 256,
+          "suggestions": [
+            4,
+            8
           ]
         },
         "mtp_prompt_lookup": {

@@ -145,9 +145,7 @@
         ".gitattributes"
       ],
       "specs": [
-        "dflash",
-        "mtp",
-        "none"
+        "mtp"
       ],
       "download_bytes": {
         "dflash": 38264834994,
@@ -170,10 +168,6 @@
       ],
       "sources": [
         "processor"
-      ],
-      "specs": [
-        "dflash",
-        "none"
       ],
       "download_bytes": {
         "dflash": 24035100455,
@@ -200,7 +194,9 @@
         "mtp"
       ],
       "download_bytes": {
-        "mtp": 23756486311
+        "mtp": 23756486311,
+        "none": 23756486311,
+        "dflash": 24528307207
       }
     }
   },
@@ -217,8 +213,12 @@
       },
       "parameters": {
         "dflash_block": {
-          "values": [
-            0
+          "type": "integer",
+          "min": 0,
+          "max": 256,
+          "suggestions": [
+            4,
+            8
           ]
         },
         "mtp_prompt_lookup": {

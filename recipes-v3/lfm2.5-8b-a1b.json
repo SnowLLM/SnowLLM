@@ -73,9 +73,6 @@
       "include": [
         "LFM2.5-8B-A1B-Q4_K_M.gguf"
       ],
-      "specs": [
-        "dspark"
-      ],
       "download_bytes": {
         "dspark": 5512055872
       }
@@ -90,9 +87,6 @@
       "revision": "49c14831707011e64d70b2ebd8462ba08d608434",
       "include": [
         "LFM2.5-8B-A1B-Q8_0.gguf"
-      ],
-      "specs": [
-        "dspark"
       ],
       "download_bytes": {
         "dspark": 9366686784

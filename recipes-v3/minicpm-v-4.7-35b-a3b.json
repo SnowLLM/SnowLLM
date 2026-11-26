@@ -130,11 +130,9 @@
       "sources": [
         "chat-template"
       ],
-      "specs": [
-        "dspark"
-      ],
       "download_bytes": {
-        "dspark": 17048100913
+        "dspark": 17048100913,
+        "none": 16623527985
       }
     },
     "q4-k-m": {
@@ -152,10 +150,6 @@
       ],
       "sources": [
         "chat-template"
-      ],
-      "specs": [
-        "dspark",
-        "none"
       ],
       "download_bytes": {
         "dspark": 22710411025,

@@ -21,6 +21,80 @@ def recipe(**updates):
 
 
 class RecipeCompatibilityTests(unittest.TestCase):
+    def test_dflash_block_accepts_integers_in_the_verification_range(self):
+        from types import SimpleNamespace
+        from snowllm.defaults import SPEC_MAX_STEP_ROWS
+        from snowllm.engine import draft_block
+        from snowllm.hub.model_recipes import validate_parameter
+        model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
+        params = model['specs']['dflash2']['parameters']
+        rule = params['dflash_block']
+        geo = SimpleNamespace(dspark=False)
+        self.assertEqual(rule['suggestions'], [4, 8])
+        self.assertEqual(rule['max'], 8)
+        self.assertEqual(draft_block(geo, SPEC_MAX_STEP_ROWS), SPEC_MAX_STEP_ROWS)
+        for size in (0, 1, 4, 6, 7, 8):
+            validate_parameter('dflash_block', size, rule)
+            self.assertEqual(draft_block(geo, size), size or 8)
+        for size in (-1, 4.5, 9):
+            with self.assertRaises(SnowLLMError):
+                validate_parameter('dflash_block', size, rule)
+        params['dflash_block'] = {'values': [4]}
+        model['specs']['dflash2']['defaults']['dflash_block'] = 4
+        name = f"{model['id']}:ud-iq4-xs-ud3.1:dflash2"
+        for url, expected in ((recipes.CATALOGUE_URL, rule), ('custom', {'values': [4]})):
+            entry = recipes.find(name, recipes._catalogue({'models': [model]}, url))
+            self.assertEqual(entry.raw['parameters']['dflash_block'], expected)
+            self.assertEqual(entry.defaults['dflash_block'], 4)
+
+    def test_external_draft_is_shared_unless_the_variant_excludes_it(self):
+        model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
+        variant = model['variants']['ud-iq4-xs-ud3.1']
+        # The original online v3 feed listed only MTP for this variant.
+        variant['specs'] = ['mtp-adaptive']
+        expected_bytes = variant['download_bytes'].pop('dflash2')
+        model['variants']['q4-fast']['exclude_specs'] = ['dflash2', 'dflash2-san-digital', 'dspark']
+        book = recipes._catalogue({'models': [model]}, 'test')
+        for quant in ('ud-iq4-xs-ud3.1', 'ud-q3-k-xl-ud3.1', 'ud-iq4-xs-pre-ud3.1', 'ud-q3-k-xl-pre-ud3.1'):
+            entry = recipes.find(f"{model['id']}:{quant}:dflash2", book)
+            self.assertEqual(entry.revision, model['variants'][quant]['revision'])
+            self.assertEqual(entry.sources[-1].repo, model['sources']['dflash2']['repo'])
+            self.assertEqual(entry.defaults['dflash'], '@model/dflash2')
+            self.assertTrue(entry.defaults['dflash_adaptive'])
+            self.assertEqual(recipes.find(f"{model['id']}:{quant}:none", book).defaults['num_spec'], 0)
+        self.assertEqual([r.spec for r in book if r.raw.get('variant') == 'q4-fast'], ['none'])
+        inherited = f"{model['id']}:ud-iq4-xs-ud3.1:dflash2"
+        self.assertEqual(recipes.find(inherited, book).bytes, expected_bytes)
+        variant['revision'] = 'a' * 40
+        changed = recipes._catalogue({'models': [model]}, 'test')
+        self.assertEqual(recipes.find(inherited, changed).bytes, 0)
+        variant['exclude_specs'] = ['mtp-adaptive']
+        with self.assertRaisesRegex(SnowLLMError, 'does not support mtp-adaptive'):
+            recipes._catalogue({'models': [model]}, 'test')
+
+    def test_flash_next_alternative_heads_resolve_in_separate_directories(self):
+        model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
+        book = recipes._catalogue({'models': [model]}, 'test')
+        for spec, block in [('dflash2', 8), ('dflash2-san-digital', 16), ('dspark', 7)]:
+            entry = recipes.find(f"{model['id']}:ud-q3-k-xl-ud3.1:{spec}", book)
+            self.assertEqual(entry.defaults['dflash'], '@model/' + spec)
+            self.assertEqual(entry.defaults['dflash_block'], block)
+            self.assertEqual(entry.sources[-1].subdir, spec)
+            self.assertEqual(entry.sources[-1].revision, model['sources'][spec]['revision'])
+
+    def test_named_checkpoint_uses_the_source_and_directory_declared_in_the_recipe(self):
+        model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
+        model['sources']['alternate'] = {**model['sources']['dflash2'], 'repo': 'example/alternate', 'subdir': 'heads/v2'}
+        model['specs']['experimental'] = {**model['specs']['dflash2'], 'checkpoint': 'alternate',
+                                          'spec_label': 'DFlash2@experiment'}
+        book = recipes._catalogue({'models': [model]}, 'test')
+        prefix = f"{model['id']}:ud-iq4-xs-ud3.1:"
+        entry = recipes.find(prefix + 'dflash2@experiment', book)
+        self.assertIs(entry, recipes.find(prefix + 'experimental', book))
+        self.assertEqual(entry.defaults['dflash'], '@model/heads/v2')
+        self.assertEqual(entry.sources[-1].repo, 'example/alternate')
+        self.assertEqual(entry.sources[-1].subdir, 'heads/v2')
+
     def test_bundled_recipe_order_matches_the_website_catalogue(self):
         book = builder.recipes()
         ids = [row['id'] for row in book]
@@ -244,6 +318,17 @@ class RecipeCompatibilityTests(unittest.TestCase):
             with patch.object(builder, 'OUT', path), patch('sys.argv', ['build-recipes.py']):
                 builder.main()
             current = json.loads(path.read_text())
+            models = json.loads(path.with_name('recipe-v3.json').read_text())['models']
+            for model in models:
+                for preset in model['presets'].values():
+                    self.assertIn(preset['draft'], model['variants'][preset['variant']]['specs'])
+            flash = next(m for m in models if m['id'] == 'qwen3.8-flash-next')
+            for name in ('dflash2', 'dflash2-san-digital'):
+                spec = flash['specs'][name]
+                self.assertEqual(spec['sources'], [spec['checkpoint']])
+                self.assertEqual(spec['defaults']['dflash'], '@model/' + flash['sources'][spec['checkpoint']]['subdir'])
+            self.assertIn('dflash2', flash['variants']['ud-iq4-xs-ud3.1']['specs'])
+            self.assertNotIn('mtp-adaptive', flash['variants']['q4-fast']['specs'])
             old = json.loads((path.parent / 'recipes/0.3.13.json').read_text())
             self.assertEqual(current['schema'], 2)
             self.assertEqual(old['schema'], 1)

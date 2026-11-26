@@ -424,6 +424,11 @@ def parser() -> argparse.ArgumentParser:
     from .hub.recipes import positive_gib
     g.add_argument("--recipe-memory", type=positive_gib, metavar="GiB",
                    help="Select a preset for this system RAM capacity.")
+    preset = g.add_mutually_exclusive_group()
+    preset.add_argument("--recipe-preset", metavar="PRESET",
+                        help="Use this preset's inference and compatible draft settings with the selected weights.")
+    preset.add_argument("--no-recipe-preset", dest="recipe_preset", action="store_const", const=False,
+                        help="Use the model, weight variant and draft defaults without a preset.")
     g.add_argument("--bundle", action="store_true",
                    help="Use recipes bundled with this wheel (also available as b/RECIPE).")
     g.add_argument('--target', type=str.lower, choices=('gpu', 'npu'), default='gpu',
@@ -561,7 +566,7 @@ def _equivalent_command(p, a, model, recipe):
         command[1] = ('b/' if recipe.bundle else '') + recipe.id
     for action in p._actions:
         if not action.option_strings or action.dest in (
-                'model_flag', 'bundle', 'recipe_memory', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
+                'model_flag', 'bundle', 'recipe_memory', 'recipe_preset', 'max_gpu_mem_util', 'max_gpu_mem_gib', 'max_host_mem_util', 'max_host_mem_gib'):
             continue
         value = values.get(action.dest)
         if value is None or (value == action.default and action.dest not in important):
@@ -617,7 +622,7 @@ def prepare(argv, *, managed=False):
 
     from .hub import recipes
     try:
-        found, recipe = recipes.locate(model, bundle=a.bundle, memory_gib=a.recipe_memory)
+        found, recipe = recipes.locate(model, bundle=a.bundle, memory_gib=a.recipe_memory, preset=a.recipe_preset)
         model = str(found)
     except SnowLLMError as e:
         p.exit(2, f"{term.paint('snowllm:', term.BOLD, term.RED, stream=sys.stderr)} {e}\n")

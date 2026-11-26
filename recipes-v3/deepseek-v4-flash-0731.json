@@ -55,9 +55,6 @@
       "include": [
         "UD-IQ2_XXS/*.gguf"
       ],
-      "specs": [
-        "dspark"
-      ],
       "download_bytes": {
         "dspark": 101756794368
       }

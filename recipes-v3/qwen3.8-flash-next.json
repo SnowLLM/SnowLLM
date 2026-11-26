@@ -70,6 +70,24 @@
       ],
       "subdir": "dflash2",
       "revision": "a22a1744e85c17364dcc54a6a420af7135d4c7f6"
+    },
+    "dflash2-san-digital": {
+      "repo": "san-digital/Qwen3.8-Flash-Next-DFlash2",
+      "include": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "subdir": "dflash2-san-digital",
+      "revision": "1ddcc67fa6916f58136a6ea3e99d2e816da90a0a"
+    },
+    "dspark": {
+      "repo": "shadowpa0327/Qwen3.8-Flash-Next-DSpark",
+      "include": [
+        "config.json",
+        "model.safetensors"
+      ],
+      "subdir": "dspark",
+      "revision": "3f74bdfa4a1b9deaaa56cc7c1377440ec5095fad"
     }
   },
   "variants": {
@@ -90,14 +108,14 @@
         "processor"
       ],
       "specs": [
-        "none",
-        "mtp-adaptive",
-        "dflash2"
+        "mtp-adaptive"
       ],
       "download_bytes": {
         "dflash2": 91578633469,
         "mtp-adaptive": 93159060481,
-        "none": 90372492225
+        "none": 90372492225,
+        "dflash2-san-digital": 91578633233,
+        "dspark": 91701640036
       }
     },
     "ud-iq4-xs-ud3.1": {
@@ -120,7 +138,11 @@
         "mtp-adaptive"
       ],
       "download_bytes": {
-        "mtp-adaptive": 97366471713
+        "dflash2": 95786044701,
+        "mtp-adaptive": 97366471713,
+        "none": 94579903457,
+        "dflash2-san-digital": 95786044465,
+        "dspark": 95909051268
       }
     },
     "ud-q3-k-xl-pre-ud3.1": {
@@ -140,14 +162,14 @@
         "processor"
       ],
       "specs": [
-        "none",
-        "mtp-adaptive",
-        "dflash2"
+        "mtp-adaptive"
       ],
       "download_bytes": {
         "dflash2": 92100038787,
         "none": 90893897543,
-        "mtp-adaptive": 93680465799
+        "mtp-adaptive": 93680465799,
+        "dflash2-san-digital": 92100038551,
+        "dspark": 92223045354
       }
     },
     "ud-iq4-xs-pre-ud3.1": {
@@ -167,12 +189,14 @@
         "processor"
       ],
       "specs": [
-        "mtp-adaptive",
-        "dflash2"
+        "mtp-adaptive"
       ],
       "download_bytes": {
         "dflash2": 95796269187,
-        "mtp-adaptive": 97376696199
+        "mtp-adaptive": 97376696199,
+        "none": 94590127943,
+        "dflash2-san-digital": 95796268951,
+        "dspark": 95919275754
       }
     },
     "q4-fast": {
@@ -187,9 +211,6 @@
       "defaults": {
         "max_model_len": 409600
       },
-      "specs": [
-        "none"
-      ],
       "download_bytes": {
         "none": 0
       }
@@ -239,20 +260,22 @@
       }
     },
     "dflash2": {
-      "sources": [
-        "dflash2"
-      ],
+      "checkpoint": "dflash2",
+      "spec_label": "DFlash2@incoai",
       "defaults": {
-        "dflash": "@model/dflash2",
-        "dflash_block": 4,
+        "dflash_block": 8,
         "mtp_prompt_lookup": true,
         "dflash_adaptive": true,
         "mtp_tool_draft": true
       },
       "parameters": {
         "dflash_block": {
-          "values": [
-            4
+          "type": "integer",
+          "min": 0,
+          "max": 8,
+          "suggestions": [
+            4,
+            8
           ]
         },
         "mtp_prompt_lookup": {
@@ -274,6 +297,76 @@
           ]
         }
       }
+    },
+    "dflash2-san-digital": {
+      "checkpoint": "dflash2-san-digital",
+      "spec_label": "DFlash2@san-digital",
+      "defaults": {
+        "dflash_block": 16,
+        "mtp_prompt_lookup": true,
+        "dflash_adaptive": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "type": "integer",
+          "min": 0,
+          "max": 16,
+          "suggestions": [
+            4,
+            8,
+            16
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "dflash_adaptive": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
+    },
+    "dspark": {
+      "checkpoint": "dspark",
+      "defaults": {
+        "dflash_block": 7,
+        "mtp_prompt_lookup": true,
+        "mtp_tool_draft": true
+      },
+      "parameters": {
+        "dflash_block": {
+          "values": [
+            0,
+            1,
+            4,
+            7
+          ]
+        },
+        "mtp_prompt_lookup": {
+          "values": [
+            false,
+            true
+          ]
+        },
+        "mtp_tool_draft": {
+          "values": [
+            false,
+            true
+          ]
+        }
+      }
     }
   },
   "legacy_ids": {
@@ -283,7 +376,8 @@
       "defaults": {
         "dflash_adaptive": null,
         "mtp_prompt_lookup": null,
-        "mtp_tool_draft": null
+        "mtp_tool_draft": null,
+        "dflash_block": 4
       },
       "priority": 80,
       "requires": "0.3.11",
@@ -332,7 +426,8 @@
       "defaults": {
         "dflash_adaptive": null,
         "mtp_prompt_lookup": null,
-        "mtp_tool_draft": null
+        "mtp_tool_draft": null,
+        "dflash_block": 4
       },
       "priority": 169,
       "requires": "0.3.22",
@@ -344,7 +439,8 @@
       "defaults": {
         "dflash_adaptive": null,
         "mtp_prompt_lookup": null,
-        "mtp_tool_draft": null
+        "mtp_tool_draft": null,
+        "dflash_block": 4
       },
       "priority": 80,
       "requires": "0.3.11",

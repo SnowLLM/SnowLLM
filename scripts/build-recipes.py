@@ -11,6 +11,7 @@ from datetime import date
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from snowllm.hub.model_recipes import draft_specs, variant_specs
 from snowllm.hub.recipes import RECIPE_TYPES, SCHEMA, SETTABLE, _catalogue, recipe_rank, version as parts
 
 SOURCE = ROOT / "recipes"
@@ -306,6 +307,11 @@ def main() -> None:
         for src in r.get("sources", ()):
             src["url"] = url_of(src["repo"], src.get("revision", "main"))
     stamp = updated()
+    # Released v3 clients read the effective list directly from each variant.
+    for model in models:
+        model['specs'] = draft_specs(model)
+        for variant in model['variants'].values():
+            variant['specs'] = variant_specs(model['specs'], variant)
     OUT.with_name("recipe-v3.json").write_text(json.dumps(payload, indent=2) + "\n")
     OUT.write_text(json.dumps({"schema": 2, "version": VERSION, "updated": stamp,
                                "recipe_types": RECIPE_TYPES, "recipes": book}, indent=2) + "\n")

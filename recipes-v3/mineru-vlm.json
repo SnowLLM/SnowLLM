@@ -44,9 +44,6 @@
         "*.txt",
         "*.safetensors"
       ],
-      "specs": [
-        "none"
-      ],
       "download_bytes": {
         "none": 2328011610
       }

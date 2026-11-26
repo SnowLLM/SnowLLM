@@ -70,8 +70,7 @@
         "UD-IQ2_XXS/*.gguf"
       ],
       "specs": [
-        "mtp",
-        "none"
+        "mtp"
       ],
       "download_bytes": {
         "mtp": 101844951904,

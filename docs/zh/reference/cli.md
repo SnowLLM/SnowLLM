@@ -14,6 +14,15 @@ snowllm qwen3.6-35b-a3b-fp8 --max-model-len 32k --num-spec 2
 
 `snowllm recipes --bundle` 列出 wheel 内置的名称。可以用 `模型ID:预设名` 固定配置，例如 `qwen3.8-flash-next:iq4-mtp-adaptive`。其他支持的量化与草稿组合以 `模型ID:量化变体:草稿` 列出。显式 CLI 参数覆盖预设。[v3 在线目录](https://snowllm.dev/recipe-v3.json) 列出量化变体、支持的草稿参数、推荐内存档位及推理默认值。原有配方 ID 继续对应原配置。
 
+在 v3 模型配方中，如果草稿有独立的 checkpoint 来源，且无需从主权重包读取额外文件，各量化变体会自动继承该方法。模型定义了 `none` 时，各变体也可关闭投机解码。变体的 `specs` 列出原生 MTP 等依赖权重包的方法，`exclude_specs` 可排除不兼容的方法。spec 的 `checkpoint` 字段引用模型 `sources` 中的条目，由该条目指定仓库、revision、文件和安装子目录。用 `spec_label` 设置 `DFlash2@san-digital` 这样的名称，即可在 CLI 和 WebUI 中选择对应的 checkpoint。
+
+Qwen3.8 Flash Next 提供 `DFlash2@incoai`（原版，默认上限 8）和 `DFlash2@san-digital`（续训版，默认上限 16），两者默认开启自适应起草。可用 `--dflash-block` 或 WebUI 的「草稿块大小」输入从 1 到该 checkpoint 上限的任意整数。块长包含锚点，例如填 12 时每轮最多起草 11 个候选 token。显式填 0 使用引擎默认值 8。
+
+```sh
+snowllm pull b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital
+snowllm b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital --dflash-block 12
+```
+
 ## 服务 {#serving}
 
 | 选项 | 默认值 | 说明 |

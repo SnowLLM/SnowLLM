@@ -86,8 +86,7 @@
         "LICENSE-DeepSeek"
       ],
       "specs": [
-        "dspark",
-        "none"
+        "dspark"
       ],
       "download_bytes": {
         "dspark": 317600818409,
