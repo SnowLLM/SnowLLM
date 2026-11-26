@@ -102,16 +102,14 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--mtp-prompt-lookup` | Off | Reuse matching request text and tool results as target-verified drafts. |
 | `--spec-tool-draft` | Off | Draft tool-call markup for Flash-Next, Qwen and MiniCPM, or tool headers for DeepSeek V4, LFM2.5, GLM-5.3-Flash and Inkling-2-Mini. The target verifies every proposed token. |
 | `--dflash` | Unset | DFlash or DSpark draft checkpoint; replaces MTP and shares the memory budget. |
-| `--dflash-block` | `0` | The engine accepts DFlash/DFlash2 widths from 1 to 256 within the selected recipe’s range, including the anchor token. Fixed-width execution requires a width supported by the installed native attention kernel. Set `0` to use 8, or leave the option unset to inherit the recipe. For DSpark, `0` uses the checkpoint size. Inkling accepts verification widths from 2 through the checkpoint block size and computes the full draft attention block. |
-| `--dflash-adaptive` | Off | Adjust the verification width for DFlash and DFlash2. On Qwen3.8 Flash Next with DFlash2, the next draft can contain any number of candidates from 1 to the smaller of the configured and checkpoint block sizes minus one (a block of 1 contains only the anchor). Draft attention uses the checkpoint query layout with only the actual KV positions visible. The policy estimates accepted prefix length from the last eight rounds per request and accounts for the cost of extra verification rows. The Inkling DSpark recipes enable it by default and use draft confidence, observed acceptance and step time for single-request greedy decoding. |
+| `--dflash-block` | `0` | DFlash/DFlash2 block size, including the anchor. Omit to use the recipe setting. Set `0` for 8 (DSpark uses its checkpoint size). |
+| `--dflash-adaptive` | Off | Adjust verification width each step for DFlash, DFlash2 and Inkling DSpark, up to `--dflash-block`. |
 | `--dflash-p-min` | `0.0` | DSpark confidence threshold; 0 disables early stopping. |
 | `--kv-cache-dtype` | `bf16` | `bf16`, `auto` (bf16) or experimental `int8`. INT8 is [model-dependent](../guides/performance#long-contexts). |
 | `--max-num-batched-tokens` | `8192` | Fixed prefill chunk size, e.g. `2k`. See [tuning](../guides/performance#prefill-chunk-size). |
 | `--batch-prefill` | Off | Batch fresh prompts; requires --num-spec 0, may change output. |
 | `--mtp-window` | `0` | Recent tokens visible to MTP; 0 uses full context. |
 | `--mtp-sinks` | `64` | Leading tokens retained with --mtp-window. |
-
-Qwen3.8 Flash-Next DFlash2 and DSpark load the original BF16 safetensors and quantize the draft projections to Q8_0 on the GPU at startup. The DFlash2 selector codebooks and both DSpark Markov matrices stay in BF16. Set `SNOWLLM_DFLASH_Q8_ON_LOAD=0` to use BF16 projections.
 
 ## Multimodal
 
