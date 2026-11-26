@@ -20,12 +20,13 @@ from .forward_context import (
     i64,
 )
 from .inputs import synthetic_batch
-from .qwen_runner import QwenRunner
+from .qwen_runner import QwenRunner, _UNPREPARED_DECODE
 from .qwen4exp_spec import Qwen4ExpSpecDecoder
 from .resources import ActivationProbe
 from ..models.qwen4exp import mtp_tail
 
 GATHER_CHUNK = 4096
+_QSA_SHORT_DECODE = ("decode", "qsa-short")
 
 
 class Qwen4ExpRunner(QwenRunner):
@@ -142,8 +143,20 @@ class Qwen4ExpRunner(QwenRunner):
         from .prefix_cache import Qwen4ExpResidue
         return Qwen4ExpResidue(self.linear_mods, self.ple_mods)
 
+    def _decode_plan_key(self, batch):
+        key = super()._decode_plan_key(batch)
+        if key == _UNPREPARED_DECODE and self._qsa() and not batch.varlen_attn:
+            return _QSA_SHORT_DECODE
+        return key
+
     def _activation_cases(self, chunk, decode):
         yield from super()._activation_cases(chunk,decode)
+        if self._plan_short_drafts and self._qsa():
+            # Uniform short verification uses QSA scratch that ragged attention skips.
+            rows = self.max_num_seqs * self.attn_q_tokens
+            batch = self._probe_batch(rows, False)
+            yield ActivationProbe(_QSA_SHORT_DECODE, rows, lambda: self._forward_eager(batch),
+                lifetimes='uses' if self.plan_activations else 'references')
         if self.num_spec and self.model.mtp is not None:
             selected = self._probe_batch(decode, False)
             selected.last_row = i64(list(range(0, decode, selected.tokens_per_req)))
