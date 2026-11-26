@@ -227,6 +227,8 @@
   "Delete conversation": "删除会话",
   "Export conversation": "导出会话",
   "Delete this conversation?": "删除此会话？",
+  "Skip confirmation for this tab session": "本次浏览不再确认删除聊天",
+  "Cancel": "取消",
   "New conversation": "新会话",
   "Copy answer": "复制回答",
   "Copy code": "复制代码",

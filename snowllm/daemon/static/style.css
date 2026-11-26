@@ -464,6 +464,7 @@ body:has(#page-chat:not([hidden])) :is(#load-advice, #bench-exclusive) { display
 
 .chat-dialog { max-height: calc(100dvh - 24px); border-color: var(--chat-line); border-radius: 18px; }
 .chat-dialog .dialog-heading { margin-bottom: 12px; gap: 10px; }
+.chat-delete-option { margin-top:16px; font-size:14px; color:var(--chat-ink); }
 .chat-dialog h2 { margin: 0; font-size: 19px; }
 #chat-history-dialog { width: min(440px, calc(100vw - 24px)); padding: 18px; }
 .chat-session-list { display: grid; align-content: start; gap: 3px; max-height: min(54dvh, 430px); padding: 4px; overflow: auto; }

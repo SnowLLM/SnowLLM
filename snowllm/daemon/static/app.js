@@ -24,6 +24,8 @@ let logRequest = 0;
 let savedRoot;
 let aliases = [], currentChatModel = null;
 const activeChats = new Map();
+let skipChatDeleteConfirmation = false;
+try { skipChatDeleteConfirmation = sessionStorage.getItem('snowllm.skip-chat-delete-confirmation') === '1'; } catch {}
 const chatHistoryMedia = matchMedia('(min-width: 720px) and (min-height: 620px)');
 let chatDrafts = new Map();
 let modelSignature = '', aliasRequest = 0;
@@ -1092,6 +1094,21 @@ $('open-load-dialog').addEventListener('click', () => openModelLoader());
 $('open-load-from-chat').addEventListener('click', () => openModelLoader());
 $('close-load-dialog').addEventListener('click', () => $('load-dialog').close());
 $('load-dialog').addEventListener('cancel', event => { if (submittingLoad) event.preventDefault(); });
+function dismissOnBackdrop(dialog, cancelButton) {
+  function outside(event) {
+    if (event.target !== dialog) return false;
+    const box = dialog.getBoundingClientRect();
+    return event.clientX < box.left || event.clientX >= box.right || event.clientY < box.top || event.clientY >= box.bottom;
+  }
+  let startedOutside = false;
+  dialog.addEventListener('pointerdown', event => { startedOutside = event.button === 0 && outside(event); });
+  dialog.addEventListener('click', event => {
+    if (startedOutside && outside(event)) cancelButton.click();
+    startedOutside = false;
+  });
+}
+dismissOnBackdrop($('load-dialog'), $('close-load-dialog'));
+dismissOnBackdrop($('delete-chat-dialog'), $('cancel-chat-delete'));
 $('add-load-model').addEventListener('click', () => { const card = addLoadCard(); card.fields['load-target'].focus(); });
 $('cancel-load').addEventListener('click', () => action($('cancel-load'), async () => { renderStatus(await post('/daemon/load/cancel')); toast(t('Load cancellation requested')); }));
 $('retry-load').addEventListener('click', () => action($('retry-load'), async () => {
@@ -1191,11 +1208,26 @@ $('chat-session').addEventListener('click', (event) => {
 });
 $('chat-model').addEventListener('change', () => { const next = $('chat-model').value; if (conversation.length) newSession(); currentChatModel = next; renderChatModels(); updateThinkingLevels(); saveConversation(); controls(); });
 $('open-chat-settings').addEventListener('click', () => $('chat-settings-dialog').showModal());
-$('delete-chat').addEventListener('click', () => {
-  if (activeChats.has(sessionId) || !confirm(t('Delete this conversation?'))) return;
+function deleteCurrentChat() {
   saveChatDraft('');
   sessions = sessions.filter(item => item.id !== sessionId);
   selectSession(sessions.at(-1)?.id);
+}
+const deleteChatDialog = $('delete-chat-dialog');
+$('delete-chat').addEventListener('click', () => {
+  if (activeChats.has(sessionId)) return;
+  if (skipChatDeleteConfirmation) return deleteCurrentChat();
+  deleteChatDialog.dataset.sessionId = sessionId;
+  $('skip-chat-delete').checked = false;
+  deleteChatDialog.showModal();
+});
+$('confirm-chat-delete').addEventListener('click', () => {
+  if (deleteChatDialog.dataset.sessionId !== sessionId || activeChats.has(sessionId)) return;
+  if ($('skip-chat-delete').checked) {
+    skipChatDeleteConfirmation = true;
+    try { sessionStorage.setItem('snowllm.skip-chat-delete-confirmation', '1'); } catch {}
+  }
+  deleteCurrentChat();
 });
 $('export-chat').addEventListener('click', () => {
   const text = conversation.flatMap(message => message.retry ? [message, message.retry] : [message]).map(message => {

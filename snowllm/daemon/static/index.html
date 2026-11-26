@@ -198,6 +198,16 @@
           </div>
         </div>
       </dialog>
+      <dialog id="delete-chat-dialog" class="chat-dialog" aria-labelledby="delete-chat-title">
+        <form method="dialog">
+          <h2 id="delete-chat-title" data-i18n="Delete this conversation?">Delete this conversation?</h2>
+          <label class="check-label chat-delete-option"><input id="skip-chat-delete" type="checkbox"><span data-i18n="Skip confirmation for this tab session">Skip confirmation for this tab session</span></label>
+          <div class="dialog-footer">
+            <button id="cancel-chat-delete" class="button secondary" autofocus data-i18n="Cancel">Cancel</button>
+            <button id="confirm-chat-delete" class="button secondary danger" data-i18n="Delete">Delete</button>
+          </div>
+        </form>
+      </dialog>
       <dialog id="chat-settings-dialog" class="chat-dialog" aria-labelledby="chat-settings-title">
         <div class="dialog-heading">
           <h2 id="chat-settings-title" data-i18n="Conversation settings">Conversation settings</h2>
