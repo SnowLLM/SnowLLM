@@ -125,6 +125,48 @@ class ModelDirectoryLookupTests(unittest.TestCase):
         (dest / 'draft' / 'config.json').write_text('{}')
         self.assertTrue(recipes.loadable(dest, self.recipe))
 
+    def test_empty_unrelated_and_interrupted_downloads_have_distinct_states(self):
+        dest = self.recipe.path(self.roots[0])
+        dest.mkdir()
+        for name in (None, 'notes.txt', 'notes.txt.snowllm-part'):
+            if name:
+                (dest / name).touch()
+            self.assertEqual(recipes.local_copy(self.recipe, self.roots), (None, recipes.NOT_DOWNLOADED))
+        (dest / 'model.gguf.snowllm-part').write_bytes(b'data')
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.INCOMPLETE))
+
+    def test_nested_gguf_requires_all_main_shards(self):
+        dest = self.recipe.path(self.roots[0])
+        quant = dest / 'Q4'
+        quant.mkdir(parents=True)
+        (dest / 'mmproj-BF16.gguf').touch()
+        (quant / 'model-00002-of-00003.gguf').touch()
+        self.assertFalse(recipes.loadable(dest))
+        (quant / 'model-00001-of-00003.gguf').touch()
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.INCOMPLETE))
+        (quant / 'model-00003-of-00003.gguf').touch()
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.DOWNLOADED))
+
+    def test_shared_draft_directory_counts_for_reading_only(self):
+        self.recipe = recipes.Recipe({**self.recipe.raw, 'sources': [
+            dict(repo='example/draft', subdir='draft', include=['config.json', 'model.safetensors'])]})
+        dest = self.copy(self.roots[0])
+        draft = self.root / 'shared-draft'
+        draft.mkdir()
+        (dest / 'draft').symlink_to(draft, target_is_directory=True)
+        (draft / 'config.json').write_text('{}')
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.INCOMPLETE))
+        (draft / 'model.safetensors').write_bytes(b'data')
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.DOWNLOADED))
+        blobs = [recipes.Blob('', dest / name, (dest / name).stat().st_size, None)
+                 for name in ('model.gguf', 'draft/config.json', 'draft/model.safetensors')]
+        recipes.write_manifest(self.recipe, dest, blobs)
+        self.assertTrue(recipes.complete(self.recipe, dest))
+        with self.assertRaises(recipes.SnowLLMError):
+            recipes.under(dest, 'draft/model.safetensors')
+        (draft / 'model.safetensors').write_bytes(b'x')
+        self.assertEqual(recipes.local_copy(self.recipe, self.roots), (dest, recipes.INCOMPLETE))
+
     def test_pull_uses_first_root_even_when_an_archive_copy_exists(self):
         self.copy(self.roots[1])
         with patch.object(recipes, 'models_roots', return_value=self.roots), \

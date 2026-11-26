@@ -33,6 +33,8 @@ def find_gguf(root: str | pathlib.Path) -> pathlib.Path:
                            f"mtp-*.gguf the draft head and dspark-*.gguf the DSpark drafter, "
                            f"not models)")
     files = [p for p in files if part_number(p.name) in (None, 1)]
+    if not files:
+        raise SnowLLMError(f"{root} is missing the first GGUF shard")
     if len(files) > 1:
         raise SnowLLMError(f"{root} holds {len(files)} GGUFs and no way to tell which is the "
                            f"model: {', '.join(p.name for p in files)}")

@@ -490,13 +490,18 @@ def source_digest(recipe):
     return hashlib.sha256(json.dumps(sources, sort_keys=True).encode()).hexdigest()
 
 
+def _matches_file(dest, entry):
+    rel = pathlib.Path(entry['path'])
+    if rel.is_absolute() or '..' in rel.parts or rel.drive:
+        return False
+    path = dest / rel
+    return path.is_file() and path.stat().st_size == entry['size']
+
+
 def complete(recipe, dest):
     saved = manifest(recipe, dest)
     return bool(saved and saved.get('source_digest') == source_digest(recipe)
-                and saved.get('files') and all(
-                    under(dest, entry['path']).is_file()
-                    and under(dest, entry['path']).stat().st_size == entry['size']
-                    for entry in saved['files']))
+                and saved.get('files') and all(_matches_file(dest, entry) for entry in saved['files']))
 
 
 def plan(blobs: list[Blob], dest: pathlib.Path) -> list[tuple[str, str, int, int]]:
@@ -552,19 +557,24 @@ def _wanted(rel: str, s: Source) -> bool:
     return _keep(rel, s.include, s.exclude)
 
 
-def _on_disk_files(dest: pathlib.Path) -> list[pathlib.Path]:
-    if not dest.is_dir():
-        return []
-    part = (PART_SUFFIX, PART_SUFFIX + ".json")
-    return [p for p in dest.rglob("*")
-            if p.is_file() and p.relative_to(dest).parts[0] not in (MANIFEST, _PROFILE_DIR)
-            and not p.name.endswith(part)]
+def _on_disk_files(dest, recipe, *, include_partial=False):
+    roots = {dest}
+    for source in recipe.sources:
+        subdir = pathlib.Path(source.subdir)
+        if not subdir.is_absolute() and '..' not in subdir.parts and (dest / subdir).is_symlink():
+            roots.add(dest / subdir)
+    for root in roots:
+        for path in root.rglob('*'):
+            if (path.is_file() and path.relative_to(dest).parts[0] not in (MANIFEST, _PROFILE_DIR)
+                    and not path.name.endswith(PART_SUFFIX + '.json')
+                    and (include_partial or not path.name.endswith(PART_SUFFIX))):
+                yield path
 
 
 def unfetched(recipe: Recipe, dest: pathlib.Path) -> list[Source]:
     if not dest.is_dir():
         return list(recipe.sources)
-    here = [p.relative_to(dest).as_posix() for p in _on_disk_files(dest)]
+    here = [p.relative_to(dest).as_posix() for p in _on_disk_files(dest, recipe)]
     missing = []
     for source in recipe.sources:
         required = [name for name in source.include if not glob.has_magic(name)
@@ -576,7 +586,7 @@ def unfetched(recipe: Recipe, dest: pathlib.Path) -> list[Source]:
 
 
 def fetched_bytes(recipe: Recipe, dest: pathlib.Path) -> int:
-    return sum(p.stat().st_size for p in _on_disk_files(dest)
+    return sum(p.stat().st_size for p in _on_disk_files(dest, recipe)
                if any(_wanted(p.relative_to(dest).as_posix(), s) for s in recipe.sources))
 
 
@@ -587,31 +597,59 @@ def shortfall(recipe: Recipe, dest: pathlib.Path) -> int:
 
 
 def loadable(path: pathlib.Path, recipe: Recipe | None = None) -> bool:
-    weights = path.is_dir() and ((path / "config.json").exists() or any(path.glob("*.gguf"))
-                                or any(path.glob("*.gguf.part*-of-*")))
-    if not weights or recipe is None:
-        return weights
+    if not path.is_dir():
+        return False
+    if not (path / "config.json").is_file():
+        from ..checkpoint.gguf import split_parts
+        from ..checkpoint.gguf.files import find_gguf
+        try:
+            if not all(p.is_file() for p in split_parts(find_gguf(path))):
+                return False
+        except (SnowLLMError, OSError):
+            return False
+    if recipe is None:
+        return True
     if unfetched(recipe, path):
         return False
     saved = manifest(recipe, path)
     if saved and saved.get('source_digest') == source_digest(recipe):
         return complete(recipe, path)
-    return all(under(path, entry['path']).is_file() and under(path, entry['path']).stat().st_size == entry['size']
-               for entry in recipe.files)
+    return all(_matches_file(path, entry) for entry in recipe.files)
+
+
+DOWNLOADED = "downloaded"
+INCOMPLETE = "incomplete"
+NOT_DOWNLOADED = "not downloaded"
+
+
+def local_copy(recipe, root):
+    partial = None
+    explicit = {entry['path'] for entry in recipe.files}
+    for directory in models_roots(root):
+        here = recipe.path(directory)
+        if not here.is_dir():
+            continue
+        if loadable(here, recipe):
+            return here, DOWNLOADED
+        if partial is None:
+            for path in _on_disk_files(here, recipe, include_partial=True):
+                rel = path.relative_to(here).as_posix().removesuffix(PART_SUFFIX)
+                if rel in explicit or any(_wanted(rel, source) for source in recipe.sources):
+                    partial = here
+                    break
+    return (partial, INCOMPLETE) if partial else (None, NOT_DOWNLOADED)
 
 
 def installed(recipe: Recipe, root: pathlib.Path) -> pathlib.Path | None:
-    fallback = None
+    path, _ = local_copy(recipe, root)
+    if path is not None:
+        return path
+    # Older manual checkpoints can have filenames outside the recipe's download patterns.
     for directory in models_roots(root):
         here = recipe.path(directory)
-        if not (loadable(here) or _on_disk_files(here)):
-            continue
-        if fallback is None:
-            fallback = here
-        if complete(recipe, here) or (not unfetched(recipe, here)
-                                      and not any(here.rglob('*' + PART_SUFFIX))):
+        if not (here / MANIFEST).is_file() and loadable(here):
             return here
-    return fallback
+    return None
 
 
 def _tokens(n: int) -> str:
@@ -621,16 +659,8 @@ def _tokens(n: int) -> str:
     return str(n)
 
 
-DOWNLOADED = "downloaded"
-INCOMPLETE = "incomplete"
-NOT_DOWNLOADED = "not downloaded"
-
-
 def _on_disk(recipe: Recipe, root: pathlib.Path) -> str:
-    here = installed(recipe, root)
-    if here is None:
-        return NOT_DOWNLOADED
-    return INCOMPLETE if unfetched(recipe, here) else DOWNLOADED
+    return local_copy(recipe, root)[1]
 
 
 def _where(recipe: Recipe, root: pathlib.Path) -> str:
