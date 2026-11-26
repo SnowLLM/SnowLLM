@@ -7,6 +7,8 @@ import torch
 
 import _harness
 from snowllm import ops
+from snowllm.defaults import SPEC_MAX_STEP_ROWS
+from snowllm.engine import draft_block
 from snowllm.engine.block_manager import BlockAllocator, TableMirror
 from snowllm.engine.prefix_cache import WindowPages
 from snowllm.engine.request import Request, SamplingParams
@@ -16,6 +18,12 @@ from snowllm.engine.spec_decode import DFlashDecoder
 
 
 class DraftWindowTests(unittest.TestCase):
+    def test_dflash_block_width(self):
+        geo = SimpleNamespace(dspark=False)
+        for width in (0, 1, 4, 6, 7, 8, SPEC_MAX_STEP_ROWS):
+            with self.subTest(width=width):
+                self.assertEqual(draft_block(geo, width), width or 8)
+
     def decoder(self, total=32):
         decoder = object.__new__(DFlashDecoder)
         decoder.runner = SimpleNamespace(block_size=16, max_prefill_tokens=64)

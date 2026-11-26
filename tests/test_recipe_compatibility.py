@@ -22,20 +22,14 @@ def recipe(**updates):
 
 class RecipeCompatibilityTests(unittest.TestCase):
     def test_dflash_block_accepts_integers_in_the_verification_range(self):
-        from types import SimpleNamespace
-        from snowllm.defaults import SPEC_MAX_STEP_ROWS
-        from snowllm.engine import draft_block
         from snowllm.hub.model_recipes import validate_parameter
         model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
         params = model['specs']['dflash2']['parameters']
         rule = params['dflash_block']
-        geo = SimpleNamespace(dspark=False)
         self.assertEqual(rule['suggestions'], [4, 8])
         self.assertEqual(rule['max'], 8)
-        self.assertEqual(draft_block(geo, SPEC_MAX_STEP_ROWS), SPEC_MAX_STEP_ROWS)
         for size in (0, 1, 4, 6, 7, 8):
             validate_parameter('dflash_block', size, rule)
-            self.assertEqual(draft_block(geo, size), size or 8)
         for size in (-1, 4.5, 9):
             with self.assertRaises(SnowLLMError):
                 validate_parameter('dflash_block', size, rule)
