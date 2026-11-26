@@ -202,6 +202,8 @@ def draft_block(geo: DraftGeometry, block: int) -> int:
         if block not in (0, 1, 4, 8, 9, 15, geo.block_size) or block > geo.block_size:
             raise SnowLLMError("DSpark requires its checkpoint block size or a supported shorter block (1, 4, 8, 9, 15)")
         return block or geo.block_size
+    if geo is not None and not 0 <= block <= SPEC_MAX_STEP_ROWS:
+        raise SnowLLMError(f"DFlash block must be between 0 and {SPEC_MAX_STEP_ROWS} (0 uses 8)")
     return block or 8
 
 
@@ -1116,7 +1118,7 @@ class Engine:
             T = self.spec.select_lengths(batch, self.max_model_len)
         else:
             T = self.spec.verify_rows(n) if self.spec else 0
-            if T and isinstance(self.spec, DFlashDecoder) and self.spec.prefix_feedback is not None:
+            if T and isinstance(self.spec, DFlashDecoder) and self.spec.adaptive_verification:
                 T = self.spec.select_verify_rows([r for r in self.running if r.prefilled])
             if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
                          for r in self.running if r.prefilled):

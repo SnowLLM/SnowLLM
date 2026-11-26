@@ -99,10 +99,11 @@ class DFlashDraft:
                                        device="cuda")
 
     def forward(self, noise: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor,
-                block_tables: torch.Tensor, seq_lens: torch.Tensor, *, local_table=None, local_slots=None, initial_zeros=None) -> torch.Tensor:
+                block_tables: torch.Tensor, seq_lens: torch.Tensor, *, local_table=None, local_slots=None, initial_zeros=None, attention_block=None) -> torch.Tensor:
         M, H = noise.shape
         B = seq_lens.numel()
         blk = M // B
+        query_rows = attention_block or blk
         g = self.geo
         sc = self.scratch(M)
         half = g.head_size // 2
@@ -121,7 +122,7 @@ class DFlashDraft:
                            if g.sliding_window else (block_tables, seq_lens))
         plans = {w: d.paged_attn_plan(v[1], num_slots, self.block_size)
                  for w, v in views.items()}
-        ws = empty(d.paged_attn_workspace_size(num_slots, blk), dtype=torch.uint8,
+        ws = empty(d.paged_attn_workspace_size(num_slots, query_rows), dtype=torch.uint8,
                          device="cuda")
 
         h = noise
@@ -131,8 +132,17 @@ class DFlashDraft:
             residual = empty_like(h)
             ops.copy_rows(residual, initial_zeros)
         proj = empty(M, d.proj_shape(d.Proj.QKV)[0], dtype=torch.bfloat16, device="cuda")
-        q = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
-        attn = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
+        padded_q = empty(B, query_rows, g.q_dim, dtype=torch.bfloat16, device="cuda")
+        padded_out = empty_like(padded_q)
+        # Right alignment preserves query positions and window masks with the compact KV lengths.
+        q_tail = padded_q[:, -blk:]
+        out_tail = padded_out[:, -blk:]
+        repack = B > 1 and query_rows != blk
+        if repack:
+            q = empty(M, g.q_dim, dtype=torch.bfloat16, device="cuda")
+            attn = empty_like(q)
+        else:
+            q, attn = q_tail.view(M, g.q_dim), out_tail.view(M, g.q_dim)
         o = empty(M, d.proj_shape(d.Proj.O)[0], dtype=torch.bfloat16, device="cuda")
         mlp_ws = empty(max(d.gate_up_swiglu_workspace_bytes(M,w["gate_up"])
                                 for w in self.w["layers"]),dtype=torch.uint8,device="cuda")
@@ -169,9 +179,13 @@ class DFlashDraft:
             d.norm_rope_store(proj,w["q_norm"],w["k_norm"],cos,sin,q,kc,vc,kv_slots,
                               self.eps,self.block_size)
             v_bt, v_len = views[windowed]
-            d.paged_attn(q.view(M, g.num_heads, g.head_size), v_len, kc, vc, attn,
-                         v_bt, plans[windowed], num_slots, ws, scale, blk, self.block_size,
+            if repack:
+                q_tail.copy_(q.view_as(q_tail))
+            d.paged_attn(padded_q.view(-1, g.num_heads, g.head_size), v_len, kc, vc, padded_out,
+                         v_bt, plans[windowed], num_slots, ws, scale, query_rows, self.block_size,
                          window=g.sliding_window if windowed else 0, causal=g.causal(layer))
+            if repack:
+                attn.view_as(out_tail).copy_(out_tail)
             d.proj(d.Proj.O, attn, w["o"], sc, o)
             sub = site1(o, w.get("attn_conv"))
             ops.rmsnorm_residual(sub, residual, w["post_norm"], x, self.eps)

@@ -67,6 +67,46 @@ class DraftWindowTests(unittest.TestCase):
                 torch.testing.assert_close(out[:, rows].float(), expected.view(8, 4, 256),
                                            atol=4e-4, rtol=.01)
 
+    def test_compact_dflash2_queries_keep_their_positions_in_the_checkpoint_tile(self):
+        from test_dflash_sampling import geometry
+        d, geo = ops.dflash, geometry()
+        d.select(geo)
+        B, trained, width, page = 2, 8, 5, 16
+        heads, kv_heads, dim = geo.num_heads, geo.num_kv_heads, geo.head_size
+        ends = torch.tensor([7, 35], device="cuda", dtype=torch.int32)
+        tables = torch.tensor([[3, 0, 1], [4, 2, 5]], device="cuda", dtype=torch.int32)
+        partitions = d.paged_attn_num_slots(B)
+        plan = d.paged_attn_plan(ends, partitions, page)
+        ws = torch.empty(d.paged_attn_workspace_size(partitions, trained), device="cuda", dtype=torch.uint8)
+        generator = torch.Generator(device="cuda").manual_seed(73)
+        def rand(*shape):
+            return torch.randn(shape, device="cuda", dtype=torch.bfloat16, generator=generator)
+        k, v = rand(6*page, kv_heads, dim), rand(6*page, kv_heads, dim)
+        pools = torch.empty_like(k), torch.empty_like(v)
+        slots = torch.arange(6*page, device="cuda", dtype=torch.int32)
+        d.reshape_and_cache(k.flatten(1), v.flatten(1), *pools, slots, page)
+        query = rand(B, width, heads, dim)
+        tile = rand(B, trained, heads, dim)
+        tile[:, -width:].copy_(query)
+        out = torch.empty_like(tile)
+        window = 9
+        for causal in (False, True):
+            d.paged_attn(tile.flatten(0, 1), ends, *pools, out, tables, plan, partitions, ws,
+                         dim**-.5, trained, page, window=window, causal=causal)
+            for b, end in enumerate(ends.tolist()):
+                pos = torch.arange(end, device="cuda")
+                physical = tables[b, pos // page].long() * page + pos % page
+                keys, values = (x[physical].float().repeat_interleave(heads // kv_heads, dim=1)
+                                for x in (k, v))
+                anchor = pos[-width:, None]
+                allow = abs(anchor - pos) < window
+                if causal:
+                    allow &= pos <= anchor
+                scores = torch.einsum("qhd,khd->qhk", query[b].float(), keys) * dim**-.5
+                probs = scores.masked_fill(~allow[:, None, :], -torch.inf).softmax(-1)
+                expected = torch.einsum("qhk,khd->qhd", probs, values)
+                torch.testing.assert_close(out[b, -width:].float(), expected, atol=.01, rtol=.025)
+
     def test_window_growth_releases_only_unreferenced_history(self):
         decoder = self.decoder()
         r = Request([0]*300, SamplingParams())

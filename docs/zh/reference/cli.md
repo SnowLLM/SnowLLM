@@ -91,8 +91,8 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | `--mtp-prompt-lookup` | 关闭 | 复用当前请求文本和工具返回内容作为草稿，交由目标模型验证。 |
 | `--spec-tool-draft` | 关闭 | 为 Flash-Next、Qwen 和 MiniCPM 起草工具调用标记，为 DeepSeek V4、LFM2.5、GLM-5.3-Flash 和 Inkling-2-Mini 起草工具调用头。每个候选 token 均由目标模型验证。 |
 | `--dflash` | 未设置 | DFlash 或 DSpark 草稿模型目录；替代 MTP 并共享内存预算。 |
-| `--dflash-block` | `0` | 草稿分块大小；`0` 使用引擎默认值，DFlash 为 `8`，DSpark 使用模型配置。Inkling 可选 2 到草稿块大小之间的验证宽度，草稿注意力始终使用完整块。 |
-| `--dflash-adaptive` | 关闭 | 调整 DFlash 或 DFlash2 的验证宽度。Inkling DSpark 配方默认开启此项，单请求贪心解码时根据草稿置信度、实际接受情况和耗时选择宽度。 |
+| `--dflash-block` | `0` | DFlash/DFlash2 引擎接受 1 到 256 的整数，使用配方时还受该配方的块长上限约束，块长包含锚点 token。固定块长运行时还需已安装的原生注意力内核支持该宽度。填 `0` 使用引擎默认值 8，留空沿用配方配置。DSpark 填 `0` 使用 checkpoint 块长。Inkling 可选 2 到草稿块大小之间的验证宽度，草稿注意力始终使用完整块。 |
+| `--dflash-adaptive` | 关闭 | 调整 DFlash 或 DFlash2 的验证宽度。Qwen3.8 Flash Next 使用 DFlash2 时，还会调整实际起草长度。上限取配置块长和 checkpoint 块长的较小值。除去一个锚点，可逐档选择 1 至上限减 1 个候选。草稿注意力使用 checkpoint 的查询布局，只读取实际块长对应的 KV。引擎根据每个请求最近八轮的前缀接受情况和增加验证行的成本选档。Inkling DSpark 配方默认开启此项，单请求贪心解码时根据草稿置信度、实际接受情况和耗时选择宽度。 |
 | `--dflash-p-min` | `0.0` | DSpark 置信度阈值；`0` 禁用提前停止。 |
 | `--kv-cache-dtype` | `bf16` | `bf16`、`auto`（bf16）或实验性 `int8`。INT8 的支持[依赖模型](../guides/performance#long-contexts)。 |
 | `--max-num-batched-tokens` | `8192` | 固定预填充分块大小，如 `2k`。见[调优指南](../guides/performance#prefill-chunk-size)。 |

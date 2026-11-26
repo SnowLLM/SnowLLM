@@ -19,12 +19,17 @@ class DFlashSampling:
         self.candidates = torch.empty(max_seqs, self.length, width,
                                       dtype=torch.int64, device="cuda")
         self.q = torch.empty_like(self.candidates, dtype=torch.float32)
+        self.pools = {self.length: (self.candidates, self.q)}
         rows = max_seqs * block
         width = min(vocab, ops.SAMPLING_MAX_K)
         self.p = torch.empty(rows * width, dtype=torch.float32, device="cuda")
         self.p_ids = torch.empty(rows * width, dtype=torch.int64, device="cuda")
         self.tokens = torch.empty(rows, dtype=torch.int64, device="cuda")
         self.accepted = torch.empty(max_seqs, dtype=torch.int64, device="cuda")
+
+    def reserve_width(self, length):
+        shape = (self.q.size(0), length, self.q.size(2))
+        self.pools[length] = (self.candidates.new_empty(shape), self.q.new_empty(shape))
 
     def stage(self, batch):
         count = len(batch)
@@ -41,10 +46,11 @@ class DFlashSampling:
             self.uniform[:len(batch)].uniform_(generator=self.sampler.rng)
 
     def propose(self, draft, hidden, logits, anchor, path):
-        count = path.shape[0]
+        count, length = path.shape
+        candidates, q = self.pools[length]
         draft.propose(hidden, logits, anchor, path, temperature=self.temperature[:count],
-                      uniform=self.uniform[:count], slots=self.slots[:count],
-                      candidate_ids=self.candidates, probabilities=self.q)
+                      uniform=self.uniform.view(-1)[:count*length].view(count, length), slots=self.slots[:count],
+                      candidate_ids=candidates, probabilities=q)
 
     def remember(self, batch, drafts):
         for request, tokens in zip(batch, drafts):
@@ -66,19 +72,24 @@ class DFlashSampling:
         valid = [int(tuple(r.drafts) == self.proposals[r.slot]) for r in batch]
         uniform = self.sampler._uniform(count * width).view(count, width)
         with self.inputs.reading(reuse=True):
-            source_slots = [r.slot for r in batch] if width == self.block else [0]
+            length = width - 1
+            lengths = [len(self.proposals[r.slot]) if ok else self.length for r, ok in zip(batch, valid)]
+            packed = length in self.pools and all(n == length or not ok for n, ok in zip(lengths, valid))
+            source_slots = [r.slot for r in batch] if packed else [0]
             slots = self.inputs.tensor("verify_slots", source_slots, torch.int32)
             current = self.inputs.tensor("verify_valid", valid, torch.int32)
-            if width == self.block:
-                ops.dflash.reject(p, ids, drafts, self.candidates, self.q, slots, current, uniform,
+            if packed:
+                candidates, q = self.pools[length]
+                ops.dflash.reject(p, ids, drafts, candidates, q, slots, current, uniform,
                                   tokens, accepted)
             else:
-                # Each saved q has full-block stride. Pass its contiguous prefix as a one-slot pool.
+                # A rebatch can mix proposal strides. Each slot prefix is contiguous on its own.
                 for i, request in enumerate(batch):
                     row = slice(i, i + 1)
                     target = slice(i * width, (i + 1) * width)
                     prefix = (slice(request.slot, request.slot + 1), slice(0, width - 1))
-                    ops.dflash.reject(p[target], ids[target], drafts[row], self.candidates[prefix],
-                                      self.q[prefix], slots, current[row], uniform[row], tokens[row],
+                    candidates, q = self.pools[lengths[i]]
+                    ops.dflash.reject(p[target], ids[target], drafts[row], candidates[prefix],
+                                      q[prefix], slots, current[row], uniform[row], tokens[row],
                                       accepted[row])
         return tokens, accepted

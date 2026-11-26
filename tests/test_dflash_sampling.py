@@ -174,6 +174,18 @@ def verify_prefix(ck, geo):
     ck.exact("short prefix: reordered native and lookup slots", tokens.cpu(), expected)
     ck.exact("short prefix: acceptance and bonus position", kept.cpu(), counts)
 
+    sampling.reserve_width(width - 1)
+    sampling.pools[width-1][0].copy_(sampling.candidates[:, :width-1])
+    sampling.pools[width-1][1].copy_(sampling.q[:, :width-1])
+    requests[0].drafts = requests[0].drafts[:width-1]
+    sampling.remember(requests, [r.drafts for r in requests])
+    sampling.q[2].fill_(float('nan'))
+    expected, counts = reference_reject(p.cpu().view(2, width, -1), indices.cpu().view(2, width, -1),
+        drafts.cpu(), sampling.pools[width-1][0].cpu(), sampling.pools[width-1][1].cpu(), [2, 0], [True, True], uniforms.cpu())
+    tokens, kept = sampling.verify(logits, requests, drafts)
+    ck.exact("mixed block widths use each slot's proposal distribution", tokens.cpu(), expected)
+    ck.exact("mixed block widths accept the sampled prefix", kept.cpu(), counts)
+
 
 def distribution(ck):
     batch, width = 40000, 4
@@ -207,8 +219,10 @@ def allocation(ck, geo):
     sampler.reserve(12, geo.vocab_size)
     with ops.dry_load() as dry:
         planned = DFlashSampling(sampler, geo, 3, 4, geo.vocab_size)
+        planned.reserve_width(2)
     before = requested()
     actual = DFlashSampling(sampler, geo, 3, 4, geo.vocab_size)
+    actual.reserve_width(2)
     used = requested() - before
     ck("sampling static buffers match the dry allocation plan", used == dry.device,
        f"planned={dry.device}, actual={used}")

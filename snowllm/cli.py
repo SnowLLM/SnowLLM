@@ -311,7 +311,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
                                  mtp_window=mtp_window, mtp_sinks=mtp_sinks,
                                  dflash_p_min=getattr(engine.dflash, 'p_min', None),
                                  dspark_adaptive=dspark_adaptive,
-                                 dflash_adaptive=getattr(engine.dflash, "prefix_feedback", None) is not None,
+                                 dflash_adaptive=getattr(engine.dflash, "adaptive_verification", False),
                                  enforce_eager=enforce_eager, prefill_chunk=engine.prefill_chunk)
     blocks = engine.blocks.total
     graph_status = ('pending shared workspace initialization' if getattr(scheduler, 'defer_capture', False)
@@ -369,6 +369,8 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
         cut = f", cut at confidence {p_min}" if p_min else ", whole block every step"
         if policy := getattr(engine.dflash, "inkling_policy", None):
             cut = ", adaptive greedy verification K=" + "/".join(str(n - 1) for n in policy.widths)
+        elif getattr(engine.dflash, "block_history", None) is not None:
+            cut = f", adaptive draft and verification K=1..{engine.dflash.width - 1}"
         elif getattr(engine.dflash, "prefix_feedback", None) is not None:
             cut = f", adaptive verification K={engine.dflash.short_width - 1}/{engine.dflash.width - 1}"
         _log(f"dflash: block {engine.dflash_block}{cut}, {pool.total} draft KV blocks "
@@ -493,7 +495,8 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--dflash", metavar="PATH", default=None,
                    help='Draft checkpoint for DFlash or DSpark; replaces MTP.')
     g.add_argument("--dflash-block", type=int, default=0, metavar="N",
-                   help='Draft block size; 0 uses the checkpoint default.')
+                   help='Draft block size (an upper limit including the anchor for adaptive DFlash2). '
+                        '0 uses 8 for DFlash/DFlash2 or the checkpoint size for DSpark.')
     g.add_argument("--dflash-p-min", type=float, default=DEFAULT_DSPARK_P_MIN, metavar="P",
                    help='DSpark confidence threshold; 0 disables early stopping.')
     g.add_argument("--dflash-adaptive", action=argparse.BooleanOptionalAction, default=False,

@@ -18,7 +18,7 @@ def main():
     for vocab in [67, 248320]:
         pred = torch.zeros(vocab, 256, dtype=torch.bfloat16, device='cuda')
         succ = torch.zeros_like(pred)
-        for rows in ([3] if vocab == 67 else [3, 12, 16, 17]):
+        for rows in ([1, 3] if vocab == 67 else [1, 2, 3, 12, 16, 17]):
             hidden = torch.zeros(rows, 256, dtype=torch.bfloat16, device='cuda')
             logits = torch.empty(rows, vocab, device='cuda')
             anchor = torch.zeros(1, dtype=torch.int64, device='cuda')

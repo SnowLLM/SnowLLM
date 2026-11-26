@@ -33,6 +33,34 @@ class SpecTerminalTests(unittest.TestCase):
         decoder.prefix_feedback = None
         self.assertEqual(decoder.step_rows(2), (8,))
 
+    def test_dynamic_dflash_drafts_at_selected_width_and_verifies_common_prefix(self):
+        decoder = object.__new__(DFlashDecoder)
+        decoder.block = decoder.width = 8
+        a, b = (Request([1], SamplingParams(max_new_tokens=32)) for _ in range(2))
+        decoder.block_history = {}
+        self.assertEqual(decoder.step_rows(2), tuple(range(1, 9)))
+        self.assertEqual(decoder._next_block([a]), 3)
+        for depth in range(2, 7):
+            decoder.block_history[a] = [(depth, depth)] * 8
+            self.assertEqual(decoder._next_block([a]), depth + 2)
+        decoder.block_history[a] = [(7, 0)] * 8
+        self.assertEqual(decoder._next_block([a]), 2)
+        decoder.block_history[a] = [(7, 7)] * 8
+        b.params.max_new_tokens = 5
+        decoder.runner = Mock(n_draft_replays=0)
+        decoder._draft_table = decoder._stage_rows = decoder._proposals = Mock()
+        decoder.geo = Mock(inkling=False)
+        graph = Mock()
+        decoder.graphs = {(2, False, 5): graph}
+        decoder.propose([a, b], [4, 1])
+        graph.replay.assert_called_once()
+        decoder._proposals.assert_called_with([a, b], 5)
+        a.drafts, b.drafts = [1]*7, [2]*4
+        self.assertEqual(decoder.select_verify_rows([a]), 8)
+        self.assertEqual(decoder.select_verify_rows([a, b]), 5)
+        b.drafts.clear()
+        self.assertEqual(decoder.select_verify_rows([a, b]), 1)
+
     def test_target_commit_controls_next_mtp_graph(self):
         # The target may stop at an accepted draft, a correction, or a bonus token.
         cases = [
@@ -156,8 +184,9 @@ class SpecTerminalTests(unittest.TestCase):
         decoder.runner = Mock(n_draft_replays=0)
         graph = Mock()
         decoder.geo = Mock(inkling=False)
-        decoder.graphs = {(2, False): graph}
-        decoder._proposals = lambda batch: decoder._store_proposals(batch, [[10], [20]], None)
+        decoder.block = 2
+        decoder.graphs = {(2, False, 2): graph}
+        decoder._proposals = lambda batch, short: decoder._store_proposals(batch, [[10], [20]], None)
         done, live = (Request([1], SamplingParams(), done=finished) for finished in (True, False))
         decoder.propose([done, live], [1, 2])
         graph.replay.assert_called_once()
