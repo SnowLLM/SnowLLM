@@ -32,6 +32,7 @@ def context_len(r: Request) -> int:
 
 
 class DSparkScheduling:
+    uniform_verification = False
     windowed = False
     cache_window = 0
     sink_blocks = 0
@@ -152,7 +153,7 @@ class DSparkScheduling:
         self.costs = {}
 
     def decode_shapes(self, max_num_seqs: int) -> list[DecodeShape]:
-        if not self.adaptive:
+        if not self.adaptive or self.uniform_verification:
             return SpecDecoder.decode_shapes(self, max_num_seqs)
         shapes = []
         for n in range(1, max_num_seqs + 1):
@@ -176,11 +177,16 @@ class DSparkScheduling:
                 if remember:
                     self.scheduler.reset()
                 return [width + 1]
+        if self.uniform_verification:
+            cap = SPEC_MAX_STEP_ROWS // len(batch) - 1
+            limits = [min(limit, cap) for limit in limits]
         confidence = [self.confidence.get(r, []) for r in batch]
         if not all(r in self.confidence for r in batch):
             self.scheduler.reset()
         lengths = self.scheduler.choose(batch, confidence, limits, self.costs[len(batch)],
                                          remember=remember)
+        if self.uniform_verification:
+            return [min(lengths) + 1] * len(batch)
         return [n + 1 for n in lengths]
 
     def verify_prefixes(self, batch: list[Request], lengths: list[int]):
@@ -293,11 +299,12 @@ class SpecDecoder:
         ids = [t for r in batch for t in [r.last] + r.drafts[:k]]
         at = [(r, c[i] + t) for i, r in enumerate(batch) for t in range(T)]
         sidx = [s for r in batch for s in self.slots.name(r, T)]
+        offsets = [i * T for i in range(B + 1)]
         d_ids, pos, drafts, cs, pds, slots, seq, d_sidx, cu, ones = self.stage(
             (ids, [q + r.pos_delta for r, q in at] * 3,
              [d for r in batch for d in r.drafts[:k]], c, [r.pos_delta for r in batch]),
             ([r.blocks[q // bs] * bs + q % bs for r, q in at], [ci + T for ci in c], sidx,
-             [i * T for i in range(B + 1)], [1] * B))
+             offsets, [1] * B))
         pos = pos.view(3, -1)
         b = Batch(
             input_ids=d_ids,
@@ -312,7 +319,7 @@ class SpecDecoder:
             total_q_blocks=self.messages.q_plan(("verify",B,T),[T]*B)[0] if k else 0,
             chunk_decode=bool(k),
             prev_ids=self._ngram_context(batch, T),
-            host_ids=ids,
+            host_ids=ids, host_cu_seqlens=offsets,
         )
         if k:
             ops.copy_rows(self.d_drafts[:B,:k],drafts.view(B,k))
@@ -527,7 +534,8 @@ class DFlashDecoder(DSparkScheduling):
         self.slots = slots
         self.tables, self.stage = tables, stage
         self.draft = draft
-        if dflash_adaptive and draft.geo.dflash2 and isinstance(runner.geo, Qwen4ExpGeometry):
+        self.uniform_verification = isinstance(runner.geo, Qwen4ExpGeometry)
+        if dflash_adaptive and draft.geo.dflash2 and self.uniform_verification:
             block = min(block, draft.geo.block_size)
             if block >= 2:
                 self.block_history = {}
@@ -666,6 +674,8 @@ class DFlashDecoder(DSparkScheduling):
         if self.inkling_policy is not None and n == 1:
             return self.inkling_policy.widths
         rows = max(self.verify_rows(n), 1)
+        if self.uniform_verification and self.adaptive:
+            return tuple(range(1, min(self.width, SPEC_MAX_STEP_ROWS // n) + 1)) or (1,)
         if self.block_history is not None:
             return tuple(range(1, rows + 1))
         if self.prefix_feedback is not None and rows > 2:
@@ -690,6 +700,8 @@ class DFlashDecoder(DSparkScheduling):
     def verify_step(self, batch: list[Request], T: int | list[int]) -> None:
         timed = self.inkling_policy is not None and len(batch) == 1 and batch[0].params.temperature == 0
         start = perf_counter() if timed else None
+        if isinstance(T, list) and self.uniform_verification:
+            T = min(T)
         if isinstance(T, list):
             b, kept = self.verify_prefixes(batch, T)
             self.runner.linear_advance(b.state_indices, i32(kept), len(batch), max(T), b.cu_seqlens)
@@ -698,19 +710,23 @@ class DFlashDecoder(DSparkScheduling):
         B = len(batch)
         c = [r.num_cached for r in batch]
         bs = self.runner.block_size
-        for r in batch:
-            r.drafts += [r.last] * (T - 1 - len(r.drafts))
+        if self.uniform_verification:
+            T = min(T, 1 + min(len(r.drafts) for r in batch))
+        else:
+            for r in batch:
+                r.drafts += [r.last] * (T - 1 - len(r.drafts))
 
         roll = self.runner.roll_forward
         sidx = ([self.slots.name(r, 1)[0] for r in batch] if roll
                 else [s for r in batch for s in self.slots.name(r, T)])
         ids = [t for r in batch for t in [r.last] + r.drafts[:T - 1]]
         at = [(r, c[i] + t) for i, r in enumerate(batch) for t in range(T)]
+        offsets = [i * T for i in range(B + 1)]
         d_ids, pos, drafted, slots, seq, d_sidx, cu, ones = self.stage(
             (ids, [q + r.pos_delta for r, q in at] * 3,
              [d for r in batch for d in r.drafts[:T - 1]]),
             ([r.blocks[q // bs] * bs + q % bs for r, q in at], [ci + T for ci in c], sidx,
-             [i * T for i in range(B + 1)], [1] * B))
+             offsets, [1] * B))
         b = Batch(
             input_ids=d_ids,
             positions=pos.view(3, -1),
@@ -724,10 +740,10 @@ class DFlashDecoder(DSparkScheduling):
             chunk_decode=True,
             roll_forward=roll,
             prev_ids=self._ngram_context(batch, T),
-            host_ids=ids,
+            host_ids=ids, host_cu_seqlens=offsets if self.uniform_verification else None,
         )
         logits = self.runner.forward(b)
-        if self.block_history is not None and T == 1:
+        if self.uniform_verification and T == 1:
             tv = self.sampler.sample(logits, batch).view(B, 1)
             nacc = ones
         elif self.sampling is not None:
@@ -761,12 +777,12 @@ class DFlashDecoder(DSparkScheduling):
                 else:
                     streak = self.prefix_feedback.get(r, 0)
                     self.prefix_feedback[r] = streak + 1 if kept < self.short_width else 0
-            if T < self.width:
-                # The draft graph reads full block strides. Move rows backwards to preserve overlapping taps.
-                taps = self.runner.taps
-                for i in range(B - 1, 0, -1):
-                    for j in reversed(range(keep[i])):
-                        taps[i * self.width + j].copy_(taps[i * T + j])
+        if T < self.width:
+            # The draft graph reads full block strides. Move rows backwards to preserve overlapping taps.
+            taps = self.runner.taps
+            for i in range(B - 1, 0, -1):
+                for j in reversed(range(keep[i])):
+                    taps[i * self.width + j].copy_(taps[i * T + j])
         self.propose(batch, keep)
         if start is not None and not batch[0].done:
             self.inkling_policy.times[T].append(perf_counter() - start)

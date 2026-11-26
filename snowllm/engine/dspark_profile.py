@@ -12,7 +12,7 @@ from .forward_context import i32, positions
 from .inputs import synthetic_batch
 from .block_manager import slot_mapping
 from .request import Request, SamplingParams
-from .spec_decode import SPEC_MAX_STEP_ROWS
+from .spec_decode import DFlashDecoder, SPEC_MAX_STEP_ROWS
 
 
 def elapsed(run, *, warmup=False):
@@ -33,21 +33,21 @@ def elapsed(run, *, warmup=False):
 def profile(decoder, *, warmup=False):
     runner = decoder.runner
     shapes = decoder.decode_shapes(min(runner.max_num_seqs, SPEC_MAX_STEP_ROWS))
+    checkpoint_draft = isinstance(decoder, DFlashDecoder)
     action = 'warming up DSpark verification' if warmup else 'profiling DSpark verification costs'
     print(f'{term.stamp()} {action} ({len(shapes)} shapes) ...', flush=True)
     try:
         for B in range(1, min(runner.max_num_seqs, SPEC_MAX_STEP_ROWS) + 1):
             c = runner.block_size
             nb = ops.kv_blocks_for(c+decoder.block+1, c)
-            rolling = runner.roll_forward
-            raw_blocks = runner.num_kv_blocks if rolling else runner.cache.plan.raw_blocks
-            if (not rolling and nb > runner.ring_blocks) or B*nb > raw_blocks:
+            raw_blocks = runner.num_kv_blocks if checkpoint_draft else runner.cache.plan.raw_blocks
+            if (not checkpoint_draft and nb > runner.ring_blocks) or B*nb > raw_blocks:
                 raise ValueError('DSpark profiling needs more raw KV blocks for max_num_seqs')
             bt = i32([[i*nb+j for j in range(nb)] for i in range(B)])
             requests = [Request([0]*c, SamplingParams(), out=[0], slot=i) for i in range(B)]
             try:
                 draft_bt = decoder._draft_table(requests)
-                if not rolling:
+                if not checkpoint_draft:
                     for r in requests:
                         runner.cache.reset(r.slot)
                         if not runner.cache.history.reserve(r.slot, c+decoder.block+1):
@@ -55,7 +55,7 @@ def profile(decoder, *, warmup=False):
                 group = max(1, runner.max_prefill_tokens // c)
                 for lo in range(0, B, group):
                     hi = min(B, lo+group)
-                    if rolling:
+                    if checkpoint_draft:
                         table = bt[lo:hi].contiguous()
                         rows = [(i, t) for i in range(hi-lo) for t in range(c)]
                         total, qmap = ops.prefill_q_plan([c]*(hi-lo))
@@ -72,19 +72,19 @@ def profile(decoder, *, warmup=False):
                         [i for i in range(lo, hi) for _ in range(c)],
                         list(range(c))*(hi-lo), list(range(c))*(hi-lo), draft_bt)
                 # Only the last target row per request is committed when no draft is accepted.
-                if rolling:
+                if checkpoint_draft:
                     total, qmap = ops.prefill_q_plan([1]*B)
                     warm = synthetic_batch([1]*B, nb, block_tables=bt,
                         positions=positions([c]*B), slot_mapping=slot_mapping(bt, [(i,c) for i in range(B)], c),
                         seq_lens=[c+1]*B, state_indices=list(range(B)), num_accepted=[1]*B,
-                        roll_forward=True, chunk_decode=True, total_q_blocks=total, q_block_map=qmap,
-                        varlen_decode=B > 1)
+                        roll_forward=runner.roll_forward, chunk_decode=True, total_q_blocks=total, q_block_map=qmap,
+                        varlen_decode=runner.roll_forward and B > 1)
                 else:
                     warm = runner._warm_decode(B, 1, c, bt)
                 runner.forward(warm)
                 def draft_step():
                     decoder._write_ctx(B, list(range(B)), [c]*B, [c]*B, draft_bt)
-                    if rolling:
+                    if checkpoint_draft:
                         decoder._draft_blocks(requests)
                     else:
                         decoder._block(requests, draft_bt)
@@ -93,9 +93,9 @@ def profile(decoder, *, warmup=False):
                 for shape in (s for s in shapes if s.B == B):
                     with contextlib.closing(runner._graph_cases(shape)) as cases:
                         for case in cases:
-                            rows = sum(shape.lengths)
-                            state = runner.cache.state
-                            saved = [state.save(slot) for slot in range(B)]
+                            rows = sum(shape.lengths) if shape.lengths else B * shape.T
+                            state = None if checkpoint_draft else runner.cache.state
+                            saved = [state.save(slot) for slot in range(B)] if state is not None else []
                             def run():
                                 for slot, metadata in enumerate(saved):
                                     state.load(slot, metadata)

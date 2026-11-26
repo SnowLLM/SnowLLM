@@ -61,6 +61,40 @@ class SpecTerminalTests(unittest.TestCase):
         b.drafts.clear()
         self.assertEqual(decoder.select_verify_rows([a, b]), 1)
 
+    def test_flash_next_dspark_truncates_proposals_and_keeps_snapshot_per_row(self):
+        decoder = object.__new__(DFlashDecoder)
+        decoder.uniform_verification = decoder.adaptive = True
+        decoder.width, decoder.block = 5, 4
+        a, b = (Request([4, 8], SamplingParams(), out=[12], blocks=[0],
+                        drafts=drafts, slot=i) for i, drafts in enumerate(([13], [23, 24, 25])))
+        decoder.scheduler = Mock()
+        decoder.scheduler.choose.return_value = [1, 3]
+        decoder.costs, decoder.confidence = {2: object()}, {a: [.9], b: [.9]*3}
+        lengths = decoder.select_lengths([a, b], 64)
+        self.assertEqual(lengths, [2, 2])
+        self.assertTrue(all(not shape.lengths for shape in decoder.decode_shapes(2)))
+        decoder.runner = Mock(block_size=16, prev_context=2, roll_forward=False,
+                              plan_query_tiles=False, taps=torch.arange(10))
+        decoder.slots = Mock()
+        decoder.slots.name.side_effect = lambda r, n: [r.slot*5+j for j in range(n)]
+        decoder.tables = Mock()
+        decoder.stage = lambda a, b: [torch.tensor(v, dtype=torch.int64) for v in (*a, *b)]
+        decoder.sampling = None
+        decoder.sampler = object.__new__(Sampler)
+        decoder.sampler.stop_token_ids = set()
+        decoder.sampler.sample = Mock(return_value=torch.tensor([13, 30, 77, 80]))
+        decoder.propose = Mock()
+        with patch.object(ops, 'spec_accept', return_value=torch.tensor([2, 1])):
+            decoder.verify_step([a, b], lengths)
+        batch, = decoder.runner.forward.call_args.args
+        self.assertEqual(batch.host_ids, [12, 13, 12, 23])
+        self.assertEqual(batch.prev_ids, [[4, 8], [8, 12], [4, 8], [8, 12]])
+        self.assertEqual(batch.host_cu_seqlens, [0, 2, 4])
+        self.assertEqual(batch.state_indices.tolist(), [0, 1, 5, 6])
+        self.assertEqual((a.state_head, b.state_head), (1, 5))
+        self.assertEqual(decoder.runner.taps[5].item(), 2)
+        decoder.propose.assert_called_once_with([a, b], [2, 1])
+
     def test_target_commit_controls_next_mtp_graph(self):
         # The target may stop at an accepted draft, a correction, or a bonus token.
         cases = [

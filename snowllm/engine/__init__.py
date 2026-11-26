@@ -1118,8 +1118,14 @@ class Engine:
             T = self.spec.select_lengths(batch, self.max_model_len)
         else:
             T = self.spec.verify_rows(n) if self.spec else 0
-            if T and isinstance(self.spec, DFlashDecoder) and self.spec.adaptive_verification:
-                T = self.spec.select_verify_rows([r for r in self.running if r.prefilled])
+            if T and isinstance(self.spec, DFlashDecoder):
+                ready = [r for r in self.running if r.prefilled]
+                if self.spec.adaptive_verification:
+                    T = self.spec.select_verify_rows(ready)
+                if self.spec.uniform_verification:
+                    for r in ready:
+                        T = min(T, 1 + len(r.drafts), self.max_model_len - r.num_cached,
+                                r.params.max_new_tokens - len(r.out))
             if T and any(r.num_cached + self.spec.rows_needed(T) > self.max_model_len
                          for r in self.running if r.prefilled):
                 T = 0
