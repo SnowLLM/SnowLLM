@@ -11,7 +11,7 @@ from .dflash_draft import DFlashDraft
 
 class DSparkDraft(DFlashDraft):
     def propose(self, hidden: torch.Tensor, logits: torch.Tensor, anchor: torch.Tensor,
-                path: torch.Tensor, confidence: torch.Tensor) -> None:
+                path: torch.Tensor, confidence: torch.Tensor | None) -> None:
         b, block = path.shape
         if hidden.shape[0] != b * block:
             raise SnowLLMError("DSpark hidden rows do not match its proposal block")
@@ -30,12 +30,14 @@ def load_heads(src, geo, weights):
         raise SnowLLMError("DSpark currently shares its target's embedding and output head")
     vocab = pad_gemm_n(geo.vocab_size)
     for key in ("markov_w1", "markov_w2"):
-        raw = src.dense(f"markov_head.{key}.weight").cuda()
+        raw = src.dense(f"markov_head.{key}.weight").to(device="cuda", dtype=torch.bfloat16).contiguous()
         if raw.shape != (geo.vocab_size, geo.markov_rank):
             raise SnowLLMError(f"DSpark {key} has incompatible shape {tuple(raw.shape)}")
-        padded = torch.zeros(vocab, geo.markov_rank, dtype=torch.bfloat16, device="cuda")
-        padded[:geo.vocab_size].copy_(raw)
-        weights[key] = ops.dspark_pack_weight(padded) if key == "markov_w2" else padded
+        if vocab != geo.vocab_size:
+            padded = raw.new_zeros((vocab, geo.markov_rank))
+            padded[:geo.vocab_size].copy_(raw)
+            raw = padded
+        weights[key] = ops.dspark_pack_weight(raw) if key == "markov_w2" else raw
     weights["conf_weight"] = src.dense("confidence_head.proj.weight").cuda().float().reshape(-1)
     weights["conf_bias"] = (src.dense("confidence_head.proj.bias").cuda().float().reshape(-1)
                             if src.has("confidence_head.proj.bias") else None)

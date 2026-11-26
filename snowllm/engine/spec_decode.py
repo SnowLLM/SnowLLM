@@ -577,7 +577,7 @@ class DFlashDecoder(DSparkScheduling):
         self.d_draft = torch.zeros(S, block if self.dspark else max(block - 1, 1),
                                    dtype=torch.int64, device="cuda")
         self.d_conf = (torch.empty(S, block, dtype=torch.float32, device="cuda")
-                       if self.dspark else None)
+                       if self.dspark and (self.p_min > 0 or self.adaptive or self.inkling_policy is not None) else None)
         self.messages=HostArena()
         self.noise = torch.zeros(M, H, dtype=torch.bfloat16, device="cuda")
         self.ctx_rows = (i64([i * self.draft_width + j for i in range(S) for j in range(self.width)])
@@ -863,6 +863,8 @@ class DFlashDecoder(DSparkScheduling):
         M, W = B * blk, B * width
         rows = self.draft_rows[:M]
         def gather(values):
+            if B == 1:
+                return values[:M]
             return ops.gather_rows(values.view(W, 1), rows).view(M)
         ids = gather(self.d_i64[W:2*W])
         pos = gather(self.d_i64[2*W:3*W])
@@ -879,7 +881,8 @@ class DFlashDecoder(DSparkScheduling):
         logits = self.runner.model.lm_head(hidden, self.runner.draft_logits[:M])
         anchor = torch.empty(B, dtype=torch.int64, device="cuda")
         ops.copy_rows(anchor, self.d_i64[W:2*W].view(B, width)[:, 0])
-        self.draft.propose(hidden, logits, anchor, self.d_draft[:B, :blk], self.d_conf[:B])
+        confidence = self.d_conf[:B] if self.d_conf is not None else None
+        self.draft.propose(hidden, logits, anchor, self.d_draft[:B, :blk], confidence)
 
     def _proposals(self, batch: list[Request]) -> None:
         count = self.block if self.dspark else self.block - 1

@@ -100,6 +100,8 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | `--mtp-window` | `0` | MTP 可见的最近 token 数；`0` 使用完整上下文。 |
 | `--mtp-sinks` | `64` | 配合 --mtp-window 保留的开头 token 数。 |
 
+Qwen3.8 Flash-Next 的 DFlash2 和 DSpark 默认读取原始 BF16 safetensors，在启动时用 GPU 将草稿投影权重量化为 Q8_0。DFlash2 的 selector 码本和 DSpark 的两个 Markov 矩阵保留 BF16。设置 `SNOWLLM_DFLASH_Q8_ON_LOAD=0` 可使用 BF16 投影。
+
 ## 多模态 {#multimodal}
 
 | 选项 | 默认值 | 说明 |

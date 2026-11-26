@@ -33,7 +33,7 @@ MIN_PLE_FIRST_CHUNK = 128
 
 if TYPE_CHECKING:
     from .mtp_tool import MtpToolFormat, ToolHeaders
-    from ..checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
+    from ..checkpoint.gguf.dflash import DraftSource
     from ..models.deepseek_v4.deepseek4 import DeepSeekV4ForCausalLM
     from ..models.glm5_next.layers import Glm5NextForConditionalGeneration
     from ..models.qwen3_5.qwen3_5 import Qwen3_5MoeForCausalLM
@@ -41,7 +41,6 @@ if TYPE_CHECKING:
 
     TargetModel = (Qwen3_5MoeForCausalLM | DeepSeekV4ForCausalLM
                    | Qwen4ExpForConditionalGeneration | Glm5NextForConditionalGeneration)
-    DraftSource = GGUFDraftSource | DictDraftSource
 
 
 @dataclass
@@ -200,8 +199,8 @@ def draft_block(geo: DraftGeometry, block: int) -> int:
             raise SnowLLMError(f"Inkling DSpark verification width must be between 2 and {geo.block_size}")
         return block or geo.block_size
     if geo is not None and geo.dspark:
-        if block not in (0, 1, 4, 8, 9, 15) or block > geo.block_size:
-            raise SnowLLMError("DSpark block must be 1, 4, 8, 9 or 15 and fit the checkpoint")
+        if block not in (0, 1, 4, 8, 9, 15, geo.block_size) or block > geo.block_size:
+            raise SnowLLMError("DSpark requires its checkpoint block size or a supported shorter block (1, 4, 8, 9, 15)")
         return block or geo.block_size
     return block or 8
 

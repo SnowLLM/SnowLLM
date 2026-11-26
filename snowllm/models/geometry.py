@@ -361,7 +361,7 @@ class DFlashGeometry:
         if types and len(types) != cfg["num_hidden_layers"]:
             raise ValueError("DFlash layer_types must describe every draft layer")
         lfm = "Lfm2DSparkDraftModel" in cfg.get("architectures", [])
-        dspark = lfm or "Qwen3DSparkModel" in cfg.get("architectures", [])
+        dspark = lfm or bool({"Qwen3DSparkModel", "DSparkDraftModel"}.intersection(cfg.get("architectures", [])))
         d = dict(d)
         if lfm:
             d.update(markov_head_type=cfg.get('markov_head_type','vanilla'),
@@ -433,6 +433,12 @@ class DFlashGeometry:
     @property
     def dspark(self) -> bool:
         return self.markov_rank > 0
+
+    @property
+    def qwen38_flash_next(self) -> bool:
+        if self.hidden != 2560 or self.num_target_layers != 48:
+            return False
+        return self.dflash2 or (self.dspark and not self.target_model_type and self.vocab_size == 248320)
 
     @property
     def conv_groups(self) -> int:

@@ -2,20 +2,15 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
-from ...ops.allocation import empty, empty_like, zeros_like
-from ...ops.allocation import active_arena
 import torch
 
 from ... import ops
+from ...checkpoint.gguf.dflash import DraftSource, prepare_draft_source
+from ...checkpoint.gguf.dflash import NeoXSource as NeoXSource
 from ...engine.resources import ActivationProbe, DraftWorkspace, allocate_draft_pool
+from ...ops.allocation import active_arena, empty, empty_like, zeros_like
 from ..geometry import DFlashGeometry
-
-if TYPE_CHECKING:
-    from ...checkpoint.gguf.dflash import DictDraftSource, GGUFDraftSource
-
-    DraftSource = GGUFDraftSource | DictDraftSource
 
 d = ops.dflash
 
@@ -208,43 +203,22 @@ class DFlashDraft:
                       candidate_ids=candidate_ids, probabilities=probabilities)
 
 
-def _packed(src: "DraftSource", which: int, names: Sequence[str]) -> object | None:
-    fmts = {src.fmt(n) for n in names}
-    if len(fmts) != 1 or None in fmts:
-        return None
-    blocks = torch.cat([src.packed(n) for n in names]) if len(names) > 1 else src.packed(names[0])
-    return d.proj_shuffle_w_kquant(which, blocks, fmts.pop())
+def _proj(src: DraftSource, which: int, names: Sequence[str]) -> object:
+    formats = {src.fmt(name) for name in names}
+    fmt = formats.pop() if len(formats) == 1 else None
+    read = src.packed if fmt is not None else src.dense
+    weight = read(names[0]) if len(names) == 1 else torch.cat([read(name) for name in names])
+    if fmt is not None:
+        return d.proj_shuffle_w_kquant(which, weight, fmt)
+    weight = weight.cuda()
+    return d.proj_shuffle_w(which, weight)
 
 
-def _proj(src: "DraftSource", which: int, names: Sequence[str]) -> object:
-    packed = _packed(src, which, names)
-    if packed is not None:
-        return packed
-    rows = [src.dense(n) for n in names]
-    return d.proj_shuffle_w(which, (torch.cat(rows, 0) if len(rows) > 1 else rows[0]).cuda())
-
-
-class NeoXSource:
-    def __init__(self,source,head_size):
-        self.source,self.head_size=source,head_size
-
-    def __getattr__(self,name):
-        return getattr(self.source,name)
-
-    def dense(self,name):
-        value=self.source.dense(name)
-        if name.endswith(('self_attn.q_proj.weight','self_attn.k_proj.weight',
-                          'self_attn.q_norm.weight','self_attn.k_norm.weight')):
-            shape=value.shape
-            return value.reshape(-1,self.head_size//2,2,*shape[1:]).transpose(1,2).reshape(shape)
-        return value
-
-
-def load(src: "DraftSource", geo: DFlashGeometry,
+def load(src: DraftSource, geo: DFlashGeometry,
          pools: list[tuple[torch.Tensor, torch.Tensor]], arena: ops.Arena,
          block_size: int, *, candidate_search=False) -> DFlashDraft:
-    if not geo.rope_is_neox_style:
-        src=NeoXSource(src,geo.head_size)
+    src = prepare_draft_source(src, geo)
+
     def cu(name: str) -> torch.Tensor:
         return src.dense(name).cuda()
 

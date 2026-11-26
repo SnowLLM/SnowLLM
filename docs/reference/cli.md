@@ -102,6 +102,8 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | `--mtp-window` | `0` | Recent tokens visible to MTP; 0 uses full context. |
 | `--mtp-sinks` | `64` | Leading tokens retained with --mtp-window. |
 
+Qwen3.8 Flash-Next DFlash2 and DSpark load the original BF16 safetensors and quantize the draft projections to Q8_0 on the GPU at startup. The DFlash2 selector codebooks and both DSpark Markov matrices stay in BF16. Set `SNOWLLM_DFLASH_Q8_ON_LOAD=0` to use BF16 projections.
+
 ## Multimodal
 
 | Option | Default | Description |

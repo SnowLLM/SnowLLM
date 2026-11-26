@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
+import os
 import pathlib
 
 import torch
@@ -103,7 +104,7 @@ def geometry(g: GGUF) -> DFlashGeometry:
         num_sliding_layers=(sum(bool(b) for b in pattern) if len(pattern) else layers) if window else 0,
         tap_layers=(tuple(g.need("{arch}.target_layers")) if inkling else taps_in(g.need("{arch}.target_layers"))),
         mask_token_id=int(g.need("tokenizer.ggml.mask_token_id")),
-        num_target_layers=0,
+        num_target_layers=int(g.get("{arch}.target_layer_count") or 0),
         block_size=int(g.need("{arch}.block_size")),
         rope_theta=float(g.need("{arch}.rope.freq_base")),
         eps=float(g.need("{arch}.attention.layer_norm_rms_epsilon")),
@@ -177,3 +178,54 @@ class DictDraftSource:
             return self.sd[key]
         except KeyError:
             raise SnowLLMError(f"this DFlash draft has no weight {key!r}") from None
+
+
+class OnLoadQ8DraftSource(DictDraftSource):
+    def fmt(self, key: str) -> int | None:
+        return DRAFT_FORMATS["Q8_0"] if self.dense(key).dtype == torch.bfloat16 else None
+
+    def packed(self, key: str) -> torch.Tensor:
+        weight = self.dense(key)
+        if weight.ndim != 2 or weight.shape[1] % 32:
+            raise SnowLLMError(f"Q8_0 needs rows of complete 32-weight blocks for {key}")
+        blocks = weight.cuda().reshape(-1, 32).float()
+        magnitude = blocks.abs()
+        scale = (magnitude.amax(dim=1, keepdim=True).double() / 127).float()
+        inverse = scale.double().reciprocal().float().masked_fill_(scale == 0, 0)
+        magnitude.mul_(inverse)
+        # GGML uses round-to-nearest with ties away from zero.
+        codes = magnitude.floor()
+        codes.add_(magnitude.sub_(codes) >= 0.5)
+        codes.copysign_(blocks)
+        scale_bytes = scale.half().view(torch.uint8)
+        code_bytes = codes.to(torch.int8).view(torch.uint8)
+        return torch.cat((scale_bytes, code_bytes), dim=1).flatten()
+
+
+class NeoXSource:
+    def __init__(self, source, head_size: int):
+        self.source = source
+        self.head_size = head_size
+
+    def __getattr__(self, name):
+        return getattr(self.source, name)
+
+    def dense(self, name: str) -> torch.Tensor:
+        value = self.source.dense(name)
+        if name.endswith(("self_attn.q_proj.weight", "self_attn.k_proj.weight",
+                          "self_attn.q_norm.weight", "self_attn.k_norm.weight")):
+            pairs = value.reshape(-1, self.head_size // 2, 2, *value.shape[1:])
+            return pairs.transpose(1, 2).reshape(value.shape)
+        return value
+
+
+DraftSource = GGUFDraftSource | DictDraftSource | NeoXSource
+
+
+def prepare_draft_source(source: DraftSource, geo: DFlashGeometry) -> DraftSource:
+    if not geo.rope_is_neox_style:
+        return NeoXSource(source, geo.head_size)
+    if (isinstance(source, DictDraftSource) and geo.qwen38_flash_next
+            and os.environ.get("SNOWLLM_DFLASH_Q8_ON_LOAD", "1") == "1"):
+        return OnLoadQ8DraftSource(source.sd)
+    return source
