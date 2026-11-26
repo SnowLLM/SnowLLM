@@ -6,6 +6,7 @@ import torch
 
 from snowllm import _capi, ops
 from snowllm.engine import Engine, Request, SamplingParams
+from snowllm.engine.forward_context import DecodeShape
 from snowllm.engine.inputs import synthetic_batch
 from snowllm.engine.prefix_cache import LinearResidue, PrefixCache, PrefixStore
 from snowllm.engine.qwen4exp_runner import Qwen4ExpRunner
@@ -57,17 +58,30 @@ class Qwen4ExpPrefillPlanTest(unittest.TestCase):
                          (1280, 512, 1, 130560, 32))
         self.assertEqual((job.cu, job.length, job.qmap), (10, 20, 30))
 
-    def test_short_uniform_qsa_and_ragged_verify_have_separate_plans(self):
-        runner = self.runner
-        runner._plan_short_drafts = True
-        runner.geo = SimpleNamespace(index_topk=256)
-        runner.full_mods = [object()]
-        def key(tokens, ragged):
-            batch = SimpleNamespace(batch_size=4, tokens_per_req=tokens, varlen_attn=ragged)
-            return runner._decode_plan_key(batch)
-        self.assertEqual(key(1, False), key(4, False))
-        self.assertNotEqual(key(4, False), key(4, True))
-        self.assertNotEqual(key(4, False), key(16, False))
+    def test_decode_checks_request_boundaries_before_graph_lookup(self):
+        def batch(lengths, **fields):
+            return synthetic_batch(lengths, 4, seq_lens=[100, 200], chunk_decode=True,
+                state_indices=list(range(sum(lengths))),
+                tensor=lambda _, values, dtype: torch.tensor(values, dtype=dtype), **fields)
+
+        with patch.object(self.runner, '_feed_ple') as feed:
+            for invalid in (batch([1, 3]), batch([2, 3]), batch([1, 3], host_cu_seqlens=None),
+                            batch([2, 2], varlen_decode=True)):
+                with self.assertRaisesRegex(ops.SnowLLMError, 'equal verification widths'):
+                    self.runner._prepare_batch(invalid)
+            wrong_state = batch([2, 2])
+            wrong_state.state_indices = wrong_state.state_indices[:2]
+            with self.assertRaisesRegex(ops.SnowLLMError, 'snapshot per token'):
+                self.runner._prepare_batch(wrong_state)
+            feed.assert_not_called()
+            self.assertEqual(self.runner._prepare_batch(batch([2, 2]))[1], (2, 2))
+            self.assertIsNone(self.runner._prepare_batch(batch([1, 3], is_prefill=True))[1])
+
+    def test_unprepared_workspace_and_graphs_use_uniform_decode(self):
+        self.runner.attn_q_tokens = 8
+        self.assertEqual(self.runner._unprepared_probe(64), (32, False))
+        with self.assertRaisesRegex(ops.SnowLLMError, 'common verification width'):
+            next(self.runner._graph_cases(DecodeShape(2, 3, True, (1, 3))))
 
     def test_decode_uses_existing_probe(self):
         sentinel = object()

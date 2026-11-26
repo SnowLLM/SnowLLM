@@ -7,9 +7,9 @@ import ctypes
 from .allocation import empty
 import torch
 
-from .._capi import check, lib
+from .._capi import SnowLLMError, check, lib
 from ._common import _chk, _chk_dense, _chk_rows, _p, _stream
-from .attention_full import _PAGED_ATTENTION_PREPARED, _PagedAttentionStep
+from .attention_full import _PagedAttentionStep
 
 
 @operator
@@ -250,18 +250,22 @@ def qsa_job_descriptors(jobs):
 
 @operator
 def qsa_attention(ctx, module, q, index_q, pools, out, proj):
-    decode_ws = ctx.arena.workspace(0 if ctx.batch.is_prefill else ctx.decode_ws_bytes)
-    b=ctx.batch
+    b = ctx.batch
+    if ctx.kv_int8 or len(pools) != 2:
+        raise SnowLLMError("QSA requires BF16 KV")
+    if b.is_prefill and not ctx.qsa_jobs:
+        raise SnowLLMError("QSA prefill requires a job plan")
+    ck, cv = module.compact or (None, None)
+    if not b.is_prefill and (b.varlen_attn or ck is None or cv is None or
+                             module.compact_table is None or ctx.qsa_seq_of_row is None):
+        raise SnowLLMError("QSA decode requires equal widths, compact KV buffers and a row map")
     gate=module.shuf(ctx,proj)
-    ks,vs=pools[2:] if len(pools)==4 else (None,None)
-    prepared = ctx.attention_prepared
     att=_PagedAttentionStep((ctypes.c_void_p*10)(*[_p(t) for t in
-        (q,pools[0],pools[1],ks,vs,b.cu_seqlens,b.block_tables,b.seq_lens,b.q_block_map)],gate[0]),
-        (ctypes.c_void_p*3)(_p(out),_p(ctx.decode_plan if prepared is None else prepared),_p(decode_ws)),b.batch_size,
+        (q,pools[0],pools[1],None,None,b.cu_seqlens,b.block_tables,b.seq_lens,b.q_block_map)],gate[0]),
+        (ctypes.c_void_p*3)(_p(out),None,None),b.batch_size,
         b.block_tables.shape[1],b.total_q_blocks,ctx.num_slots,b.tokens_per_req,ctx.block_size,
-        gate[1],gate[2],module.attn_scale,int(b.varlen_attn) | (_PAGED_ATTENTION_PREPARED if prepared is not None else 0))
+        gate[1],gate[2],module.attn_scale,int(b.is_prefill))
     jobs = ctx.qsa_jobs
-    ck,cv=module.compact or (None,None)
     table=module.compact_table
     ix=module.indexer
     step=_QsaStep(att,(ctypes.c_void_p*6)(*[_p(t) for t in
@@ -270,9 +274,11 @@ def qsa_attention(ctx, module, q, index_q, pools, out, proj):
         ctypes.addressof(jobs) if jobs is not None else 0,len(jobs) if jobs is not None else 0,q.shape[0],
         ctx.qsa_max_blocks,ix.heads,ix.dim,ix.ratio,ix.topk,
         table.shape[0] if table is not None else 0,table.shape[1] if table is not None else 0,
-        module.plan_slots,int(b.is_prefill),int(ks is not None or vs is not None),
-        int(ck is not None),2 if ctx.qsa_job_row is not None else int(ctx.qsa_seq_of_row is not None))
+        module.plan_slots,int(b.is_prefill),0,
+        int(ck is not None),2 if b.is_prefill and ctx.qsa_job_row is not None else int(ctx.qsa_seq_of_row is not None))
     need=lib.snowllm_qsa_attention_scratch_bytes(ctypes.byref(step))
+    if need < 0:
+        raise SnowLLMError("the kernel does not support this sparse QSA batch")
     with ctx.arena.frame():
         ws=ctx.arena.flat(need,torch.uint8)
         check(lib.snowllm_qsa_attention(ctypes.byref(step),_p(ws),need,_stream()),'qsa_attention')

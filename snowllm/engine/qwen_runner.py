@@ -151,15 +151,20 @@ class QwenRunner(GraphRunner):
             yield ActivationReservation([ProbeGroup(self._activation_cases(rows, self.decode_rows))],
                                         zero=True)
 
+    def _unprepared_probe(self, decode):
+        return decode, True
+
     def _activation_cases(self, chunk, decode):
         modes = [(PLAN_MAIN, chunk, True, False), (PLAN_DECODE, decode, False, False)]
         if self.model.mtp is not None:
             modes += [(PLAN_MTP_DECODE, decode, False, True), (PLAN_MTP, chunk, True, True)]
+        ragged = False
         if self._plan_short_drafts:
-            modes.append((_UNPREPARED_DECODE, decode, False, False))
+            rows, ragged = self._unprepared_probe(decode)
+            modes.append((_UNPREPARED_DECODE, rows, False, False))
         for key, rows, prefill, draft in modes:
             batch = self._probe_batch(rows, prefill)
-            batch.varlen_decode = key is _UNPREPARED_DECODE
+            batch.varlen_decode = key is _UNPREPARED_DECODE and ragged
             def walk():
                 return (self.mtp_draft(self._mtp_input(rows), batch.input_ids, batch) if draft
                         else self._forward_eager(batch))

@@ -20,13 +20,12 @@ from .forward_context import (
     i64,
 )
 from .inputs import synthetic_batch
-from .qwen_runner import QwenRunner, _UNPREPARED_DECODE
+from .qwen_runner import QwenRunner
 from .qwen4exp_spec import Qwen4ExpSpecDecoder
 from .resources import ActivationProbe
 from ..models.qwen4exp import mtp_tail
 
 GATHER_CHUNK = 4096
-_QSA_SHORT_DECODE = ("decode", "qsa-short")
 
 
 class Qwen4ExpRunner(QwenRunner):
@@ -34,6 +33,8 @@ class Qwen4ExpRunner(QwenRunner):
     spec_decoder_type = Qwen4ExpSpecDecoder
 
     def _graph_cases(self, shape):
+        if shape.lengths:
+            raise ops.SnowLLMError("Flash-Next decode graphs require a common verification width")
         yield from super()._graph_cases(shape)
         proposer = getattr(self, 'mtp_proposer', None)
         if proposer is not None:
@@ -54,11 +55,7 @@ class Qwen4ExpRunner(QwenRunner):
 
     def _configure(self):
         if self.kv_int8 and self.geo.index_topk:
-            raise ops.SnowLLMError(
-                "kv_int8 would switch off this checkpoint's sparse attention: the QSA kernels "
-                "read bf16 KV only, so every full-attention layer would attend over the whole "
-                "context instead of the indexer's selection, and the output would change. Serve "
-                "it with --kv-cache-dtype bf16.")
+            raise ops.SnowLLMError("Flash-Next QSA requires --kv-cache-dtype bf16")
         self.ple_mods: list[Ple] = []
         self.ple_table = self.model.ple_table
         super()._configure()
@@ -143,20 +140,11 @@ class Qwen4ExpRunner(QwenRunner):
         from .prefix_cache import Qwen4ExpResidue
         return Qwen4ExpResidue(self.linear_mods, self.ple_mods)
 
-    def _decode_plan_key(self, batch):
-        key = super()._decode_plan_key(batch)
-        if key == _UNPREPARED_DECODE and self._qsa() and not batch.varlen_attn:
-            return _QSA_SHORT_DECODE
-        return key
+    def _unprepared_probe(self, decode):
+        return self.max_num_seqs * self.attn_q_tokens, False
 
     def _activation_cases(self, chunk, decode):
         yield from super()._activation_cases(chunk,decode)
-        if self._plan_short_drafts and self._qsa():
-            # Uniform short verification uses QSA scratch that ragged attention skips.
-            rows = self.max_num_seqs * self.attn_q_tokens
-            batch = self._probe_batch(rows, False)
-            yield ActivationProbe(_QSA_SHORT_DECODE, rows, lambda: self._forward_eager(batch),
-                lifetimes='uses' if self.plan_activations else 'references')
         if self.num_spec and self.model.mtp is not None:
             selected = self._probe_batch(decode, False)
             selected.last_row = i64(list(range(0, decode, selected.tokens_per_req)))
@@ -228,6 +216,16 @@ class Qwen4ExpRunner(QwenRunner):
                 stream.release(slot)
 
     def _prepare_batch(self, b: Batch):
+        if not b.is_prefill:
+            width = b.tokens_per_req
+            cu = b.host_cu_seqlens
+            if cu is None and b.batch_size > 1 and b.cu_seqlens is not None:
+                cu = b.cu_seqlens.tolist()
+            if (width < 1 or b.varlen_attn or b.num_tokens != b.batch_size * width or
+                    (cu is not None and cu != list(range(0, b.num_tokens + 1, width)))):
+                raise ops.SnowLLMError("Flash-Next decode requires equal verification widths across requests")
+            if b.roll_forward or b.state_indices.numel() != b.num_tokens:
+                raise ops.SnowLLMError("Flash-Next decode requires one state snapshot per token")
         self._feed_ple(b)
         return super()._prepare_batch(b)
 

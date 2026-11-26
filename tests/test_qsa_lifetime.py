@@ -18,6 +18,25 @@ class QsaLifetimeTests(unittest.TestCase):
             with self.subTest(prefill=prefill):
                 self.check_index_query_lifetime(prefill)
 
+    def test_unsupported_qsa_never_reaches_native_dispatch(self):
+        q = object()
+        cases = [
+            (True, False, None, None, False, (q, q), 'job plan'),
+            (False, True, (q, q), q, False, (q, q), 'equal widths'),
+            (False, False, None, q, False, (q, q), 'compact KV'),
+            (False, False, (None, q), q, False, (q, q), 'compact KV'),
+            (False, False, (q, q), None, False, (q, q), 'row map'),
+            (False, False, (q, q), q, True, (q, q), 'BF16'),
+            (False, False, (q, q), q, False, (q, q, q, q), 'BF16'),
+        ]
+        with patch.object(ple.lib, 'snowllm_qsa_attention_scratch_bytes') as native:
+            for prefill, ragged, compact, rows, int8, pools, error in cases:
+                ctx = SimpleNamespace(batch=SimpleNamespace(is_prefill=prefill, varlen_attn=ragged),
+                                      qsa_jobs=None, qsa_seq_of_row=rows, kv_int8=int8)
+                with self.subTest(error=error), self.assertRaisesRegex(ops.SnowLLMError, error):
+                    ple.qsa_attention(ctx, SimpleNamespace(compact=compact, compact_table=q), q, q, pools, q, q)
+            native.assert_not_called()
+
     def check_index_query_lifetime(self, prefill):
         arena = ops.Arena()
         # A CPU backing buffer exercises the production arena without GPU allocation.
@@ -32,22 +51,26 @@ class QsaLifetimeTests(unittest.TestCase):
         batch = SimpleNamespace(is_prefill=prefill, cu_seqlens=cu,
             block_tables=table, seq_lens=lengths, q_block_map=qmap, batch_size=1,
             total_q_blocks=1, tokens_per_req=2, varlen_attn=False)
-        ctx = SimpleNamespace(arena=arena, batch=batch, decode_ws_bytes=128,
-            decode_plan=None, num_slots=1, block_size=16,
+        ctx = SimpleNamespace(arena=arena, batch=batch, kv_int8=False,
+            qsa_jobs=(ple._QsaJob * 1)() if prefill else None, qsa_job_row=None,
+            num_slots=1, block_size=16,
             qsa_lens=[(0, 2, 0, 0, cu, lengths, 1, qmap)] if prefill else None,
             qsa=SimpleNamespace(weights=None, comp=None, cells=None),
-            qsa_seq_of_row=None, qsa_max_blocks=16)
+            qsa_seq_of_row=qmap, qsa_max_blocks=16)
         module = torch.nn.Module()
         module.indexer = SimpleNamespace(pool=None, heads=4, dim=8, ratio=4, topk=4)
-        module.compact = module.compact_table = module.plan = module.plan_ws = None
+        module.compact_table = table
+        module.plan = module.plan_ws = None
         module.plan_slots = 0
         module.attn_scale = .125
         module.shuf = lambda ctx, proj: (0, proj.shape[1], 0)
+        module.compact = (q, q)
         calls = []
 
         def native(step, workspace, size, stream):
             descriptor = ctypes.cast(step, ctypes.POINTER(ple._QsaStep)).contents
             self.assertEqual(descriptor.inputs[0], index_q.data_ptr())
+            self.assertEqual(descriptor.attention.varlen, int(prefill))
             self.assertEqual(size, 4096)
             calls.append(workspace)
             return 0
