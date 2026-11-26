@@ -178,6 +178,14 @@ ARMS = {
         ("SnowLLM", "MiniCPM-V 4.7 35B-A3B Q4_K_M", "DSpark block 8, adaptive, HTTP"),
 }
 
+for quant, precision in (("q3_k_xl", "UD-Q3_K_XL"), ("iq4_xs", "UD-IQ4_XS")):
+    for method, spec in (("none", "None"), ("mtp_adaptive", "Adaptive MTP (up to 7)"),
+                         ("dflash2_incoai", "DFlash2@incoai (adaptive, block ≤8)"),
+                         ("dflash2_san_digital", "DFlash2@san-digital (adaptive, block ≤16)")):
+        for workload, title in (("pg19", "PG-19"), ("file_edit", "File-edit")):
+            key = f"qwen3_8_flash_next_ud31_{quant}_{method}_{workload}_gfx1151_20261126"
+            ARMS[key] = ("SnowLLM", f"Qwen3.8-Flash-Next UD3.1 {precision}", f"{title} · {spec}")
+
 
 def al_of(row: dict, n_max: int | None) -> tuple[float | None, bool]:
     if row.get("accept_length_mean") is not None:
