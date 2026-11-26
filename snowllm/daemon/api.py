@@ -51,7 +51,7 @@ class ModelPath(BaseModel):
 
 
 class Pull(BaseModel):
-    recipe: str = Field(min_length=1, pattern=r"^(?:b/)?[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    recipe: str = Field(min_length=1, pattern=r"^(?:b/)?[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*){0,2}$")
 
 
 def storage_bytes(path):
@@ -154,16 +154,36 @@ def create_app(manager: DaemonManager, *, admin_host="127.0.0.1", admin_key=None
             roots = [Path(value) for value in getattr(manager, 'models_dirs', [manager.models_dir])]
             url = manager.status()["recipes_url"]
             book = recipes.catalogue(url=url, refresh=refresh, bundle=bundle)
+            from ..hub.model_recipes import recommended, system_memory_gib
+            candidates = {}
+            for recipe in book:
+                if 'recommend_order' in recipe.raw:
+                    candidates.setdefault(recipe.raw['model_id'], []).append(recipe)
+            picks = set()
+            if candidates:
+                memory = system_memory_gib()
+                for name, choices in candidates.items():
+                    try:
+                        picks.add(recommended(name, choices, memory).ref)
+                    except SnowLLMError:
+                        continue
             rows = []
             for recipe, recipe_type in recipes.catalogue_for_display(book, url, bundle=bundle):
-                path = recipes.installed(recipe, roots) or recipe.path(roots[0])
+                path, state = recipes.local_copy(recipe, roots)
+                path = path or recipe.path(roots[0])
                 rows.append({**recipe.raw, "id": recipe.ref, "type": recipe_type,
-                             "path": str(path), "servable": recipe.servable,
+                             "path": str(path), "servable": recipe.servable, "recommended": recipe.ref in picks,
                              "download_path": str(recipe.path(roots[0])),
-                             "loadable": recipes.loadable(path, recipe),
+                             "loadable": state == recipes.DOWNLOADED, "partial": state == recipes.INCOMPLETE,
                              "downloaded": recipes.complete(recipe, path),
                              "exists": path.is_dir()})
-            return {"recipe_types": recipes.RECIPE_TYPES, "recipes": rows}
+            from ..cli import parser
+            from ..defaults import DEFAULT_GPU_UTIL
+            cli = parser()
+            defaults = {key: cli.get_default(key) for key in recipes.SETTABLE}
+            defaults['max_gpu_mem_util'] = DEFAULT_GPU_UTIL
+            defaults['dflash_p_min'] = cli.get_default('dflash_p_min')
+            return {"recipe_types": recipes.RECIPE_TYPES, "recipes": rows, "load_defaults": defaults}
         try:
             return await asyncio.to_thread(inventory)
         except (SnowLLMError, OSError, ValueError) as exc:

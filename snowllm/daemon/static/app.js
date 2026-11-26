@@ -32,8 +32,15 @@ let modelSignature = '', aliasRequest = 0;
 let preferredThinkingLevel = '';
 let conversation = [];
 let sessions = [], sessionId = newSessionId(), loadSettings = {};
-const specOptionFields = ['mtp-prompt-lookup', 'mtp-tool-draft'];
-const loadFieldIds = ['load-id', 'load-target', 'context-length', 'gpu-budget', 'spec-depth', 'kv-type', ...specOptionFields, 'extra-options'];
+let cliDefaults = {};
+const inferenceOptions = {'context-length': 'max-model-len', 'gpu-budget': 'max-gpu-mem',
+  'max-num-seqs': 'max-num-seqs', 'max-num-batched-tokens': 'max-num-batched-tokens', 'kv-type': 'kv-cache-dtype'};
+const loadFieldIds = ['load-id', 'load-target', ...Object.keys(inferenceOptions), 'extra-options'];
+const specLabels = {num_spec: 'MTP depth', mtp_adaptive: 'Adaptive MTP', dflash: 'Draft checkpoint',
+  dflash_block: 'Draft block size', dflash_p_min: 'Draft confidence threshold', dflash_adaptive: 'Adaptive verification',
+  dspark_adaptive: 'Adaptive DSpark', mtp_window: 'Draft attention window', mtp_sinks: 'Attention sink tokens',
+  mtp_prompt_lookup: 'Prompt lookup', mtp_tool_draft: 'Tool-call drafting'};
+const manualPreset = '@manual';
 const loadCards = [];
 let loadCardSequence = 0, submittingLoad = false;
 let seenLoadAdvice = null;
@@ -63,43 +70,67 @@ try {
   chatDrafts = new Map(Object.entries(JSON.parse(localStorage.getItem('snowllm.chat-drafts') || '{}'))
     .filter(([, text]) => typeof text === 'string'));
 } catch {}
-function loadKey(card) { return card.source === 'recipe' ? card.fields['load-recipe'].value : card.fields['load-path'].value.trim(); }
-function selectLoadModel(card) {
+function loadKey(card) {
+  return card.source === 'recipe' ? card.fields['spec-method'].selectedOptions[0]?.dataset.recipe || '' : card.fields['load-path'].value.trim();
+}
+function selectLoadModel(card, spec) {
   card.restored = false;
   card.pendingRecipe = '';
   const model = loadKey(card);
   if (card.source === 'path') syncLocalModel(card);
-  if (model) {
-    try { localStorage.setItem('snowllm.load-selection', JSON.stringify({source: card.source, model})); } catch {}
+  const modelName = card.fields['load-model'].value;
+  if (model || (card.source === 'recipe' && modelName)) {
+    const selection = {source: card.source, model: model || modelName, modelName, bundle: bundleCatalog,
+      preset: card.fields['load-recipe'].value, precision: card.fields['load-precision'].value, method: card.fields['spec-method'].value};
+    try { localStorage.setItem('snowllm.load-selection', JSON.stringify(selection)); } catch {}
   }
-  restoreLoadSettings(card);
-  renderLoadHints(card);
+  if (spec) renderLoadHints(card, spec);
+  else restoreLoadSettings(card);
+}
+function loadSettingsKey(card) {
+  const ref = loadKey(card);
+  const preset = card.source === 'recipe' && card.fields['load-recipe'].value;
+  return preset && preset !== ref ? JSON.stringify([preset, ref]) : ref;
 }
 function saveLoadSettings(card, notify = true) {
   if (!loadKey(card)) { toast(t('Choose a recipe or enter a checkpoint directory.')); return; }
-  loadSettings[loadKey(card)] = Object.fromEntries(loadFieldIds.map(id => [id, card.fields[id].value]));
+  loadSettings[loadSettingsKey(card)] = {...Object.fromEntries(loadFieldIds.map(id => [id, card.fields[id].value])),
+    ...Object.fromEntries(Object.entries(card.specInputs).map(([key, input]) => [key, input.value]))};
   try { localStorage.setItem('snowllm.load-settings', JSON.stringify(loadSettings)); if (notify) toast(t('Load settings saved')); } catch { toast(t('Browser storage unavailable · this conversation is temporary')); }
 }
 function restoreLoadSettings(card) {
-  const saved = loadSettings[loadKey(card)] || {};
+  const saved = loadSettings[loadSettingsKey(card)] || {};
   for (const id of loadFieldIds) card.fields[id].value = typeof saved[id] === 'string' ? saved[id] : '';
   if (!['gpu', 'npu'].includes(card.fields['load-target'].value)) card.fields['load-target'].value = 'gpu';
-  updateTargetSettings(card);
+  renderLoadHints(card, saved);
 }
 function updateTargetSettings(card) {
   const npu = card.fields['load-target'].value === 'npu';
   card.fields['npu-load-hint'].hidden = !npu;
-  for (const id of ['context-length', 'gpu-budget', 'spec-depth', 'kv-type', ...specOptionFields]) card.fields[id].disabled = npu;
+  for (const id of Object.keys(inferenceOptions)) card.fields[id].disabled = npu;
+  for (const input of Object.values(card.specInputs)) input.disabled = npu;
+  for (const button of card.fields['spec-fields'].querySelectorAll('.input-action button')) button.disabled = npu;
+  card.fields['spec-method'].disabled = npu || !card.fields['spec-method'].options.length;
 }
 function modelLoadRequest(card) {
   const fields = card.fields;
   const model = loadKey(card).trim();
+  if (!model && card.source === 'recipe' && fields['load-recipe'].value === manualPreset) throw new Error(t('Choose a weight precision…'));
   if (!model) throw new Error(t('Choose a recipe or enter a checkpoint directory.'));
   const options = [];
-  for (const [id, flag] of [['context-length', '--max-model-len'], ['gpu-budget', '--max-gpu-mem'], ['spec-depth', '--num-spec'], ['kv-type', '--kv-cache-dtype']]) if (!fields[id].disabled && fields[id].value.trim()) options.push(flag, fields[id].value.trim());
-  for (const id of specOptionFields) {
-    const field = fields[id];
-    if (!field.disabled && field.value) options.push(field.value === 'on' ? '--' + id : '--no-' + id);
+  const preset = card.source === 'recipe' && recipes.find(row => row.id === fields['load-recipe'].value);
+  if (card.source === 'recipe' && fields['load-recipe'].value === manualPreset) options.push('--no-recipe-preset');
+  else if (preset?.inference && preset.id !== model) options.push('--recipe-preset', preset.preset);
+  for (const [id, flag] of Object.entries(inferenceOptions)) {
+    if (!fields[id].disabled && fields[id].value.trim()) options.push('--' + flag, fields[id].value.trim());
+  }
+  for (const [key, input] of Object.entries(card.specInputs)) {
+    if (input.disabled) continue;
+    if (input.type === 'number' && !input.validity.valid) throw new Error(t(specLabels[key]) + ' · ' + input.validationMessage);
+    if (!input.value.trim()) continue;
+    const flag = key.replaceAll('_', '-');
+    if (key !== 'dflash' && (input.value === 'on' || input.value === 'off')) options.push((input.value === 'on' ? '--' : '--no-') + flag);
+    else options.push('--' + flag, input.type === 'number' ? String(input.valueAsNumber) : input.value.trim());
   }
   options.push(...parseOptions(fields['extra-options'].value));
   return {model, options, target: fields['load-target'].value, id: fields['load-id'].value.trim() || null};
@@ -116,7 +147,8 @@ function renderLoadCards() {
 function addLoadCard(selection = null) {
   const node = $('load-model-template').content.firstElementChild.cloneNode(true);
   const card = {node, source: selection?.source || 'recipe', fields: {}, restored: Boolean(selection),
-    pendingRecipe: selection?.source === 'recipe' ? selection.model : ''};
+    specInputs: {}, pendingModel: selection?.modelName || '', pendingPrecision: selection?.precision || '', pendingSpec: selection?.method ?? (selection?.preset && selection.model !== selection.preset ? selection.model : ''),
+    pendingRecipe: selection?.source === 'recipe' ? selection.preset || selection.model : ''};
   const prefix = `load-card-${++loadCardSequence}-`;
   node.querySelectorAll('[data-field]').forEach(field => {
     card.fields[field.dataset.field] = field;
@@ -130,7 +162,32 @@ function addLoadCard(selection = null) {
     selectLoadModel(card);
   }));
   const fields = card.fields;
-  fields['load-recipe'].addEventListener('change', () => selectLoadModel(card));
+  fields['load-model'].addEventListener('change', () => {
+    renderPresetOptions(card);
+    selectLoadModel(card);
+  });
+  fields['load-recipe'].addEventListener('change', () => {
+    const previous = recipes.find(row => row.id === loadKey(card));
+    const manual = fields['load-recipe'].value === manualPreset;
+    renderPrecisionOptions(card, manual ? weightPrecision(previous) : '', manual ? fields['spec-method'].value : '');
+    selectLoadModel(card);
+    resetOverrides();
+  });
+  function resetOverrides() {
+    for (const id of [...Object.keys(inferenceOptions), 'extra-options']) fields[id].value = '';
+    for (const input of Object.values(card.specInputs)) input.value = '';
+  }
+  function applyOverrides() {
+    const spec = Object.fromEntries(Object.entries(card.specInputs).map(([key, input]) => [key, input.value]));
+    selectLoadModel(card, spec);
+    const block = card.specInputs.dflash_block;
+    if (block && (block.validity.rangeOverflow || block.validity.rangeUnderflow)) block.value = '';
+  }
+  fields['load-precision'].addEventListener('change', () => {
+    renderMethodOptions(card, fields['spec-method'].value);
+    applyOverrides();
+  });
+  fields['spec-method'].addEventListener('change', applyOverrides);
   fields['load-path'].addEventListener('change', () => selectLoadModel(card));
   fields['load-target'].addEventListener('change', () => updateTargetSettings(card));
   fields['local-model'].addEventListener('change', () => {
@@ -142,7 +199,12 @@ function addLoadCard(selection = null) {
   fields['save-load-settings'].addEventListener('click', () => saveLoadSettings(card));
   fields['copy-load-command'].addEventListener('click', () => action(fields['copy-load-command'], () => copyText(modelLoadCommand(modelLoadRequest(card), location.href))));
   fields['reset-load-settings'].addEventListener('click', () => {
+    if (card.source === 'recipe') {
+      renderPrecisionOptions(card);
+      selectLoadModel(card);
+    }
     for (const id of loadFieldIds) fields[id].value = '';
+    resetOverrides();
     fields['load-target'].value = 'gpu'; updateTargetSettings(card); saveLoadSettings(card);
   });
   fields['browse-model'].addEventListener('click', () => openDirectory(fields['load-path'].id));
@@ -155,14 +217,18 @@ function addLoadCard(selection = null) {
   node.querySelector('[data-role="load-title"]').tabIndex = -1;
   if (selection?.source === 'path') fields['load-path'].value = selection.model;
   renderRecipeOptions(); renderLocalOptions(); chooseSource(card, card.source);
-  restoreLoadSettings(card); renderLoadHints(card);
+  restoreLoadSettings(card);
   translatePage(); renderLoadCards();
   return card;
 }
-function configureModel(source, model) {
+function configureModel(source, model, preset = model, method = '', precision = '') {
   const card = loadCards.find(item => item.restored || !loadKey(item)) || addLoadCard();
   chooseSource(card, source);
-  card.fields[source === 'recipe' ? 'load-recipe' : 'load-path'].value = model;
+  if (source === 'recipe') {
+    const recipe = recipes.find(row => row.id === model);
+    card.fields['load-model'].value = recipe?.model || model;
+    renderPresetOptions(card, preset, method, precision);
+  } else card.fields['load-path'].value = model;
   selectLoadModel(card);
   openModelLoader(card.fields[source === 'recipe' ? 'load-recipe' : 'load-path']);
 }
@@ -663,10 +729,11 @@ async function refreshCatalog(refresh, sourceChanged = false) {
     if (root !== JSON.stringify(status?.models_dirs || [status?.models_dir])) return;
     if (catalog.status === 'fulfilled') {
       recipes = catalog.value.recipes;
+      cliDefaults = catalog.value.load_defaults || {};
       recipeTypes = catalog.value.recipe_types || {};
       $('catalog-error').hidden = true;
       renderRecipeOptions();
-      renderRecipes(); loadCards.forEach(renderLoadHints);
+      renderRecipes(); loadCards.forEach(card => renderLoadHints(card));
     } else {
       $('catalog-error').hidden = false; $('catalog-error').textContent = t("Catalog unavailable: {0}. You can still load a local checkpoint from Overview.", catalog.reason.message);
       if (!recipes.length) {
@@ -684,77 +751,289 @@ async function refreshCatalog(refresh, sourceChanged = false) {
   }
 }
 function groupRecipes(rows) {
-  const groups = new Map(Object.entries(recipeTypes).map(([type, label]) => [type, {type, label, rows: []}]));
-  const other = {type: 'other', label: t('Other recipes'), rows: []};
-  for (const recipe of rows) (groups.get(recipe.type) || other).rows.push(recipe);
-  return [...groups.values(), other].filter(group => group.rows.length);
+  const groups = new Map();
+  for (const model of rows) {
+    const family = model.family || (model.type?.startsWith('qwen') ? 'Qwen' : recipeTypes[model.type]) || t('Other recipes');
+    const key = family.toLowerCase();
+    if (!groups.has(key)) groups.set(key, {type: key, label: family, rows: []});
+    groups.get(key).rows.push(model);
+  }
+  return [...groups.values()];
 }
-function renderRecipeOptions() {
-  const groups = groupRecipes(recipes);
-  for (const card of loadCards) {
-    const select = card.fields['load-recipe'], previous = select.value;
-    const selected = previous || card.pendingRecipe;
-    select.replaceChildren(new Option(t("Choose a recipe\u2026"), ''));
-    for (const {type, label, rows} of groups) {
-      const group = document.createElement('optgroup');
-      group.label = label;
-      group.dataset.recipeType = type;
-      for (const recipe of rows) {
-        const option = new Option(`${recipe.id}${recipe.loadable ? t(" \u00b7 local") : ''}${recipe.status === 'coming soon' ? ` · ${t('Coming soon')}` : !recipe.servable ? t(" \u00b7 upgrade required") : ''}`, recipe.id);
-        option.classList.toggle('local', Boolean(recipe.loadable));
-        option.disabled = !recipe.servable;
-        group.append(option);
-      }
-      select.append(group);
+function modelChoices(rows) {
+  const models = new Map();
+  for (const row of rows) {
+    const name = row.model || row.id;
+    if (!models.has(name)) models.set(name, {name, family: row.family, type: row.type, choices: []});
+    models.get(name).choices.push(row);
+  }
+  for (const model of models.values()) {
+    if (model.choices.some(row => row.model_id)) {
+      model.choices = model.choices.filter(row => row.preset && Number.isInteger(row.recommend_order))
+        .sort((a, b) => a.recommend_order - b.recommend_order);
     }
-    if (recipes.some(recipe => recipe.id === selected && recipe.servable)) {
-      select.value = selected;
-      card.pendingRecipe = '';
-    }
-    if (card.source === 'recipe' && select.value !== previous) restoreLoadSettings(card);
+  }
+  return [...models.values()];
+}
+function presetSelect(select, choices, selected, forLoad = false) {
+  const available = choices.filter(row => !forLoad || row.servable);
+  const current = available.find(row => row.id === selected) || available.find(row => row.recommended)
+    || available.find(row => !row.model_id);
+  const manual = available.some(row => row.variant && row.base_defaults);
+  select.replaceChildren();
+  if (!manual && !current) select.append(new Option(t("Choose a preset…"), ''));
+  for (const row of choices) {
+    let label = row.preset || (row.model_id ? row.id.split(':').slice(1).join(' · ') : row.id);
+    if (row.recommended) label += ' · ' + t('Recommended');
+    if (row.loadable) label += t(" · local");
+    const option = new Option(label, row.id);
+    option.disabled = forLoad && !row.servable;
+    select.append(option);
+  }
+  if (manual) select.append(new Option(t('No preset'), manualPreset));
+  select.value = manual && (!current || selected === manualPreset) ? manualPreset : current?.id || '';
+  select.disabled = !choices.length;
+}
+function precisionRows(preset) {
+  if (!preset?.variant) return preset ? [preset] : [];
+  const rows = recipes.filter(row => row.model_id === preset.model_id && row.variant);
+  const named = rows.filter(row => row.preset);
+  const variants = new Set(named.map(row => row.variant));
+  const precisions = new Set(named.map(weightPrecision));
+  return [preset, ...rows.filter(row => row !== preset && (variants.has(row.variant) || !precisions.has(weightPrecision(row))))];
+}
+function weightPrecision(row) {
+  const version = row?.variant?.match(/-(pre-)?ud(\d+(?:\.\d+)+)$/i);
+  return version ? `${version[1] || ''}UD${version[2]} · ${row.precision}` : row?.precision;
+}
+function precisionLabel(precision) {
+  return precision?.replace(/^pre-UD\d+(?:\.\d+)+ · /i, '');
+}
+function selectionRow(selection, modelName) {
+  return selection === manualPreset
+    ? recipes.find(row => row.model === modelName && row.preset && row.variant)
+    : recipes.find(row => row.id === selection);
+}
+function precisionOptions(select, preset, selected = '', manual = false) {
+  select.replaceChildren();
+  if (!preset?.variant) return;
+  const rows = precisionRows(preset);
+  const precisions = new Set(rows.map(weightPrecision));
+  if (selected && !precisions.has(selected)) {
+    // Older WebUI selections named only the precision and used the preset's weight revision.
+    selected = weightPrecision(rows.find(row => row.preset && row.precision === selected));
+  }
+  if (!manual) select.append(new Option(t('Default ({0})', precisionLabel(weightPrecision(preset))), ''));
+  else if (precisions.size > 1) select.append(new Option(t('Choose a weight precision…'), ''));
+  for (const precision of precisions) {
+    select.append(new Option(precisionLabel(precision), precision));
+    if (selected === precision) select.value = selected;
   }
 }
+function methodOptions(select, preset, selected = '', precision = '', manual = false) {
+  select.replaceChildren();
+  if (!preset || (manual && !precision)) return;
+  const labels = {mtp: 'MTP', dflash: 'DFlash', dspark: 'DSpark', none: 'Off'};
+  const legacyMethod = spec => ({'mtp-adaptive': 'mtp', dflash2: 'dflash'}[spec] || spec);
+  const method = row => row.spec_label || legacyMethod(row.spec);
+  const choices = new Map();
+  const rows = precisionRows(preset).filter(row => weightPrecision(row) === (precision || weightPrecision(preset)));
+  for (const row of rows) {
+    const key = method(row);
+    const current = choices.get(key);
+    if (!current || (current.variant !== preset.variant && row.variant === preset.variant)) choices.set(key, row);
+  }
+  const fallback = choices.get(method(preset)) || rows.find(row => row.recommended) || rows[0];
+  if (!fallback) return;
+  if (selected && !choices.has(selected)) {
+    const previous = rows.find(row => row.id === selected || legacyMethod(row.spec) === selected);
+    if (previous) selected = method(previous);
+  }
+  const label = row => row.spec_label || t(labels[method(row)] || row.spec || 'Default');
+  if (!manual) {
+    const inherited = new Option(t('Default ({0})', label(fallback)), '');
+    inherited.dataset.recipe = fallback.id;
+    select.append(inherited);
+  } else if (!choices.has(selected)) {
+    selected = choices.has('none') ? 'none' : method(fallback);
+  }
+  const rank = key => ({mtp: 0, dflash: 1, dflash2: 1, dspark: 2, none: 4}[key?.split('@')[0].toLowerCase()] ?? 3);
+  for (const [key, row] of [...choices].sort(([a], [b]) => rank(a) - rank(b))) {
+    const option = new Option(label(row), key);
+    option.dataset.recipe = row.id;
+    select.append(option);
+    if (selected === key) select.value = key;
+  }
+}
+function renderMethodOptions(card, selected) {
+  const fields = card.fields;
+  const selection = fields['load-recipe'].value;
+  methodOptions(fields['spec-method'], selectionRow(selection, fields['load-model'].value), selected,
+    fields['load-precision'].value, selection === manualPreset);
+}
+function renderPrecisionOptions(card, precision, method) {
+  const fields = card.fields;
+  const selection = fields['load-recipe'].value;
+  precisionOptions(fields['load-precision'], selectionRow(selection, fields['load-model'].value), precision, selection === manualPreset);
+  renderMethodOptions(card, method);
+}
+function renderPresetOptions(card, selected = '', method = '', precision = '') {
+  const name = card.fields['load-model'].value;
+  const choices = modelChoices(recipes).find(model => model.name === name)?.choices || [];
+  presetSelect(card.fields['load-recipe'], choices, selected, true);
+  renderPrecisionOptions(card, precision, method);
+}
+function renderRecipeOptions() {
+  const models = modelChoices(recipes);
+  for (const card of loadCards) {
+    const select = card.fields['load-model'];
+    const previous = card.fields['load-recipe'].value;
+    const method = card.fields['spec-method'].value;
+    const previousRef = loadKey(card);
+    const selected = previous || card.pendingRecipe;
+    const row = recipes.find(item => item.id === selected);
+    const name = row?.model || row?.id || select.value || card.pendingModel;
+    select.replaceChildren(new Option(t("Choose a model…"), ''));
+    for (const group of groupRecipes(models)) {
+      const options = document.createElement('optgroup');
+      options.label = group.label;
+      options.dataset.recipeType = group.type;
+      for (const model of group.rows) options.append(new Option(model.name, model.name));
+      select.append(options);
+    }
+    select.value = models.some(model => model.name === name) ? name : '';
+    renderPresetOptions(card, selected, method || card.pendingSpec, card.fields['load-precision'].value || card.pendingPrecision);
+    if (select.value) { card.pendingModel = ''; card.pendingRecipe = ''; card.pendingSpec = ''; card.pendingPrecision = ''; }
+    if (card.source === 'recipe' && loadKey(card) !== previousRef) restoreLoadSettings(card);
+  }
+}
+const libraryPresets = new Map();
+const libraryOverrides = new Map();
 function renderRecipes() {
-  const search = $('model-search').value.toLowerCase();
-  const visible = recipes.filter(recipe => (!search || [recipe.id, recipe.model, recipe.precision, recipe.type, recipeTypes[recipe.type]].join(' ').toLowerCase().includes(search)) && (!$('installed-only').checked || recipe.loadable));
-  $('recipe-count').textContent = t("{0} recipes", visible.length);
+  const search = $('model-search').value.trim().toLowerCase();
+  const visible = [];
+  for (const model of modelChoices(recipes)) {
+    const variants = model.choices[0]?.variant;
+    const rows = variants ? precisionRows(model.choices[0]) : model.choices;
+    const matches = rows.filter(row => (!$('installed-only').checked || row.loadable)
+      && [model.name, model.family, row.id, weightPrecision(row), row.type, recipeTypes[row.type]].join(' ').toLowerCase().includes(search));
+    if (matches.length) visible.push(variants ? model : {...model, choices: matches});
+  }
+  $('recipe-count').textContent = t("{0} models", visible.length);
   const list = $('recipe-list');
   list.replaceChildren();
   for (const {type, label, rows} of groupRecipes(visible)) {
     const section = element('section', 'recipe-group');
     section.dataset.recipeType = type;
     const title = element('h2', 'recipe-group-title', label);
-    title.id = `recipe-group-${type}`;
+    title.id = `recipe-group-${encodeURIComponent(type)}`;
     section.setAttribute('aria-labelledby', title.id);
     const grid = element('div', 'recipe-grid');
-    grid.append(...rows.map(recipeCard));
+    grid.append(...rows.map(modelCard));
     section.append(title, grid);
     list.append(section);
   }
   if (!visible.length) list.append(element('p', 'empty-state', t("No recipes match your filters.")));
   controls();
 }
-function recipeCard(recipe) {
-  const card = element('article', `recipe-card${recipe.loadable ? ' local' : ''}`);
+function modelCard(model) {
+  const card = element('article', 'recipe-card');
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', t('Preset for {0}', model.name));
+  presetSelect(select, model.choices, libraryPresets.get(model.name));
+  const presetLabel = element('label', '', t('Preset'));
+  presetLabel.append(select);
+  const overrides = element('fieldset', 'preset-overrides');
+  const legend = element('legend');
+  overrides.append(legend);
+  const precision = document.createElement('select');
+  const method = document.createElement('select');
+  for (const [field, caption] of [[precision, 'Weight precision'], [method, 'Draft method']]) {
+    if (field === method) {
+      method.id = 'library-method-' + encodeURIComponent(model.name);
+      overrides.append(specCaption(caption, method.id), method);
+      continue;
+    }
+    const label = element('label', '', t(caption));
+    label.append(field);
+    overrides.append(label);
+  }
+  function render(saved = libraryOverrides.get(model.name)) {
+    card.replaceChildren(element('h3', '', model.name), presetLabel);
+    const manual = select.value === manualPreset;
+    const preset = selectionRow(select.value, model.name);
+    legend.textContent = t(manual ? 'Model settings' : 'Preset overrides');
+    precisionOptions(precision, preset, saved?.precision, manual);
+    methodOptions(method, preset, saved?.method, precision.value, manual);
+    if (preset?.variant) card.append(overrides);
+    const recipe = recipes.find(row => row.id === method.selectedOptions[0]?.dataset.recipe);
+    card.classList.toggle('local', Boolean(recipe?.loadable));
+    if (recipe) renderRecipeDetails(card, recipe, select.value, method.value, precision.value);
+  }
+  for (const field of [precision, method]) field.addEventListener('change', () => {
+    render({precision: precision.value, method: method.value});
+    libraryOverrides.set(model.name, {precision: precision.value, method: method.value});
+    controls();
+  });
+  select.addEventListener('change', () => {
+    libraryPresets.set(model.name, select.value);
+    const previous = recipes.find(row => row.id === method.selectedOptions[0]?.dataset.recipe);
+    if (select.value === manualPreset) libraryOverrides.set(model.name, {precision: weightPrecision(previous), method: method.value});
+    else libraryOverrides.delete(model.name);
+    render();
+    controls();
+  });
+  render();
+  return card;
+}
+function effectiveDefaults(recipe, selection) {
+  if (selection === manualPreset) return {...cliDefaults, ...recipe?.base_defaults};
+  const preset = recipes.find(row => row.id === selection);
+  if (preset?.inference && recipe?.base_defaults && recipe.id !== preset.id) {
+    const draft = recipe.spec === preset.spec ? preset.draft_params : {};
+    return {...cliDefaults, ...recipe.base_defaults, ...draft, ...preset.inference};
+  }
+  return {...cliDefaults, ...recipe?.defaults};
+}
+function renderRecipeDetails(card, recipe, preset, method, precision) {
   const top = element('div', 'recipe-card-top');
-  const availability = element('span', `availability-badge ${recipe.loadable ? 'local' : recipe.exists ? 'partial' : 'remote'}`);
-  availability.append(element('span', 'availability-icon', recipe.loadable ? '✓' : recipe.exists ? '◐' : '↓'),
-    element('span', '', t(recipe.loadable ? 'Available locally' : recipe.exists ? 'Partial copy' : 'Not downloaded')));
-  top.append(element('span', 'pill', recipe.precision || t('Model')), availability);
-  card.append(top, element('h3', '', recipe.model || recipe.id), element('div', 'recipe-id', recipe.id));
+  const partial = recipe.partial ?? recipe.exists;
+  const availability = element('span', `availability-badge ${recipe.loadable ? 'local' : partial ? 'partial' : 'remote'}`);
+  availability.append(element('span', 'availability-icon', recipe.loadable ? '✓' : partial ? '◐' : '↓'),
+    element('span', '', t(recipe.loadable ? 'Available locally' : partial ? 'Partial copy' : 'Not downloaded')));
+  top.append(element('span', 'pill', precisionLabel(weightPrecision(recipe)) || t('Model')), availability);
+  card.append(top);
+  if (recipe.model_id) {
+    const settings = element('details', 'effective-settings');
+    settings.append(element('summary', '', t('Effective inference settings')));
+    const defaults = effectiveDefaults(recipe, preset);
+    const labels = {max_model_len: 'Context length', max_num_seqs: 'Max concurrent requests',
+      max_num_batched_tokens: 'Prefill chunk size', kv_cache_dtype: 'KV cache precision'};
+    for (const key of Object.keys(recipe.parameters || {})) labels[key] = specLabels[key] || key;
+    const list = element('dl', 'runtime-list model-runtime');
+    for (const [key, label] of Object.entries(labels)) {
+      list.append(element('dt', '', t(label)), element('dd', '', settingValue(key, defaults[key], recipe.spec_label || recipe.spec)));
+    }
+    settings.append(list);
+    card.append(settings);
+  }
   if (!recipe.servable) card.append(element('span', 'pill', recipe.status === 'coming soon' ? t('Coming soon') : t('Requires {0}', recipe.requires)));
   const footer = element('div', 'recipe-footer');
   footer.append(element('span', 'recipe-size', t("{0} on disk", bytes(recipe.bytes))));
   const buttons = element('div', 'download-actions');
   if (recipe.loadable && recipe.servable) {
     const use = element('button', 'button secondary', t("Configure & load")); use.dataset.use = recipe.id;
-    use.addEventListener('click', () => configureModel('recipe', recipe.id)); buttons.append(use);
+    use.addEventListener('click', () => configureModel('recipe', recipe.id, preset, method, precision)); buttons.append(use);
+  }
+  if (recipe.repo === 'TBD') {
+    footer.append(element('span', 'field-hint', t('Local weights only')), buttons);
+    card.append(footer);
+    return;
   }
   const download = element('button', `button ${recipe.loadable ? 'secondary' : 'primary'}`, recipe.loadable ? t("Update files") : t("Download"));
   download.dataset.download = recipe.id;
   download.addEventListener('click', () => action(download, async () => { renderStatus(await post('/daemon/pull', { recipe: recipe.id })); toast(t("Downloading {0}", recipe.id)); }));
   buttons.append(download); footer.append(buttons); card.append(footer);
-  return card;
 }
 function renderLocal() {
   $('nav-count').textContent = localModels.length;
@@ -793,16 +1072,131 @@ function chooseSource(card, next) {
   card.source = next; card.fields['recipe-input'].hidden = next !== 'recipe'; card.fields['path-input'].hidden = next !== 'path';
   card.node.querySelectorAll('[data-source]').forEach(button => { button.classList.toggle('selected', button.dataset.source === next); button.setAttribute('aria-pressed', String(button.dataset.source === next)); });
 }
-function renderLoadHints(card) {
+function settingValue(key, value, spec) {
+  if (key === 'dflash' && value == null) return t('No draft checkpoint');
+  if (key === 'dflash_block' && value === 0) return t(['dflash', 'dflash2'].includes(spec?.split('@')[0].toLowerCase())
+    ? '0 (engine default: 8)' : '0 (checkpoint default)');
+  if (value == null) return t('Automatic');
+  if (typeof value === 'boolean') return t(value ? 'On' : 'Off');
+  return String(value);
+}
+let visibleSpecTip;
+function hideSpecTip() {
+  if (visibleSpecTip) visibleSpecTip.hidden = true;
+  visibleSpecTip = null;
+}
+document.addEventListener('pointerdown', event => {
+  if (!visibleSpecTip?.parentElement.contains(event.target)) hideSpecTip();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && visibleSpecTip?.isConnected) {
+    hideSpecTip();
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}, true);
+function specCaption(caption, fieldId, helpKey = caption) {
+  const group = element('span', 'spec-caption');
+  const label = element('label', '', t(caption));
+  label.htmlFor = fieldId;
+  const button = element('button', 'spec-help', '?');
+  button.type = 'button';
+  button.setAttribute('aria-label', t('About {0}', t(caption)));
+  const tip = element('span', 'spec-tooltip', t(helpKey + ' help'));
+  tip.id = fieldId + '-help';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  button.setAttribute('aria-describedby', tip.id);
+  function show() {
+    hideSpecTip();
+    visibleSpecTip = tip;
+    tip.hidden = false;
+  }
+  for (const event of ['pointerenter', 'focus', 'click']) button.addEventListener(event, show);
+  group.addEventListener('pointerleave', () => {
+    if (visibleSpecTip === tip && document.activeElement !== button) hideSpecTip();
+  });
+  button.addEventListener('blur', () => { if (visibleSpecTip === tip) hideSpecTip(); });
+  group.append(label, button, tip);
+  return group;
+}
+function renderSpecFields(card, recipe, defaults, saved) {
+  const container = card.fields['spec-fields'];
+  const previous = saved || Object.fromEntries(Object.entries(card.specInputs).map(([key, field]) => [key, field.value]));
+  container.replaceChildren();
+  card.specInputs = {};
+  if (!recipe && card.source === 'recipe') return;
+  const rules = recipe?.parameters;
+  for (const [key, caption] of Object.entries(specLabels)) {
+    if (rules && !Object.hasOwn(rules, key)) continue;
+    const rule = rules?.[key] || {};
+    const value = defaults[key];
+    const boolean = key.endsWith('_adaptive') || ['mtp_prompt_lookup', 'mtp_tool_draft'].includes(key);
+    const hint = settingValue(key, value, recipe?.spec_label || recipe?.spec);
+    const input = document.createElement(boolean || rule.values ? 'select' : 'input');
+    if (input.tagName === 'SELECT') {
+      input.append(new Option(t('Default ({0})', hint), ''));
+      for (const v of rule.values || [true, false]) input.append(new Option(settingValue(key, v), boolean ? (v ? 'on' : 'off') : String(v)));
+    } else {
+      input.type = key === 'dflash' ? 'text' : 'number';
+      if (input.type === 'number') {
+        input.min = key === 'num_spec' ? 0 : rule.min ?? 0;
+        if (rule.max != null) input.max = rule.max;
+        if (key === 'dflash_p_min') { input.max = 1; input.step = 'any'; }
+      }
+      input.placeholder = hint;
+    }
+    const id = key.replaceAll('_', '-');
+    input.id = card.fields['spec-method'].id + '-' + id;
+    const wrapper = element('div');
+    const inkling = key === 'dflash_adaptive' && recipe?.spec?.startsWith('dspark');
+    wrapper.append(specCaption(caption, input.id, inkling ? 'DSpark verification' : caption));
+    if (key === 'dflash_block' && rule.suggestions?.length && input.type === 'number') {
+      const controls = element('div', 'input-action');
+      controls.append(input);
+      for (const size of rule.suggestions) {
+        const button = element('button', 'button secondary', String(size));
+        button.type = 'button';
+        button.setAttribute('aria-label', t('Use draft block size {0}', size));
+        button.addEventListener('click', () => { input.value = String(size); input.focus(); });
+        controls.append(button);
+      }
+      const help = element('p', 'field-hint', t('Enter a custom integer from {0} to {1}. Use 0 for the engine default (8).', rule.min, rule.max));
+      help.id = input.id + '-hint';
+      input.setAttribute('aria-describedby', help.id);
+      wrapper.append(controls, help);
+    } else wrapper.append(input);
+    container.append(wrapper);
+    input.value = previous[key] ?? previous[key === 'num_spec' ? 'spec-depth' : id] ?? '';
+    card.specInputs[key] = input;
+  }
+}
+function renderLoadHints(card, saved) {
   const fields = card.fields;
-  const recipe = recipes.find(row => row.id === fields['load-recipe'].value);
+  const recipe = card.source === 'recipe' ? recipes.find(row => row.id === loadKey(card)) : null;
+  const selection = card.source === 'recipe' ? fields['load-recipe'].value : '';
+  const manual = selection === manualPreset;
+  const defaults = effectiveDefaults(recipe, selection);
+  fields['precision-row'].hidden = !manual && !recipe?.variant;
+  fields['override-title'].hidden = fields['precision-row'].hidden;
+  fields['override-title'].dataset.i18n = manual ? 'Model settings' : 'Preset overrides';
+  fields['override-title'].textContent = t(fields['override-title'].dataset.i18n);
+  fields['method-row'].hidden = !recipe;
+  fields['method-caption'].replaceChildren(specCaption('Draft method', fields['spec-method'].id));
+  const checkpoint = recipe && defaults.dflash;
+  fields['draft-checkpoint'].hidden = !checkpoint;
+  fields['draft-checkpoint'].textContent = checkpoint ? t('Draft checkpoint · {0}',
+    checkpoint.replace(/^@model(?=\/|$)/, () => recipe.path || '@model')) : '';
   fields['load-recipe'].classList.toggle('local-selected', Boolean(recipe?.loadable));
-  fields['recipe-description'].textContent = recipe
-    ? t(recipe.loadable ? 'Local copy available.' : 'Download this recipe from Models before loading.') : '';
-  const context = card.source === 'recipe' ? recipe?.defaults?.max_model_len : null;
-  fields['context-length'].placeholder = Number.isSafeInteger(context) && context > 0
-    ? t('Recipe default · {0}', context % 1024 === 0 ? (context / 1024) + 'K' : context)
-    : t('Default');
+  fields['recipe-description'].textContent = recipe ? t(recipe.loadable ? 'Local copy available.'
+    : recipe.repo === 'TBD' ? 'Local weights only' : 'Download this recipe from Models before loading.') : '';
+  fields['context-length'].placeholder = defaults.max_model_len ?? '';
+  fields['max-num-seqs'].placeholder = defaults.max_num_seqs ?? '';
+  fields['max-num-batched-tokens'].placeholder = defaults.max_num_batched_tokens ?? '';
+  fields['gpu-budget'].placeholder = defaults.max_gpu_mem_gib != null ? defaults.max_gpu_mem_gib + ' GiB' : defaults.max_gpu_mem_util ?? '';
+  fields['kv-type'].options[0].textContent = t('Default ({0})', (defaults.kv_cache_dtype || 'auto').toUpperCase());
+  renderSpecFields(card, recipe, defaults, saved);
+  updateTargetSettings(card);
 }
 async function storageSpace() {
   try { const data = await api('/daemon/directories'); $('disk-free').textContent = bytes(data.free_bytes); }
@@ -1083,7 +1477,7 @@ $('language').addEventListener('change', () => {
   translatePage(); navigate(); updateThinkingLevels();
   renderConversation(); renderSessions(); renderChatModels(); syncChatControls();
   if (status) renderStatus(status);
-  renderRecipeOptions(); renderRecipes(); renderLocal(); loadCards.forEach(renderLoadHints); renderLoadCards();
+  renderRecipeOptions(); renderRecipes(); renderLocal(); loadCards.forEach(card => renderLoadHints(card)); renderLoadCards();
   refreshMetrics(); refreshLogs().catch(() => {});
 });
 $('api-address').textContent = t("Connecting\u2026"); $('api-url').value = '';
@@ -1126,7 +1520,7 @@ $('refresh-recipes').addEventListener('click', () => refreshCatalog(true));
 document.querySelectorAll('[data-catalog-source]').forEach(select => select.addEventListener('change', () => {
   bundleCatalog = select.value === 'bundle';
   document.querySelectorAll('[data-catalog-source]').forEach(control => { control.value = select.value; });
-  recipes = []; renderRecipeOptions(); renderRecipes(); loadCards.forEach(renderLoadHints);
+  recipes = []; renderRecipeOptions(); renderRecipes(); loadCards.forEach(card => renderLoadHints(card));
   refreshCatalog(false, true);
 }));
 $('refresh-logs').addEventListener('click', () => action($('refresh-logs'), refreshLogs)); $('log-kind').addEventListener('change', () => refreshLogs().catch(error => toast(error.message)));
@@ -1254,7 +1648,7 @@ if (sessions.some(item => item.id === sessionId)) selectSession(sessionId);
 else saveConversation();
 benchmarkUI = createBenchmarkUI({api, post, action, toast, getStatus: () => status, renderSettings: renderEffectiveSettings, refreshStatus});
 taskUI = createTaskUI({api, post, action, refreshStatus, onBenchmark: id => { benchmarkUI.select(id); location.hash = 'benchmark'; }});
-if (savedLoadSelection?.source === 'recipe' && savedLoadSelection.model.startsWith('b/')) {
+if (savedLoadSelection?.source === 'recipe' && (savedLoadSelection.bundle || savedLoadSelection.model.startsWith('b/'))) {
   bundleCatalog = true;
   document.querySelectorAll('[data-catalog-source]').forEach(select => { select.value = 'bundle'; });
 }

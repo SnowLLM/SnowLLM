@@ -223,16 +223,135 @@ test('benchmark comparisons expose outdated, incomplete and mismatched measureme
 
 test('model load sends explicit spec overrides and inherits recipe defaults', async () => {
   const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
-  const fields = Object.fromEntries(['context-length', 'gpu-budget', 'spec-depth', 'kv-type',
-    'load-target', 'load-id', 'extra-options', 'mtp-prompt-lookup', 'mtp-tool-draft'].map(id => [id, {value: ''}]));
+  const fields = Object.fromEntries(['context-length', 'gpu-budget', 'kv-type', 'max-num-seqs',
+    'max-num-batched-tokens', 'load-target', 'load-id', 'extra-options'].map(id => [id, {value: ''}]));
+  const specInputs = {mtp_prompt_lookup: {value: ''}, mtp_tool_draft: {value: ''}, dflash_block: {value: ''}};
   const context = vm.createContext({loadKey: () => 'model', parseOptions: () => []});
-  vm.runInContext(app.match(/^const specOptionFields = .*;$/m)[0] +
+  vm.runInContext(app.slice(app.indexOf('const inferenceOptions'), app.indexOf('const loadFieldIds')) +
     app.slice(app.indexOf('function modelLoadRequest('), app.indexOf('function renderLoadCards(')), context);
-  const options = () => Array.from(context.modelLoadRequest({fields}).options);
+  const options = () => Array.from(context.modelLoadRequest({fields, specInputs}).options);
   assert.deepEqual(options(), []);
-  fields['mtp-prompt-lookup'].value = 'off';
-  fields['mtp-tool-draft'].value = 'on';
-  assert.deepEqual(options(), ['--no-mtp-prompt-lookup', '--mtp-tool-draft']);
-  fields['mtp-prompt-lookup'].disabled = fields['mtp-tool-draft'].disabled = true;
+  specInputs.mtp_prompt_lookup.value = 'off';
+  specInputs.mtp_tool_draft.value = 'on';
+  specInputs.dflash_block.value = '4';
+  assert.deepEqual(options(), ['--no-mtp-prompt-lookup', '--mtp-tool-draft', '--dflash-block', '4']);
+  for (const input of Object.values(specInputs)) input.disabled = true;
   assert.deepEqual(options(), []);
+});
+
+test('model library shows only ordered recommendation candidates for v3 models', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const context = vm.createContext({});
+  vm.runInContext(app.slice(app.indexOf('function modelChoices('), app.indexOf('function presetSelect(')), context);
+  const groups = context.modelChoices([
+    {model: 'Flash', id: 'old'},
+    {model: 'Flash', model_id: 'flash', preset: 'q3', id: 'flash:q3', recommend_order: 1},
+    {model: 'Flash', model_id: 'flash', id: 'flash:q3:dflash'},
+    {model: 'Flash', model_id: 'flash', preset: 'other', id: 'flash:other'},
+    {model: 'Flash', model_id: 'flash', preset: 'iq4', id: 'flash:iq4', recommend_order: 0, recommended: true},
+    {model: 'Custom', id: 'custom-q4'},
+    {model: 'Custom', id: 'custom-q8'},
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(groups.map(m => m.choices.map(r => r.id)))),
+    [['flash:iq4', 'flash:q3'], ['custom-q4', 'custom-q8']]);
+});
+
+test('v3 preset selection recommends by memory and allows an explicit manual choice', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const context = vm.createContext({manualPreset: '@manual', t: key => key,
+    Option: class { constructor(label, value) { this.value = value; } }});
+  vm.runInContext(app.slice(app.indexOf('function presetSelect('), app.indexOf('function precisionRows(')), context);
+  const select = {replaceChildren() { this.options = []; }, append(option) { this.options.push(option); }};
+  const row = {id: 'flash:q3', model_id: 'flash', preset: 'q3', variant: 'q3', base_defaults: {}, servable: true};
+  context.presetSelect(select, [row]);
+  assert.deepEqual(select.options.map(o => o.value), [row.id, '@manual']);
+  assert.equal(select.value, '@manual');
+  row.recommended = true;
+  context.presetSelect(select, [row]);
+  assert.equal(select.value, row.id);
+  context.presetSelect(select, [row], '@manual');
+  assert.equal(select.value, '@manual');
+  context.presetSelect(select, [{id: 'legacy'}]);
+  assert.deepEqual(select.options.map(o => o.value), ['legacy']);
+});
+
+test('library and loader group models by family across architectures', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const context = vm.createContext({recipeTypes: {glm: 'GLM'}, t: text => text});
+  vm.runInContext(app.slice(app.indexOf('function groupRecipes('), app.indexOf('function presetSelect(')), context);
+  const rows = [{id: 'flash', family: 'Qwen', type: 'qwen38fn'}, {id: 'glm', type: 'glm'},
+    {id: 'dense', type: 'qwen35dense'}, {id: 'moe', family: 'Qwen', type: 'qwen35moe'}];
+  const groups = context.groupRecipes(context.modelChoices(rows));
+  assert.deepEqual(JSON.parse(JSON.stringify(groups.map(g => [g.label, g.rows.map(row => row.name)]))),
+    [['Qwen', ['flash', 'dense', 'moe']], ['GLM', ['glm']]]);
+});
+
+test('inheriting a preset and explicitly choosing its draft method remain distinct', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const rows = ['none', 'dflash2', 'mtp-adaptive'].map(spec => ({id: 'test:' + spec, model_id: 'test', variant: 'q3', precision: 'Q3', spec}));
+  rows[2].preset = 'fast';
+  rows.push({id: 'test:q4-dflash', model_id: 'test', variant: 'q4', precision: 'Q4', spec: 'dflash2', preset: 'q4-dflash'},
+    {id: 'test:q4-mtp', model_id: 'test', variant: 'q4-head', precision: 'Q4', spec: 'mtp', preset: 'q4-mtp'},
+    {id: 'test:old', model_id: 'test', variant: 'old-q4', precision: 'Q4', spec: 'none'});
+  class Option {
+    constructor(label, value) { Object.assign(this, {label, value, dataset: {}}); }
+  }
+  const context = vm.createContext({recipes: rows, Option, t: (key, name) => key.replace('{0}', name)});
+  vm.runInContext(app.slice(app.indexOf('function precisionRows('), app.indexOf('function renderMethodOptions(')), context);
+  const select = {
+    replaceChildren() { this.options = []; this.value = ''; },
+    append(option) { this.options.push(option); },
+  };
+  context.methodOptions(select, rows[2], '');
+  assert.deepEqual(select.options.map(o => [o.label, o.value, o.dataset.recipe]), [
+    ['Default (MTP)', '', rows[2].id], ['MTP', 'mtp', rows[2].id],
+    ['DFlash', 'dflash', rows[1].id], ['Off', 'none', rows[0].id],
+  ]);
+  context.precisionOptions(select, rows[2], 'Q4');
+  assert.deepEqual(select.options.map(o => o.label), ['Default (Q3)', 'Q3', 'Q4']);
+  assert.equal(select.value, 'Q4');
+  context.methodOptions(select, rows[2], 'dflash', 'Q4');
+  assert.deepEqual(select.options.map(o => o.dataset.recipe), ['test:q4-mtp', 'test:q4-mtp', 'test:q4-dflash']);
+  assert.equal(select.value, 'dflash');
+  context.precisionOptions(select, rows[2], 'Q4', true);
+  assert.deepEqual(select.options.map(o => o.label), ['Choose a weight precision…', 'Q3', 'Q4']);
+  context.methodOptions(select, rows[2], 'dflash', 'Q4', true);
+  assert.deepEqual(select.options.map(o => o.label), ['MTP', 'DFlash']);
+  assert.equal(select.value, 'dflash');
+  context.methodOptions(select, rows[2], '', 'Q3', true);
+  assert.equal(select.value, 'none');
+  context.methodOptions(select, rows[0], 'mtp');
+  assert.equal(select.value, 'mtp');
+  assert.equal(select.options[0].dataset.recipe, rows[0].id);
+  assert.equal(select.options.find(o => o.value === select.value).dataset.recipe, rows[2].id);
+  const mtpWeights = rows.find(row => row.variant === 'q4-head');
+  rows.push({...mtpWeights, id: 'test:q4-head:dflash', preset: null, spec: 'dflash2'});
+  context.methodOptions(select, mtpWeights, 'dflash');
+  assert.equal(select.options.find(o => o.value === 'dflash').dataset.recipe, 'test:q4-head:dflash');
+
+  const current = {model_id: 'flash', id: 'flash:iq4', preset: 'iq4', variant: 'iq4-ud3.1', precision: 'IQ4', spec: 'mtp-adaptive'};
+  const old = {...current, id: 'flash:iq4-pre-ud3.1:dflash2', variant: 'iq4-pre-ud3.1', spec: 'dflash2', preset: null};
+  rows.push(current, old);
+  context.precisionOptions(select, current, 'IQ4');
+  assert.deepEqual(select.options.map(o => o.label), ['Default (UD3.1 · IQ4)', 'UD3.1 · IQ4', 'IQ4']);
+  assert.equal(select.value, 'UD3.1 · IQ4');
+  context.precisionOptions(select, current, 'pre-UD3.1 · IQ4', true);
+  assert.equal(select.options.find(o => o.value === select.value).label, 'IQ4');
+  context.methodOptions(select, current, 'dflash');
+  assert.deepEqual(select.options.map(o => o.dataset.recipe), [current.id, current.id]);
+  context.methodOptions(select, current, 'dflash', 'pre-UD3.1 · IQ4');
+  assert.deepEqual(select.options.map(o => o.dataset.recipe), [old.id, old.id]);
+  assert.equal(select.value, 'dflash');
+
+  rows[1].spec_label = 'DFlash2@original';
+  const continued = {...rows[1], id: 'test:continued', spec: 'another-head', spec_label: 'DFlash2@continued'};
+  rows.push(continued);
+  for (const manual of [false, true]) {
+    context.methodOptions(select, rows[2], continued.spec_label, 'Q3', manual);
+    assert.deepEqual(select.options.filter(o => o.label.startsWith('DFlash2@')).map(o => [o.label, o.dataset.recipe]),
+      [['DFlash2@original', rows[1].id], ['DFlash2@continued', continued.id]]);
+    assert.equal(select.value, continued.spec_label);
+    context.methodOptions(select, rows[2], 'dflash', 'Q3', manual);
+    assert.equal(select.value, 'DFlash2@original');
+  }
 });

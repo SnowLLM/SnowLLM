@@ -98,40 +98,51 @@
         <div class="load-model-heading"><h3 data-role="load-title"></h3><div class="load-model-tools"><label data-for="load-target" data-i18n="Execution target">Execution target</label><select data-field="load-target"><option value="gpu">GPU</option><option value="npu">NPU</option></select><button type="button" class="button secondary danger" data-field="remove-model" data-i18n="Remove">Remove</button></div></div>
         <p data-field="npu-load-hint" class="field-hint" hidden data-i18n="NPU backend integration is pending; dedicated NPU weights are required.">NPU backend integration is pending; dedicated NPU weights are required.</p>
         <div class="segmented" role="group" aria-label="Model source" data-i18n-aria-label="Model source"><button type="button" class="selected" data-source="recipe"><span data-i18n="Recipe">Recipe</span></button><button type="button" data-source="path"><span data-i18n="Local path">Local path</span></button></div>
-        <div data-field="recipe-input"><label data-for="load-recipe"><span data-i18n="Model recipe">Model recipe</span></label><select data-field="load-recipe"><option value="" data-i18n="Loading recipes…">Loading recipes…</option></select><p data-field="recipe-description" class="field-hint"></p></div>
+        <div data-field="recipe-input"><label data-for="load-model"><span data-i18n="Model">Model</span></label><select data-field="load-model"></select><label data-for="load-recipe"><span data-i18n="Preset">Preset</span></label><select data-field="load-recipe"><option value="" data-i18n="Loading recipes…">Loading recipes…</option></select><p data-field="recipe-description" class="field-hint"></p></div>
         <div data-field="path-input" hidden><label data-for="load-path"><span data-i18n="Checkpoint directory">Checkpoint directory</span></label><div class="input-action"><input data-field="load-path" placeholder="/path/to/model or C:\Models\Qwen"><button type="button" data-field="browse-model" class="button secondary"><span data-i18n="Browse">Browse</span></button></div><label data-for="local-model"><span data-i18n="Local model">Local model</span></label><select data-field="local-model"><option value="" data-i18n="Choose a local model…">Choose a local model…</option></select></div>
-        <details class="advanced">
-          <summary><span data-i18n="Inference settings">Inference settings</span><span data-i18n="Optional overrides">Optional overrides</span></summary>
-          <div class="load-advanced-fields">
-            <label data-for="load-id" data-i18n="Model ID (optional)">Model ID (optional)</label>
-            <input data-field="load-id" maxlength="256" placeholder="Defaults to the model name" data-i18n-placeholder="Defaults to the model name">
-            <div class="form-grid">
+        <fieldset class="preset-overrides">
+          <legend data-field="override-title" data-i18n="Preset overrides" hidden>Preset overrides</legend>
+          <div data-field="precision-row" hidden><label data-for="load-precision" data-i18n="Weight precision">Weight precision</label><select data-field="load-precision"></select></div>
+          <details class="advanced" open>
+            <summary><span data-i18n="Speculative decoding">Speculative decoding</span></summary>
+            <div class="load-advanced-fields">
+              <div data-field="method-row"><div data-field="method-caption"></div><select data-field="spec-method"></select><div data-field="draft-checkpoint" class="field-hint checkpoint-hint" hidden></div></div>
+              <div data-field="spec-fields" class="form-grid"></div>
+            </div>
+          </details>
+          <details class="advanced" open>
+            <summary><span data-i18n="Inference settings">Inference settings</span></summary>
+            <div class="load-advanced-fields form-grid">
               <div><label data-for="context-length" data-i18n="Context length">Context length</label><input data-field="context-length"></div>
-              <div><label data-for="gpu-budget" data-i18n="GPU memory limit">GPU memory limit</label><input data-field="gpu-budget" placeholder="Default · 0.9" data-i18n-placeholder="Default · 0.9"></div>
-              <div><label data-for="spec-depth" data-i18n="MTP depth">MTP depth</label><input data-field="spec-depth" type="number" min="0" max="16" placeholder="Recipe default" data-i18n-placeholder="Recipe default"></div>
-              <div><label data-for="kv-type" data-i18n="KV cache precision">KV cache precision</label><select data-field="kv-type"><option value="" data-i18n="Recipe default">Recipe default</option><option value="bf16">BF16</option><option value="int8">INT8</option></select></div>
-              <div><label data-for="mtp-prompt-lookup" data-i18n="Prompt lookup">Prompt lookup</label><select data-field="mtp-prompt-lookup"><option value="" data-i18n="Recipe default">Recipe default</option><option value="on" data-i18n="On">On</option><option value="off" data-i18n="Off">Off</option></select>
-                <p class="field-hint" data-i18n="Off by default. Enable for repeated passages in prompts or tool results during speculative decoding.">Off by default. Enable for repeated passages in prompts or tool results during speculative decoding.</p></div>
-              <div><label data-for="mtp-tool-draft" data-i18n="Tool-call drafting">Tool-call drafting</label><select data-field="mtp-tool-draft"><option value="" data-i18n="Recipe default">Recipe default</option><option value="on" data-i18n="On">On</option><option value="off" data-i18n="Off">Off</option></select>
-                <p class="field-hint" data-i18n="Off by default. Enable for tool calls with Flash-Next adaptive MTP to draft function names and argument markup.">Off by default. Enable for tool calls with Flash-Next adaptive MTP to draft function names and argument markup.</p></div>
+              <div><label data-for="max-num-seqs" data-i18n="Max concurrent requests">Max concurrent requests</label><input data-field="max-num-seqs" type="number" min="1" max="256"></div>
+              <div><label data-for="max-num-batched-tokens" data-i18n="Prefill chunk size">Prefill chunk size</label><input data-field="max-num-batched-tokens"></div>
+              <div><label data-for="kv-type" data-i18n="KV cache precision">KV cache precision</label><select data-field="kv-type"><option value=""></option><option value="bf16">BF16</option><option value="int8">INT8</option><option value="auto">Auto</option></select></div>
+              <div><label data-for="gpu-budget" data-i18n="GPU memory limit">GPU memory limit</label><input data-field="gpu-budget"></div>
             </div>
-            <label data-for="extra-options" data-i18n="Additional options">Additional options</label>
-            <textarea data-field="extra-options" rows="2" placeholder='--device-map auto --dflash "/path/to/drafter"'></textarea>
-            <p class="field-hint" data-i18n="GPU memory limits and allocation mode are shared by models targeting GPU.">GPU memory limits and allocation mode are shared by models targeting GPU.</p>
-            <div class="load-preset-actions">
-              <button data-field="save-load-settings" type="button" class="button secondary" data-i18n="Save load settings">Save load settings</button>
-              <button data-field="reset-load-settings" type="button" class="button secondary" data-i18n="Reset load settings">Reset load settings</button>
-              <button data-field="copy-load-command" type="button" class="button secondary" data-i18n="Copy CLI command">Copy CLI command</button>
+          </details>
+          <details class="advanced">
+            <summary><span data-i18n="Advanced settings">Advanced settings</span></summary>
+            <div class="load-advanced-fields">
+              <label data-for="load-id" data-i18n="Model ID (optional)">Model ID (optional)</label>
+              <input data-field="load-id" maxlength="256" placeholder="Defaults to the model name" data-i18n-placeholder="Defaults to the model name">
+              <label data-for="extra-options" data-i18n="Additional options">Additional options</label>
+              <textarea data-field="extra-options" rows="2" placeholder='--device-map auto --dflash "/path/to/drafter"'></textarea>
+              <p class="field-hint" data-i18n="GPU memory limits and allocation mode are shared by models targeting GPU.">GPU memory limits and allocation mode are shared by models targeting GPU.</p>
             </div>
-          </div>
-        </details>
+          </details>
+        </fieldset>
+        <div class="load-preset-actions">
+          <button data-field="save-load-settings" type="button" class="button secondary" data-i18n="Save load settings">Save load settings</button>
+          <button data-field="reset-load-settings" type="button" class="button secondary" data-i18n="Reset load settings">Reset load settings</button>
+          <button data-field="copy-load-command" type="button" class="button secondary" data-i18n="Copy CLI command">Copy CLI command</button>
+        </div>
       </section></template>
     </dialog>
     <section id="page-models" class="page" hidden>
       <div class="page-heading"><div><h1><span data-i18n="Models">Models</span></h1></div><button id="refresh-recipes" class="button secondary"><span data-i18n="↻ Refresh catalog">↻ Refresh catalog</span></button></div>
       <div class="catalog-source"><label for="catalog-source"><span data-i18n="Recipe source">Recipe source</span></label><select id="catalog-source" data-catalog-source><option value="server" data-i18n="snowllm.dev">snowllm.dev</option><option value="bundle" data-i18n="Bundled">Bundled</option></select></div>
       <article id="download-card" class="download-card" hidden><div><div class="eyebrow"><span data-i18n="DOWNLOAD">DOWNLOAD</span></div><h2 id="download-name">—</h2><p id="download-state">—</p><progress id="download-progress" max="100" aria-label="Download progress" data-i18n-aria-label="Download progress" hidden></progress><p id="download-progress-detail" hidden></p></div><div class="download-actions"><button id="download-logs-button" class="button secondary"><span data-i18n="View output">View output</span></button><button id="cancel-download" class="button secondary"><span data-i18n="Cancel download">Cancel download</span></button></div></article>
-      <div class="library-tools"><label class="search-box"><span aria-hidden="true">⌕</span><input id="model-search" type="search" placeholder="Search models, recipes, or precision" data-i18n-placeholder="Search models, recipes, or precision" aria-label="Search models" data-i18n-aria-label="Search models"></label><label class="check-label"><input id="installed-only" type="checkbox"><span data-i18n="Available locally">Available locally</span></label><span id="recipe-count" class="muted">— recipes</span></div>
+      <div class="library-tools"><label class="search-box"><span aria-hidden="true">⌕</span><input id="model-search" type="search" placeholder="Search models, recipes, or precision" data-i18n-placeholder="Search models, recipes, or precision" aria-label="Search models" data-i18n-aria-label="Search models"></label><label class="check-label"><input id="installed-only" type="checkbox"><span data-i18n="Available locally">Available locally</span></label><span id="recipe-count" class="muted">—</span></div>
       <p id="catalog-error" class="banner error" hidden></p>
       <div id="recipe-list"><p class="empty-state"><span data-i18n="Loading model catalog…">Loading model catalog…</span></p></div>
       <article class="panel local-panel"><div class="panel-heading"><div><h2><span data-i18n="Local checkpoints">Local checkpoints</span></h2></div><a href="#settings" class="text-link"><span data-i18n="Change directory →">Change directory →</span></a></div><div id="local-list" class="local-list"><p class="muted"><span data-i18n="Scanning storage…">Scanning storage…</span></p></div></article>
@@ -290,7 +301,7 @@
       <div class="page-heading"><div><h1><span data-i18n="Settings">Settings</span></h1></div></div>
       <article class="panel settings-panel"><label for="language"><span data-i18n="Language">Language</span></label><select id="language"><option value="auto" data-i18n="Browser default">Browser default</option><option value="en">English</option><option value="zh_CN">简体中文</option></select></article>
       <article class="panel settings-panel"><div class="panel-heading"><div><h2><span data-i18n="Model storage">Model storage</span></h2></div></div><p class="field-hint"><span data-i18n="Configuration:">Configuration:</span><code id="config-file"></code></p><form id="storage-form"><label for="models-dir"><span data-i18n="Model directory">Model directory</span></label><div class="input-action"><textarea id="models-dir" rows="3" required placeholder="/path/to/models&#10;/path/to/archive"></textarea><button id="browse-storage" type="button" class="button secondary"><span data-i18n="Browse">Browse</span></button><button id="add-storage" type="button" class="button secondary"><span data-i18n="Add directory">Add directory</span></button></div><p class="field-hint"><span data-i18n="One directory per line. Downloads use the first; models are read from all directories.">One directory per line. Downloads use the first; models are read from all directories.</span></p><div id="storage-override" class="banner" hidden></div><div class="storage-summary"><div><span><span data-i18n="Available space">Available space</span></span><strong id="disk-free">—</strong></div><div><span><span data-i18n="Configuration source">Configuration source</span></span><strong id="config-source">—</strong></div></div><div class="settings-footer"><p><span data-i18n="Existing models are not moved.">Existing models are not moved.</span></p><button class="button primary" type="submit"><span data-i18n="Save directory">Save directory</span></button></div></form></article>
-      <article class="panel settings-panel"><h2><span data-i18n="Recipe catalogue">Recipe catalogue</span></h2><form id="recipes-settings-form"><label for="recipes-url"><span data-i18n="URL or JSON file">URL or JSON file</span></label><input id="recipes-url" placeholder="https://snowllm.dev/recipe-v2.json"><div id="recipes-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save catalogue">Save catalogue</span></button></div></form></article>
+      <article class="panel settings-panel"><h2><span data-i18n="Recipe catalogue">Recipe catalogue</span></h2><form id="recipes-settings-form"><label for="recipes-url"><span data-i18n="URL or JSON file">URL or JSON file</span></label><input id="recipes-url" placeholder="https://snowllm.dev/recipe-v3.json"><div id="recipes-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save catalogue">Save catalogue</span></button></div></form></article>
       <article class="panel settings-panel"><details><summary><span data-i18n="Developer settings">Developer settings</span></summary><form id="library-settings-form"><label for="library-path"><span data-i18n="Custom kernel library">Custom kernel library</span></label><input id="library-path" placeholder="Bundled kernels (default)" data-i18n-placeholder="Bundled kernels (default)"><div id="library-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save library">Save library</span></button></div></form></details></article>
       <article class="panel settings-panel"><h2><span data-i18n="Local API">Local API</span></h2><label for="api-url">OpenAI Chat Completions</label><div class="input-action"><input id="api-url" aria-label="OpenAI Chat Completions base URL" readonly><button data-copy-api="api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/chat/completions</code></p><label for="responses-api-url">OpenAI Responses</label><div class="input-action"><input id="responses-api-url" aria-label="OpenAI Responses base URL" readonly><button data-copy-api="responses-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/responses</code></p><label for="anthropic-api-url">Anthropic Messages</label><div class="input-action"><input id="anthropic-api-url" aria-label="Anthropic Messages base URL" readonly><button data-copy-api="anthropic-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/messages</code></p></article>
     </section>

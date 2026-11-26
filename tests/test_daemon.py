@@ -260,7 +260,15 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             rows = response.json()['recipes']
             self.assertTrue(rows)
             self.assertTrue(all(row['id'].startswith('b/') for row in rows))
-            ref = next(row['id'] for row in rows if row['servable'])
+            ref = 'b/qwen3.8-flash-next:iq4-mtp-adaptive'
+            iq4 = next(row for row in rows if row['id'] == ref)
+            self.assertTrue(iq4['servable'])
+            self.assertEqual(iq4['defaults']['num_spec'], 7)
+            q3 = next(row for row in rows if row['id'] == 'b/qwen3.8-flash-next:q3-mtp-adaptive')
+            for preset in (iq4, q3):
+                methods = {r['spec'] for r in rows if r.get('model_id') == preset['model_id'] and r.get('variant') == preset['variant']}
+                self.assertEqual(methods, {'mtp-adaptive', 'dflash2', 'dflash2-san-digital', 'dspark', 'none'})
+            self.assertEqual(response.json()['load_defaults']['kv_cache_dtype'], 'bf16')
             with patch.object(self.manager, 'pull', return_value={}) as pull:
                 self.assertEqual((await client.post('/daemon/pull', json={'recipe': ref})).status_code, 200)
                 pull.assert_called_once_with(ref)
@@ -268,7 +276,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.post('/daemon/load', json={'model': ref})).status_code, 200)
                 await self.manager.task
                 self.assertEqual(spawn.call_args.args[0][0], ref)
-            for invalid in ('b/../model', 'b/b/model', '../model'):
+            for invalid in ('b/../model', 'b/b/model', '../model', 'model::spec', 'model:../spec'):
                 self.assertEqual((await client.post('/daemon/pull', json={'recipe': invalid})).status_code, 422)
 
     async def test_recipe_picker_orders_an_older_official_catalogue(self):

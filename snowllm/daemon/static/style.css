@@ -11,7 +11,7 @@
 .recipe-group + .recipe-group{margin-top:28px}
 .recipe-group-title{margin-bottom:12px}
 .recipe-card:has(.availability-badge.local){border-color:#84c9b3;box-shadow:inset 0 3px 0 #228765}
-.recipe-card-top{flex-wrap:wrap;gap:10px}
+.recipe-card-top{flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:16px}
 .availability-badge{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:7px;font-size:12px;font-weight:650;line-height:1.3;background:#edf1f2;color:#53656c;border:1px solid #d6dfe2}
 .availability-badge.local{background:#daf3e6;color:#176341;border-color:#83c8a4}
 .availability-badge.partial{background:#fff2dc;color:#805413;border-color:#e8c68d}
@@ -61,7 +61,18 @@
 .load-model-card .advanced[open] summary::before{transform:rotate(90deg)}
 .load-model-card .advanced summary span{float:none;font-size:inherit;font-weight:inherit;color:inherit;display:inline}
 .load-model-card .advanced summary>span:last-child{font-size:11px;font-weight:400;color:var(--muted);margin-left:auto}
+.preset-overrides{min-width:0;border:0;padding:0;margin:18px 0 0}
+.preset-overrides legend{padding:0;font-size:13px;font-weight:650}
+.recipe-card label select{display:block;margin-top:6px}
+.recipe-card .preset-overrides label{margin:10px 0}
 .load-advanced-fields{padding-top:2px}
+.spec-caption { position:relative; display:flex; align-items:center; gap:5px; margin:18px 0 8px; }
+.spec-caption label, .preset-overrides .spec-caption label { margin:0; }
+.preset-overrides .spec-caption { margin-top:10px; }
+.spec-help { width:20px; height:20px; padding:0; border:1px solid var(--muted); border-radius:50%; background:white; color:var(--muted); font-size:12px; line-height:1; cursor:help; }
+.spec-help:hover, .spec-help:focus-visible { color:var(--teal); border-color:currentColor; }
+.spec-tooltip { position:absolute; z-index:5; inset-inline-start:0; top:100%; width:min(24rem,100%); padding:9px 12px; border-radius:6px; background:var(--ink); color:white; font-size:12px; line-height:1.5; font-weight:400; }
+.checkpoint-hint { overflow-wrap:anywhere; }
 .load-preset-actions{border-top:1px solid var(--line);padding-top:14px;margin-top:16px}
 .load-preset-actions .button{font-size:11px;padding:7px 10px;min-height:32px}
 .load-panel .load-footer{margin-top:20px;flex-direction:row;align-items:center;flex-wrap:wrap}
