@@ -390,10 +390,14 @@ def find(name: str, recipes: list[Recipe], *, memory_gib=None) -> Recipe:
     candidates = [r for r in recipes if r.raw.get('model_id') == name.lower()]
     if candidates:
         return recommended(name, candidates, memory_gib)
-    near = [r.id for r in recipes if name.lower() in r.id.lower()]
+    near = [r for r in recipes if name.casefold() in r.id.casefold()]
+    # A new preset can contain a shorthand that uniquely identified a flat recipe.
+    legacy = [r for r in near if 'model_id' not in r.raw]
+    if len(legacy) == 1:
+        return legacy[0]
     if len(near) == 1:
-        return next(r for r in recipes if r.id == near[0])
-    hint = f" Did you mean: {', '.join(near)}?" if near else ""
+        return near[0]
+    hint = f" Did you mean: {', '.join(r.id for r in near)}?" if near else ""
     raise SnowLLMError(f"no recipe {name!r}.{hint} `snowllm recipes` lists them all.")
 
 

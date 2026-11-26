@@ -66,6 +66,28 @@ class BundledRecipeTests(unittest.TestCase):
                     self.assertEqual(selected.defaults, entry.defaults)
                     self.assertEqual(selected.ref, entry.ref)
 
+    def test_old_cli_shorthand_pulls_and_serves_the_same_profile(self):
+        from snowllm.cli import prepare
+        short = 'Q3-K-XL-UD3.1'
+        full = 'qwen3.8-flash-next-q3-k-xl-ud3.1'
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(recipes, 'models_roots', return_value=[Path(folder)]), \
+             contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with patch.object(recipes, 'pull') as pull:
+                self.assertEqual(recipes.main('pull', ['--bundle', short]), 0)
+            entry, dest = pull.call_args.args
+            self.assertEqual(entry.id, full)
+            dest.mkdir()
+            (dest / 'config.json').write_text('{}')
+            for argv in ([f'b/{short}'], ['--model', full, '--bundle']):
+                _, args, path, selected = prepare([*argv, '--max-model-len', '8k'])
+                self.assertEqual((selected.ref, path), (entry.ref, str(dest)))
+                self.assertEqual(args.num_spec, 2)
+                self.assertFalse(args.mtp_adaptive)
+                self.assertEqual(args.max_model_len, 8192)
+            with self.assertRaisesRegex(SnowLLMError, 'Did you mean'):
+                recipes.find('q3-k-xl', recipes.catalogue(bundle=True))
+
     def test_weight_and_draft_overrides_keep_preset_capacity_and_explicit_cli_settings(self):
         from snowllm.cli import prepare
         book = recipes.catalogue(bundle=True)
