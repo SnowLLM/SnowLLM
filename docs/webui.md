@@ -180,7 +180,7 @@ management listener rejects cross-origin requests.
 
 ## Benchmark {#benchmark}
 
-Select a loaded model on the **Benchmark** page and choose input lengths, output cap, concurrency, warm-ups and measured repetitions. The test uses the standard PG-19 HTTP method and the model's current inference settings. Input lengths include the chat template. Input plus output must fit the loaded context, and concurrency must fit its request slots.
+Select a loaded model on the **Benchmark** page and choose input lengths, output cap, concurrency, warm-ups and measured repetitions. Choose PG-19 for passage summaries or File Edit to rename a local variable in `metrics.py` and return the complete file. Both use the standard HTTP client and the model's current inference settings. Input lengths include the chat template. Input plus output must fit the loaded context, and concurrency must fit its request slots.
 
 The task waits for existing requests, then reserves inference exclusively. New inference requests are blocked until cleanup finishes; model loads and unloads may queue in the task center. Refreshing or closing the browser does not stop the task. Stopping it terminates its client and requests, preserves completed samples and restores serving. Cancelling while waiting for existing requests leaves those requests running.
 
@@ -192,7 +192,7 @@ Decode throughput is the median of retained requests; TTFT and prefill use the f
 
 ```sh
 snowllm bench run --model-id main --isl 1k,8k
-snowllm bench run --model-id main --isl 1k,8k --detach
+snowllm bench run --model-id main --workload file-edit --isl 1k,8k --detach
 snowllm bench list
 snowllm bench show RUN_ID
 snowllm bench cancel RUN_ID
@@ -200,4 +200,4 @@ snowllm bench export RUN_ID --out result.json
 snowllm bench export RUN_ID --results-only --out rows.json
 ```
 
-`run` waits by default; Ctrl+C requests cancellation. `--detach` returns the run ID immediately. Use `--admin-port` for another management port. Defaults match the standard sweep: 1K/8K/32K/128K/220K inputs, a 256-token output cap, concurrency 1, one warm-up and four retained requests per point, and `thinking=auto`. Choose shorter lengths explicitly for smaller loaded contexts.
+`run` waits by default; Ctrl+C requests cancellation. `--detach` returns the run ID immediately. Use `--admin-port` for another management port. Defaults match the standard sweep: 1K/8K/32K/128K/220K inputs, an output cap of 256 for PG-19 or 1,024 for File Edit, concurrency 1, one warm-up and four retained requests per point, and `thinking=auto`. Choose shorter lengths explicitly for smaller loaded contexts.

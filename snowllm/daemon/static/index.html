@@ -235,12 +235,13 @@
     </section>
     <section id="page-benchmark" class="page" hidden>
       <div class="page-heading"><h1 data-i18n="Benchmark">Benchmark</h1><button id="bench-refresh" class="button secondary" data-i18n="↻ Refresh">↻ Refresh</button></div>
-      <p class="field-hint" data-i18n="Standard PG-19 HTTP benchmark. Decode uses the median; TTFT and prefill use the first retained request. Includes client and transport time.">Standard PG-19 HTTP benchmark. Decode uses the median; TTFT and prefill use the first retained request. Includes client and transport time.</p>
+      <p class="field-hint" data-i18n="Decode speed uses the median. TTFT and prefill use the first measured request. All include client and transport time.">Decode speed uses the median. TTFT and prefill use the first measured request. All include client and transport time.</p>
       <p id="bench-no-model" class="banner" data-i18n="Load a model before starting a benchmark.">Load a model before starting a benchmark.</p>
       <div class="bench-layout">
         <article class="panel"><h2 data-i18n="Test settings">Test settings</h2>
           <form id="bench-form"><fieldset id="bench-fields" class="bench-fields">
             <label for="bench-model" data-i18n="Model">Model</label><select id="bench-model" required></select>
+            <label for="bench-workload" data-i18n="Workload">Workload</label><select id="bench-workload"><option value="pg19" data-i18n="PG-19 · summarize a passage">PG-19 · summarize a passage</option><option value="file-edit" data-i18n="File Edit · edit and return a Python file">File Edit · edit and return a Python file</option></select>
             <label for="bench-isl" data-i18n="Input lengths (tokens)">Input lengths (tokens)</label><input id="bench-isl" value="1k,8k,32k,128k,220k" required>
             <div class="bench-input-grid">
               <div><label for="bench-osl" data-i18n="Max output tokens">Max output tokens</label><input id="bench-osl" type="number" min="1" step="1" value="256" required></div>

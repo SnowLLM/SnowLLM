@@ -2,7 +2,7 @@
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Positive = Annotated[int, Field(gt=0, strict=True)]
 
@@ -20,13 +20,21 @@ def sizes(value):
 class BenchmarkConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     model_id: str = Field(min_length=1, max_length=256)
+    workload: Literal['pg19', 'file-edit'] = 'pg19'
     isl: list[Positive] = Field(default_factory=lambda: [1024, 8192, 32768, 131072, 225280], min_length=1, max_length=32)
-    osl: Positive = 256
+    osl: Positive = Field(default=256, description='Output cap in tokens. Defaults to 256 for PG-19 and 1024 for File Edit.')
     conc: list[Positive] = Field(default_factory=lambda: [1], min_length=1, max_length=32)
     reps: Positive = 4
     warm: Annotated[int, Field(ge=0, strict=True)] = 1
     thinking: Literal['auto', 'on', 'off'] = 'auto'
     label: str = Field(default='', max_length=256)
+
+    @model_validator(mode='before')
+    @classmethod
+    def workload_defaults(cls, values):
+        if isinstance(values, dict) and values.get('workload') == 'file-edit' and 'osl' not in values:
+            return {**values, 'osl': 1024}
+        return values
 
     @field_validator('isl', 'conc')
     @classmethod
@@ -36,7 +44,7 @@ class BenchmarkConfig(BaseModel):
         return values
 
     def arguments(self):
-        return ['--isl', ','.join(map(str, self.isl)), '--osl', str(self.osl),
+        return ['--workload', self.workload, '--isl', ','.join(map(str, self.isl)), '--osl', str(self.osl),
                 '--conc', ','.join(map(str, self.conc)), '--reps', str(self.reps),
                 '--warm', str(self.warm), '--thinking', self.thinking,
                 '--label', self.label or self.model_id]

@@ -177,13 +177,13 @@ test('switching to bundled recipes completes while the server is pending and ign
 test('benchmark commands preserve the selected model, settings and shell quoting', async () => {
   const { benchmarkCommand } = await import('data:text/javascript;base64,' + Buffer.from(commands).toString('base64'));
   const config = { model_id: "main model'; $(printf injected >&2)", isl: [1024, 8192], osl: 256, conc: [1, 2], reps: 4, warm: 1, thinking: 'auto' };
-  const command = benchmarkCommand(config, 'http://localhost:9001/#benchmark');
+  const command = benchmarkCommand({...config, workload: 'file-edit'}, 'http://localhost:9001/#benchmark');
   if (process.platform === 'win32') return;
   const result = spawnSync('/bin/sh', ['-c', 'snowllm() { printf "%s\\0" "$@"; }\n' + command], {encoding: 'utf8'});
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.split('\0').slice(0, -1), ['bench', 'run', '--admin-host', 'localhost', '--admin-port', '9001',
-    '--model-id=' + config.model_id, '--isl', '1024,8192', '--osl', '256', '--conc', '1,2', '--reps', '4', '--warm', '1', '--thinking', 'auto']);
+    '--model-id=' + config.model_id, '--workload', 'file-edit', '--isl', '1024,8192', '--osl', '256', '--conc', '1,2', '--reps', '4', '--warm', '1', '--thinking', 'auto']);
 });
 
 test('benchmark step metrics use measured step time and only derive it when AL is known', async () => {
@@ -211,7 +211,11 @@ test('benchmark comparisons expose outdated, incomplete and mismatched measureme
     model: {runtime_config: {native: {sha256:'native'}, prefill_chunk:8192}}, model_identity: {files:[{path:'weights.gguf', size:1024}]},
     events:[{type:'validated', corpus_sha256:'corpus'}], provenance:{client_sha256:'client'}};
   const right = structuredClone(left);
+  right.config.workload = 'pg19';
   assert.deepEqual(comparisonDifferences(left, right), []);
+  right.config.workload = 'file-edit';
+  assert.deepEqual(comparisonDifferences(left, right), ['Workload']);
+  right.config.workload = 'pg19';
   right.outdated = true; right.state = 'cancelled'; right.model.runtime_config.prefill_chunk = 512;
   right.events[0].corpus_sha256 = 'different'; right.config.reps = 1;
   assert.deepEqual(comparisonDifferences(left, right), ['Incomplete run', 'Outdated result', 'reps', 'Inference settings', 'Corpus']);

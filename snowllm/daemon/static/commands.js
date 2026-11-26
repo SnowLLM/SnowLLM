@@ -15,6 +15,7 @@ export function modelLoadCommand(request, managementUrl) {
 
 export function benchmarkCommand(request, managementUrl) {
   const args = ['snowllm', 'bench', 'run', ...managementArgs(managementUrl), `--model-id=${request.model_id}`];
+  if (request.workload) args.push('--workload', request.workload);
   for (const key of ['isl', 'osl', 'conc', 'reps', 'warm', 'thinking']) {
     args.push(`--${key}`, Array.isArray(request[key]) ? request[key].join(',') : String(request[key]));
   }

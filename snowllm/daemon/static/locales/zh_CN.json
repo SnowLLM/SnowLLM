@@ -320,7 +320,6 @@
   "Benchmark": "性能测试",
   "View benchmark": "查看测试",
   "Benchmark in progress. Inference and model changes resume when it finishes.": "性能测试进行中，完成后恢复推理和模型管理。",
-  "Standard PG-19 HTTP benchmark. Decode uses the median; TTFT and prefill use the first retained request. Includes client and transport time.": "标准 PG-19 HTTP 测试：生成速度取中位数，首 token 延迟和预填充速度取首次正式请求，包含客户端和传输耗时。",
   "Load a model before starting a benchmark.": "请先加载模型再开始性能测试。",
   "Test settings": "测试设置",
   "Input lengths (tokens)": "输入长度（token）",
@@ -445,5 +444,9 @@
   "History": "历史",
   "Export": "导出",
   "Delete": "删除",
-  "What would you like to ask?": "想问点什么？"
+  "What would you like to ask?": "想问点什么？",
+  "Workload": "测试任务",
+  "PG-19 · summarize a passage": "PG-19 · 段落摘要",
+  "File Edit · edit and return a Python file": "File Edit · 修改并返回完整 Python 文件",
+  "Decode speed uses the median. TTFT and prefill use the first measured request. All include client and transport time.": "生成速度取中位数，首 token 延迟和预填充速度取首次正式请求的结果，均包含客户端和传输耗时。"
 }

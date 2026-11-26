@@ -14,7 +14,7 @@ from .jobs import TERMINAL
 
 
 def parser():
-    p = argparse.ArgumentParser(prog='snowllm bench', description='Benchmark loaded models using the standard PG-19 HTTP method')
+    p = argparse.ArgumentParser(prog='snowllm bench', description='Benchmark loaded models using the standard PG-19 or File Edit HTTP workload')
     sub = p.add_subparsers(dest='action', required=True)
     sub.add_parser('context', add_help=False, help='run the standard HTTP client against an existing server')
     for name in ('run', 'list', 'show', 'cancel', 'export'):
@@ -25,8 +25,9 @@ def parser():
             cmd.add_argument('run_id')
         if name == 'run':
             cmd.add_argument('--model-id', required=True)
+            cmd.add_argument('--workload', choices=('pg19', 'file-edit'), default='pg19')
             cmd.add_argument('--isl', type=sizes, default=[1024, 8192, 32768, 131072, 225280])
-            cmd.add_argument('--osl', type=int, default=256)
+            cmd.add_argument('--osl', type=int, default=argparse.SUPPRESS, help='output cap (PG-19: 256, File Edit: 1024)')
             cmd.add_argument('--conc', type=sizes, default=[1])
             cmd.add_argument('--reps', type=int, default=4)
             cmd.add_argument('--warm', type=int, default=1)
@@ -53,7 +54,7 @@ def main(argv=None):
     config = None
     if a.action == 'run':
         try:
-            config = BenchmarkConfig(**{key: getattr(a, key) for key in BenchmarkConfig.model_fields})
+            config = BenchmarkConfig(**{key: vars(a)[key] for key in BenchmarkConfig.model_fields if key in vars(a)})
         except ValueError as exc:
             p.error(str(exc))
         if a.detach and a.out:

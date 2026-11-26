@@ -146,7 +146,7 @@ snowllm status --admin-host 192.168.1.10 --admin-api-key-file ~/.config/snowllm/
 
 ## 性能测试 {#benchmark}
 
-在「性能测试」页面选择已加载模型，设置输入长度、输出上限、并发、预热和正式测试次数，即可运行标准 PG-19 HTTP 测试。输入长度包含聊天模板；输入加输出上限必须适合当前上下文，并发不能超过已加载的请求槽位。测试沿用当前生效的推理设置，不会自动重新加载模型。
+在「性能测试」页面选择已加载模型，设置输入长度、输出上限、并发、预热和正式测试次数，即可运行标准 HTTP 测试。PG-19 让模型概括段落，File Edit 让模型重命名 `metrics.py` 中的局部变量并返回完整文件。输入长度包含聊天模板；输入加输出上限必须适合当前上下文，并发不能超过已加载的请求槽位。测试沿用当前生效的推理设置，不会自动重新加载模型。
 
 开始后先等待已有请求结束，再独占推理服务；测试期间暂停接收新推理请求；加载与卸载可在任务中心排队。刷新或关闭浏览器不影响任务。停止测试会结束测试客户端及其请求，保留已完成样本，然后恢复服务。等待现有请求期间停止测试不会中断这些原有请求。
 
@@ -158,7 +158,7 @@ snowllm status --admin-host 192.168.1.10 --admin-api-key-file ~/.config/snowllm/
 
 ```sh
 snowllm bench run --model-id main --isl 1k,8k
-snowllm bench run --model-id main --isl 1k,8k --detach
+snowllm bench run --model-id main --workload file-edit --isl 1k,8k --detach
 snowllm bench list
 snowllm bench show RUN_ID
 snowllm bench cancel RUN_ID
@@ -166,4 +166,4 @@ snowllm bench export RUN_ID --out result.json
 snowllm bench export RUN_ID --results-only --out rows.json
 ```
 
-`run` 默认等待完成，Ctrl+C 请求取消任务；`--detach` 返回任务 ID 后退出。可用 `--admin-port` 指向其他管理端口。默认输入长度为 1K、8K、32K、128K、220K，输出上限 256，单并发，每档预热 1 次、正式测试 4 次，thinking 为 `auto`。上下文较小时请显式选择较短输入长度。
+`run` 默认等待完成，Ctrl+C 请求取消任务；`--detach` 返回任务 ID 后退出。可用 `--admin-port` 指向其他管理端口。默认输入长度为 1K、8K、32K、128K、220K，PG-19 的输出上限为 256，File Edit 为 1024，单并发，每档预热 1 次、正式测试 4 次，thinking 为 `auto`。上下文较小时请显式选择较短输入长度。

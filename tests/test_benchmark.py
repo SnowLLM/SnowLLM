@@ -30,9 +30,12 @@ class ConfigTests(unittest.TestCase):
         config = BenchmarkConfig(model_id='main')
         self.assertEqual(config.isl, [1024, 8192, 32768, 131072, 225280])
         self.assertEqual((config.osl, config.reps, config.warm, config.conc), (256, 4, 1, [1]))
+        self.assertEqual(config.workload, 'pg19')
+        self.assertEqual(BenchmarkConfig(model_id='main', workload='file-edit').osl, 1024)
+        self.assertEqual(BenchmarkConfig(model_id='main', workload='file-edit', osl=384).osl, 384)
         self.assertEqual(sizes('1k, 8K,1m'), [1024, 8192, 1048576])
         for options in [dict(isl=[]), dict(isl=[0]), dict(conc=[True]), dict(isl=[1024,1024]),
-                        dict(warm=-1), dict(reps=0), dict(thinking='invalid')]:
+                        dict(warm=-1), dict(reps=0), dict(thinking='invalid'), dict(workload='invalid')]:
             with self.subTest(options=options), self.assertRaises(ValueError):
                 BenchmarkConfig(model_id='main', **options)
 
@@ -188,6 +191,9 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             return self.real_popen(command, **kwargs)
         output = Path(command[command.index('--out')+1])
         events = Path(command[command.index('--events')+1])
+        config = self.manager.benchmarks.current['config']
+        self.assertEqual(command[command.index('--workload')+1], config['workload'])
+        self.assertEqual(command[command.index('--osl')+1], str(config['osl']))
         self.assertNotIn('withgpu', command)
         self.assertEqual(kwargs['env']['SNOWLLM_BENCH_LEASE'], self.manager.benchmarks.current['id'])
         code = f'''import json, time
@@ -198,7 +204,7 @@ time.sleep({self.delay})
 '''
         return self.real_popen([sys.executable, '-c', code], **kwargs)
 
-    async def start(self, delay=0, model_id='main'):
+    async def start(self, delay=0, model_id='main', **settings):
         self.delay = delay
         self.real_popen = subprocess.Popen
         self.spawner = patch('snowllm.benchmark.jobs.subprocess.Popen', side_effect=self.spawn_client)
@@ -207,15 +213,16 @@ time.sleep({self.delay})
         self.addCleanup(identity.stop)
         self.spawner.start()
         self.addCleanup(self.spawner.stop)
-        return await self.api.post('/daemon/benchmarks', json=dict(model_id=model_id, isl=[1024]))
+        return await self.api.post('/daemon/benchmarks', json=dict(model_id=model_id, isl=[1024], **settings))
 
     async def test_task_runs_survives_new_client_and_exports_standard_rows(self):
-        response = await self.start()
+        response = await self.start(workload='file-edit')
         self.assertEqual(response.status_code, 200, response.text)
         run_id = response.json()['id']
         await asyncio.wait_for(self.manager.benchmarks.task, 10)
         record = (await self.api.get('/daemon/benchmarks/'+run_id)).json()
         self.assertEqual(record['state'], 'completed', record)
+        self.assertEqual((record['config']['workload'], record['config']['osl']), ('file-edit', 1024))
         self.assertEqual(record['progress']['completed'], 1)
         self.assertIn('native', record['model']['runtime_config'])
         self.assertIsNone(self.worker_app.state.benchmark.owner)
@@ -456,6 +463,18 @@ runpy.run_path(sys.argv[0], run_name='__main__')
                 self.assertEqual(outputs[0][0]['corpus_sha256'], outputs[1][0]['corpus_sha256'])
                 self.assertEqual(len(received), 12)
                 self.assertTrue(all(body['enable_thinking'] is False for body in received))
+                config = BenchmarkConfig(model_id='model', workload='file-edit', isl=[2048], reps=1, warm=0)
+                result = subprocess.run([sys.executable, '-m', 'snowllm.benchmark.context',
+                                         '--base-url', f'http://127.0.0.1:{server.server_port}/v1',
+                                         '--model', 'model', '--tokenizer', folder,
+                                         '--out', str(output), *config.arguments()],
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                row = json.loads(output.read_text())[-1]
+                self.assertEqual((row['workload'], row['isl']), ('file-edit', 2048))
+                self.assertNotEqual(row['corpus_sha256'], outputs[0][0]['corpus_sha256'])
+                self.assertIn('Edit metrics.py:', received[-1]['messages'][0]['content'])
+                self.assertEqual(received[-1]['max_tokens'], 1024)
         finally:
             server.shutdown()
             server.server_close()
@@ -470,6 +489,8 @@ class BenchmarkCLITests(unittest.TestCase):
             calls.append(request)
             if request.method == 'POST' and request.url.path.endswith('/benchmarks'):
                 self.assertEqual(json.loads(request.content)['isl'], [1024, 8192])
+                self.assertEqual(json.loads(request.content)['osl'], 1024)
+                self.assertEqual(json.loads(request.content)['workload'], 'file-edit')
                 return httpx.Response(200, json={'id':'a'*32, 'state':'waiting'})
             if request.url.path.endswith('/cancel'):
                 return httpx.Response(200, json={'state':'cancelling'})
@@ -478,7 +499,7 @@ class BenchmarkCLITests(unittest.TestCase):
                 patch.object(cli.httpx, 'Client', side_effect=lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs)), \
                 patch('sys.stdout', new=io.StringIO()), patch('sys.stderr', new=io.StringIO()):
             out = Path(folder)/'rows.json'
-            self.assertEqual(cli.main(['run', '--model-id','main','--isl','1k,8k','--out',str(out)]), 0)
+            self.assertEqual(cli.main(['run', '--model-id','main','--workload','file-edit','--isl','1k,8k','--out',str(out)]), 0)
             self.assertEqual(json.loads(out.read_text()), [{'decode_tok_s':12}])
         self.assertEqual([request.method for request in calls], ['POST','GET'])
 

@@ -320,7 +320,6 @@
   "Benchmark": "Benchmark",
   "View benchmark": "View benchmark",
   "Benchmark in progress. Inference and model changes resume when it finishes.": "Benchmark in progress. Inference and model changes resume when it finishes.",
-  "Standard PG-19 HTTP benchmark. Decode uses the median; TTFT and prefill use the first retained request. Includes client and transport time.": "Standard PG-19 HTTP benchmark. Decode uses the median; TTFT and prefill use the first retained request. Includes client and transport time.",
   "Load a model before starting a benchmark.": "Load a model before starting a benchmark.",
   "Test settings": "Test settings",
   "Input lengths (tokens)": "Input lengths (tokens)",
@@ -445,5 +444,9 @@
   "History": "History",
   "Export": "Export",
   "Delete": "Delete",
-  "What would you like to ask?": "What would you like to ask?"
+  "What would you like to ask?": "What would you like to ask?",
+  "Workload": "Workload",
+  "PG-19 · summarize a passage": "PG-19 · summarize a passage",
+  "File Edit · edit and return a Python file": "File Edit · edit and return a Python file",
+  "Decode speed uses the median. TTFT and prefill use the first measured request. All include client and transport time.": "Decode speed uses the median. TTFT and prefill use the first measured request. All include client and transport time."
 }

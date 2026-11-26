@@ -187,6 +187,7 @@ See [Web UI](../webui) for model management and [Performance tuning](../guides/p
 
 ```sh
 snowllm bench run --model-id MODEL_ID --isl 1k,8k --osl 256 --reps 4 --warm 1
+snowllm bench run --model-id MODEL_ID --workload file-edit --isl 1k,8k
 snowllm bench list
 snowllm bench show RUN_ID
 snowllm bench cancel RUN_ID

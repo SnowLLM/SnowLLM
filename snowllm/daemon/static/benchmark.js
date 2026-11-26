@@ -28,6 +28,7 @@ export function comparisonDifferences(left, right) {
     if (JSON.stringify(canonical(left[key])) !== JSON.stringify(canonical(right[key]))) differences.push(label);
   }
   if (!left.model_identity || !right.model_identity) differences.push('Missing model identity');
+  if ((left.config.workload || 'pg19') !== (right.config.workload || 'pg19')) differences.push('Workload');
   for (const key of ['osl', 'reps', 'warm', 'thinking', 'conc', 'isl']) {
     if (JSON.stringify(left.config[key]) !== JSON.stringify(right.config[key])) differences.push(key);
   }
@@ -44,10 +45,11 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
   let selected = '', current = null, baseline = null, refreshing = false, revision = 0;
   const renderResults = createBenchmarkResults();
   const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+  const workloadName = config => config.workload === 'file-edit' ? 'File Edit' : 'PG-19';
   const stateLabel = state => t({queued: 'Queued', waiting: 'Waiting for active requests', running: 'Running', stopping: 'Stopping',
     cancelling: 'Cancelling', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted'}[state] || state);
   function request() {
-    return {model_id: $('bench-model').value, isl: parseLengths($('bench-isl').value),
+    return {model_id: $('bench-model').value, workload: $('bench-workload').value, isl: parseLengths($('bench-isl').value),
       osl: Number($('bench-osl').value), conc: parseLengths($('bench-conc').value),
       reps: Number($('bench-reps').value), warm: Number($('bench-warm').value), thinking: $('bench-thinking').value};
   }
@@ -79,7 +81,7 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
     $('bench-detail').hidden = !current;
     renderResults(current, current && baseline);
     if (!current) return;
-    $('bench-run-title').textContent = `${current.config.model_id} · ${stateLabel(current.state)}`;
+    $('bench-run-title').textContent = `${current.config.model_id} · ${workloadName(current.config)} · ${stateLabel(current.state)}`;
     $('bench-run-id').textContent = `${current.id} · ${new Date(current.created_at).toLocaleString()}`;
     $('bench-cancel').disabled = terminal.has(current.state) || ['cancelling', 'stopping'].includes(current.state);
     $('bench-export').href = `/daemon/benchmarks/${current.id}/export`;
@@ -115,7 +117,7 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
       if (version !== revision) return;
       if (!selected && runs.length) selected = runs[0].id;
       const compareId = $('bench-baseline').value;
-      const options = () => runs.map(run => new Option(`${run.config.model_id} · ${new Date(run.created_at).toLocaleString()} · ${stateLabel(run.state)}`, run.id));
+      const options = () => runs.map(run => new Option(`${run.config.model_id} · ${workloadName(run.config)} · ${new Date(run.created_at).toLocaleString()} · ${stateLabel(run.state)}`, run.id));
       $('bench-history').replaceChildren(...options()); $('bench-history').value = selected;
       $('bench-baseline').replaceChildren(new Option(t('No comparison'), ''), ...options());
       if (runs.some(run => run.id === compareId)) $('bench-baseline').value = compareId;
@@ -126,6 +128,13 @@ export function createBenchmarkUI({ api, post, action, toast, getStatus, renderS
     } finally { refreshing = false; }
   }
   $('bench-model').addEventListener('change', () => update(getStatus()));
+  const outputCaps = {pg19: '256', 'file-edit': '1024'};
+  let workload = 'pg19';
+  $('bench-workload').addEventListener('change', () => {
+    outputCaps[workload] = $('bench-osl').value;
+    workload = $('bench-workload').value;
+    $('bench-osl').value = outputCaps[workload];
+  });
   $('bench-form').addEventListener('submit', event => {
     event.preventDefault(); action($('bench-start'), async () => {
       const result = await post('/daemon/benchmarks', request());
