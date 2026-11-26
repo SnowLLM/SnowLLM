@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.4.0.dev2 — 2026-11-26
+
+- Choose the original or continued-training DFlash2 checkpoint for Qwen3.8 Flash Next UD3.1 with `DFlash2@incoai` or `DFlash2@san-digital`. Both support adaptive drafting with a configurable block limit.
+  Qwen3.8 Flash Next UD3.1 可通过 `DFlash2@incoai` 或 `DFlash2@san-digital` 选择原版或续训版草稿模型，两者均支持自适应起草和自定义块长上限。
+- Flash-Next now verifies concurrent requests at a common width and reports unsupported sparse attention layouts. Pin SnowLLM-Kernels to `0.4.0`.
+  Flash-Next 并发请求按共同宽度验证，遇到不支持的稀疏注意力布局会明确报错。SnowLLM-Kernels 依赖固定为 `0.4.0`。
+- Select recipe presets, model weights and draft checkpoints in the WebUI. The CLI accepts unambiguous legacy recipe names. The HTTP benchmark supports file-edit workloads.
+  WebUI 可选择配方预设、模型权重和草稿 checkpoint。CLI 兼容可唯一解析的旧配方名，HTTP benchmark 新增文件编辑负载。
+
 ## 0.4.0.dev1 — 2026-11-25
 
 - Model recipes now select a complete preset by installed system RAM. Use a model ID with `snowllm pull MODEL` or `snowllm MODEL`, or select a preset with `MODEL:PRESET`. The v3 catalogue and wheel retain the existing recipe IDs.
