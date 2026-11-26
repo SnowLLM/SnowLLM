@@ -6,6 +6,7 @@ from ..ops._common import dry_alloc
 from ..models.qwen3_5.layers import FullAttention, GatedDeltaNet
 from ..models.lfm2.layers import ShortConv
 from ..models.qwen4exp.layers import Ple
+from ..models.geometry import Qwen4ExpGeometry
 from ..models.glm5_next.layers import LinearAttention, SparseAttention
 from .resources import ResourceSet
 from .cache import CacheStorage, RequestState, paged_buffers, tensor
@@ -163,12 +164,14 @@ class QwenResources(ResourceSet):
 
     def allocate_statics(self, slabs):
         r, g = self.r, self.r.geo
+        r.logits = tensor(slabs, (r.decode_rows, g.vocab_size), torch.float32)
         if r.drafting:
-            r.draft_logits = tensor(slabs, (r.decode_rows, g.vocab_size), torch.float32)
+            # Flash-Next verification consumes target logits before either proposer starts.
+            r.draft_logits = (r.logits if isinstance(g, Qwen4ExpGeometry) else
+                              tensor(slabs, (r.decode_rows, g.vocab_size), torch.float32))
         if r.model.mtp is not None:
             r._alloc_mtp_hidden()
         r.d_mscale = tensor(slabs, (1,), torch.float32).fill_(1)
-        r.logits = tensor(slabs, (r.decode_rows, g.vocab_size), torch.float32)
         r.model.lm_head.scratch = None
         r.model.lm_head.arena = r.arena
         r.num_slots = ops.paged_decode_num_slots(r.max_num_seqs)

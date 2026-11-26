@@ -211,7 +211,7 @@ class Qwen4ExpSpecDecoder(SpecDecoder):
         batch.last_row = selected
         logits, hidden = self.runner.mtp_draft(source, batch.input_ids, batch)
         B = batch.batch_size
-        ops.copy_rows(self.d_drafts[:B, 0], self._draft_tokens(logits))
+        self._store_draft_tokens(logits, self.d_drafts[:B, 0])
         ops.copy_rows(self.runner.mtp_h[:B], hidden)
         return self.runner.mtp_h[:B]
 

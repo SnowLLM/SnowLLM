@@ -428,8 +428,9 @@ class SpecDecoder:
                           *, start: int = 1) -> None:
         for j in range(start, k):
             pos,slots,bt,seq_lens=self._step_metadata(B,nacc,j)
-            ids=self.d_step_ids[:B]
-            ops.copy_rows(ids,self.d_drafts[:B,j-1])
+            ids = self.d_drafts[:B, j-1]
+            if not ids.is_contiguous():
+                ids = ops.copy_rows(self.d_step_ids[:B], ids)
             cb = Batch(
                 input_ids=ids,
                 positions=pos,slot_mapping=slots,
@@ -438,7 +439,7 @@ class SpecDecoder:
                 carry_source_offset=self._draft_source_offset(j),
             )
             logits, h = self.runner.mtp_draft(h, ids, cb)
-            ops.copy_rows(self.d_drafts[:B,j],self._draft_tokens(logits))
+            self._store_draft_tokens(logits, self.d_drafts[:B, j])
 
     def _draft_states(self, batch: list[Request]) -> torch.Tensor:
         return self.slots.dummy_indices(len(batch))
@@ -448,6 +449,12 @@ class SpecDecoder:
 
     def _draft_tokens(self,logits):
         return ops.argmax(logits,out=self.d_argmax[:logits.shape[0]])
+
+    def _store_draft_tokens(self, logits, out):
+        if out.is_contiguous():
+            ops.argmax(logits, out=out)
+        else:
+            ops.copy_rows(out, self._draft_tokens(logits))
 
     def _first_metadata(self,tokens,accepted):
         b,t = tokens.shape
