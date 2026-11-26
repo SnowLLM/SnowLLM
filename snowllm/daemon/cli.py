@@ -153,7 +153,7 @@ def main(argv):
             a = p.parse_args(argv)
     if not 1 <= a.admin_port <= 65535:
         p.error("admin port must be between 1 and 65535")
-    from .server import local_url, validate_listener_keys
+    from .server import advertised_url, local_url, validate_listener_keys
     local_admin_url = local_url(a.admin_host, a.admin_port)
     if action is None:
         if not 1 <= a.port <= 65535:
@@ -172,20 +172,22 @@ def main(argv):
         except ValueError as exc:
             p.error(str(exc))
         # Probe before creating the manager so a second daemon cannot disturb the first.
-        browser_url = a.admin_url or local_admin_url
+        probe_url = local_admin_url if a.admin_url else advertised_url(a.admin_host, a.admin_port)
         with httpx.Client(timeout=1, trust_env=False) as client:
-            try:
-                response = client.get(local_admin_url + "/daemon/status", headers=bearer_headers(admin_key))
+            for url in dict.fromkeys((probe_url, local_admin_url)):
+                try:
+                    response = client.get(url + "/daemon/status", headers=bearer_headers(admin_key))
+                except httpx.HTTPError:
+                    continue
                 if response.is_success:
-                    print(f"SnowLLM Web UI already running at {local_admin_url}")
+                    browser_url = a.admin_url or url
+                    print(f"SnowLLM Web UI already running at {browser_url}")
                     if api_auth or admin_auth:
                         print("Restart the service for changes to the authentication settings to take effect.")
                     print(json.dumps(response.json(), indent=2, ensure_ascii=False))
                     if not a.no_browser:
                         open_browser(browser_url)
                     return 0
-            except httpx.HTTPError:
-                pass
         from .server import serve
         from .manager import DaemonManager
         try:
@@ -193,8 +195,6 @@ def main(argv):
         except (OSError, ValueError) as exc:
             print(f"snowllm webui: {exc}", file=sys.stderr)
             return 1
-        print(f"SnowLLM Web UI / management: {browser_url}", flush=True)
-        print(f"SnowLLM inference API: {local_url(a.host, a.port)}/v1", flush=True)
         if api_key_path:
             print(f"Inference key file: {api_key_path}", flush=True)
         if a.show_keys and api_key:

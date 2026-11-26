@@ -4,6 +4,7 @@ import asyncio
 from contextlib import contextmanager
 import logging
 import signal
+import socket
 import threading
 
 import uvicorn
@@ -17,6 +18,20 @@ from ..updates import session as update_session
 def local_url(host, port):
     host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
     return f"http://{'[' + host + ']' if ':' in host else host}:{port}"
+
+
+def advertised_url(host, port):
+    if host in ("0.0.0.0", "::"):
+        family, destination = ((socket.AF_INET, "192.0.2.1") if host == "0.0.0.0"
+                               else (socket.AF_INET6, "2001:db8::1"))
+        try:
+            # UDP connect selects a local source address without sending a packet.
+            with socket.socket(family, socket.SOCK_DGRAM) as probe:
+                probe.connect((destination, 9))
+                host = probe.getsockname()[0]
+        except OSError:
+            pass
+    return local_url(host, port)
 
 
 def validate_listener_keys(admin_key, api_key):
@@ -38,7 +53,7 @@ class Listener(uvicorn.Server):
 async def serve(manager, *, host, port, admin_host, admin_port, api_key=None, admin_key=None,
                 admin_url=None, browser=None):
     validate_listener_keys(admin_key, api_key)
-    manager.inference_url = local_url(host, port)
+    manager.inference_url = advertised_url(host, port)
     log_config = access_log_config()
     servers = [
         Listener(uvicorn.Config(create_inference_app(manager, api_key=api_key), host=host, port=port,
@@ -75,8 +90,11 @@ async def serve(manager, *, host, port, admin_host, admin_port, api_key=None, ad
                 raise RuntimeError("a daemon listener stopped during startup")
             await asyncio.sleep(.01)
         manager.start_telemetry()
+        browser_url = admin_url or advertised_url(admin_host, admin_port)
+        print(f"SnowLLM inference API: {manager.inference_url}/v1", flush=True)
+        print(f"SnowLLM Web UI / management: {browser_url}", flush=True)
         if browser:
-            threading.Thread(target=browser, args=(admin_url or local_url(admin_host, admin_port),), daemon=True).start()
+            threading.Thread(target=browser, args=(browser_url,), daemon=True).start()
         async with update_session(manager.update):
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:

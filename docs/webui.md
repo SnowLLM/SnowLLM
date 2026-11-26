@@ -174,6 +174,7 @@ Both ports must be available before either listener starts serving. Ctrl+C
 stops the service and its owned inference/download process trees; partial downloads
 can be resumed with another pull. The browser opens after both listeners are
 ready, or when connecting to an existing daemon, unless `--no-browser` is given.
+When the management listener binds to `0.0.0.0` or `::`, the Web UI link uses the local IP selected by the OS routing table, falling back to loopback if no route is available. An explicit `--admin-url` takes precedence.
 If opening the browser fails, the service continues and prints the URL. The
 management listener rejects cross-origin requests.
 
