@@ -53,5 +53,12 @@ def zeros_like(value, **kwargs):
 
 
 @operator
+def add_into(out, x, y):
+    if not out.is_meta:
+        torch.add(x, y, out=out)
+    return out
+
+
+@operator
 def copy_into(dst, src):
     return dst.copy_(src)

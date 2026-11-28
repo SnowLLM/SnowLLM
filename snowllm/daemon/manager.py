@@ -9,6 +9,7 @@ from pathlib import Path
 import signal
 import socket
 import subprocess
+import tempfile
 import sys
 import uuid
 
@@ -18,7 +19,7 @@ from ..updates import Update
 from ..errors import is_capacity_error
 from ..telemetry import Telemetry, enabled as telemetry_enabled, announce_opt_out
 from ..config import (models_directory, models_directories, normalize_model_directories,
-                      read_config, write_config, recipes_source,
+                      read_config, write_config, recipes_source, disk_offload_directory,
                       library_path, bundled_library_path, DEFAULT_RECIPES_URL)
 from .tasks import TaskQueue
 
@@ -106,6 +107,7 @@ class DaemonManager:
             self.state = "failed"
             self.error = self.worker_error()
             self.models = [{**row, "state": "failed", "error": self.error} for row in self.models]
+        offload = disk_offload_directory(self.config_path, self.config)
         recipe_url, recipe_source = recipes_source(self.config_path, self.config)
         library, lib_source = library_path(self.config_path, self.config)
         progress = None
@@ -120,6 +122,8 @@ class DaemonManager:
                     inference_url=self.inference_url,
                     active_requests=self.active, models_dir=str(directory),
                     models_dirs=list(map(str, directories)),
+                    disk_offload_dir=str(offload) if offload else None,
+                    moe_cache_dirs_override=os.environ.get('SNOWLLM_MOE_CACHE_DIRS') or None,
                     config_file=str(self.config_path),
                     saved_models_dir=self.config.get("models_dir"),
                     saved_models_dirs=self.config.get('models_dirs'),
@@ -150,7 +154,6 @@ class DaemonManager:
                     raise ValueError(f'model directory is not a directory: {path}')
             path = paths[0]
             path.mkdir(parents=True, exist_ok=True)
-            import tempfile
             with tempfile.TemporaryFile(dir=path):
                 pass
             updated["models_dir"] = str(path)
@@ -161,7 +164,7 @@ class DaemonManager:
         for key, value in settings.items():
             if key == "library_path" and (self.backend or self.jobs.busy) and value != self.config.get(key):
                 raise ValueError("unload all models before changing the kernel library")
-            if key not in ("recipes_url", "library_path"):
+            if key not in ("recipes_url", "library_path", "disk_offload_dir"):
                 raise ValueError(f"unknown setting: {key}")
             if value is None or value == "":
                 updated.pop(key, None)
@@ -170,12 +173,16 @@ class DaemonManager:
                 raise ValueError(f"{key} must be a non-empty string")
             value = value.strip()
             # Validate the saved value independently of any environment override.
-            if key == "library_path" or not value.startswith(("http://", "https://")):
+            if key != "recipes_url" or not value.startswith(("http://", "https://")):
                 path = Path(value).expanduser()
                 if not path.is_absolute():
                     path = self.config_path.parent / path
                 path = path.resolve()
-                if not path.is_file():
+                if key == "disk_offload_dir":
+                    path.mkdir(parents=True, exist_ok=True)
+                    with tempfile.TemporaryFile(dir=path):
+                        pass
+                elif not path.is_file():
                     raise ValueError(f"{key} file does not exist: {path}")
                 value = str(path)
             updated[key] = value

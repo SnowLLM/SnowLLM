@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
 import contextlib
+import contextvars
 import ctypes
 import enum
 import functools
@@ -152,6 +153,32 @@ def host_pinned_bytes() -> int:
 
 _mapped: list = []
 _ranges: list = []
+_mapping_attempt = contextvars.ContextVar('mapping_attempt', default=None)
+
+
+@contextlib.contextmanager
+def capture_host_mappings():
+    owned = []
+    token = _mapping_attempt.set(owned)
+    try:
+        yield owned
+    finally:
+        _mapping_attempt.reset(token)
+
+
+def release_unused_host_mappings(owned):
+    global _host_pinned
+    if not owned:
+        return
+    torch.cuda.synchronize()
+    for storage, owner, span, size in owned:
+        if storage.expired():
+            buf, base = owner
+            _hip_memory.unregister(base)
+            _mapped.remove(owner)
+            _ranges.remove(span)
+            buf.close()
+            _host_pinned -= size
 
 
 class _Mapped:
@@ -231,8 +258,12 @@ def _register(n: int) -> torch.Tensor:
             buf.close()
         raise
     # Keep registration and CPU storage alive for asynchronous native launches.
-    _mapped.append((buf, base))
-    _ranges.append((mapped + skip, mapped + skip + n))
+    owner, span = (buf, base), (mapped + skip, mapped + skip + n)
+    _mapped.append(owner)
+    _ranges.append(span)
+    if (owned := _mapping_attempt.get()) is not None:
+        from torch.multiprocessing.reductions import StorageWeakRef
+        owned.append((StorageWeakRef(tensor.untyped_storage()), owner, span, size))
     return tensor
 
 
@@ -432,9 +463,12 @@ def _device_bytes(allocate: Callable, n: int) -> torch.Tensor:
     try:
         return _observe(allocate(int(n), dtype=torch.uint8, device="cuda"))
     except torch.OutOfMemoryError as exc:
-        if not WINDOWS:
-            raise
-        raise torch.OutOfMemoryError(f"{exc}\n{WINDOWS_PAGEFILE_HINT}") from exc
+        if WINDOWS:
+            error = torch.OutOfMemoryError(f"{exc}\n{WINDOWS_PAGEFILE_HINT}")
+            error.requested_device_bytes = int(n)
+            raise error from exc
+        exc.requested_device_bytes = int(n)
+        raise
 
 
 def zero_bytes(n: int) -> torch.Tensor:

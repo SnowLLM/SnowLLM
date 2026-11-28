@@ -4,9 +4,11 @@
 import contextlib
 import dataclasses
 import weakref
+from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from .. import ops
+from ..weight_map import GROUPS, LAYERED, PROJECTIONS, WeightMap
 from .._capi import SnowLLMError
 from .._platform import release_device_cache
 
@@ -20,12 +22,12 @@ COST = {
     "shared": ((0.74, 3.6),),
     "head": ((0.28, 3.6),),
 }
-PROJECTIONS = {f'{group}.{part}': group for group in ('experts', 'shared')
-               for part in ('gate_up', 'down')}
-GROUPS = (*COST, *PROJECTIONS)
-LAYERED = ("dense", "shared", "experts", *PROJECTIONS)
 GIB = 1 << 30
 _scope = None
+
+
+def current_placement():
+    return _scope
 
 
 @contextlib.contextmanager
@@ -176,6 +178,10 @@ class DeviceMap:
     short: int = 0
     total_bytes: int | None = None
     disk_savings: int = 0
+    disk_layers: frozenset[int] | None = None
+
+    def on_disk(self, layer: int) -> bool:
+        return self.disk_layers is None or layer in self.disk_layers
 
     def on_host(self, group: str, layer: int | None = None) -> bool:
         selected = group if group in self.host else PROJECTIONS.get(group, group)
@@ -213,7 +219,7 @@ class DeviceMap:
 
     def describe(self) -> str:
         if not self.host:
-            return "device map: everything in the carve-out"
+            return "device map: no model weights in host memory"
         rows = ", ".join(self._row(g) for g in GROUPS if self.group_host_bytes(g))
         out = (f"device map: {rows} in pinned host memory, freeing "
                f"{self.host_bytes / GIB:.2f} GiB of carve-out for "
@@ -364,10 +370,49 @@ def check_budget(dmap: DeviceMap, budget: int) -> DeviceMap:
         f"your --max-model-len.")
 
 
+def _explicit_map(mapping, sizes, per_layer, disk_candidates):
+    groups = defaultdict(list)
+    for rule in mapping.rules:
+        groups[rule.group].append(rule)
+    host, layers, disk = set(), {}, set()
+    for group, rules in groups.items():
+        by = _layer_sizes(group, per_layer)
+        assigned = set()
+        # Reserve exact IDs first, then satisfy counts in input order, then the group default.
+        for rule in sorted(rules, key=lambda r: (r.span is None, r.count is None)):
+            available = (set(disk_candidates) if rule.tier == 'disk' and disk_candidates is not None
+                         else set(by))
+            available -= assigned
+            if rule.span:
+                start, end = rule.span
+                pick = {i for i in available if start <= i <= end}
+                if len(pick) != end - start + 1:
+                    missing = next(i for i in range(start, end + 1) if i not in pick)
+                    raise SnowLLMError(f'--device-map: {group} at layer {missing} is unavailable for {rule.tier}')
+            elif rule.count is not None:
+                pick = sorted(available, key=lambda i: (-by.get(i, 0), i))[:rule.count]
+            else:
+                pick = available
+            assigned.update(pick)
+            if rule.tier == 'disk':
+                disk.update(pick)
+            elif rule.tier == 'host':
+                if pick:
+                    host.add(group)
+                    layers.setdefault(group, set()).update(pick)
+                elif not by and rule.span is None and rule.count is None:
+                    host.add(group)
+    return DeviceMap(frozenset(host), dict(sizes), {g: frozenset(v) for g, v in layers.items()},
+                     per_layer, disk_layers=frozenset(disk))
+
+
 def parse(spec: str, sizes: dict[str, int], budget: int | None = None, need: int = 0,
-          per_layer: dict[str, dict[int, int]] | None = None) -> DeviceMap:
+          per_layer: dict[str, dict[int, int]] | None = None, *, disk_candidates=None) -> DeviceMap:
     spec = (spec or "").strip()
     per_layer = per_layer or {}
+    explicit = WeightMap.parse(spec)
+    if explicit is not None:
+        return _explicit_map(explicit, sizes, per_layer, disk_candidates)
     if not spec or spec in ("off", "none", "device"):
         return DeviceMap(frozenset(), dict(sizes), {}, per_layer)
     if spec in ("auto", "all"):

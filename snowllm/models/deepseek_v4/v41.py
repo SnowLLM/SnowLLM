@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
 import math
-from functools import lru_cache
 
 import torch
 from torch import nn
 
-from ... import _capi, ops
+from ... import ops
 from ...ops import deepseek41 as native
+from ...ops.operation import geometry_cache
 from ..projection import pack_bf16, pack_kquant, project
 from .compression import mask_stride
 from .layers import Compressor, LMHead, RMSNorm, Rope, VocabEmbedding, _ws
@@ -20,9 +21,9 @@ def index_score_tile_rows(rows, stride_cap):
     return max(1, min(rows, _INDEX_SCORE_TILE_BYTES // (4 * stride_cap)))
 
 
-@lru_cache(None)
+@geometry_cache
 def output_projection_plan(rows, path, low_capacity):
-    path = ops.Path.DECODE if path == ops.Path.DECODE and rows <= 16 else ops.Path.PREFILL
+    path = native.projection_path(rows, path)
     need = ops.dsv4_o_proj_scratch_bytes(rows, path, low_capacity)
     reuse = need < ops.dsv4_o_proj_scratch_bytes(rows, path)
     return path, need, reuse
@@ -47,12 +48,8 @@ class Linear(nn.Module):
             if self.fp8:
                 x = a.copy(x)
                 native.fp8_quant(x)
-            if self.which is not None and not self.fp32 and ctx.path == ops.Path.DECODE and m <= 16:
-                ws = a.flat(ops.dsv4_proj_scratch_bytes(self.which, m), torch.uint8)
-                if self.quant:
-                    ops.dsv4_proj_kquant(self.which, x, self.quant, ws, out, ops.Path.DECODE)
-                else:
-                    ops.dsv4_proj_bf16(self.which, x, self.weight, ws, out, ops.Path.DECODE)
+            if self.which is not None and not self.fp32:
+                native.projection(a, self.which, x, self.weight, self.quant, out, self.k, ctx.path)
             else:
                 project(ctx, x, self.weight, out, self.n, self.k, self.quant)
         return out[:, :self.live] if self.live != self.n else out
@@ -150,15 +147,15 @@ class Attention(nn.Module):
         out = a.new(ctx.M, g.hidden)
         with a.frame():
             qr = self.q_norm(ctx, self.q_a(ctx, x))
-            q = self.q_b(ctx, qr).view(ctx.M, 64, 512)
-            rot = ctx.rot[bool(self.ratio)]
-            ops.dsv4_rope_tail(q, *rot)
             plan = b.plans[self.ratio] if self.ratio else None
             if not (b.ced_stage == "replay" and self.layer == max(g.kv_source_layers)):
                 self.write_kv(ctx, lp, x)
             compressed = plan is not None and plan.max_n_comp > 0
             if compressed and self.index_q is not None:
                 self._index(ctx, lp, x, qr, plan)
+            q = self.q_b(ctx, qr).view(ctx.M, 64, 512)
+            rot = ctx.rot[bool(self.ratio)]
+            ops.dsv4_rope_tail(q, *rot)
             attended = a.like(q)
             with a.frame():
                 scratch_bytes = (ops.dsv4_attention_scratch_bytes(b.total_q_blocks, False) if b.block_q else
@@ -210,12 +207,18 @@ class Layer(nn.Module):
         for i, (mix, body) in enumerate(((self.hc_attn, lambda x: self.attn(ctx, lp, self.attn_norm(ctx, x))),
                                          (self.hc_ffn, lambda x: self.moe(ctx, x)))):
             next_mix = ctx.mixes[i]
-            dest = ctx.banks[1] if streams is ctx.banks[0] else ctx.banks[0]
-            with ctx.arena.frame():
+            # Planned encoder outputs can reuse attention scratch after the branch finishes.
+            spare = ctx.banks[1]
+            with contextlib.nullcontext() if spare is None else ctx.arena.frame():
                 mix(ctx, streams, next_mix)
                 folded = ctx.arena.new(ctx.M, ctx.geo.hidden)
                 ops.dsv4_hc_weighted_sum(streams, ctx.pre_mix, folded)
-                ops.dsv4_hc_expand(body(folded), streams, next_mix[:, 4:8], next_mix[:, 8:], dest)
+                update = body(folded)
+                if spare is None:
+                    dest = ctx.arena.like(streams)
+                else:
+                    dest = spare if streams is ctx.banks[0] else ctx.banks[0]
+                ops.dsv4_hc_expand(update, streams, next_mix[:, 4:8], next_mix[:, 8:], dest)
             ctx.pre_mix, streams = next_mix[:, :4], dest
         return streams
 
@@ -261,6 +264,8 @@ class DeepSeekV41ForCausalLM(nn.Module):
                 with a.frame():
                     hidden = a.new(ctx.M, g.hidden)
                     self.embed(b.input_ids, hidden)
+                    if b.embeds is not None:
+                        ops.index_copy(hidden, 0, b.embed_rows, b.embeds)
                     ops.dsv4_hc_broadcast(hidden, streams)
             else:
                 ops.dsv4_hc_broadcast(ctx.embedded, streams)
@@ -358,7 +363,7 @@ def load(rd, geo, progress=None, device_map=None, *, target=None):
             progress(i + 1, geo.num_layers)
     if target is not None:
         embed = target.embed if isinstance(target.embed, VocabEmbedding) else target.embed.weight
-    elif rd.gguf["token_embd.weight"].quant.name == "Q4_K" and hasattr(_capi.lib, "snowllm_gather_embedding_q4_k"):
+    elif rd.gguf["token_embd.weight"].quant.name == "Q4_K":
         embed = VocabEmbedding(rd.raw("token_embd.weight").view(geo.vocab_size, geo.hidden // 256 * 144), 4)
     else:
         embed = rd.tensor("token_embd.weight").view(geo.vocab_size, geo.hidden)

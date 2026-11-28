@@ -3,6 +3,7 @@
 
 from .operation import operator
 import ctypes
+from typing import NamedTuple
 import torch
 
 from .._capi import check, lib
@@ -208,44 +209,47 @@ class HcMixWeights:
                      int(down_n), int(lr), float(eps)]
 
 
+class HcActivation(NamedTuple):
+    storage: torch.Tensor
+    projection_path: int
+
+    @classmethod
+    def allocate(cls, arena, rows, hidden, phase):
+        storage_rows = ctypes.c_int64()
+        path = lib.snowllm_hc_activation_plan(rows, hidden, int(phase), ctypes.byref(storage_rows))
+        return cls(arena.new(storage_rows.value, hidden, dtype=torch.bfloat16), path)
+
+
 class _HcStep(ctypes.Structure):
     _fields_ = [('weights',ctypes.c_void_p*6)]+[(n,ctypes.c_void_p) for n in (
         'residual','inject','xn','lo','mixed')]+[(n,ctypes.c_int64) for n in (
         'rows','count','hidden','stride','down_n','lr')]+[('eps',ctypes.c_float)]+[
         (n,ctypes.c_int) for n in ('fmt','up_fmt','inject_bf16','weight_inject_bf16')]+[
-        (n,ctypes.c_void_p) for n in ('prepared_output','prepared_input')]+[
-        (n,ctypes.c_int64) for n in ('prepared_output_bytes','prepared_input_bytes')]
+        ('output_path',ctypes.c_int),('output_bytes',ctypes.c_int64)]
 
 
-def _hc_step(hc, rows, count, hidden, residual=None, inject=None, xn=None, lo=None, mixed=None,
-             prepared_output=None, prepared_input=None):
-    for prepared in (prepared_output, prepared_input):
-        if prepared is not None:
-            _chk(prepared, 'prepared HC activation', torch.uint8, hc_prepared_bytes(rows))
+def _hc_step(hc, rows, count, hidden, residual=None, inject=None, xn=None, lo=None, mixed=None):
+    output_path = Path.PREFILL
+    if isinstance(mixed, HcActivation):
+        mixed, output_path = mixed
+    if mixed is not None:
+        _chk(mixed, 'mixed HC output', torch.bfloat16)
     v=hc.args
     return _HcStep((ctypes.c_void_p*6)(*v[:5],v[7]),_p(residual),_p(inject),_p(xn),_p(lo),
         _p(mixed),rows,count,hidden,inject.stride(0) if inject is not None else count,
         hc.down_n,hc.lr,v[11],v[5],v[6],inject is None or inject.dtype is torch.bfloat16,v[8],
-        _p(prepared_output),_p(prepared_input),
-        0 if prepared_output is None else prepared_output.nbytes,
-        0 if prepared_input is None else prepared_input.nbytes)
+        int(output_path), mixed.nbytes if mixed is not None else 0)
 
 
 @operator
-def hc_prepared_bytes(rows):
-    query = getattr(lib,'snowllm_hc_prepared_bytes',None)
-    return query(rows) if query is not None else 0
-
-
-@operator
-def hc_prepared_qkv(prepared, w, scale, v, kv, workspace, out, index_w=None, index_out=None):
+def hc_mixed_qkv(activation, w, scale, v, kv, workspace, out, index_w=None, index_out=None):
     from .inference import _weights
-    rows = out.shape[0]
-    _chk(prepared, 'prepared HC activation', torch.uint8, hc_prepared_bytes(rows))
-    _chk(out, 'projection', torch.bfloat16, rows, out.shape[1])
+    mixed, path = activation
+    _chk(mixed, 'HC activation', torch.bfloat16)
+    _chk(out, 'projection', torch.bfloat16)
     weights = _weights((w,scale),(v,None),(kv,None))
-    check(lib.snowllm_hc_prepared_qkv(weights,_p(prepared),prepared.nbytes,_p(workspace),
-        _p(out),rows,_p(index_w),_p(index_out),_stream()),'hc_prepared_qkv')
+    check(lib.snowllm_hc_mixed_qkv(weights,_p(mixed),mixed.nbytes,_p(workspace),
+        _p(out),out.shape[0],path,_p(index_w),_p(index_out),_stream()),'hc_mixed_qkv')
 
 
 @operator
@@ -257,24 +261,10 @@ def hc_combine_mix_workspace_bytes(rows, hc, count, hidden):
 
 
 @operator
-def hc_combine_mix(streams, block, inject, hc, lo, mixed, workspace, xn=None, prepared=None):
-    rows,count,hidden=streams.shape
-    post=_hc_step(hc,rows,count,hidden,streams,inject,xn,lo,mixed,prepared_output=prepared)
-    if hasattr(lib,'snowllm_hc_combine_mix'):
-        check(lib.snowllm_hc_combine_mix(ctypes.byref(post),_p(block),_p(workspace),
-            workspace.nbytes,_stream()),'hc_combine_mix')
-        return
-    if xn is not None:
-        qwen4exp_hc_combine_norm(streams,block,inject,streams,hc.t[0],xn,hc.args[11])
-    else:
-        qwen4exp_hc_combine(streams,block,inject,streams)
-    from types import SimpleNamespace
-    from .inference import inference_hc
-    down=(SimpleNamespace(quant=hc.t[1],meta=hc.t[2],fmt=hc.args[5])
-          if hc.t[2] is not None else hc.t[1])
-    up=(SimpleNamespace(quant=hc.t[3],meta=hc.t[4],fmt=hc.args[6])
-        if hc.t[4] is not None else hc.t[3])
-    inference_hc(streams,hc.t[0],down,up,lo,mixed,hc.lr,hc.args[11],workspace,xn,hc.t[5])
+def hc_combine_mix(streams, block, inject, hc, lo, mixed, workspace, xn=None):
+    post = _hc_step(hc,*streams.shape,streams,inject,xn,lo,mixed)
+    check(lib.snowllm_hc_combine_mix(ctypes.byref(post),_p(block),_p(workspace),
+        workspace.nbytes,_stream()),'hc_combine_mix')
 
 
 @operator
@@ -308,7 +298,9 @@ def hc_linear_step_workspace_bytes(rows, hc, post_hc, count, hidden, mixed, path
         return max(qwen4exp_hc_linear_ws_bytes(rows,hc.lr),
                    hc_combine_mix_workspace_bytes(rows,post_hc,count,hidden))
     post=_hc_step(post_hc,rows,count,hidden)
-    return lib.snowllm_hc_linear_step_workspace_bytes(ctypes.byref(post),hc.lr,mixed,int(path))
+    if isinstance(mixed, HcActivation):
+        path, mixed = mixed.projection_path, True
+    return lib.snowllm_hc_linear_step_workspace_bytes(ctypes.byref(post),hc.lr,bool(mixed),int(path))
 
 
 @operator
@@ -316,23 +308,15 @@ def hc_linear_step(streams, hc, lo, mixed, post_hc, post_lo, post_mixed, xn, w,
                    cu_seqlens, has_state, state_indices, conv_state, recurrent_state,
                    workspace, block, B, path, num_accepted=None, ckpt=None, retain=None,
                    input_xn=None):
-    if not hasattr(lib,'snowllm_hc_linear_step'):
-        if mixed is None:
-            qwen4exp_hc_linear_attn(streams,hc,lo,w,cu_seqlens,has_state,state_indices,
-                conv_state,recurrent_state,workspace,block,B,path,num_accepted,ckpt,retain,input_xn)
-        else:
-            from .attention_linear import fused_linear_attn
-            fused_linear_attn(mixed,w,cu_seqlens,has_state,state_indices,conv_state,
-                recurrent_state,workspace,block,B,path,num_accepted,ckpt,retain)
-        hc_combine_mix(streams,block,lo[:,hc.lr:hc.lr+streams.shape[1]],post_hc,
-                       post_lo,post_mixed,workspace,xn)
-        return
-    prepared = mixed is not None and mixed.dtype is torch.uint8
-    post=_hc_step(post_hc,*streams.shape,streams,lo[:,hc.lr:hc.lr+streams.shape[1]],xn,
-                  post_lo,post_mixed,prepared_input=mixed if prepared else None)
+    if isinstance(mixed, HcActivation):
+        mixed, path = mixed
+    if mixed is not None:
+        _chk(mixed, 'HC attention input', torch.bfloat16)
+    post=_hc_step(post_hc,*streams.shape,streams,lo[:,hc.lr:hc.lr+streams.shape[1]],xn,post_lo,post_mixed)
     at,slots,n,ck_conv,ck_rec=ckpt or (None,None,0,None,None)
     rq,rc,rb=retain or (None,None,None)
-    check(lib.snowllm_hc_linear_step(ctypes.byref(post),_p(None if prepared else mixed),workspace.nbytes,
+    check(lib.snowllm_hc_linear_step(ctypes.byref(post),_p(mixed),
+        mixed.nbytes if mixed is not None else 0,workspace.nbytes,
         _p(streams),*hc.args,_p(lo),_p(input_xn),*w.args,_p(cu_seqlens),_p(has_state),
         _p(state_indices),_p(num_accepted),_p(conv_state),_p(recurrent_state),_p(at),_p(slots),
         n,_p(ck_conv),_p(ck_rec),_p(workspace),_p(block),B,streams.shape[0],int(path),_stream(),

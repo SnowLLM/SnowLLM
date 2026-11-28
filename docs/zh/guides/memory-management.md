@@ -152,9 +152,11 @@ snowllm MODEL --max-gpu-mem 0.9 --max-disk-offload 80GB
 
 `80GB` 是上限，实际需要多少就卸载多少。它限制的是卸载的权重，不是磁盘缓存文件大小；运行时仍需为 GPU 专家缓存和读取缓冲留出空间。
 
-默认直接从模型文件读取。也可以用 `SNOWLLM_MOE_CACHE_DIRS` 指定额外的磁盘缓存目录，保存处理好的专家权重；缺失的记录在首次使用时生成，后续可复用。
+使用自动放置和磁盘上限时，如果引擎初始化期间测得显存缺口，SnowLLM 会记录缺少的字节数，释放本次加载的权重，并缩小每层 GPU 专家缓存后重新加载。每次重试仍遵守主机和磁盘上限。显式设置每层专家槽位数会固定缓存大小。
 
-多块 SSD 可以分别指定目录，并行读取。Linux 用 `:` 分隔，Windows 用 `;` 分隔。
+Qwen MoE、MiniCPM-V 4.7、GLM、DeepSeek V4/V4.1、Inkling 2 和 LFM2.5 都可卸载 routed expert。VQ 直接读取 GGUF，其他格式在加载时按层写入进程专用的临时文件，默认位于 `~/.cache/snowllm/experts`。请为所选投影的全部专家记录留足磁盘空间。共享专家保持常驻，磁盘卸载也支持 decode graph 回放。
+
+可用 `SNOWLLM_MOE_CACHE_DIRS` 指定缓存位置。通用后端按层分配目录；DeepSeek V4 非 VQ 支持跨目录的持久化分条缓存。Linux 用 `:` 分隔路径，Windows 用 `;`。
 
 ::: code-group
 
@@ -176,7 +178,76 @@ snowllm MODEL --max-disk-offload 80GB
 手动放置需要充分理解模型的权重分组、内存占用和卸载机制。配置不当可能导致内存不足或性能下降，通常建议使用自动内存放置。
 :::
 
-可以通过 `--device-map` 指定哪些权重放到主机内存，其余权重保留在 GPU，计算仍由 GPU 执行。
+通常只需设置三个上限。自动规划优先在 GPU 驻留权重，显存不足时先使用允许的主机预算，再将可卸载的路由专家放到磁盘。手动放置可以用同一张映射指定三个位置。
+
+```bash
+snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
+snowllm MODEL --device-map '*=gpu,head=host,experts=disk' --max-host-mem 16GiB --max-disk-offload 32GiB
+```
+
+未指定的权重默认在 GPU。`head=host` 将输出层放到主机，`experts=disk` 允许从磁盘按需换入路由专家。给出磁盘上限时按实际缺口计算 GPU 缓存槽位；单独将专家显式映射到磁盘时，默认每层保留路由 top-k 个 GPU 槽位。可用 `--disk-offload-gpu-cache-experts N` 固定每层 GPU 缓存数量。所有已配置的容量上限仍生效。
+
+### 按层放置权重 {#layer-placement}
+
+每条规则写成 `权重组选择器=位置`。位置可以是 `gpu`、`host` 或 `disk`。disk 仅接受路由专家组 `experts`。下面两列使用相同的层选择规则。
+
+| 选择范围 | 主机内存 | 磁盘 |
+| --- | --- | --- |
+| 全部符合条件的专家层 | `experts=host` | `experts=disk` |
+| 指定层号 12（从 0 编号） | `experts[12]=host` | `experts[12]=disk` |
+| 层号 14 到 40，含两端 | `experts[14-40]=host` | `experts[14-40]=disk` |
+| 选取至多两个符合条件的层 | `experts:2=host` | `experts:2=disk` |
+
+一组权重可以分配给多个位置。加载器先分配明确指定的层号和范围，再按规则的书写顺序处理 `:N`。每条数量规则从余下符合条件的层中按该组权重大小降序选取，同大小时优先选层号小的。整组规则接收剩余符合条件的层。显式范围重叠或某个明确指定的层不支持目标位置时，加载器会报错。
+
+```bash
+snowllm MODEL --device-map '*=gpu,experts[12]=host,experts[14-40]=disk'
+```
+
+#### 视觉模型的实测内存
+
+使用 `--vision-placement disk` 时，大型视觉投影保存在打包的磁盘缓存中。图片编码时读取当前批次所需的张量。实测 Inkling 2 Mini BF16、MiniCPM-V 4.7 F16、Qwen3.6-27B BF16 和 MinerU-4.1 BF16 的缓存大小分别为 606.5、1060.4、883.7 和 1261.9 MiB。纯文本请求跳过这些读取。选择 `--vision-placement gpu` 可让权重常驻显存，省去每批读取的耗时。
+
+在配置了 96 GiB 显存的 Radeon 8060S 上，下列三种配置均以 `--max-host-mem 16GiB` 跑通了单并发 HTTP 推理，健康接口均报告 `disk_offloaded_weight_bytes=0`。启用视觉的两个模型都正确识别了单图和双图中的颜色。
+
+| 模型 | 上下文 / prefill 分块 | 主机权重 | 就绪时设备用量 | 显存上限 |
+| --- | ---: | ---: | ---: | ---: |
+| DeepSeek V4 Flash 0731 IQ2_XXS + adaptive DSpark（文本） | 409600 / 8192 | 2.15 GiB | 91.02 GiB | 95% |
+| GLM-5.3-Flash UD-IQ2_XXS + adaptive MTP 2，F16 视觉头 | 227328 / 8192 | 13.78 GiB | 89.26 GiB | 95% |
+| DeepSeek V4.1 Flash 1017 VQ/Q4_K + adaptive DSpark，BF16 视觉头 | 226304 / 8192 | 15.70 GiB | 95.66 GiB | 96 GiB |
+
+最后一行的启动命令为 `snowllm b/deepseek-v4.1-flash-1017:vq-q4-k-dspark:vision=bf16 --max-host-mem 16GiB --device-map auto --max-gpu-mem 96GiB --max-model-len 226304 --max-num-batched-tokens 8192`。三行都使用自动权重放置。V4.1 实测用两步处理了 16384 个未缓存输入 token，Engram 查表使用本地 SSD。主机权重列不含加载临时缓冲和 HTTP 客户端。
+
+DeepSeek-V4.1 和 GLM-5.3-Flash 从本地缓存流式读取选定的视觉头。下表使用 16 GiB 主机上限、768 token 上下文、并发 1、eager 模式，并关闭前缀缓存。两种模型都通过了纯文本、单图和双图请求。纯文本请求读取视觉缓存 0 字节。两张 112 × 112 图片可在同一批编码，视觉权重读取量与单图相同。
+
+| 模型 | GPU 常驻视觉权重 | 每批图片读取视觉缓存 | 文本专家放置 | 就绪时设备已用显存 / 显存上限 |
+| --- | ---: | ---: | --- | ---: |
+| GLM-5.3-Flash UD-IQ2_XXS + MTP 2，F16 视觉头 | 754 KiB | 1,074.5 MiB | 自动放置，主机权重 6.07 GiB，无磁盘专家 | 91.71 / 92 GiB |
+| DeepSeek-V4.1-Flash-1017 VQ/Q4_K + adaptive DSpark，BF16 视觉头 | 498 KiB | 925.25 MiB | 40 层使用磁盘，每层 384 个专家中有 316 个 GPU 缓存槽位 | 92.00 / 94 GiB |
+
+DeepSeek 的常驻视觉权重已计入图像路由偏置。启动时为图像激活、流式投影和输出特征规划的显存，DeepSeek 为 144.1 MiB（prefill 分块 128），GLM 为 133.9 MiB（分块 32）。就绪时的设备用量还包括文本模型、分配器和驱动。在这台机器上，DeepSeek 的显存上限为 94 GiB 时，仅将主机上限增至 16 GiB 仍无法保证文本专家全部脱离磁盘。
+
+在测试机上编码一张 112 × 112 图片，DeepSeek 的流式与常驻投影分别耗时 206 ms 和 123 ms，GLM 分别为 169 ms 和 52 ms。测量时缓存已建好，预热一次，取三次 GPU 同步计时的中位数。计时范围仅覆盖视觉编码。
+
+以下为视觉头常驻 GPU 时的历史测量。两种手动配置均通过了单图和双图请求。测试使用 eager 模式、768 token 上下文、并发 1、`--prefix-memory-ratio 0`，主机上限 4 GiB、磁盘卸载上限 32 GiB。每个磁盘层在 GPU 保留 240 个专家缓存槽位。
+
+| 模型和视觉头 | 主机层号 | 磁盘层号 | Prefill 分块 | 就绪时设备已用显存 / 显存上限 |
+| --- | --- | --- | ---: | ---: |
+| GLM-5.3-Flash UD-IQ2_XXS，F16 视觉头，MTP 2 | 12 | 14–40 | 32 | 87.48 / 92 GiB |
+| DeepSeek-V4.1-Flash-1017 VQ/Q4_K，BF16 视觉头，DSpark | 12 | 14–30 | 128 | 92.53 / 94 GiB |
+
+DeepSeek 在该配置下只剩 1.47 GiB 显存余量。增大上下文、并发数或单请求图片上限后，应以新配置的启动规划为准。
+
+相同模型、视觉头、上下文和 prefill 分块使用 `--device-map auto --max-disk-offload 32GiB` 时，可由规划器选择每个磁盘层的 GPU 专家槽位。两种自动配置均通过单图和双图请求。下表记录就绪时的设备用量。
+
+| 模型 | GPU 槽位 / 每层专家数 | 磁盘层数 | 主机权重 / 主机上限 | 设备已用显存 / 显存上限 |
+| --- | ---: | ---: | ---: | ---: |
+| GLM-5.3-Flash + MTP 2 | 261 / 288 | 43 | 0.80 / 1 GiB | 90.78 / 92 GiB |
+| DeepSeek-V4.1 + adaptive DSpark，block 5 | 333 / 384 | 39 | 3.79 / 4 GiB | 93.84 / 94 GiB |
+
+DeepSeek 首次选择每层 335 个槽位。两次启动检查分别测得约 140 MiB 和 147 MiB 显存缺口，规划器依次减到 334 和 333 个槽位。
+
+#### 仅指定主机分组的简写
 
 例如，将一层专家的 down 投影权重放到主机内存：
 
@@ -195,4 +266,4 @@ snowllm MODEL --device-map experts.down:1 --max-host-mem 32GB
 
 冒号后的数字是层数，不是层号；SnowLLM 按该分组的权重大小，从大到小选择层。`--max-host-mem` 仍限制主机内存使用，指定的权重放不下时会报错。
 
-固定分组的 `--device-map` 与 `--host-alloc`、`--max-disk-offload` 互斥。
+旧式主机分组简写与 `--host-alloc`、`--max-disk-offload` 互斥。

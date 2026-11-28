@@ -429,19 +429,32 @@ class CLITests(unittest.TestCase):
         _, kw = self.launch_options(recipe=recipe)
         self.assertEqual(kw['max_disk_mem_gib'], 8)
         _, kw = self.launch_options(('--moe-cache-experts', '64'), recipe)
-        self.assertEqual((kw['moe_cache_experts'], kw['max_disk_mem_gib']), (64, None))
+        self.assertEqual((kw['moe_cache_experts'], kw['max_disk_mem_gib']), (64, 8))
         _, kw = self.launch_options(('--max-disk-offload', '0'), recipe)
         self.assertEqual(kw['max_disk_mem_gib'], 0)
         recipe = SimpleNamespace(id='local', serve_as='model', defaults=dict(moe_cache_experts=64))
         _, kw = self.launch_options(('--max-disk-offload', '20GiB'), recipe)
         self.assertEqual((kw['moe_cache_experts'], kw['max_disk_mem_gib']), (0, 20))
-        for defaults in (dict(max_disk_mem_gib=8, moe_cache_experts=64), dict(disk_offload='8GiB')):
-            with self.subTest(defaults=defaults), self.assertRaises(SnowLLMError):
-                Recipe(dict(id='local', repo='a/b', defaults=defaults))
+        recipe = Recipe(dict(id='local', repo='a/b', defaults=dict(
+            max_disk_mem_gib=8, disk_offload_gpu_cache_experts=64, device_map='*=gpu,experts=disk')))
+        _, kw = self.launch_options(recipe=recipe)
+        self.assertEqual((kw['moe_cache_experts'], kw['max_disk_mem_gib']), (64, 8))
+        with self.assertRaises(SnowLLMError):
+            Recipe(dict(id='local', repo='a/b', defaults=dict(disk_offload='8GiB')))
+
+    def test_device_map_and_gpu_cache_slots_with_three_limits(self):
+        rule = '*=gpu,experts[2]=host,experts[3-5]=disk'
+        flags = ('--device-map', rule, '--max-gpu-mem', '64GiB', '--max-host-mem', '4GiB',
+                 '--max-disk-offload', '20GiB', '--disk-offload-gpu-cache-experts', '316')
+        _, opts = self.launch_options(flags)
+        self.assertEqual((opts['device_map'], opts['moe_cache_experts'], opts['max_disk_mem_gib']),
+                         (rule, 316, 20))
+        _, opts = self.launch_options(('--host-offload', '0', '--max-disk-offload', '20GiB'))
+        self.assertEqual((opts['host_offload'], opts['max_disk_mem_gib']), (0, 20))
 
     def test_disk_ceiling_errors_do_not_import_gpu_code(self):
         for options in (('--max-disk-offload', '-1GiB'), ('--max-disk-offload', '0.1B'),
-                        ('--max-disk-offload', '8GiB', '--moe-cache-experts', '64'),
+                        ('--device-map', 'head=disk'),
                         ('--disk-offload', '8GiB'), ('--max-disk-mem', '8GiB')):
             with self.subTest(options=options):
                 result = self.run_cli('MODEL', *options)
@@ -655,14 +668,12 @@ class CLITests(unittest.TestCase):
         self.assertEqual(kw['moe_cache_experts'], 0)
         recipe = Recipe(dict(id='local', repo='a/b', defaults=dict(max_disk_mem_gib=12)))
         _, kw = self.launch_options(('--moe-cache-experts', '32'), recipe)
-        self.assertIsNone(kw['max_disk_mem_gib'])
+        self.assertEqual(kw['max_disk_mem_gib'], 12)
         self.assertEqual(kw['moe_cache_experts'], 32)
         _, kw = self.launch_options(('--host-alloc',), recipe)
         self.assertIsNone(kw['max_disk_mem_gib'])
-        for defaults in (dict(max_disk_mem_gib=12, host_alloc=True),
-                         dict(max_disk_mem_gib=12, moe_cache_experts=32)):
-            with self.subTest(defaults=defaults), self.assertRaises(SnowLLMError):
-                Recipe(dict(id='local', repo='a/b', defaults=defaults))
+        with self.assertRaises(SnowLLMError):
+            Recipe(dict(id='local', repo='a/b', defaults=dict(max_disk_mem_gib=12, host_alloc=True)))
 
     def test_memory_budget_errors_do_not_import_gpu_code(self):
         for pool in ('gpu', 'host', 'disk'):
@@ -721,7 +732,7 @@ class CLITests(unittest.TestCase):
                         ('--max-gpu-mem', '20G'), ('--max-disk-offload', '.9'),
                         ('--max-disk-offload', '20'), ('--max-disk-offload', 'NaN'),
                         ('--max-gpu-mem', '.9', '--gpu-memory-utilization', '.8'),
-                        ('--max-disk-offload', '20GB', '--moe-cache-experts', '32'),
+                        ('--device-map', 'experts=disk,experts.down=host'),
                         ('--max-disk-offload', '20GB', '--host-alloc')):
             with self.subTest(options=options):
                 result = self.run_cli('MODEL', *options)

@@ -44,18 +44,7 @@ class BiasedProjection(Projection):
 
     def forward(self, ctx, x, out):
         with ctx.arena.frame():
-            if self.bias is None and ctx.M > 128 and not (
-                self.n <= 1024 and ctx.M <= 1024
-            ):
-                scratch = ctx.arena.workspace(ops.gemm_bf16_a_ws_bytes(ctx.M, self.k))
-                ops.gemm_bf16_a(x, self.dense, out, ctx.M, self.n, self.k, scratch)
-                return
-            scratch = ctx.arena.workspace(
-                ops.vision_gemm_workspace_bytes(ctx.M, self.n, self.k)
-            )
-            ops.vision_gemm_bias_act(
-                x, self.dense, scratch, out, self.bias, None, ctx.M, self.n, self.k, 0
-            )
+            ops.vision_projection(ctx.arena, x, self.dense, self.bias, out, ctx.M, self.n, self.k)
 
 
 class Qwen2VLForConditionalGeneration(nn.Module):
@@ -67,23 +56,14 @@ class Qwen2VLForConditionalGeneration(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.embed_tokens, self.norm, self.lm_head = embed, norm, head
         self.eps, self.mtp = cfg["rms_norm_eps"], None
-        self.inv_freq = (
-            1.0
-            / (
-                cfg["rope_theta"]
-                ** (
-                    torch.arange(0, geo.head_size, 2, dtype=torch.float32)
-                    / geo.head_size
-                )
-            )
-        ).cuda()
+        self.inv_freq = ops.base_inv_freq(cfg["rope_theta"], geo.head_size).cuda()
 
     def forward(self, ctx):
         ctx.open()
         b = ctx.batch
         self.embed_tokens(b.input_ids, ctx.residual)
         if b.embeds is not None:
-            ctx.residual[b.embed_rows] = b.embeds
+            ops.index_copy(ctx.residual, 0, b.embed_rows, b.embeds)
         ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin)
         for layer in self.layers:
             layer(ctx)

@@ -1,6 +1,15 @@
 <!-- snowllm-changelog:start -->
 # Changelog / 更新日志
 
+## 0.4.0.dev3 — 2026-11-28
+
+- Choose GPU, host or disk placement for supported weights. Set the offload directory in WebUI settings.
+  支持为相应权重选择 GPU、主机或磁盘，可在 WebUI 设置中指定卸载目录。
+- Add image inputs for Inkling-2-Mini, DeepSeek-V4.1-Flash and GLM-5.3-Flash with compatible vision projectors.
+  Inkling-2-Mini、DeepSeek-V4.1-Flash 和 GLM-5.3-Flash 搭配相应视觉投影器后可接收图像输入。
+- Fix chat tokenization, tool-call ordering and mixed-batch sampling. Pin SnowLLM-Kernels to `0.4.1.dev3`.
+  修复聊天分词、工具调用顺序及混合批次采样问题。内核依赖固定为 `0.4.1.dev3`。
+
 ## 0.4.0.dev2 — 2026-11-26
 
 - Choose the original or continued-training DFlash2 checkpoint for Qwen3.8 Flash Next UD3.1 with `DFlash2@incoai` or `DFlash2@san-digital`. Both support adaptive drafting with a configurable block limit.

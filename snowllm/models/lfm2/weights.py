@@ -90,6 +90,8 @@ def load_weights(w,cfg,want,fp8,with_mtp,device_map=None):
                     up=torch.stack([read(key+f'{e}.w3.weight') for e in range(g.moe_num_experts)])
                     down=torch.stack([read(key+f'{e}.w2.weight') for e in range(g.moe_num_experts)])
                 mlp=FusedMoE(router,ops.moe_shuffle_gate_up(gate.contiguous(),up.contiguous()),ops.moe_shuffle_down(down))
+        if isinstance(mlp, FusedMoE):
+            mlp.bind_disk(i)
         layers.append(Layer(attn,mlp,read(p+'operator_norm.weight'),read(p+'ffn_norm.weight')))
     model=_finish(cfg,layers,embed,read('model.embedding_norm.weight'),head)
     model.device_map=device_map
@@ -141,6 +143,8 @@ def load_gguf_weights(rd,cfg,want,device_map=None,mtp=False):
                 down,=rd.transient(names[2])
                 dw=ops.moe_kquant_shuffle_down(down,fmts[2],g.moe_num_experts)
                 mlp=FusedMoE(router,gu,dw)
+        if isinstance(mlp, FusedMoE):
+            mlp.bind_disk(i)
         layers.append(Layer(attn,mlp,rd.tensor(p+'attn_norm.weight'),rd.tensor(p+'ffn_norm.weight')))
         if ops.drying() is None:
             torch.cuda.synchronize()

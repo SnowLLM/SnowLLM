@@ -55,7 +55,7 @@ def _specs(rd, geo):
         if geo.is_hashed(i) or f'blk.{i}.ffn_gate_tid2eid.weight' in rd.gguf:
             continue
         if f'blk.{i}.ffn_exps_vq.blob' in rd.gguf:
-            raise SnowLLMError('VQ MoE does not support the expert LRU cache yet')
+            raise SnowLLMError('VQ records require the native disk expert proxy')
         names = tuple(f'blk.{i}.ffn_{part}_exps.weight' for part in ('gate', 'up', 'down'))
         tensors = [rd.gguf[n] for n in names]
         if any(t.shape[0] != experts or t.nbytes % experts for t in tensors):
@@ -101,17 +101,19 @@ class ExpertStore:
         if mode not in ('all', 'down', 'auto'):
             raise SnowLLMError('moe_cache_mode must be all, down or auto')
         specs = _specs(rd, geo)
-        self.resident_layers = tuple(i for i in range(geo.num_layers) if i not in specs)
         def on_host(role, layer):
             return device_map is not None and device_map.on_host('experts.' + role, layer)
         self.host_layers = tuple(i for i in specs if on_host('gate_up', i) or on_host('down', i))
         self.host_bytes = sum(sum(_sizes(fmt, geo.moe_num_experts, role))
                               for i, (gu, dn, _) in specs.items()
                               for role, fmt in (('gate_up', gu), ('down', dn)) if on_host(role, i))
+        self.specs = {i: spec for i, spec in specs.items() if i not in self.host_layers
+                      and (device_map is None or device_map.on_disk(i))}
+        self.resident_layers = tuple(i for i in range(geo.num_layers)
+                                     if i not in self.specs and i not in self.host_layers)
         self.fixed_bytes = sum(sum(_sizes(fmt, geo.moe_num_experts, role))
-                               for i in self.host_layers for role, fmt in
+                               for i in specs if i not in self.specs for role, fmt in
                                (('gate_up', specs[i][0]), ('down', specs[i][1])) if not on_host(role, i))
-        self.specs = {i: spec for i, spec in specs.items() if i not in self.host_layers}
         self.experts, self.topk = geo.moe_num_experts, geo.moe_topk
         self.disk_cache = ExpertDiskCache.from_env()
         self.buffers = {m: _buffers(self.specs, m, self.disk_cache is not None)
@@ -223,6 +225,9 @@ class ExpertStore:
             self.hits_done = torch.cuda.Event()
             from ..checkpoint.reader import FileReader
             self._file_reader = FileReader(*reader_config)
+            from concurrent.futures import ThreadPoolExecutor
+            self.proxy = ThreadPoolExecutor(max_workers=1, thread_name_prefix='expert-reader',
+                initializer=torch.cuda.set_device, initargs=(torch.cuda.current_device(),))
             self.reader = self._file_reader._r
 
     def allocation_bytes(self, mode, count):
@@ -231,6 +236,11 @@ class ExpertStore:
                       for gu, dn, _ in self.specs.values())
         raw, scratch = self.buffers[mode]
         return self.fixed_bytes + weights + raw * min(count, self.topk) + scratch
+
+    def _read(self, count):
+        result = self.proxy.submit(lib.snowllm_file_reader_readv, self.reader, self.io_paths,
+            self.io_offsets, self.io_sizes, self.io_destinations, count, _stream())
+        check(result.result(), 'read disk experts')
 
     def load_many(self, layer, assignments, gate_up, down):
         if self.disk_cache is not None:
@@ -262,8 +272,7 @@ class ExpertStore:
                     raw.append(tensor)
                     at += size
                 tensors.append(raw)
-            check(lib.snowllm_file_reader_readv(self.reader, self.io_paths, self.io_offsets,
-                self.io_sizes, self.io_destinations, self.parts * len(batch), _stream()), 'read cached experts')
+            self._read(self.parts * len(batch))
             for (expert, slot), raw in zip(batch, tensors):
                 self._insert(layer, raw, slot, gate_up, down, expert=expert)
 
@@ -280,8 +289,7 @@ class ExpertStore:
                         self.io_destinations[count] = self.raw.data_ptr() + i * self.raw_stride + offset + destination
                         count += 1
                         self.disk_cache.read_bytes += size
-            check(lib.snowllm_file_reader_readv(self.reader, self.io_paths, self.io_offsets,
-                self.io_sizes, self.io_destinations, count, _stream()), 'read prepacked experts')
+            self._read(count)
             for i, (_, slot, _) in enumerate(batch):
                 for role, fmt, offset, size, _ in self.packed[layer]:
                     begin = i * self.raw_stride + offset
@@ -321,6 +329,7 @@ class ExpertStore:
                 self.stream.synchronize()
             if self.io_stream is not None:
                 self.io_stream.synchronize()
+            self.proxy.shutdown(wait=True)
             self._file_reader.close()
             self.reader = None
 
@@ -342,13 +351,22 @@ class CachedExperts:
         self.weights = None
         self.weights_key = None
 
+    @property
+    def gate(self):
+        return self.gate_up
+
     def workspace_bytes(self, rows):
         return lib.snowllm_moe_cache_workspace_bytes(rows)
 
     @operator
     def forward(self, hidden, router, shared_gate, shared_down, out, workspace,
                 token_ids=None, tid2eid=None):
+        from ..engine.graphs import expert_capture
         store = self.store
+        if graph := expert_capture(store):
+            graph.boundary(lambda: self.forward(hidden, router, shared_gate, shared_down, out,
+                                                workspace, token_ids, tid2eid))
+            return
         rows = hidden.shape[0]
         if not rows:
             return

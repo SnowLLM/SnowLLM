@@ -320,9 +320,12 @@ class InklingTextModel:
         cache.position = offset + size
         return logits
 
-    def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill, *, taps=None, tap_at=None):
+    def hidden(self, input_ids, position, sequences, visit_inputs, plan, prefill, *, taps=None, tap_at=None,
+               embeds=None, embed_rows=None):
         eps = self.config["rms_norm_eps"]
         x = normalize_rows(ops.gather_rows(self.embedding, input_ids), eps, self.embed_norm)
+        if embeds is not None:
+            ops.copy_rows(x, embeds, dst_index=embed_rows)
         blocks, bank, pass_messages = [], None, None
         for visit, i in enumerate(self.visits):
             if i == self.start:

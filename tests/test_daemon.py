@@ -154,6 +154,36 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
             await self.manager.task
             self.assertEqual(self.manager.state, "ready")
 
+    async def test_offload_directory_save_override_and_clear(self):
+        from snowllm.checkpoint.expert_cache import ExpertDiskCache
+        from snowllm.config import disk_offload_directory
+
+        config = self.manager.config_path
+        root = config.parent / 'cache SSD'
+        transport = httpx.ASGITransport(app=create_app(self.manager))
+        with patch.dict(os.environ, SNOWLLM_CONFIG=str(config), SNOWLLM_MOE_CACHE_DIRS=''):
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                resp = await client.put('/daemon/config', json={'disk_offload_dir': root.name})
+                self.assertEqual(resp.status_code, 200, resp.text)
+                self.assertEqual(resp.json()['disk_offload_dir'], str(root))
+                self.assertEqual(disk_offload_directory(), root)
+                cache = ExpertDiskCache.from_env()
+                size = cache.plan(0, 'down', 256, 1, 'test')
+                cache.publish(0, 'down', 0, bytes(size))
+                shard = Path(os.fsdecode(cache.lookup(0, 'down', 0)[0][0]))
+                self.assertTrue(shard.is_relative_to(root / 'experts'))
+                with patch.dict(os.environ, SNOWLLM_MOE_CACHE_DIRS=str(config.parent / 'stripe')):
+                    self.assertEqual(ExpertDiskCache.from_env().directories, (config.parent / 'stripe',))
+                    self.assertEqual(self.manager.status()['moe_cache_dirs_override'], str(config.parent / 'stripe'))
+                invalid = await client.put('/daemon/config', json={'disk_offload_dir': str(config)})
+                self.assertEqual(invalid.status_code, 400)
+                self.assertEqual(disk_offload_directory(), root)
+                cleared = await client.put('/daemon/config', json={'disk_offload_dir': None})
+                self.assertEqual(cleared.status_code, 200)
+                self.assertIsNone(disk_offload_directory())
+                self.assertIsNone(ExpertDiskCache.from_env())
+                self.assertTrue(shard.exists())
+
     async def test_model_storage_deletion_boundaries_and_active_files(self):
         root = Path(self.tmp.name) / "models"
         self.manager.configure(str(root))
@@ -269,6 +299,10 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
                 methods = {r['spec'] for r in rows if r.get('model_id') == preset['model_id'] and r.get('variant') == preset['variant']}
                 self.assertEqual(methods, {'mtp-adaptive', 'dflash2', 'dflash2-san-digital', 'dspark', 'none'})
             self.assertEqual(response.json()['load_defaults']['kv_cache_dtype'], 'bf16')
+            head = next(o for o in iq4['vision_options'] if o['vision_head'] == 'F16')
+            ref = head['id']
+            self.assertEqual(ref, iq4['id'] + ':vision=f16')
+            self.assertEqual(head['vision_file'], 'vision/mmproj-F16.gguf')
             with patch.object(self.manager, 'pull', return_value={}) as pull:
                 self.assertEqual((await client.post('/daemon/pull', json={'recipe': ref})).status_code, 200)
                 pull.assert_called_once_with(ref)

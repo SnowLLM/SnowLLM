@@ -16,16 +16,18 @@ HEAD_PLAN = ('mtp-decode-selected-head',)
 _planning = False
 
 
-def available(model):
-    return (model is not None and model.layer.is_full and model.layer.ple is None
-            and hasattr(lib,'snowllm_attention_projection_rows'))
+def supported_rows(model, batch_size, kv_int8):
+    if model is None or not model.layer.is_full or model.layer.ple is not None:
+        return 0
+    return lib.snowllm_mtp_tail_rows(batch_size, kv_int8)
 
 
 def enabled(model, batch, rows, kv_int8):
-    return (available(model) and (_planning or os.environ.get('SNOWLLM_MTP_PREFILL_TAIL','1') != '0')
-            and not kv_int8 and batch.is_prefill and batch.need_logits and rows == 8192
-            and batch.batch_size == 1 and batch.last_row is not None and batch.last_row.numel() == 1
-            and batch.host_seq_lens == [8192] and batch.host_cu_seqlens == [0,8192])
+    return (batch.is_prefill and batch.need_logits and batch.last_row is not None
+            and batch.last_row.numel() == 1 and rows > 0
+            and rows == supported_rows(model, batch.batch_size, kv_int8)
+            and batch.host_seq_lens == [rows] and batch.host_cu_seqlens == [0, rows]
+            and (_planning or os.environ.get('SNOWLLM_MTP_PREFILL_TAIL', '1') != '0'))
 
 
 @contextmanager
@@ -80,7 +82,7 @@ def tail_prefill(model, ctx, streams):
         tail_ctx = replace(ctx, batch=tail_b, M=B, path=ops.Path.DECODE,
             residual=tail_streams, blk=a.new(B, E), qsa=qsa,
             qsa_seq_of_row=seq, qsa_cu_seqlens=cu, qsa_lens=None,
-            hc_xn=None, hc_prepared=None, xn_live=False)
+            hc_xn=None, xn_live=False)
         q_tail = ops.gather_rows(q, last)
         index_tail = ops.gather_rows(index_q, last)
         proj_tail = ops.attention_projection_rows(proj, last)

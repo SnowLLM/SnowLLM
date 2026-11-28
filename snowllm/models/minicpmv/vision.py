@@ -8,7 +8,7 @@ import torch
 from ... import ops
 from ...ops.allocation import copy_into
 from ..._capi import SnowLLMError
-from ..vision_layers import VisionBlock, VisionLinear
+from ..vision_layers import RESIDENT_VISION, VisionBlock, check_vision_room, execute_vision, position_weights
 
 
 def _cu(grids):
@@ -28,7 +28,8 @@ def _windows(grids):
 
 
 class MiniCPMVision:
-    def __init__(self, sd, cfg):
+    def __init__(self, sd, cfg, weights=RESIDENT_VISION):
+        self.streamed = weights is not RESIDENT_VISION
         self.config = cfg
         self.hidden = h = cfg["hidden_size"]
         self.heads = cfg["num_attention_heads"]
@@ -44,19 +45,19 @@ class MiniCPMVision:
             return sd[p + name].to(torch.bfloat16).cuda()
 
         def linear(name):
-            return VisionLinear.pack(get(name + ".weight"), get(name + ".bias"))
+            return weights.linear(lambda: get(name + ".weight"), get(name + ".bias"))
 
         def attention(name):
-            return VisionLinear.pack(
-                torch.cat([get(name + f".{proj}_proj.weight") for proj in ("q", "k", "v")]),
+            return weights.linear(
+                lambda: torch.cat([get(name + f".{proj}_proj.weight") for proj in ("q", "k", "v")]),
                 torch.cat([get(name + f".{proj}_proj.bias") for proj in ("q", "k", "v")]))
 
         def norm(name):
             return get(name + ".weight"), get(name + ".bias")
 
-        self.patch = VisionLinear.pack(get("embeddings.patch_embedding.weight").reshape(h, -1),
+        self.patch = weights.linear(lambda: get("embeddings.patch_embedding.weight").reshape(h, -1),
                                        get("embeddings.patch_embedding.bias"))
-        self.positions = get("embeddings.position_embedding.weight")
+        self.positions = weights.table(lambda: get("embeddings.position_embedding.weight"))
         self.post_norm = norm("post_layernorm")
         self.blocks = []
         for i in range(cfg["num_hidden_layers"]):
@@ -75,15 +76,17 @@ class MiniCPMVision:
         mp = "model.merger.mlp.0."
         self.merger_norm = tuple(sd[mp + "pre_norm." + s].to(torch.bfloat16).cuda()
                                  for s in ("weight", "bias"))
-        self.merger = [VisionLinear.pack(sd[mp + name + ".weight"].to(torch.bfloat16).cuda(),
+        self.merger = [weights.linear(lambda: sd[mp + name + ".weight"].to(torch.bfloat16).cuda(),
                                          sd[mp + name + ".bias"].to(torch.bfloat16).cuda())
                        for name in ("linear_1", "linear_2")]
 
     @classmethod
-    def from_gguf(cls, rd):
+    def from_gguf(cls, rd, weights=RESIDENT_VISION):
+        from ...checkpoint.reader import TensorMapping
         from ...checkpoint.gguf.minicpmv import vision_config, vision_names
         cfg = vision_config(rd.gguf)
-        return cls({hf: rd.tensor(gg) for hf, gg in vision_names(rd.gguf).items()}, cfg)
+        names = vision_names(rd.gguf)
+        return cls(TensorMapping(names, lambda key: rd.tensor(names[key])), cfg, weights)
 
     def _grids(self, target_sizes, mode):
         if mode not in ("4x", "16x"):
@@ -139,11 +142,13 @@ class MiniCPMVision:
         patches = torch.zeros(m, self.patch.k, dtype=torch.bfloat16)
         patches[:, :3*p*p].copy_(pixel_values.cpu().reshape(3, p, m, p)
                                  .permute(2, 0, 1, 3).reshape(m, -1))
-        out = torch.empty(m//(16 if mode=='16x' else 4),self.out_hidden,
-                          dtype=torch.bfloat16,device='cuda')
+        rows = m // (16 if mode == '16x' else 4)
+        if self.streamed:
+            check_vision_room(rows * self.out_hidden * 2)
+        out = torch.empty(rows, self.out_hidden, dtype=torch.bfloat16, device='cuda')
         arena = ops.Arena()
-        return arena.execute(('vision',),m,
-            lambda: self._forward_gpu(arena,grids,mode,patches,out))
+        return execute_vision(arena, ('vision',), m,
+            lambda: self._forward_gpu(arena,grids,mode,patches,out), self.streamed)
 
     def _forward_gpu(self,arena,grids,mode,patches,out):
         from transformers.vision_utils import get_vision_nearest_position_ids
@@ -154,7 +159,7 @@ class MiniCPMVision:
         self._gemm(b["patches"], self.patch, hidden, b)
         ids = get_vision_nearest_position_ids(torch.tensor(grids), math.isqrt(self.positions.shape[0]))
         copy_into(b["positions"],ids.to(torch.int32))
-        ops.vision_pos_embed_add(hidden, self.positions, b["positions"])
+        ops.vision_pos_embed_add(hidden, position_weights(self.positions, arena), b["positions"])
         copy_into(b["cu"],_cu(grids))
         cu = b["cu"]
         b["tile_map"] = ops.vision_attention_tile_map(cu,hidden.shape[0])

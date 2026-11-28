@@ -8,6 +8,19 @@ from .._capi import check, lib
 from ._common import _chk, _p, _stream
 
 
+def base_inv_freq(theta, dim):
+    indices = torch.arange(0, dim, 2, dtype=torch.float32)
+    return 1.0 / (theta ** (indices / dim))
+
+
+def vision_rope_table(positions, inv_freq, *, cls_token=False):
+    angles = (positions.unsqueeze(-1) * inv_freq).flatten(1)
+    angles = torch.cat((angles, angles), dim=-1)
+    if cls_token:
+        angles = torch.nn.functional.pad(angles, (0, 0, 1, 0))
+    return angles.cos(), angles.sin()
+
+
 @operator
 def rope_cos_sin(position_ids: torch.Tensor, inv_freq: torch.Tensor, cos: torch.Tensor,
                  sin: torch.Tensor, mrope: bool = True, mscale: torch.Tensor | None = None) -> None:

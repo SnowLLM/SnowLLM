@@ -24,7 +24,7 @@
   "priority": 149,
   "serve_as": "DeepSeek-V4.1-Flash-1017",
   "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
-  "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Vision is not enabled.",
+  "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. The v3 recipe can enable the included BF16 vision head.",
   "defaults": {
     "max_num_seqs": 1,
     "num_spec": 0,

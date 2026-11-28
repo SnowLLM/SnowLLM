@@ -128,6 +128,36 @@
       "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
     }
   },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 902822624
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 899283680
+      },
+      "F32": {
+        "file": "mmproj-F32.gguf",
+        "bytes": 1786305248
+      }
+    },
+    "gguf-mtp": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 902822528
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 899283584
+      },
+      "F32": {
+        "file": "mmproj-F32.gguf",
+        "bytes": 1786305152
+      }
+    }
+  },
   "variants": {
     "fp8": {
       "precision": "FP8",

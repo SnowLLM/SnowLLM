@@ -51,6 +51,21 @@ class ThinkingControlsTests(unittest.TestCase):
         self.assertTrue(capabilities["switch"])
         self.assertEqual(capabilities["levels"], ["xhigh", "medium", "low"])
 
+    def test_effort_map_in_template_with_generation_blocks(self):
+        from tokenizers import Tokenizer, models
+        from transformers import PreTrainedTokenizerFast
+
+        source = """
+        {% set levels = {'none': 0.0, 'medium': 0.7, 'xhigh': 0.99, 'max': 0.99} %}
+        {% set effort = reasoning_effort if reasoning_effort is defined else 0.9 %}
+        {% if effort is string %}{% set key = effort | trim %}
+        {% if key not in levels %}{{ raise_exception('unknown effort') }}{% endif %}
+        {% generation %}{{ levels[key] }}{% endgeneration %}{% endif %}
+        """
+        tokenizer = PreTrainedTokenizerFast(tokenizer_object=Tokenizer(models.WordLevel()),
+                                            chat_template=source)
+        self.assertEqual(thinking_capabilities(tokenizer)["levels"], ["none", "medium", "xhigh", "max"])
+
     def test_required_model_capabilities_override_template_switch(self):
         tok = state().tokenizer
         required = thinking_capabilities(tok, required=True)

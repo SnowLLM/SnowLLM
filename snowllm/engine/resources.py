@@ -64,12 +64,18 @@ class Resource:
             finally:
                 probe.release()
 
-    def bytes_for(self, *args, **kwargs):
+    def _layout(self, args, kwargs):
         key = (args, tuple(sorted(kwargs.items())))
         if key not in self._sizes:
-            with dry_alloc() as dry, self.temporary(*args, **kwargs):
-                self._sizes[key] = dry.device
+            with dry_alloc() as dry, self.temporary(*args, **kwargs) as probe:
+                self._sizes[key] = dry.device, tuple(pool.committed for pool in probe.slabs.pools)
         return self._sizes[key]
+
+    def bytes_for(self, *args, **kwargs):
+        return self._layout(args, kwargs)[0]
+
+    def slab_sizes(self, *args, **kwargs):
+        return self._layout(args, kwargs)[1]
 
 
 class ResourceSet:
@@ -225,6 +231,7 @@ class PoolPlan:
     checkpoint_bytes: int = 0
     future_bytes: int = 0
     minimum_snapshots: int = 1
+    slab_sizes: Callable[[int], tuple[int, ...]] | None = None
 
     @property
     def snapshot_floor(self):

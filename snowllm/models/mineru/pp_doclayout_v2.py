@@ -64,8 +64,7 @@ class SelfAttention:
         q = self.q(qk).view(batch, length, 8, channels // 8).transpose(1, 2)
         k = self.k(qk).view(batch, length, 8, channels // 8).transpose(1, 2)
         v = self.v(x).view(batch, length, 8, channels // 8).transpose(1, 2)
-        scores = op.multiply(op.matmul(q, k.transpose(-1, -2)), (channels // 8) ** -0.5)
-        value = op.dense(op.matmul(op.softmax(scores), v).transpose(1, 2)).view(
+        value = op.dense(op.scaled_attention(q, k, v).transpose(1, 2)).view(
             batch, length, channels
         )
         return self.out(value)

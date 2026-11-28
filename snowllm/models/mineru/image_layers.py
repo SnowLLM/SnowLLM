@@ -50,8 +50,9 @@ class Norm:
         self.eps = eps
         self.scale = self.shift = None
         if self.weight.dtype == torch.float32:
-            self.scale = self.weight * torch.rsqrt(self.variance + eps)
-            self.shift = self.bias - self.mean * self.scale
+            self.scale, self.shift = op.batch_norm_affine(
+                self.weight, self.bias, self.mean, self.variance, eps
+            )
 
     def __call__(self, x):
         if self.scale is not None:
@@ -139,12 +140,7 @@ class SqueezeExcitation:
     def __call__(self, x):
         weight = self.second(self.first(op.adaptive_pool(x)))
         if self.act == "clip02":
-            weight = op.evaluate(
-                torch.clamp,
-                weight.shape,
-                (op.add(op.multiply(weight, 0.2), 0.5),),
-                {"min": 0.0, "max": 1.0},
-            )
+            weight = op.clamp(op.add(op.multiply(weight, 0.2), 0.5), 0.0, 1.0)
         else:
             weight = op.activation(weight, self.act)
         return op.multiply(x, weight)

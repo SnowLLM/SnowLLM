@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+from ..config import disk_offload_directory
 from ..errors import SnowLLMError
 from . import _cache_io
 
@@ -17,6 +18,17 @@ def align(size):
     return -(-size // ALIGN) * ALIGN
 
 
+def expert_cache_directories():
+    value = os.environ.get('SNOWLLM_MOE_CACHE_DIRS')
+    if value:
+        paths = value.split(os.pathsep)
+        if any(not p.strip() for p in paths):
+            raise SnowLLMError('SNOWLLM_MOE_CACHE_DIRS contains an empty directory')
+        return tuple(Path(p).expanduser().resolve() for p in paths)
+    root = disk_offload_directory()
+    return (root / 'experts',) if root else ()
+
+
 class ExpertDiskCache:
     def __init__(self, directories):
         self.directories = tuple(Path(p).expanduser().resolve() for p in directories)
@@ -27,13 +39,8 @@ class ExpertDiskCache:
 
     @classmethod
     def from_env(cls):
-        value = os.environ.get('SNOWLLM_MOE_CACHE_DIRS', '')
-        if not value:
-            return None
-        parts = value.split(os.pathsep)
-        if any(not p.strip() for p in parts):
-            raise SnowLLMError('SNOWLLM_MOE_CACHE_DIRS contains an empty directory')
-        return cls(parts)
+        directories = expert_cache_directories()
+        return cls(directories) if directories else None
 
     def plan(self, layer, role, size, experts, identity):
         record = align(size)

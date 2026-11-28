@@ -81,12 +81,13 @@ class WindowsAccountingTests(unittest.TestCase):
 
     def test_persistent_state_still_rejects_when_no_more_weights_can_move(self):
         from snowllm.engine.runner import BaseRunner
-        from snowllm.errors import SnowLLMError
+        from snowllm.errors import CapacityError
         runner = object.__new__(BaseRunner)
         runner.model, runner._allow = SimpleNamespace(), 2
         with patch('snowllm.models.placement.ensure_room', return_value=False):
-            with self.assertRaisesRegex(SnowLLMError, 'persistent state and workspace'):
+            with self.assertRaises(CapacityError) as caught:
                 runner._persistent_capacity(10)
+        self.assertEqual(caught.exception.gpu_shortfall, 8)
 
     def test_pool_does_not_credit_windows_reusable_cache_twice(self):
         from snowllm.engine.runner import BaseRunner, CapacityError

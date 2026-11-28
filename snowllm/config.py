@@ -35,7 +35,7 @@ def read_config(path: Path | None = None) -> dict:
         if not isinstance(values['models_dirs'], list):
             raise ValueError(f'models_dirs in {path} must be a list of paths')
         _model_paths(values['models_dirs'], 'models_dirs')
-    for key in ("recipes_url", "library_path"):
+    for key in ("recipes_url", "library_path", "disk_offload_dir"):
         if values.get(key) is not None and (not isinstance(values[key], str) or not values[key].strip()):
             raise ValueError(f"{key} in {path} must be a non-empty string or null")
     return values
@@ -93,6 +93,13 @@ def models_directory(path: Path | None = None, values: dict | None = None,
                      override: str | list[str] | None = None) -> tuple[Path, str]:
     directories, source = models_directories(path, values, override)
     return directories[0], source
+
+
+def disk_offload_directory(path: Path | None = None, values: dict | None = None) -> Path | None:
+    path = path or default_config_path()
+    values = read_config(path) if values is None else values
+    raw = values.get("disk_offload_dir")
+    return (path.parent / Path(raw).expanduser()).resolve() if raw else None
 
 
 def write_config(path: Path, values: dict) -> None:

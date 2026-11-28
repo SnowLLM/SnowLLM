@@ -146,6 +146,10 @@ class Recipe:
         self.files = raw.get("files") or []
         self.defaults = dict(raw.get("defaults") or {})
         if not self.stale:
+            if 'disk_offload_gpu_cache_experts' in self.defaults:
+                count = self.defaults.pop('disk_offload_gpu_cache_experts')
+                if self.defaults.setdefault('moe_cache_experts', count) != count:
+                    raise SnowLLMError(f"recipe {self.id!r} sets conflicting GPU expert cache sizes")
             if "gpu_memory_utilization" in self.defaults:
                 previous = self.defaults.pop("gpu_memory_utilization")
                 if "max_gpu_mem_util" in self.defaults and self.defaults["max_gpu_mem_util"] != previous:
@@ -354,21 +358,52 @@ def _catalogue(raw: dict, url: str, *, bundle: bool = False) -> list[Recipe]:
         # The initial official v3 feed listed only the preset's block size for DFlash.
         fixed_blocks = {r.id: r for r in out if url == CATALOGUE_URL and r.spec in ('dflash', 'dflash2')
                         and r.raw.get('parameters', {}).get('dflash_block') in ({'values': [0]}, {'values': [4]})}
-        if missing or fixed_blocks:
+        missing_heads = {r.id: r for r in out if url == CATALOGUE_URL and 'vision_head' not in r.raw}
+        if missing or fixed_blocks or missing_heads:
             try:
                 packaged = _bundled_entries()
             except SnowLLMError:
                 packaged = []
             for entry in packaged:
-                recipe = missing.get(entry['id']) or fixed_blocks.get(entry['id'])
+                head = missing_heads.get(entry['id']) if 'vision_head' in entry else None
+                recipe = missing.get(entry['id']) or fixed_blocks.get(entry['id']) or head
                 if not recipe or source_digest(recipe) != source_digest(Recipe(entry)):
                     continue
                 if recipe.id in missing and entry.get('bytes'):
                     recipe.bytes = recipe.raw['bytes'] = entry['bytes']
+                if head:
+                    recipe.raw.update({key: entry[key] for key in ('vision_head', 'vision_file', 'vision_heads') if key in entry})
                 block_rule = entry.get('parameters', {}).get('dflash_block')
                 if recipe.id in fixed_blocks and block_rule and block_rule.get('type') == 'integer':
                     recipe.raw['parameters'] = {**recipe.raw['parameters'], 'dflash_block': block_rule}
     return out
+
+
+def with_vision(recipe: Recipe, choice: str) -> Recipe:
+    raw = recipe.raw
+    heads = raw.get('vision_heads', {})
+    selected = next((key for key in (*heads, 'none') if key.casefold() == choice.casefold()), None)
+    if not heads or selected is None or 'vision_base' in raw:
+        raise SnowLLMError(f"{recipe.id} has no vision head {choice!r}")
+    previous = raw['vision_head']
+    if selected == previous:
+        return recipe
+    old = heads.get(previous, {})
+    new = heads.get(selected, {})
+    include = [name for name in raw['include'] if name != old.get('file')]
+    sources = list(raw.get('sources', []))
+    path = 'none'
+    included = new.get('file') in include
+    if included:
+        path = new['file']
+    elif new:
+        path = 'vision/' + new['file']
+        sources.append(dict(repo=recipe.repo, revision=recipe.revision, subdir='vision', include=[new['file']]))
+    size = recipe.bytes + (0 if included else new.get('bytes', 0)) - old.get('bytes', 0) if recipe.bytes else 0
+    return Recipe({**raw, 'id': recipe.id + ':vision=' + selected.lower(),
+                   'vision_base': recipe.id, 'vision_head': selected, 'vision_file': path,
+                   'include': include, 'sources': sources, 'bytes': size,
+                   'modalities': ['text', 'image'] if new else ['text']}, bundle=recipe.bundle)
 
 
 def find(name: str, recipes: list[Recipe], *, memory_gib=None) -> Recipe:
@@ -378,6 +413,9 @@ def find(name: str, recipes: list[Recipe], *, memory_gib=None) -> Recipe:
     for r in recipes:
         if name in (r.id, r.ref):
             return r
+    base, separator, choice = name.rpartition(':vision=')
+    if separator:
+        return with_vision(find(base, recipes, memory_gib=memory_gib), choice)
     parts = name.casefold().split(':')
     if len(parts) == 3 and '@' in parts[2]:
         model, variant, label = parts
@@ -492,9 +530,10 @@ def write_manifest(recipe: Recipe, dest: pathlib.Path, blobs: list[Blob]) -> Non
         "files": [{"path": b.dest.relative_to(dest).as_posix(), "size": b.size, "sha256": b.sha256}
                   for b in blobs],
     }
-    profile = recipe.defaults.get("mtp_adaptive") or "model_id" in recipe.raw
+    profile = recipe.defaults.get("mtp_adaptive") or "model_id" in recipe.raw or 'vision_base' in recipe.raw
     receipt.update({k: recipe.raw[k] for k in ("model_id", "variant", "spec", "spec_label", "preset", "parameters", "recommend_order",
-                                               "min_system_gib", "base_defaults", "inference", "draft_params") if k in recipe.raw})
+                                               "min_system_gib", "base_defaults", "inference", "draft_params",
+                                               "vision_head", "vision_file", "modalities") if k in recipe.raw})
     primary = dest / MANIFEST
     path = primary
     if profile:
@@ -817,7 +856,7 @@ def _parser(cmd: str) -> argparse.ArgumentParser:
     p.add_argument("--recipe-memory", type=positive_gib, metavar="GiB",
                    help="select a recommended preset for this system RAM capacity")
     p.add_argument("recipe", nargs="?", metavar="RECIPE",
-                   help="which one; omit it to pick from a list")
+                   help="recipe to download; append :vision=HEAD or :vision=none to select a projector")
     p.add_argument("--dir", metavar="DIR", default=None,
                    help="download here instead of MODELS_DIR/<the recipe's dir>")
     p.add_argument("--jobs", "-j", type=int, default=DEFAULT_JOBS, metavar="N",

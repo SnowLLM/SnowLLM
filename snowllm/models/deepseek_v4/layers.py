@@ -10,6 +10,7 @@ from typing import NamedTuple
 import torch
 from torch import nn
 
+from ..moe import StandardMoE
 from ... import ops
 from ...engine.forward_context import Dsv4Context
 from ...trace import span
@@ -358,30 +359,21 @@ class Attention(nn.Module):
                                     plan, rot, fp8=0)
 
 
-class MoE(nn.Module):
+class MoE(StandardMoE):
     def __init__(self, router_w: torch.Tensor, gate_up: ExpertWeight, down: ExpertWeight,
                  shared_gate_up: ExpertWeight, shared_down: ExpertWeight, norm: RMSNorm,
                  geo: DeepSeekV4Geometry, tid2eid: torch.Tensor | None = None) -> None:
-        super().__init__()
-        self.router_w, self.gate_up, self.down = router_w, gate_up, down
-        self.shared_gate_up, self.shared_down, self.norm = shared_gate_up, shared_down, norm
-        self.tid2eid, self.hidden = tid2eid, geo.hidden
-        self.cache = None
+        super().__init__(router_w, gate_up, down, shared_gate_up, shared_down)
+        self.norm, self.tid2eid, self.hidden = norm, tid2eid, geo.hidden
 
     def forward(self, ctx: Dsv4Context, folded: torch.Tensor) -> torch.Tensor:
         cur = self.norm(ctx, folded, folded)
         t = cur.shape[0]
         out = ctx.arena.new(t, self.hidden)
         with span("moe"), ctx.arena.frame():
-            need = self.cache.workspace_bytes(t) if self.cache is not None else ops.moe_workspace_bytes(t)
-            ws = ctx.arena.flat(need, torch.uint8)
-            if self.cache is not None:
-                self.cache.forward(cur, self.router_w, self.shared_gate_up, self.shared_down,
-                                   out, ws, ctx.batch.input_ids, self.tid2eid)
-            else:
-                ops.inference_moe(cur,self.router_w,self.gate_up,self.down,self.shared_gate_up,
-                                  self.shared_down,out,ws,token_ids=ctx.batch.input_ids,
-                                  tid2eid=self.tid2eid)
+            ws = ctx.arena.flat(self.backend.workspace_bytes(t), torch.uint8)
+            self.backend.forward(cur, self.router_w, self.shared_gate_up, self.shared_down,
+                                 out, ws, ctx.batch.input_ids, self.tid2eid)
         return out
 
 

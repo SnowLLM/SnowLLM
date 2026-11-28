@@ -223,6 +223,12 @@ class PublicWheelContentTests(unittest.TestCase):
             self.check([('snowllm/__init__.py', secret)])
         self.assertNotIn(secret, str(error.exception))
 
+    def test_disk_option_and_key_prefixes(self):
+        self.check([('snowllm/cli.py', '--disk-offload-gpu-cache-experts')])
+        for prefix in ('sk-', 'sk-proj-', 'sk-svcacct-', 'pypi-'):
+            with self.subTest(prefix=prefix), self.assertRaisesRegex(ValueError, 'credential'):
+                self.check([('snowllm/cli.py', 'key=' + prefix + 'a' * 40)])
+
     def test_rejects_personal_paths(self):
         with self.assertRaisesRegex(ValueError, 'personal path'):
             self.check([('snowllm/__init__.py', '/home/developer/project/file.py')])

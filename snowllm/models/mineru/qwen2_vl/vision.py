@@ -3,11 +3,12 @@ import torch
 
 from .... import ops
 from ...vision import VisionGeometry, VisionModel, prepare_vision_inputs
-from ...vision_layers import VisionBlock, VisionLinear
+from ...vision_layers import RESIDENT_VISION, VisionBlock, check_vision_room
 
 
 class Qwen2Vision(VisionModel):
-    def __init__(self, source, config):
+    def __init__(self, source, config, weights=RESIDENT_VISION):
+        self.streamed = weights is not RESIDENT_VISION
         hidden = config["embed_dim"]
         self.geo = VisionGeometry(
             config["depth"],
@@ -27,15 +28,13 @@ class Qwen2Vision(VisionModel):
             return source.read_dequant("visual." + name).to(torch.bfloat16)
 
         def linear(name):
-            return VisionLinear.pack(read(name + ".weight"), read(name + ".bias"))
+            return weights.linear(lambda: read(name + ".weight"), read(name + ".bias"))
 
         def norm(name):
             return read(name + ".weight"), read(name + ".bias")
 
-        weight = read("patch_embed.proj.weight").reshape(hidden, -1)
-        self.patch = VisionLinear.pack(
-            weight, torch.zeros(hidden, dtype=torch.bfloat16, device=weight.device)
-        )
+        self.patch = weights.linear(lambda: read("patch_embed.proj.weight").reshape(hidden, -1),
+                                    torch.zeros(hidden, dtype=torch.bfloat16, device="cuda"))
         self.blocks = []
         for i in range(config["depth"]):
             prefix = f"blocks.{i}."
@@ -57,17 +56,18 @@ class Qwen2Vision(VisionModel):
     def forward(self, pixel_values, grid_thw):
         g = self.geo
         cache = getattr(self, "_native_graph_cache", None)
+        admit = cache.admit if cache else (check_vision_room if self.streamed else None)
         pixels, _, cos, sin, cu = prepare_vision_inputs(
-            pixel_values, grid_thw, g, admit=cache.admit if cache else None
+            pixel_values, grid_thw, g, admit=admit
         )
         rows = pixels.shape[0]
-        if cache is not None:
-            cache.admit((rows // g.merge_unit * g.out_hidden * 2 + 511) // 512 * 512)
+        if admit is not None:
+            admit((rows // g.merge_unit * g.out_hidden * 2 + 511) // 512 * 512)
         out = torch.empty(
             rows // g.merge_unit, g.out_hidden, dtype=torch.bfloat16, device="cuda"
         )
         values = (pixels, cos, sin, cu)
-        if cache is not None:
+        if cache is not None and not self.streamed:
             return cache.native(self.execute_prepared, values, out)
         return self.execute_prepared(*values, out)
 

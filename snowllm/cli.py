@@ -96,6 +96,52 @@ def _log_mtp_tip(engine) -> None:
         _log('Adaptive MTP tip: consider enabling ' + ' and '.join(tips) + '.')
 
 
+def _start_with_placement_retry(load, start, kv):
+    import gc
+    from ._platform import release_device_cache
+    from .errors import CapacityError
+    from .ops._common import capture_host_mappings, release_unused_host_mappings
+
+    from .models.placement import host_budget
+    import torch
+
+    if not kv.get('memory_auto') or not (kv.get('host_offload_allowed') or kv.get('max_disk_bytes')):
+        model = load()
+        return model, start(model)
+    while True:
+        with capture_host_mappings() as mappings:
+            model = load()
+            try:
+                return model, start(model)
+            except (CapacityError, torch.OutOfMemoryError) as exc:
+                required = (exc.gpu_shortfall if isinstance(exc, CapacityError)
+                            else getattr(exc, 'requested_device_bytes', 0))
+                if required <= 0:
+                    raise
+                store = getattr(model, 'moe_offload_plan', None)
+                host = 0
+                if kv.get('host_offload_allowed') and getattr(model, '_automatic_placement', False):
+                    host = min(model.device_map.host_bytes + required, host_budget(model))
+                if host > max(kv.get('minimum_host_savings', 0), getattr(model, '_initial_host_bytes', 0)):
+                    kv['minimum_host_savings'] = host
+                    _log(f'replanning initial host placement for {host} bytes after GPU allocation pressure')
+                else:
+                    saved = store.disk_saved_bytes if store else 0
+                    target = saved + required
+                    if (not getattr(model, 'config', {}).get('num_experts_per_tok')
+                            or target > (kv.get('max_disk_bytes') or 0)
+                            or target <= kv.get('minimum_disk_savings', 0)):
+                        raise
+                    kv['minimum_disk_savings'] = target
+                    _log(f'replanning disk offload for at least {target} bytes of savings')
+        if store is not None:
+            store.close()
+        del model, store
+        gc.collect()
+        release_unused_host_mappings(mappings)
+        release_device_cache()
+
+
 @startup_report
 def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks: int | None,
           default_max_tokens: int | None, seed: int | None, profile_dir: str | None,
@@ -120,7 +166,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
           offload_ratio: float | None = None, host_alloc: bool = False, scheduler=None,
           mtp_adaptive: bool | None = None,
           mtp_prompt_lookup: bool = False, mtp_tool_draft: bool = False,
-          dflash_adaptive: bool = False) -> "ServerState":
+          dflash_adaptive: bool = False, vision_head: str | None = None, vision_placement: str = "auto") -> "ServerState":
     from .capacity import MemoryBudget, configure, placement_options
     limits = MemoryBudget(max_gpu_mem_util, max_host_mem_util, max_host_mem_gib,
                           max_gpu_mem_gib=max_gpu_mem_gib, max_disk_mem_gib=max_disk_mem_gib)
@@ -175,7 +221,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     from .engine import plan_draft, draft_num_spec, _dspark
     draft = plan_draft(dflash, candidate_search=dflash_adaptive)
     draft_kv = dict(draft_resident=draft.device_bytes) if _dspark(draft.geo) else {}
-    kv = dict(ctx=max_model_len, slots=max_num_seqs,
+    kv = dict(ctx=max_model_len, slots=max_num_seqs, max_images=limit_mm_per_prompt,
               util=gpu_memory_utilization,
               chunk=prefill_chunk, reserve=draft.load_peak_bytes,
               draft_weight_bytes=draft.device_bytes,
@@ -193,74 +239,83 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
               host_offload_allowed=limits.host_offload_enabled,
               max_disk_bytes=limits.disk_limit(),
               **draft_kv)
-    model = loader.load(root, device_map=device_map, moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
-                        host_offload=host_offload,
-                        mtp=bool(num_spec) and not dflash,
-                        kv=kv)
-    dt = time.time() - t0
-    gib = read_bytes() / (1 << 30)
-    _log(f"loaded in {dt:.1f}s"
-         + (f", {gib:.1f} GiB off disk at {gib * (1 << 30) / dt / 1e9:.2f} GB/s" if gib else ""))
+
+    def load():
+        return loader.load(root, device_map=device_map, moe_cache_experts=moe_cache_experts,
+                           moe_cache_mode=moe_cache_mode, host_offload=host_offload,
+                           mtp=bool(num_spec) and not dflash, vision=vision_head != 'none',
+                           vision_head=vision_head if vision_head != 'none' else None, kv=kv,
+                           vision_placement=vision_placement)
+
+    def start(model):
+        nonlocal num_spec
+        dt = time.time() - t0
+        gib = read_bytes() / (1 << 30)
+        _log(f"loaded in {dt:.1f}s"
+             + (f", {gib:.1f} GiB off disk at {gib * (1 << 30) / dt / 1e9:.2f} GB/s" if gib else ""))
+        store = getattr(model, 'moe_offload_plan', None)
+        if store is not None:
+            mode = store.mode if store.active else 'resident'
+            selected = f'auto -> {mode}' if moe_cache_mode == 'auto' else mode
+            _log(f'MoE offload ({selected}): GPU cache holds up to {store.capacity if store.active else 0} routed experts on each of '
+                 f'{len(store.specs) if store.active else 0} disk-cached layers; {len(store.host_layers)} host layers; '
+                 + ('expert cache transfers enabled' if store.active else 'no disk cache transfers'))
+            _log(f'MoE offload: net {store.saved_bytes} bytes ({store.saved_bytes / (1 << 30):.3f} GiB) '
+                 f'saved, host {store.host_bytes / (1 << 30):.3f} GiB + disk net '
+                 f'{store.disk_saved_bytes / (1 << 30):.3f} GiB' +
+                 (f'; disk target {store.offload_target} bytes' if store.offload_target is not None else ''))
+            disk_cache = store.disk_cache if store.active else None
+            if disk_cache is not None:
+                _log('MoE prepacked cache: ' + ', '.join(map(str, disk_cache.directories)) +
+                     '; records are built on first use and striped across directories')
+
+        if dflash:
+            if num_spec:
+                _log(f"--num-spec {num_spec} ignored: --dflash proposes a whole block "
+                     f"in one forward instead of a chain of {num_spec}")
+            num_spec = 0
+        elif num_spec and model.mtp is None:
+            _log(f"--num-spec {num_spec} ignored: {root.name} carries no MTP head "
+                 f"(scripts/make-mtp-gguf.py builds one for a GGUF), decoding plainly")
+            num_spec = 0
+            kv['num_spec'] = 0
+
+        t1 = time.time()
+        engine = Engine(model, num_kv_blocks=num_kv_blocks, max_num_seqs=max_num_seqs,
+                max_model_len=max_model_len, stop_token_ids=eos, seed=seed,
+                enforce_eager=enforce_eager, num_spec=num_spec, kv_int8=kv_int8,
+                mtp_window=mtp_window, mtp_sinks=mtp_sinks, mtp_adaptive=mtp_adaptive,
+                mtp_prompt_lookup=mtp_prompt_lookup, mtp_tool_draft=mtp_tool_draft,
+                dflash_path=dflash, dflash_block=dflash_block,
+                dflash_p_min=(DEFAULT_DSPARK_P_MIN if dflash_p_min is None
+                              else dflash_p_min),
+                dspark_adaptive=dspark_adaptive, dflash_adaptive=dflash_adaptive,
+                prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
+                account=exact_stats or stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
+                gpu_memory_utilization=kv['util'],
+                prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft,
+                defer_capture=getattr(scheduler, 'defer_capture', False))
+        _log_mtp_tip(engine)
+        from ._platform import device_mem_info
+        release_device_cache()
+        free, total = device_mem_info()
+        if dspark_adaptive and getattr(model.geo, "v41", False):
+            # V4.1 has no captured target graphs, so post-profile weight moves are safe.
+            from .models.placement import ensure_room
+            while total-free > limits.gpu_limit(total) and ensure_room(
+                    model, total-free-limits.gpu_limit(total)):
+                release_device_cache()
+                free, total = device_mem_info()
+        if total-free > limits.gpu_limit(total):
+            if memory_report() is not None:
+                memory_report().shortfall(total-free-limits.gpu_limit(total))
+            engine.runner._discard_pools()
+            from .capacity import memory_shortage
+            raise memory_shortage(total-free-limits.gpu_limit(total))
+        return engine, free, total, t1
+
+    model, (engine, free, total, t1) = _start_with_placement_retry(load, start, kv)
     store = getattr(model, 'moe_offload_plan', None)
-    if store is not None:
-        mode = store.mode if store.active else 'host'
-        selected = f'auto -> {mode}' if moe_cache_mode == 'auto' else mode
-        _log(f'MoE offload ({selected}): {store.capacity if store.active else 0} routed experts on each of '
-             f'{len(store.specs) if store.active else 0} disk-cached layers; {len(store.host_layers)} host layers; '
-             f'{len(store.resident_layers)} hash layers and shared experts stay on GPU; '
-             + ('target forwards run eager for cache transfers' if store.active else 'no disk cache transfers'))
-        _log(f'MoE offload: net {store.saved_bytes} bytes ({store.saved_bytes / (1 << 30):.3f} GiB) '
-             f'saved, host {store.host_bytes / (1 << 30):.3f} GiB + disk net '
-             f'{store.disk_saved_bytes / (1 << 30):.3f} GiB' +
-             (f'; disk target {store.offload_target} bytes' if store.offload_target is not None else ''))
-        disk_cache = store.disk_cache if store.active else None
-        if disk_cache is not None:
-            _log('MoE prepacked cache: ' + ', '.join(map(str, disk_cache.directories)) +
-                 '; records are built on first use and striped across directories')
-
-    if dflash:
-        if num_spec:
-            _log(f"--num-spec {num_spec} ignored: --dflash proposes a whole block "
-                 f"in one forward instead of a chain of {num_spec}")
-        num_spec = 0
-    elif num_spec and model.mtp is None:
-        _log(f"--num-spec {num_spec} ignored: {root.name} carries no MTP head "
-             f"(scripts/make-mtp-gguf.py builds one for a GGUF), decoding plainly")
-        num_spec = 0
-        kv['num_spec'] = 0
-
-    t1 = time.time()
-    engine = Engine(model, num_kv_blocks=num_kv_blocks, max_num_seqs=max_num_seqs,
-            max_model_len=max_model_len, stop_token_ids=eos, seed=seed,
-            enforce_eager=enforce_eager, num_spec=num_spec, kv_int8=kv_int8,
-            mtp_window=mtp_window, mtp_sinks=mtp_sinks, mtp_adaptive=mtp_adaptive,
-            mtp_prompt_lookup=mtp_prompt_lookup, mtp_tool_draft=mtp_tool_draft,
-            dflash_path=dflash, dflash_block=dflash_block,
-            dflash_p_min=(DEFAULT_DSPARK_P_MIN if dflash_p_min is None
-                          else dflash_p_min),
-            dspark_adaptive=dspark_adaptive, dflash_adaptive=dflash_adaptive,
-            prefill_chunk=prefill_chunk, batch_prefill=batch_prefill,
-            account=exact_stats or stats_interval > 0 or telemetry_enabled(), exact_stats=exact_stats,
-            gpu_memory_utilization=kv['util'],
-            prefix_memory_ratio=prefix_memory_ratio, draft_plan=draft,
-            defer_capture=getattr(scheduler, 'defer_capture', False))
-    _log_mtp_tip(engine)
-    from ._platform import device_mem_info
-    release_device_cache()
-    free, total = device_mem_info()
-    if dspark_adaptive and getattr(model.geo, "v41", False):
-        # V4.1 has no captured target graphs, so post-profile weight moves are safe.
-        from .models.placement import ensure_room
-        while total-free > limits.gpu_limit(total) and ensure_room(
-                model, total-free-limits.gpu_limit(total)):
-            release_device_cache()
-            free, total = device_mem_info()
-    if total-free > limits.gpu_limit(total):
-        if memory_report() is not None:
-            memory_report().shortfall(total-free-limits.gpu_limit(total))
-        engine.runner._discard_pools()
-        from .capacity import memory_shortage
-        raise memory_shortage(total-free-limits.gpu_limit(total))
     report = memory_report()
     if report is not None and report.values:
         report.ready(weights=model.device_map.device_bytes + draft.device_bytes,
@@ -283,6 +338,10 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     import torch
     gpu = torch.cuda.get_device_properties(torch.cuda.current_device())
     engine.runtime_config = dict(model_path=str(root.resolve()), moe_cache_experts=moe_cache_experts, moe_cache_mode=moe_cache_mode,
+                                 device_map=device_map or 'auto',
+                                 vision_placement=(('disk' if getattr(model.visual, 'streamed', False) else 'gpu')
+                                                   if model.visual is not None else None),
+                                 disk_offload_gpu_cache_experts=store.capacity if store and store.active else 0,
                                  gpu_arch=gpu.gcnArchName.split(":", 1)[0], gpu_name=gpu.name,
                                  host_total_bytes=host_total(), version=__version__,
                                  max_disk_mem_gib=limits.max_disk_mem_gib,
@@ -334,7 +393,7 @@ def build(model_path: str, max_num_seqs: int, max_model_len: int, num_kv_blocks:
     tok.model_max_length = max(alias.ctx for alias in aliases.values())
     proc = None
     if model.visual is not None:
-        proc = loader.load_processor(root, tok)
+        proc = loader.load_processor(root, tok, vision_head)
         _log("vision tower loaded; /v1/chat/completions accepts image_url parts")
 
     sampling = loader.sampling_defaults(root)
@@ -462,20 +521,18 @@ def parser() -> argparse.ArgumentParser:
                         default=argparse.SUPPRESS, metavar='LIMIT',
                         help='Host buffer ceiling: fraction (0.5) or capacity (20GB, 20GiB); enables automatic host weight offload.')
     g.add_argument("--device-map", type=str, default="", metavar="SPEC",
-                   help='Offload weights: off, auto, all, or groups such as experts.down:1.')
+                   help='Default auto: GPU, then host, then disk within the configured limits. Manual example: *=gpu,experts[12]=host,experts[14-40]=disk.')
     g.add_argument('--host-alloc', action=argparse.BooleanOptionalAction, default=False,
                    help='Allocate GPU tensors in mapped host RAM using hipHostMalloc; excludes all offload modes.')
     host_size = g.add_mutually_exclusive_group()
     host_size.add_argument('--host-offload', type=lambda x: _offload_size(x, '--host-offload'),
                    default=None, metavar='SIZE',
-                   help='Move at least SIZE of model weights to host memory, e.g. 8GiB; independent of disk offload.')
+                   help=argparse.SUPPRESS)
     host_size.add_argument('--offload-ratio', type=float, default=None, metavar='F',
                    help='Fraction of total weight bytes to offload; enable with --device-map auto.')
-    moe_size = g.add_mutually_exclusive_group()
-    moe_size.add_argument('--moe-cache-experts', type=int, default=0, metavar='N',
-                   help='DeepSeek V4 Flash: cache N routed experts per non-hash layer with LRU; '
-                        'shared experts stay on GPU, misses read from GGUF; 0 disables.')
-    moe_size.add_argument('--max-disk-offload', dest='max_disk_mem_gib',
+    g.add_argument('--disk-offload-gpu-cache-experts', '--moe-cache-experts', dest='moe_cache_experts', type=int, default=0, metavar='N',
+                   help='Disk offload: keep up to N routed experts per eligible layer on GPU. Zero leaves cache sizing to the planner.')
+    g.add_argument('--max-disk-offload', dest='max_disk_mem_gib',
                    type=lambda x: _memory_limit(x, capacity_only=True)[1],
                    default=None, metavar='SIZE',
                    help='Maximum expert weights offloaded to disk when GPU/host budgets cannot fit; no cache file quota.')
@@ -520,6 +577,10 @@ def parser() -> argparse.ArgumentParser:
                    help='Leading tokens retained with --mtp-window.')
 
     g = p.add_argument_group("multimodal")
+    g.add_argument("--vision-placement", choices=("auto", "gpu", "disk"), default="auto",
+                   help="Place vision projections on GPU or stream them from a local disk cache.")
+    g.add_argument("--vision-head", metavar="FILE|none",
+                   help="load this GGUF vision head (relative to the model directory), or disable image input")
     g.add_argument("--limit-mm-per-prompt", type=int, default=4, metavar="N",
                    help='Maximum images per request.')
     g.add_argument("--allow-image-urls", action="store_true",
@@ -599,6 +660,7 @@ def prepare(argv, *, managed=False):
         from .targets import NPU_UNAVAILABLE
         p.error(NPU_UNAVAILABLE)
     from .capacity import MemoryBudget, placement_options
+    from .weight_map import WeightMap
     from .errors import SnowLLMError
     def check_allocation(*, complete=True):
         try:
@@ -651,16 +713,22 @@ def prepare(argv, *, managed=False):
             for key in ('mtp_adaptive', 'mtp_prompt_lookup', 'mtp_tool_draft'):
                 used.pop(key, None)
         for group in (('max_gpu_mem_util', 'max_gpu_mem_gib'),
-                      ('max_host_mem_util', 'max_host_mem_gib'),
-                      ('moe_cache_experts', 'max_disk_mem_gib')):
+                      ('max_host_mem_util', 'max_host_mem_gib')):
             if any(getattr(given, key) is not unset for key in group):
                 for key in group:
                     used.pop(key, None)
+        if given.max_disk_mem_gib is not unset:
+            used.pop('moe_cache_experts', None)
         if given.host_offload is not unset:
             used.pop('offload_ratio', None)
             used.pop('device_map', None)
         if given.offload_ratio is not unset or given.device_map is not unset:
             used.pop('host_offload', None)
+        if given.device_map is not unset and (explicit := WeightMap.parse(given.device_map)):
+            used.pop('offload_ratio', None)
+            if not explicit.disk_experts:
+                used.pop('moe_cache_experts', None)
+                used.pop('moe_cache_mode', None)
         if given.host_alloc is not unset and a.host_alloc:
             for key in ('device_map', 'host_offload', 'offload_ratio',
                         'moe_cache_experts', 'moe_cache_mode', 'max_disk_mem_gib'):
@@ -675,6 +743,8 @@ def prepare(argv, *, managed=False):
         p.error('context and prefill chunk must be positive')
     check_allocation()
     if recipe:
+        if a.vision_head is None:
+            a.vision_head = getattr(recipe, 'raw', {}).get('vision_file')
         print(f'{term.stamp()} run {_equivalent_command(p, a, model, recipe)}', flush=True)
 
     return p, a, model, recipe
@@ -687,7 +757,11 @@ def build_prepared(a, model, recipe, scheduler=None):
     mineru = None
     owns_scheduler = False
     if recipe and getattr(recipe, 'runtime', 'llm') == 'mineru':
-        if a.host_alloc or a.host_offload or a.offload_ratio or a.device_map not in ('', 'off'):
+        from .weight_map import WeightMap
+        explicit = WeightMap.parse(a.device_map)
+        gpu_only = (all(r.tier == 'gpu' for r in explicit.rules) if explicit
+                    else a.device_map in ('', 'auto', 'none', 'off', 'device'))
+        if a.host_alloc or a.host_offload or a.offload_ratio or a.moe_cache_experts or not gpu_only:
             raise ValueError('MinerU recipe uses GPU memory for all models')
         from .mineru.runtime import MinerURuntime
         from .capacity import MemoryBudget
@@ -738,7 +812,7 @@ def _build_prepared(a, model, recipe, scheduler=None):
               max_disk_mem_gib=a.max_disk_mem_gib,
               serve_as=(recipe.serve_as if recipe else None),
               prefix_memory_ratio=a.prefix_memory_ratio,
-              limit_mm_per_prompt=a.limit_mm_per_prompt, scheduler=scheduler)
+              limit_mm_per_prompt=a.limit_mm_per_prompt, vision_head=a.vision_head, vision_placement=a.vision_placement, scheduler=scheduler)
 
 
 def main() -> None:

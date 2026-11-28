@@ -17,9 +17,8 @@ def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
     width = x.shape[-1]
     if gamma is not None:
         _chk(gamma, "gamma", torch.bfloat16, width)
-    if round_before_weight and gamma is not None and x.dtype == torch.bfloat16 and (
-            lib.snowllm_rmsnorm_rows_rounded_supported(width, False)
-            if hasattr(lib, "snowllm_rmsnorm_rows_rounded_supported") else width == 896):
+    if (round_before_weight and gamma is not None and x.dtype == torch.bfloat16
+            and lib.snowllm_rmsnorm_rows_rounded_supported(width, False)):
         _chk_norm_x(x, torch.bfloat16)
         _chk(out, "out", torch.bfloat16)
         check(lib.snowllm_rmsnorm_rows_rounded(_p(x), _p(gamma), _p(out), width,
@@ -36,16 +35,23 @@ def rmsnorm_rows(x, gamma, out, eps, *, round_before_weight=False):
 def layernorm_rows(x, gamma, bias, out, eps):
     if x.ndim < 2:
         raise SnowLLMError("LayerNorm needs rows")
-    width = x.shape[-1]
+    shape = x.shape
+    width = shape[-1]
     from .vision import SUPPORTED_LN_HIDDEN
     if width not in (128, *SUPPORTED_LN_HIDDEN):
         raise SnowLLMError(f"LayerNorm has no compiled width {width}")
+    _layernorm(x, gamma, bias, out, shape, x.numel() // width, width, eps)
+
+
+def _layernorm(x, gamma, bias, out, shape, rows, width, eps):
     _chk(x, "LayerNorm input", torch.bfloat16)
     _chk(gamma, "LayerNorm gamma", torch.bfloat16, width)
     _chk(bias, "LayerNorm bias", torch.bfloat16, width)
-    _chk(out, "LayerNorm output", torch.bfloat16, *x.shape)
+    _chk(out, "LayerNorm output", torch.bfloat16)
+    if out.shape != shape:
+        raise SnowLLMError("LayerNorm output must match the input shape")
     check(lib.snowllm_layernorm_rows(_p(x), _p(gamma), _p(bias), _p(out),
-                                   x.numel() // width, width, eps, _stream()), "layernorm_rows")
+                                   rows, width, eps, _stream()), "layernorm_rows")
 
 
 @operator
@@ -96,8 +102,7 @@ def rmsnorm_residual(x: torch.Tensor, residual: torch.Tensor, gamma: torch.Tenso
     _chk(gamma, "gamma", torch.bfloat16, H)
     _chk(out, "out", torch.bfloat16, M, H)
     if round_before_weight:
-        if (hasattr(lib, "snowllm_rmsnorm_residual_rounded")
-                and lib.snowllm_rmsnorm_rows_rounded_supported(H, True)):
+        if lib.snowllm_rmsnorm_rows_rounded_supported(H, True):
             check(lib.snowllm_rmsnorm_residual_rounded(_p(x), _p(residual), _p(gamma), _p(out),
                                                       H, M, eps, _stream()), "rmsnorm_residual_rounded")
         else:

@@ -16,7 +16,7 @@ class DecodeLinear(Linear):
     def __init__(self, weights, prefix):
         super().__init__(weights, prefix)
         self.packed = None
-        if self.weight.shape[1] in (512, 2048) and self.weight.shape[0] % 128 == 0:
+        if op.prefer_packed_linear_half(1, self.weight):
             self.packed = (
                 ops.gemm_bf16_shuffle_b(
                     self.weight.view(torch.bfloat16), *self.weight.shape
@@ -27,9 +27,7 @@ class DecodeLinear(Linear):
 
     def __call__(self, x):
         rows = x.numel() // x.shape[-1]
-        if self.packed is not None and rows <= (
-            8 if self.weight.shape[0] <= 1024 else 32
-        ):
+        if self.packed is not None and op.prefer_packed_linear_half(rows, self.weight):
             return op.linear_half(x, self.packed, self.bias)
         return super().__call__(x)
 

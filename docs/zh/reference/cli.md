@@ -45,12 +45,12 @@ snowllm b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital --dflash-block
 | `--max-gpu-mem` | `0.9` | GPU 内存上限：比例（`0.9`）或容量（`20GB`、`20GiB`）。 |
 | `--max-host-mem` | 未设置，不自动 host 卸载 | host 缓冲上限：比例或容量；显式设置后允许自动 host 权重卸载。未设置上限时，主机缓冲受可用 RAM 和平台映射限制约束。 |
 | `--host-alloc` | 关闭 | 通过映射的 `hipHostMalloc` 分配 GPU Tensor：权重、KV、workspace 和临时 Tensor 均使用主机 RAM；与 host/disk offload 互斥。 |
-| `--device-map` | 不卸载 | 将模型权重卸载到主机内存：`off`、`auto`、`all` 或 `experts:20` 等分组。 |
+| `--device-map` | `auto` | 默认依次用 GPU、主机和磁盘预算。可按权重组指定位置，例如 `*=gpu,experts[12]=host,experts[14-40]=disk`。 [层选择语法](../guides/memory-management#layer-placement) |
 | `--offload-ratio` | 未设置 | 最终权重总字节数中驻留主机内存的比例，取值 0–1。通过 `--device-map auto` 开启卸载，实际比例按可放置的权重分组和层取整。 |
-| `--host-offload` | 未设置 | 将至少指定大小的模型权重放到主机内存，例如 `8GiB`，按权重分组取整；与 disk 目标独立，`0` 禁用 host 卸载。与 `--offload-ratio`、固定分组的 `--device-map` 互斥。 |
+| `--host-offload` | 兼容参数 | 将至少指定大小的模型权重放到主机内存，例如 `8GiB`，按权重分组取整；与 disk 目标独立，`0` 禁用 host 卸载。与 `--offload-ratio`、固定分组的 `--device-map` 互斥。 |
 | `--max-disk-offload` | 未设置 | 自动磁盘卸载的专家权重上限；不限制 cache 文件大小。 |
-| `--moe-cache-experts` | `0` | DeepSeek V4 Flash 每个非哈希层缓存 N 个 routed experts，取值 1–256；哈希层和 shared expert 固定驻留 GPU，未命中从 GGUF 换入，`0` 关闭。启用时主模型使用 eager 执行。 |
-| `--moe-cache-mode` | `all` | `all` 同时缓存 gate/up 和 down；`down` 将所有 routed gate/up 常驻 GPU，每个非哈希层只缓存 N 个 down expert，让 down I/O 与 gate/up 计算重叠。`auto` 按等价 `all` 缓存显存预算选择模式。与 `--moe-cache-experts` 或 `--max-disk-offload` 配合使用。 |
+| `--disk-offload-gpu-cache-experts` | `0` | 每个可卸载的 MoE 层保留 N 个 routed expert 槽位。通常 N 至少为路由 top-k。原生 disk proxy 支持 decode graph 回放，并按每一步的实际路由换入专家。 |
+| `--moe-cache-mode` | `all` | `all` 换入 gate/up 和 down，`down` 仅换入 down，`auto` 按显存预算选择。VQ 的三组矩阵共用一个记录，使用 `all` 或 `auto`。 |
 | `--prefix-memory-ratio` | `0.08` | 前缀快照内存预算与基础缓存内存的比例。 |
 | `--num-kv-blocks` | 未设置 | 手动设置 KV 缓存块数。 |
 
@@ -69,13 +69,7 @@ decode graph 和异步推理 worker 同样使用 host 分配池。host 分配器
 snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
 ```
 
-规划同时计入专家缓存、GPU 换入缓冲及 host pinned I/O 缓冲。哈希层和 shared expert 常驻 GPU，其余层使用均匀 LRU 容量。上限按实际权重布局核算，不是净释放显存量，也不是 cache 文件大小配额。
-`--moe-cache-mode` 支持 `all`、`down` 和 `auto`；手动指定 `--moe-cache-experts` 与自动磁盘上限互斥。
-
-`--moe-cache-mode auto` 将 N 解释为 `all` 模式的等价专家权重及 I/O staging 显存预算。
-当 routed 专家对的卸载比例处于 (0, 1/16] 时，优先将 gate/up 常驻，并按相同字节预算计算可缓存的 down 专家数；其余使用 `all`。
-例如，该 IQ2_XXS 检查点的 N=250 选择 `down=242`，N=192 选择 `all=192`。启动日志显示实际模式和容量。
-这是根据 DeepSeek V4 Flash 双盘 DIRECT I/O 测试选取的经验阈值，不做运行时 profiling；其他模型量化和存储配置未验证最优性。
+固定槽位数也须满足磁盘上限。旧参数名 `--moe-cache-experts` 仍可使用。DeepSeek V4 非 VQ 支持少于 top-k 个槽位。
 
 内存参数只设置上限，不是需要占满的目标。context 默认 409600 tokens，prefill chunk 默认 8192 tokens；recipe 可以提供明确的默认值。CLI 不再反推或替换 context、util 或显式 offload 比例。配置 host 或 disk 上限后，自动按 GPU → host → disk 放置；未配置下一层预算时不会自动卸载。详见[内存管理](../guides/memory-management.md)。
 
@@ -114,6 +108,8 @@ snowllm MODEL --host-alloc --max-host-mem 16GiB
 | 选项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `--limit-mm-per-prompt` | `4` | 每个请求允许携带的图片数。 |
+| `--vision-head` | 配方选择或自动识别 | 加载模型目录中指定的 GGUF 视觉头。设为 `none` 可仅加载文本模型。 |
+| `--vision-placement {auto,gpu,disk}` | `auto` | 选择视觉权重常驻 GPU 或在编码图片时从磁盘读取。自动模式对聊天模型使用磁盘，对 MinerU 使用 GPU。 |
 | `--allow-image-urls` | 关闭 | 允许获取 HTTP(S) 图片；data URL 始终可用。 |
 
 ## 诊断 {#diagnostics}
@@ -132,7 +128,7 @@ profiling 端点。完整流程见 [curl profiling 示例](../integrations/http-
 
 ## 专家磁盘缓存
 
-启用 `--moe-cache-experts` 或 `--max-disk-offload` 后，可以用 `SNOWLLM_MOE_CACHE_DIRS` 指定一个或多个目录。Linux 用 `:` 分隔，Windows 用 `;` 分隔：
+启用 `--disk-offload-gpu-cache-experts` 或 `--max-disk-offload` 后，可以用 `SNOWLLM_MOE_CACHE_DIRS` 指定一个或多个目录。Linux 用 `:` 分隔，Windows 用 `;` 分隔：
 
 ::: code-group
 
@@ -145,6 +141,10 @@ $env:SNOWLLM_MOE_CACHE_DIRS = 'D:\SnowLLM\moe;E:\SnowLLM\moe'
 ```
 
 :::
+
+通用路径在加载时将专家权重写入进程专用的临时文件。默认目录是 `~/.cache/snowllm/experts`，指定多个目录时按层轮换。所需磁盘空间包含每个卸载层全部 routed expert 在所选模式下的数据。VQ 直接读取原始 GGUF，包括分片文件。
+
+**DeepSeek V4 非 VQ 的持久化分条缓存**。为此模型设置上述目录会选用以下兼容路径。
 
 缺失记录在首次使用时从 GGUF 生成。后续直接读取预重排的量化权重，省掉 GPU 重排，保留最后的 LRU 入槽复制。
 每个专家的数据都按 4 KiB 对齐切分到各个目录，由同一批量 I/O 队列读取，因此单个专家 miss 也可以并行利用多块盘。

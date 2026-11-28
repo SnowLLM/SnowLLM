@@ -83,6 +83,13 @@ class Sampler:
                                   torch.float32)
         return top_k, top_p, temp, min(max(ks), vocab)
 
+    def _resolve_greedy_rows(self, logits, rows, ids, values=None):
+        for i, request in enumerate(rows):
+            if request.params.temperature <= 0:
+                ops.argmax(logits[i:i + 1], out=ids[i, :1])
+                if values is not None:
+                    values[i, :1].fill_(1.)
+
     def sample(self, logits, rows, *, out=None):
         if out is None and self.output.device is not None:
             out = self.output.device[:len(rows)]
@@ -98,8 +105,10 @@ class Sampler:
                 k, top_p, temp, width = self._parameters(rows, logits.shape[1])
                 uniform = self._uniform(len(rows))
                 with self._workspace_scope() as workspace:
-                    return ops.sample(logits,k,top_p,temp,width,uniform=uniform,out=out,
-                                      workspace=workspace)
+                    tokens = ops.sample(logits,k,top_p,temp,width,uniform=uniform,out=out,
+                                        workspace=workspace)
+                self._resolve_greedy_rows(logits, rows, tokens.view(-1, 1))
+                return tokens
             finally:
                 self.inputs.used()
 
@@ -114,6 +123,7 @@ class Sampler:
             values, ids = out[:n].view(-1, width), indices[:n].view(-1, width)
             with self._workspace_scope() as workspace:
                 probabilities(logits, top_k, top_p, temp, width, values, ids, workspace)
+            self._resolve_greedy_rows(logits, rows, ids, values)
         return values, ids
 
     def _read_tokens(self, logits, rows=None):

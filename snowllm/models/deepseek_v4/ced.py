@@ -53,7 +53,7 @@ class EncoderTail:
                           (self.last, rows - 1, 0), (self.logical[:rows], end - rows, 1)))
         ops.resolve_slots(source.block_tables, self.sequences[:rows], self.logical[:rows],
                           self.block_size, out=self.mapping[0, :rows])
-        return replace(source, input_ids=self.ids[0, :rows], positions=self.positions[0, :rows],
+        return replace(source, embeds=None, embed_rows=None, input_ids=self.ids[0, :rows], positions=self.positions[0, :rows],
                        slot_mapping=self.mapping[0, :rows], seq_of_row=self.sequences[:rows],
                        cu_seqlens=self.cumulative, host_cu_seqlens=[0, rows], host_ids=None,
                        num_tokens=rows, last_row=self.last, total_q_blocks=0, q_block_map=None,

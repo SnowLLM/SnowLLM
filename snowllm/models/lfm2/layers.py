@@ -122,8 +122,7 @@ class Lfm2MoeForCausalLM(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.embed_tokens, self.norm, self.lm_head = embed, norm, head
         self.eps, self.mtp = cfg['norm_eps'], None
-        self.inv_freq = (1.0 / (cfg['rope_theta'] **
-                        (torch.arange(0,geo.head_size,2,dtype=torch.float32)/geo.head_size))).cuda()
+        self.inv_freq = ops.base_inv_freq(cfg['rope_theta'], geo.head_size).cuda()
 
     def forward(self, ctx):
         ctx.open()

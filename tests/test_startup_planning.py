@@ -190,12 +190,14 @@ class RemainingBudgetTests(unittest.TestCase):
         for unit in (10**9, 1 << 30):
             total, used = 96*unit, 8*unit
             limits = MemoryBudget(max_gpu_mem_gib=12*unit/(1 << 30))
-            runner = SimpleNamespace(gpu_util=limits.gpu_utilization(total), reserve_bytes=0)
+            runner = SimpleNamespace(gpu_util=limits.gpu_utilization(total), reserve_bytes=0, vision_bytes=0)
             with self.subTest(unit=unit), \
                  patch('snowllm.engine.runner.gpu_mem_info', return_value=(total-used, total)):
                 self.assertEqual(BaseRunner._allowance(runner), 4*unit)
-                runner.reserve_bytes = unit
+                runner.vision_bytes = unit
                 self.assertEqual(BaseRunner._allowance(runner), 3*unit)
+                runner.reserve_bytes = unit
+                self.assertEqual(BaseRunner._allowance(runner), 2*unit)
 
     def test_weight_admission_sees_only_the_remaining_four_gib(self):
         from snowllm.capacity import MemoryBudget

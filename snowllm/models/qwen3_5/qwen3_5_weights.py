@@ -360,6 +360,7 @@ def load_decoder_layer(w: "Weights", lp: str, stg: Staging, geo: ModelGeometry, 
         mlp = (load_moe_kquant(w, lp, stg, geo, dmap, lay) if kquant else
                load_moe_fp8(w, lp, stg, geo, dmap, lay) if fp8 else
                load_moe(w, lp, stg, geo, dmap, lay))
+        mlp.bind_disk(geo.num_layers if layer_idx == "mtp" else lay)
     return Qwen3_5DecoderLayer(
         attn=attn, mlp=mlp, input_layernorm=norms[0], post_attention_layernorm=norms[1],
         is_full=is_full, layer_idx=layer_idx)
@@ -411,8 +412,7 @@ def load_lm_head(w: "Weights", dmap: placement.DeviceMap | None = None) -> LMHea
 def inv_freq(cfg: dict) -> torch.Tensor:
     rp = cfg["rope_parameters"]
     dr = int(cfg["head_dim"] * rp["partial_rotary_factor"])
-    i = torch.arange(0, dr, 2, dtype=torch.float32)
-    return (1.0 / (rp["rope_theta"] ** (i / dr))).cuda()
+    return ops.base_inv_freq(rp["rope_theta"], dr).cuda()
 
 
 BAKED = ("hidden", "num_heads", "num_kv_heads", "head_size", "vocab_size", "qkv_proj_n",

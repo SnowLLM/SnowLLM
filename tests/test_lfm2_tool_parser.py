@@ -67,6 +67,19 @@ class LFMToolParserTests(unittest.TestCase):
                     self.assertEqual(parse_tool_calls(text, None), ("", []))
                     self.assertEqual(self.stream(text), ("", []))
 
+    def test_closed_frames_release_text_and_unfinished_arguments_do_not_emit(self):
+        frame = "<tool_call><function=weather><parameter=city>\nParis\n</parameter></function></tool_call>"
+        partial = "<tool_call><function=weather><parameter=city>\nPar"
+        self.assertEqual(self.stream(partial + "</tool_call>"), ("", []))
+        self.assertEqual(self.stream("<tool_call>weather<arg_key>city</arg_key></tool_call>"), ("", []))
+        text = frame + "\nDone" + OPEN + "[ping()]" + CLOSE + partial
+        expected = ("\nDone", [ToolCall("weather", {"city": "Paris"}), ToolCall("ping", {})])
+        self.assertEqual(parse_tool_calls(text, None), expected)
+        for split in range(len(text) + 1):
+            self.assertEqual(self.stream([text[:split], text[split:]]), expected)
+        self.assertEqual(list(StreamingToolParser(None).events(text)),
+                         [expected[1][0], "\nDone", expected[1][1]])
+
     def test_nonfinite_numbers_in_tagged_arguments(self):
         for template in (
                 "<tool_call><function=f><parameter=x>\n%s\n</parameter></function></tool_call>",

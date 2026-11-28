@@ -92,7 +92,7 @@ class CapacityTests(unittest.TestCase):
         modules = {'snowllm._capi': SimpleNamespace(lib=lib), 'snowllm.ops': ops,
                    'snowllm.ops._common': SimpleNamespace(_host_pinned=2 << 30)}
         pool = SimpleNamespace(snapshot=lambda **kw: [dict(total_size=2 << 30, active_size=1 << 30)])
-        with patch.dict(sys.modules, modules), \
+        with patch.dict(sys.modules, modules), patch('snowllm.ops', ops, create=True), \
              patch.object(host_alloc, '_pool', pool), \
              patch.object(host_alloc, '_threads', SimpleNamespace()), \
              patch.object(capacity, '_host_reserved', 1 << 30), \
@@ -128,7 +128,7 @@ class CapacityTests(unittest.TestCase):
             pool = SimpleNamespace(snapshot=lambda **kw: [dict(total_size=reserved, active_size=reserved-cached)])
             ops = SimpleNamespace(host_pinned_bytes=lambda: reserved)
             with self.subTest(reserved=reserved, cached=cached), \
-                 patch.dict(sys.modules, {'snowllm.ops': ops}), \
+                 patch('snowllm.ops', ops, create=True), \
                  patch.object(host_alloc, '_pool', pool), \
                  patch.object(host_alloc, '_threads', SimpleNamespace()), \
                  patch.object(capacity, 'budget', MemoryBudget(max_host_mem_gib=12)), \

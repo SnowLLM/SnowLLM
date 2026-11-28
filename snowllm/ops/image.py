@@ -1,15 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 import contextlib
+import ctypes
 import math
 
 import torch
 
 from torch.utils._pytree import tree_leaves
 
-from .allocation import empty, active_arena
+from .allocation import add_into, empty, active_arena
+from .miopen import convolution as plan_convolution
 from .operation import operator
+from .metadata import index_copy as index_copy
 from .._capi import check, lib
 from ._common import _p, _stream, drying
+from .arena import Arena
 
 
 def pair(value):
@@ -31,16 +35,10 @@ def dense(value):
     if value.is_contiguous():
         return value
     out = empty(value.shape, dtype=value.dtype, device=value.device)
-    if (
-        value.device.type in ("cuda", "meta") and value.dtype == torch.float32
-        and value.ndim == 3
-        and 0 < value.shape[0] <= 65535
-        and 0 < value.shape[1] <= 2**31 - 1
-        and 0 < value.shape[2] <= 2**31 - 1
-        and value.stride(1) == 1 and value.stride(2) == value.shape[1]
-        and value.stride(0) >= value.shape[1] * value.shape[2]
-    ):
-        return transpose_f32(out, value)
+    if value.device.type in ("cuda", "meta") and value.dtype == torch.float32:
+        dims = ctypes.c_int64 * value.ndim
+        if lib.snowllm_auxiliary_transpose_preferred(dims(*value.shape), dims(*value.stride()), value.ndim):
+            return transpose_f32(out, value)
     return copy(out, value)
 
 
@@ -62,13 +60,8 @@ def copy(out, value):
 
 
 def add(x, y):
-    return evaluate(
-        torch.add,
-        torch.broadcast_shapes(x.shape, y.shape)
-        if isinstance(y, torch.Tensor)
-        else x.shape,
-        (x, y),
-    )
+    shape = torch.broadcast_shapes(x.shape, y.shape) if isinstance(y, torch.Tensor) else x.shape
+    return add_into(empty(shape, dtype=x.dtype, device=x.device), x, y)
 
 
 def multiply(x, y):
@@ -87,23 +80,25 @@ def concatenate(values, dim=1):
     return evaluate(torch.cat, shape, (values,), {"dim": dim}, dtype=values[0].dtype)
 
 
+_ACTIVATIONS = {
+    None: 0,
+    "relu": 4,
+    "silu": 5,
+    "sigmoid": 9,
+    "hardsigmoid": 11,
+    "paddle_hsigmoid": 7,
+    "paddle_hswish": 12,
+    "hardswish": 6,
+    "gelu": 2,
+    "tanh": 10,
+}
+
+
 @operator
 def activation(x, kind, scale=None, shift=None):
     if kind is None and scale is None and shift is None:
         return x
     out = empty(x.shape, dtype=x.dtype, device=x.device)
-    acts = {
-        None: 0,
-        "relu": 4,
-        "silu": 5,
-        "sigmoid": 9,
-        "hardsigmoid": 11,
-        "paddle_hsigmoid": 7,
-        "paddle_hswish": 12,
-        "hardswish": 6,
-        "gelu": 2,
-        "tanh": 10,
-    }
     if (
         x.dtype == torch.float16
         and kind in ("relu", "silu", "gelu", "sigmoid", "hardsigmoid")
@@ -137,7 +132,7 @@ def activation(x, kind, scale=None, shift=None):
             channels,
             inner,
             {torch.float32: 0, torch.float16: 1, torch.bfloat16: 2}[x.dtype],
-            (kind if isinstance(kind, int) else acts[kind]),
+            (kind if isinstance(kind, int) else _ACTIVATIONS[kind]),
             _stream(),
         ),
         "image_activation",
@@ -160,6 +155,9 @@ def convolution(
     scale=None,
     shift=None,
     act=None,
+    _config=0,
+    _allow_pointwise=True,
+    _allow_depthwise=True,
 ):
     stride, padding, dilation, output_padding = (
         pair(stride),
@@ -167,6 +165,15 @@ def convolution(
         pair(dilation),
         pair(output_padding),
     )
+    if x.ndim != 4 or weight.ndim != 4 or groups <= 0:
+        raise ValueError("expected 4D input and weight and positive groups")
+    if x.device.type not in ("cuda", "meta") or x.dtype not in (torch.float16, torch.float32):
+        raise ValueError("convolution requires FP16 or FP32 input on GPU or meta")
+    if drying() is None and any(v.device != x.device for v in (weight, bias, scale, shift) if v is not None):
+        raise ValueError("convolution tensors must share a device")
+    if (len(stride) != 2 or len(padding) != 2 or len(dilation) != 2 or len(output_padding) != 2
+            or min(*stride, *dilation) < 1 or min(*padding, *output_padding) < 0):
+        raise ValueError("invalid 2D convolution geometry")
     kernel = weight.shape[2:]
     spatial = tuple(
         (size - 1) * step - 2 * pad + k
@@ -182,48 +189,48 @@ def convolution(
     if transpose:
         spatial = tuple(n + p for n, p in zip(spatial, output_padding))
     channels = weight.shape[1] * groups if transpose else weight.shape[0]
-    acts = {None: 0, "relu": 4, "silu": 5, "gelu": 2, "sigmoid": 9}
-    if (
-        x.dtype == torch.float32
-        and dilation == (1, 1)
-        and not transpose
-        and act in acts
-    ):
-        if groups == 1 and kernel == (1, 1) and stride == (1, 1) and padding == (0, 0):
-            return pointwise_f32(x, weight, bias, scale, shift, acts[act])
-        if (
-            groups == x.shape[1] == channels
-            and kernel[0] == kernel[1]
-            and kernel[0] in (3, 5)
-            and stride[0] == stride[1]
-            and stride[0] in (1, 2)
-            and padding == (kernel[0] // 2,) * 2
-        ):
-            return depthwise_conv(x, weight, bias, scale, shift, stride[0], acts[act])
-    out = empty((x.shape[0], channels, *spatial), dtype=x.dtype, device=x.device)
-    from .miopen import convolution as plan_convolution
 
-    x = dense(x)
-    plan = plan_convolution(
-        tuple(x.shape),
-        tuple(weight.shape),
-        tuple(out.shape),
-        x.dtype,
-        stride,
-        padding,
-        dilation,
-        groups,
-        transpose,
-        torch.cuda.current_device(),
-    )
+    if (x.shape[1] % groups or channels % groups or min(*x.shape, *weight.shape, *spatial) < 1
+            or x.shape[1] != (weight.shape[0] if transpose else weight.shape[1] * groups)):
+        raise ValueError("incompatible input, weight or groups for 2D convolution")
+    if weight.dtype != x.dtype or bias is not None and bias.numel() != channels:
+        raise ValueError("convolution weight dtype or number of bias channels does not match")
+    for vector in (scale, shift):
+        if vector is not None and (vector.dtype != torch.float32 or vector.numel() != channels):
+            raise ValueError("convolution affine parameters must be FP32 vectors of output channels")
+
+    def address(tensor):
+        if tensor.is_meta:
+            return tensor.storage_offset() * tensor.element_size()
+        return tensor.data_ptr()
+
+    fp32_bias = bias is not None and bias.dtype != x.dtype
+    shape = (x.shape[0], channels, *spatial)
+    device = x.device.index if x.is_cuda else torch.cuda.current_device()
+    plan = plan_convolution(device, tuple(x.shape), tuple(weight.shape), shape, stride, padding, dilation,
+                            groups, {torch.float32: 0, torch.float16: 1}[x.dtype], transpose,
+                            act if isinstance(act, int) else _ACTIVATIONS[act],
+                            x.is_contiguous(memory_format=torch.channels_last),
+                            weight.is_contiguous() and (bias is None or bias.is_contiguous()), fp32_bias,
+                            scale is not None or shift is not None, _config, _allow_pointwise, _allow_depthwise,
+                            math.gcd(address(x), address(weight), Arena.ALIGN))
+    out = empty(shape, dtype=x.dtype, device=x.device)
     arena = active_arena()
     with arena.frame() if arena is not None else contextlib.nullcontext():
-        workspace = empty((plan.workspace,), dtype=torch.uint8, device=x.device)
-        if out.device.type != "meta":
-            plan(x, weight, out, workspace)
-    if bias is not None:
-        out = add(out, bias[None, :, None, None])
-    return activation(out, act, scale, shift)
+        x = dense(x) if plan.dense_input else x
+        weight = dense(weight)
+        if fp32_bias and bias.dtype != torch.float32:
+            bias = cast(bias, torch.float32)
+        bias, scale, shift = (dense(v) if v is not None else None for v in (bias, scale, shift))
+        workspace = empty(plan.workspace, dtype=torch.uint8, device=x.device) if plan.workspace else None
+        if out.device.type != "meta" and drying() is None:
+            plan(x, weight, bias, scale, shift, out, workspace)
+    return out
+
+
+def batch_norm_affine(weight, bias, mean, variance, eps):
+    scale = weight * torch.rsqrt(variance + eps)
+    return scale, bias - mean * scale
 
 
 @operator
@@ -346,7 +353,9 @@ def adaptive_pool(x, size=(1, 1)):
 
 @operator
 def matmul(x, y):
-    batch = tuple(torch.broadcast_shapes(x.shape[:-2], y.shape[:-2]))
+    batch, other = x.shape[:-2], y.shape[:-2]
+    if batch != other:
+        batch = torch.broadcast_shapes(batch, other)
     shape = (*batch, x.shape[-2], y.shape[-1])
     out = empty(shape, dtype=x.dtype, device=x.device)
     if not batch:
@@ -499,6 +508,10 @@ def grid_sample(x, grid):
     )
 
 
+def prefer_packed_linear_half(rows, weight):
+    return bool(lib.snowllm_auxiliary_gemm_half_preferred(rows, *weight.shape))
+
+
 @operator
 def linear_half(x, weight, bias=None):
     x = dense(x)
@@ -508,7 +521,7 @@ def linear_half(x, weight, bias=None):
     arena = active_arena()
     with arena.frame() if arena is not None else contextlib.nullcontext():
         workspace = empty(
-            (16 * rows * columns if columns <= 1024 else 0,),
+            (lib.snowllm_auxiliary_gemm_half_workspace_bytes(rows, columns, contraction),),
             dtype=torch.uint8,
             device=x.device,
         )
@@ -529,15 +542,9 @@ def linear_half(x, weight, bias=None):
     return out
 
 
-@operator
-def index_copy(out, dim, indices, value):
-    if (
-        out.device.type != "meta"
-        and value.device.type != "meta"
-        and indices.device.type != "meta"
-    ):
-        out.index_copy_(dim, indices, value)
-    return out
+def scaled_attention(q, k, v):
+    scores = multiply(matmul(q, k.transpose(-1, -2)), q.shape[-1] ** -0.5)
+    return matmul(softmax(scores), v)
 
 
 def attention_half(q, k, v, mask=None):
@@ -567,38 +574,7 @@ def prepare_input(x, dtype, admit=None):
 
 @operator
 def pointwise_f32(x, weight, bias=None, scale=None, shift=None, act=0, config=0):
-    if (
-        x.dtype == torch.float32 and x.ndim == 4 and x.shape[1] == 64
-        and weight.shape == (8, 64, 1, 1) and weight.is_contiguous()
-        and x.is_contiguous(memory_format=torch.channels_last)
-        and x.storage_offset() % 4 == 0 and weight.storage_offset() % 4 == 0
-        and scale is None and shift is None and act == 0 and config == 0
-        and (bias is None or bias.is_contiguous())
-    ):
-        return pointwise_64_8_f32(x, weight, bias)
-    x = dense(x)
-    out = empty(
-        (x.shape[0], weight.shape[0], *x.shape[2:]), dtype=x.dtype, device=x.device
-    )
-    check(
-        lib.snowllm_auxiliary_pointwise_f32(
-            _p(x),
-            _p(weight),
-            _p(bias),
-            _p(scale),
-            _p(shift),
-            _p(out),
-            x.shape[0],
-            x.shape[1],
-            math.prod(x.shape[2:]),
-            weight.shape[0],
-            act,
-            config,
-            _stream(),
-        ),
-        "image_pointwise",
-    )
-    return out
+    return convolution(x, weight, bias, scale=scale, shift=shift, act=act, _config=config)
 
 
 @operator

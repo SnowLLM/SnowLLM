@@ -52,8 +52,13 @@ class SpecTerminalTests(unittest.TestCase):
         decoder.geo = Mock(inkling=False)
         graph = Mock()
         decoder.graphs = {(2, False, 5): graph}
-        decoder.propose([a, b], [4, 1])
-        graph.replay.assert_called_once()
+        decoder._ctx_dev = Mock()
+        for adaptive in (False, True):
+            decoder.adaptive = adaptive
+            graph.replay.side_effect = lambda: self.assertEqual(decoder._ctx_dev.call_count, int(adaptive))
+            decoder.propose([a, b], [4, 1])
+        decoder._ctx_dev.assert_called_once_with(2)
+        self.assertEqual(graph.replay.call_count, 2)
         decoder._proposals.assert_called_with([a, b], 5)
         a.drafts, b.drafts = [1]*7, [2]*4
         self.assertEqual(decoder.select_verify_rows([a]), 8)

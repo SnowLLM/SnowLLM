@@ -142,7 +142,6 @@ class InklingResources(ResourceSet):
 
 
 class InklingRunner(QwenRunner):
-    text_only = True
     tunable_rope = False
     plan_query_tiles = False
 
@@ -287,7 +286,7 @@ class InklingRunner(QwenRunner):
             return state, table_i, mapping_i
         hidden = model.hidden(batch.input_ids, position, seq, visit_inputs, plan, batch.is_prefill,
                               taps=taps[:batch.num_tokens].view(batch.num_tokens,self.num_taps,-1) if taps is not None else None,
-                              tap_at=self.tap_at)
+                              tap_at=self.tap_at, embeds=batch.embeds, embed_rows=batch.embed_rows)
         if batch.is_prefill:
             hidden = ops.gather_rows(hidden, batch.last_row)
         return model.logits(hidden) if batch.need_logits else None

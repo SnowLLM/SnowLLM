@@ -4,7 +4,9 @@
 import torch
 from torch import nn
 
+from ..moe import StandardMoE
 from ... import ops
+from ...ops.allocation import add_into
 from ...engine.cache import RequestState, tensor as _cache
 from ..geometry import Glm5NextGeometry
 from ...ops.glm5_next import (kda, sparse_produce, sparse_attention, sparse_workspace_bytes,
@@ -35,8 +37,7 @@ def gather_rows(x, rows, ctx=None, *, out=None):
 
 def add(x, y, ctx=None):
     out = _activation(x,*x.shape,ctx=ctx)
-    torch.add(x, y, out=out)
-    return out
+    return add_into(out, x, y)
 
 
 class Projection(nn.Module):
@@ -299,17 +300,15 @@ class DenseMLP(nn.Module):
         return self.down(act,ctx=ctx)
 
 
-class MoE(nn.Module):
-    def __init__(self, router, gate_up, down, shared_gate_up, shared_down):
-        super().__init__()
-        self.router, self.gate_up, self.down = router, gate_up, down
-        self.shared_gate_up, self.shared_down = shared_gate_up, shared_down
+class MoE(StandardMoE):
+    @property
+    def router(self):
+        return self.router_w
 
     def forward(self, x, ctx):
-        out = _activation(x,*x.shape,ctx=ctx)
-        ctx.workspace(ops.inference_moe_workspace_bytes(x.shape[0]))
-        ops.inference_moe(x,self.router,self.gate_up,self.down,self.shared_gate_up,
-                          self.shared_down,out,ctx.ws)
+        out = _activation(x, *x.shape, ctx=ctx)
+        ctx.workspace(self.backend.workspace_bytes(len(x)))
+        self.backend.forward(x, self.router_w, self.shared_gate_up, self.shared_down, out, ctx.ws)
         return out
 
 

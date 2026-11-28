@@ -27,6 +27,7 @@ class ExpertProjection:
     meta: torch.Tensor | None = None
     fmt: int = 0
     compact: tuple | None = None
+    slots: int | None = None
 
     @classmethod
     def load(cls, rd, stem, experts, n, k, compact=False):
@@ -52,8 +53,9 @@ class ExpertProjection:
 
     def __call__(self, x, ids, prefill=False, plan=None):
         if self.meta is not None:
-            return kquant_expert_linear(x, self.weight, self.meta, self.fmt, ids, plan)
-        return expert_linear(x, self.weight, self.scale, ids, prefill, plan, self.compact)
+            return kquant_expert_linear(x, self.weight, self.meta, self.fmt, ids, plan, slots=self.slots)
+        return expert_linear(x, self.weight, self.scale, ids, prefill, plan, self.compact,
+                             plan_experts=128 if self.slots else None)
 
 
 def pack_router(reader, name, weight):
@@ -79,6 +81,13 @@ def pack_router(reader, name, weight):
     return gemm_bf16_shuffle_b(weight.bfloat16(), experts, hidden)
 
 
+class ResidentInklingMoE:
+    @staticmethod
+    def project(module, x, ids, prefill):
+        activated, plan = module.activate(x, ids, prefill)
+        return module.down(activated, ids, prefill, plan=plan)
+
+
 class InklingMoE:
     def __init__(self, rd, cfg, layer, device_map=None, compact=False):
         prefix = f"blk.{layer}."
@@ -97,17 +106,30 @@ class InklingMoE:
         with place(device_map, "experts.down", layer):
             self.down = ExpertProjection.load(rd, prefix + "ffn_down_exps", experts, hidden, inter, compact)
 
+        from ...ops.disk_moe import bind_inkling
+        self.backend = bind_inkling(self, layer) or ResidentInklingMoE()
+
+    @property
+    def cache(self):
+        return None if isinstance(self.backend, ResidentInklingMoE) else self.backend
+
     def __call__(self, x, prefill=False, *, post_conv=None):
-        from ...ops.inkling import combine, expert_plan, route, short_conv, softcapped_swiglu
+        from ...ops.inkling import combine, route, short_conv
         ids, weights = route(x, self.router, self.bias, self.topk, self.scale, prefill, packed=self.packed_router)
-        experts, hidden = self.router.shape
-        plan = expert_plan(ids, experts, hidden, self.intermediate, prefill,
-                           packed=self.gate_up.scale is not None or self.down.scale is not None)
-        gate_up = self.gate_up(x[:, None, :], ids, prefill, plan=plan)
-        activated = softcapped_swiglu(gate_up, self.gate_cap, self.up_cap, prefill)
-        states = self.down(activated, ids, prefill, plan=plan)
+        states = self.backend.project(self, x, ids, prefill)
         if post_conv is None:
             return combine(states, weights, prefill)
         kernel, history, plan, residual = post_conv
         return short_conv(states, kernel, None, history, *plan, residual=residual, out_dtype=torch.bfloat16,
                           expert_weights=weights, prefill=prefill)
+
+    def plan(self, ids, prefill, packed):
+        from ...ops.inkling import expert_plan
+        experts, hidden = self.router.shape
+        return expert_plan(ids, experts, hidden, self.intermediate, prefill, packed=packed)
+
+    def activate(self, x, ids, prefill):
+        from ...ops.inkling import softcapped_swiglu
+        plan = self.plan(ids, prefill, self.gate_up.scale is not None or self.down.scale is not None)
+        gate_up = self.gate_up(x[:, None, :], ids, prefill, plan=plan)
+        return softcapped_swiglu(gate_up, self.gate_cap, self.up_cap, prefill), plan

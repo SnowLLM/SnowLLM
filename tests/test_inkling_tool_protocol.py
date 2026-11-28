@@ -16,7 +16,7 @@ class InklingToolProtocolTest(unittest.IsolatedAsyncioTestCase):
     def frame(self, tool, value):
         return [self.ROLE, *map(ord, tool), self.INVOKE, *map(ord, json.dumps(value)), self.END]
 
-    async def generate(self, tokens, tools, **options):
+    async def generate(self, tokens, tools, *, decode_text=None, **options):
         request = SimpleNamespace(finish_reason="stop")
 
         async def stream(_):
@@ -31,7 +31,7 @@ class InklingToolProtocolTest(unittest.IsolatedAsyncioTestCase):
                                  engine=SimpleNamespace(stop_token_ids=()))
         state = SimpleNamespace(model=model, model_name="m", aliases={"m": Alias(1, 4096)},
                                 think_open_id=None, sampling={}, default_max_tokens=128,
-                                engine=engine, tokenizer=SimpleNamespace(decode=decode))
+                                engine=engine, tokenizer=SimpleNamespace(decode=decode_text or decode))
         with patch.object(gen, "serving", return_value=state):
             return await gen.collect([1], gen.Common(**options), reasoning=False, types=tools)
 
@@ -47,6 +47,32 @@ class InklingToolProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(c.index, c.name, json.loads(c.arguments)) for c in calls],
                          [(0, "write", args), (1, "read", {})])
         self.assertNotEqual(calls[0].call_id, calls[1].call_id)
+
+    async def test_repeated_thinking_frames_and_literal_tags(self):
+        frames = [(self.TEXT, "<think>literal</think>"), (self.THINKING, "plan one"),
+                  (self.THINKING, "plan two"), (self.TEXT, "answer")]
+        tokens = [t for channel, body in frames for t in (self.ROLE, channel, *map(ord, body), self.END)]
+        reasoning, content, *_ = await self.generate(tokens, None)
+        self.assertEqual(reasoning, "plan oneplan two")
+        self.assertEqual(content, "<think>literal</think>answer")
+
+    async def test_stop_across_adjacent_text_frames(self):
+        tokens = [self.ROLE, self.TEXT, *map(ord, "before E"), self.END,
+                  self.ROLE, self.TEXT, *map(ord, "ND after"), self.END]
+        _, content, _, request, _ = await self.generate(tokens, None, stop=["END"])
+        self.assertEqual((content, request.stop_sequence), ("before ", "END"))
+
+    async def test_final_replacement_character_and_split_utf8(self):
+        def decode(ids):
+            return bytes(ids).decode(errors="replace")
+
+        for text in ("A�", "A�B", "A中"):
+            tokens = list(text.encode())
+            _, content, *_ = await self.generate(tokens, None, decode_text=decode)
+            self.assertEqual(content, text)
+        _, content, _, request, _ = await self.generate(list("中�".encode()), None, decode_text=decode,
+                                                        stop=["�"])
+        self.assertEqual((content, request.stop_sequence), ("中", "�"))
 
     async def test_nonfinite_arguments_do_not_hide_the_next_call(self):
         good = self.frame("read", {"name": "read", "args": {"text": "NaN", "value": 1.25}})
@@ -96,6 +122,8 @@ class DeveloperRoleTest(unittest.TestCase):
         system = {"role": "system", "content": "system instructions"}
         for family, expected in (
                 ("inkling2_loop", [system, dict(dev, role="system"), user]),
+                ("glm5_next", [system, dict(dev, role="system"), user]),
+                ("deepseek_v4", [system, dict(dev, role="system"), user]),
                 ("minicpmv4_7", [{"role": "system", "content": "system instructions\n\ndeveloper instructions"}, user]),
                 ("qwen4_exp", [system, dev, user])):
             with self.subTest(family=family):

@@ -3,13 +3,8 @@
 from types import MethodType, SimpleNamespace
 
 from ..._capi import SnowLLMError
+from ...checkpoint.gguf.minicpmv import SPECIAL_TOKENS as SPECIAL_TOKENS
 from ..multimodal import image_rows
-
-
-SPECIAL_TOKENS = dict(image_token="<|image_pad|>", video_token="<|video_pad|>",
-                      image_start_token="<image>", image_end_token="</image>",
-                      slice_start_token="<slice>", slice_end_token="</slice>",
-                      image_id_start_token="<image_id>", image_id_end_token="</image_id>")
 
 
 def processor(tok, cfg):

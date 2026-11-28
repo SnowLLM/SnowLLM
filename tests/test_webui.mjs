@@ -223,7 +223,7 @@ test('benchmark comparisons expose outdated, incomplete and mismatched measureme
 
 test('model load sends explicit spec overrides and inherits recipe defaults', async () => {
   const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
-  const fields = Object.fromEntries(['context-length', 'gpu-budget', 'kv-type', 'max-num-seqs',
+  const fields = Object.fromEntries(['context-length', 'gpu-budget', 'vision-placement', 'host-budget', 'disk-budget', 'weight-map', 'disk-expert-slots', 'kv-type', 'max-num-seqs',
     'max-num-batched-tokens', 'load-target', 'load-id', 'extra-options'].map(id => [id, {value: ''}]));
   const specInputs = {mtp_prompt_lookup: {value: ''}, mtp_tool_draft: {value: ''}, dflash_block: {value: ''}};
   const context = vm.createContext({loadKey: () => 'model', parseOptions: () => []});
@@ -237,6 +237,22 @@ test('model load sends explicit spec overrides and inherits recipe defaults', as
   assert.deepEqual(options(), ['--no-mtp-prompt-lookup', '--mtp-tool-draft', '--dflash-block', '4']);
   for (const input of Object.values(specInputs)) input.disabled = true;
   assert.deepEqual(options(), []);
+  for (const value of ['16GiB', '0']) {
+    fields['disk-budget'].value = value;
+    assert.deepEqual(options(), ['--max-disk-offload', value]);
+  }
+  fields['disk-budget'].disabled = true;
+  assert.deepEqual(options(), []);
+  for (const value of ['disk', 'gpu']) {
+    fields['vision-placement'].value = value;
+    assert.deepEqual(options(), ['--vision-placement', value]);
+  }
+  fields['vision-placement'].disabled = true;
+  fields['host-budget'].value = '4GiB';
+  fields['weight-map'].value = '*=gpu,experts[2]=host,experts[3-5]=disk';
+  fields['disk-expert-slots'].value = '316';
+  assert.deepEqual(options(), ['--max-host-mem', '4GiB', '--device-map', '*=gpu,experts[2]=host,experts[3-5]=disk',
+    '--disk-offload-gpu-cache-experts', '316']);
 });
 
 test('model library shows only ordered recommendation candidates for v3 models', async () => {
@@ -354,4 +370,36 @@ test('inheriting a preset and explicitly choosing its draft method remain distin
     context.methodOptions(select, rows[2], 'dflash', 'Q3', manual);
     assert.equal(select.value, 'DFlash2@original');
   }
+});
+
+test('vision selection follows the draft and the resolved recipe is the load key', async () => {
+  const app = await readFile(new URL('../snowllm/daemon/static/app.js', import.meta.url), 'utf8');
+  const base = {id: 'b/ink:dspark', vision_head: 'none', vision_heads: {BF16: {}}};
+  const plain = {...base, id: 'b/ink:plain'};
+  const rows = [base, plain, ...[base, plain].map(row =>
+    ({id: row.id + ':vision=bf16', vision_head: 'BF16', vision_base: row.id}))];
+  class Option {
+    constructor(label, value) { Object.assign(this, {label, value, dataset: {}}); }
+  }
+  const context = vm.createContext({recipes: rows, Option, t: (key, value) => key.replace('{0}', value)});
+  vm.runInContext(app.slice(app.indexOf('function visionOptions('), app.indexOf('function renderMethodOptions(')), context);
+  vm.runInContext(app.slice(app.indexOf('function loadKey('), app.indexOf('function selectLoadModel(')), context);
+  const vision = {
+    replaceChildren() { this.options = []; this.value = ''; },
+    append(option) { this.options.push(option); },
+    get selectedOptions() { return this.options.filter(option => option.value === this.value); },
+  };
+  const method = {selectedOptions: [{dataset: {recipe: base.id}}]};
+  const card = {source: 'recipe', fields: {'vision-head': vision, 'spec-method': method}};
+  context.visionOptions(vision, method);
+  assert.equal(context.loadKey(card), base.id);
+  vision.value = 'BF16';
+  assert.equal(context.loadKey(card), base.id + ':vision=bf16');
+  method.selectedOptions[0].dataset.recipe = plain.id;
+  context.visionOptions(vision, method, vision.value);
+  assert.equal(context.loadKey(card), plain.id + ':vision=bf16');
+  method.selectedOptions[0].dataset.recipe = 'text-only';
+  context.visionOptions(vision, method, vision.value);
+  assert.equal(vision.options.length, 0);
+  assert.equal(context.loadKey(card), 'text-only');
 });

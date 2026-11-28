@@ -87,7 +87,7 @@ class QwenRunner(GraphRunner):
         each = self._checkpoint_bytes() if self.prefix_memory_ratio else 0
         return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._cache_blocks(),
                         checkpoint_bytes=each, future_bytes=graph_bytes,
-                        minimum_snapshots=2*self.max_num_seqs)
+                        minimum_snapshots=2*self.max_num_seqs, slab_sizes=self.resources.cache.slab_sizes)
 
     def _allocate_pools(self, blocks):
         self.num_kv_blocks = blocks

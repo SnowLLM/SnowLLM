@@ -61,6 +61,13 @@ class _RowCopy(ctypes.Structure):
         (n,ctypes.c_int) for n in ('src_type','dst_type','index_type','fields')]
 
 
+@operator
+def index_copy(out, dim, indices, value):
+    if not (out.is_meta or indices.is_meta or value.is_meta):
+        out.index_copy_(dim, indices, value)
+    return out
+
+
 def _matrix(t):
     if not t.ndim:raise SnowLLMError('row copy needs a row axis')
     if t.ndim==1:return t.as_strided((t.numel(),1),(t.stride(0),1))
@@ -161,15 +168,6 @@ def copy_tensor(dst,src):
         if sp==dp and src.dtype==dst.dtype and src.stride()==dst.stride():return dst
         if _overlaps(src,dst):
             raise SnowLLMError('stage aliased tensor copies in the planned arena')
-    if src.ndim:
-        try:
-            a,b=_matrix(src),_matrix(dst)
-        except RuntimeError:
-            pass
-        else:
-            if (a.stride(1)==b.stride(1)==1 and a.stride(0)>=a.shape[1]
-                    and b.stride(0)>=b.shape[1]):
-                return copy_rows(dst,src)
     shape=(ctypes.c_int64*src.ndim)(*src.shape)
     ss=(ctypes.c_int64*src.ndim)(*src.stride())
     ds=(ctypes.c_int64*dst.ndim)(*dst.stride())

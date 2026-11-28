@@ -231,6 +231,9 @@ class NativeReader:
     def read(self, key, *args):
         return self.reader.gguf.read(self.name(key), *args)
 
+    def vq_layout(self, key):
+        return self.reader.gguf.vq_layout(self.name(key))
+
     def raw(self, key, **kwargs):
         return self.reader.raw(self.name(key), **kwargs)
 

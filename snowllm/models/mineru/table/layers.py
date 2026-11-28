@@ -5,8 +5,7 @@ from ....ops import image as op
 class TableNorm:
     def __init__(self, weights, names, eps):
         weight, bias, mean, variance = [weights.read(name) for name in names]
-        self.scale = weight * (variance + eps).rsqrt()
-        self.shift = bias - mean * self.scale
+        self.scale, self.shift = op.batch_norm_affine(weight, bias, mean, variance, eps)
 
     def __call__(self, x):
         return op.activation(x, None, self.scale, self.shift)

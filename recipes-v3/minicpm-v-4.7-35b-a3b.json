@@ -113,6 +113,18 @@
       ]
     }
   },
+  "vision_heads": {
+    "gguf": {
+      "F16-16x": {
+        "file": "mmproj-model-f16.gguf",
+        "bytes": 1119575840
+      },
+      "F16-4x": {
+        "file": "mmproj-model-f16-4x.gguf",
+        "bytes": 910491648
+      }
+    }
+  },
   "variants": {
     "mix-q3gud-im": {
       "precision": "mix_q3gud_im",

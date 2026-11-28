@@ -50,6 +50,23 @@ class DeepSeekRuntimeTests(unittest.TestCase):
                     [0, 1, 4, 5, 6], [0, 0, 2, 2, 2], [9, 10, 28, 29, 30],
                     [11, 12, 35, 36, 37], table)
 
+    def test_vision_routes_share_workspace_sized_for_the_largest_native_requirement(self):
+        from contextlib import nullcontext
+        import torch
+        from snowllm.models.deepseek_v4 import vq_moe
+
+        arena = SimpleNamespace(new=torch.empty, flat=lambda n, dtype: torch.empty(n, dtype=dtype),
+                                frame=nullcontext)
+        ctx = SimpleNamespace(arena=arena, modality_runs=((0, 2, False), (2, 6, True)))
+        experts = SimpleNamespace(layout=SimpleNamespace(hidden=1))
+        moe = vq_moe.VQMoE(None, 'text', experts, None, None, None, lambda ctx, x, out: x, chunk_size=4)
+        moe.vision_bias = 'image'
+        with patch.object(vq_moe, 'vq_moe_workspace_bytes', side_effect=lambda n, *_: {2: 9, 4: 7, 6: 8}[n]), \
+             patch.object(vq_moe, 'execute_vq') as launch:
+            moe(ctx, torch.zeros(6, 1))
+        self.assertEqual([(len(c.args[1]), c.args[3], c.args[9].nbytes) for c in launch.call_args_list],
+                         [(2, 'text', 9), (4, 'image', 9)])
+
     def test_grouped_output_projection_reads_the_weight_once(self):
         name, raw = 'blk.0.attn_output_a.weight', object()
         reader = SimpleNamespace(raw=Mock(return_value=raw),

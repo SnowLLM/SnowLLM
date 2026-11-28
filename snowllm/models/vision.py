@@ -13,7 +13,7 @@ from .. import ops
 from ..ops.allocation import active_arena
 from .._capi import SnowLLMError
 from .geometry import pad_gemm_n
-from .vision_layers import VisionBlock, VisionLinear
+from .vision_layers import RESIDENT_VISION, VisionBlock, check_vision_room, execute_vision, position_weights
 
 
 ROPE_THETA = 10000.0
@@ -97,11 +97,10 @@ def _position_ids(grid_thw: torch.Tensor, merge: int) -> torch.Tensor:
 def _rope_cos_sin(grid_thw: torch.Tensor, device: torch.device | str,
                   g: VisionGeometry) -> tuple[torch.Tensor, torch.Tensor]:
     dim = g.head_dim // 2
-    inv_freq = 1.0 / (ROPE_THETA ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
+    inv_freq = ops.base_inv_freq(ROPE_THETA, dim)
     pos = _position_ids(grid_thw, g.spatial_merge).to(torch.float32)
-    freqs = (pos.unsqueeze(-1) * inv_freq).flatten(1)
-    emb = torch.cat((freqs, freqs), dim=-1)
-    return emb.cos().to(device).contiguous(), emb.sin().to(device).contiguous()
+    cos, sin = ops.vision_rope_table(pos, inv_freq)
+    return cos.to(device).contiguous(), sin.to(device).contiguous()
 
 
 def _bilinear_pos_inputs(grid_thw: torch.Tensor, side: int,
@@ -174,19 +173,18 @@ def prepare_vision_inputs(pixel_values, grid_thw, g, *, admit=None):
 
 
 class VisionModel:
-    def __init__(self, patch_w: torch.Tensor, patch_b: torch.Tensor, pos_embed: torch.Tensor,
-                 blocks: list[VisionBlock], merger: dict[str, torch.Tensor],
-                 geo: VisionGeometry) -> None:
+    def __init__(self, patch, pos_embed, blocks, merger, geo, *, streamed=False):
         self.geo = geo
-        self.patch_w = patch_w
-        self.patch_b = patch_b
-        self.pos_embed = pos_embed
-        self.blocks = blocks
-        self.merger = merger
+        self.streamed = streamed
+        self.patch, self.pos_embed = patch, pos_embed
+        self.blocks, self.merger = blocks, merger
         self._cache: dict[str, torch.Tensor] = {}
 
     def execute_plan(self, key, rows, walk, *, arena=None, admit=True, family=None, probe=None):
         key = (*key, rows)
+        if getattr(self, 'streamed', False):
+            return execute_vision(ops.Arena(), key, rows, walk, True,
+                                  getattr(self, '_memory_admit', check_vision_room))
         if getattr(self, '_native_eager', False):
             capacity = self.__dict__.get('_eager_arena')
             if capacity is None:
@@ -235,7 +233,7 @@ class VisionModel:
 
     @classmethod
     def from_hf_state(cls, sd: dict[str, torch.Tensor], vision_config: dict,
-                      prefix: str = "model.visual.") -> "VisionModel":
+                      prefix: str = "model.visual.", weights=RESIDENT_VISION) -> "VisionModel":
         geo = VisionGeometry.from_config(vision_config)
         HIDDEN, PATCH_IN = geo.hidden, geo.patch_in
 
@@ -243,15 +241,14 @@ class VisionModel:
             return sd[prefix + name].to(torch.bfloat16).cuda()
 
         def linear(name):
-            return VisionLinear.pack(g(name + ".weight"), g(name + ".bias"))
+            return weights.linear(lambda: g(name + ".weight"), g(name + ".bias"))
 
         def norm(name):
             return g(name + ".weight"), g(name + ".bias")
 
-        patch = VisionLinear.pack(g("patch_embed.proj.weight").reshape(HIDDEN, PATCH_IN),
+        patch = weights.linear(lambda: g("patch_embed.proj.weight").reshape(HIDDEN, PATCH_IN),
                                   g("patch_embed.proj.bias"), pad=False)
-        patch_w, patch_b = patch.weight, patch.bias
-        pos_embed = g("pos_embed.weight")
+        pos_embed = weights.table(lambda: g("pos_embed.weight"))
         blocks = []
         for i in range(geo.depth):
             p = f"blocks.{i}."
@@ -264,26 +261,20 @@ class VisionModel:
         fc1, fc2 = linear(mp + "linear_fc1"), linear(mp + "linear_fc2")
         merger = {
             "norm_w": g(mp + "norm.weight"), "norm_b": g(mp + "norm.bias"),
-            "fc1_w": fc1.weight, "fc1_b": fc1.bias,
-            "fc2_w": fc2.weight, "fc2_b": fc2.bias,
+            "fc1": fc1, "fc2": fc2,
         }
-        return cls(patch_w, patch_b, pos_embed, blocks, merger, geo)
-
-    def _gemm(self, a: torch.Tensor, w_shuffled: torch.Tensor, bias: torch.Tensor | None, N: int,
-              K: int, out: torch.Tensor, act: int = 0,
-              residual: torch.Tensor | None = None) -> torch.Tensor:
-        m = a.shape[0]
-        scratch = (None if active_arena() is not None else
-                   self._byte_buf("agemm",ops.vision_gemm_workspace_bytes(m,N,K)))
-        return VisionLinear(w_shuffled, bias, N, K).forward(a, out, scratch, act, residual)
+        return cls(patch, pos_embed, blocks, merger, geo, streamed=weights is not RESIDENT_VISION)
 
     @torch.no_grad()
     def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
         g = self.geo
         OUT_HIDDEN, MERGE_UNIT = g.out_hidden, g.merge_unit
-        x, grid_thw, cos, sin, cu = prepare_vision_inputs(pixel_values, grid_thw, g)
+        admit = check_vision_room if self.streamed else None
+        x, grid_thw, cos, sin, cu = prepare_vision_inputs(pixel_values, grid_thw, g, admit=admit)
         M = x.shape[0]
         indices, weights = _bilinear_pos_inputs(grid_thw, g.grid_side, g.spatial_merge)
+        if admit:
+            admit(indices.nbytes + weights.nbytes + M // MERGE_UNIT * OUT_HIDDEN * 2)
         indices, weights = indices.to(x.device), weights.to(x.device)
         out = torch.empty(M // MERGE_UNIT,OUT_HIDDEN,dtype=torch.bfloat16,device=x.device)
         return self.execute_plan(('vision',cu.numel()),M,
@@ -295,8 +286,8 @@ class VisionModel:
         MERGE_IN,MERGE_UNIT,OUT_HIDDEN,PATCH_IN = g.merge_in,g.merge_unit,g.out_hidden,g.patch_in
         M = x.shape[0]
         hidden = self._buf("hidden", M, HIDDEN)
-        self._gemm(x, self.patch_w, self.patch_b, HIDDEN, PATCH_IN, hidden, act=0)
-        ops.vision_pos_embed_add(hidden, self.pos_embed, indices.to(x.device), weights.to(x.device))
+        self.patch.forward(x, hidden, None)
+        ops.vision_pos_embed_add(hidden, position_weights(self.pos_embed, active_arena()), indices.to(x.device), weights.to(x.device))
 
         buffers = dict(scratch=None, tile_map=ops.vision_attention_tile_map(cu,M))
         for blk in self.blocks:
@@ -307,5 +298,5 @@ class VisionModel:
         ops.vision_layernorm(hidden, mg["norm_w"], mg["norm_b"], mnorm, LN_EPS)
         merged_in = mnorm.reshape(M // MERGE_UNIT, MERGE_IN)
         h = self._buf("mh", M // MERGE_UNIT, MERGE_IN)
-        self._gemm(merged_in, mg["fc1_w"], mg["fc1_b"], MERGE_IN, MERGE_IN, h, act=2)
-        return self._gemm(h, mg["fc2_w"], mg["fc2_b"], OUT_HIDDEN, MERGE_IN, out, act=0)
+        mg["fc1"].forward(merged_in, h, None, act=2)
+        return mg["fc2"].forward(h, out, None)

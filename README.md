@@ -47,11 +47,13 @@ Each rate pair is **prefill / decode** in tok/s at the indicated input length (1
 | MiniCPM-V 4.7 35B-A3B | mix_q3gud_im | DSpark block 8 | 32 GiB | Radeon 780M | 1,194.9 / 23.00 | 1,178.1 / 76.64 | — | — |
 | Inkling 2 Mini | UD-Q4_K_M | Adaptive DSpark block 8 + prompt lookup | 32 GiB | Radeon 780M | 617.6 / 18.86 | 614.8 / 35.20 | — | — |
 | LFM2.5-8B-A1B | Q4_K_M | DSpark block 9 | 16 GiB* | Radeon 780M | 1,269.4 / 43.38 | — | — | — |
-| DeepSeek-V4.1-Flash | VQ + Q4_K | DSpark block 5 | 128 GiB (Linux), 192 GiB (Windows) | Radeon 8060S | — | — | — | — |
-| GLM-5.3-Flash | UD-IQ2_XXS | MTP k=2 | 128 GiB | Radeon 8060S | 517.1 / 25.76 | — | 480.7 / 26.79 | — |
-| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark block 5 | 128 GiB | Radeon 8060S | 862.6 / 25.96 | — | 631.8 / 22.28 | — |
+| DeepSeek-V4.1-Flash | VQ + Q4_K | Adaptive DSpark block 5 | 128 GiB (Linux), 192 GiB (Windows) | Radeon 8060S | 875.3 / 22.33 | 913.8 / 41.56 | 763.5 / 19.78 | 787.4 / 37.83 |
+| GLM-5.3-Flash | UD-IQ2_XXS | Adaptive MTP (up to 2) | 128 GiB | Radeon 8060S | 546.5 / 25.29 | 548.1 / 31.90 | 497.7 / 26.79 | 496.8 / 29.89 |
+| DeepSeek-V4-Flash | IQ2_XXS | Adaptive DSpark block 5 | 128 GiB | Radeon 8060S | 878.0 / 25.74 | 872.0 / 46.91 | 638.5 / 21.86 | 651.7 / 38.33 |
 | Qwen3.6-35B-A3B | UD-Q4_K_XL | MTP k=2 | 64 GiB | Radeon 8060S | 3,806.5 / 83.84 | — | 1,244.0 / 33.59 | — |
 | Qwen3.6-35B-A3B | UD-Q4_K_XL | DFlash block 8 | 64 GiB | Radeon 8060S | 4,325.6 / 76.36 | 4,219.5 / 206.28 | 1,310.0 / 37.14 | — |
+
+The GLM and DeepSeek measurements used Linux, 8,192-token prefill chunks, a 16 GiB host weight budget and zero disk-offloaded expert weights. The V4.1 run used a 226,304-token context and a 96 GiB GPU budget. [Placement settings](docs/guides/memory-management.md)
 
 At **32K input**, Qwen3.8-Flash-Next UD3.1 UD-IQ4_XS on the 8060S reached **1,982.9 / 49.61 tok/s** on PG-19 and **1,990.8 / 85.03 tok/s** on File Edit.
 

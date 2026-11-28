@@ -1022,11 +1022,13 @@ class DFlashDecoder(DSparkScheduling):
         self._stage_rows(batch, accepted, width=width)
         sampled = self._sample_inkling(batch)
         g = self.graphs.get((B, sampled, width))
+        # Adaptive graphs contain only the draft blocks and rely on the caller to write context.
+        if g is None or self.adaptive:
+            self._ctx_dev(B)
         if g is not None:
             g.replay()
             self.runner.n_draft_replays += 1
         else:
-            self._ctx_dev(B)
             self._blocks_dev(B, sampled, width)
             self.runner.n_draft_eager += 1
         self._proposals(batch, width)

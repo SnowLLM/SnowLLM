@@ -25,10 +25,7 @@ class LightSVTRBlock:
             .view(n, length, 3, 8, channels // 8)
             .permute(2, 0, 3, 1, 4)
         )
-        scores = op.multiply(
-            op.matmul(mixed[0], mixed[1].transpose(-1, -2)), (channels // 8) ** -0.5
-        )
-        value = op.matmul(op.softmax(scores), mixed[2]).transpose(1, 2)
+        value = op.scaled_attention(*mixed.unbind(0)).transpose(1, 2)
         value = op.dense(value).view(n, length, channels)
         x = op.add(x, self.projection(value))
         return op.add(x, self.second(op.activation(self.first(self.norm2(x)), "silu")))

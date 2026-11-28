@@ -94,7 +94,10 @@ class MemoryReport:
             yield line
         yield (f'workspace={size(v["workspace"])}, '
                f'extra/request~{size(v["other"] / v["requests"])}')
-        total = f'{status} {target} tensors={size(v["total"])}'
+        if v.get('vision_bytes'):
+            yield f'image encoding budget={size(v["vision_bytes"])} (workspace and image embeddings)'
+        label = 'plan' if v.get('vision_bytes') else 'tensors'
+        total = f'{status} {target} {label}={size(v["total"])}'
         if 'device_used' in v:
             total += f' (device={size(v["device_used"])})'
         if 'host_allocated' in v:

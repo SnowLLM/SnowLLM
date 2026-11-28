@@ -25,7 +25,7 @@
   "presets": {
     "vq-q4-k-dspark": {
       "summary": "DeepSeek-V4.1-Flash-1017 with embedded DSpark decoding, one request and an 8192-token context.",
-      "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Vision is not enabled.",
+      "note": "Shares the model directory and downloads with the recipe without DSpark. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled, including with DSpark. Select the bundled BF16 vision head for image inputs.",
       "variant": "vq-q4-k",
       "draft": "dspark",
       "draft_params": {
@@ -43,8 +43,8 @@
       }
     },
     "vq-q4-k-none": {
-      "summary": "DeepSeek-V4.1-Flash-1017 text inference with VQ + Q4_K weights, one request and an 8192-token context.",
-      "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Vision is not enabled.",
+      "summary": "DeepSeek-V4.1-Flash-1017 inference with VQ + Q4_K weights, one request and an 8192-token context.",
+      "note": "Reads the GGUF byte-range parts directly. Keep the matching 1017 Engram tables on a local SSD. Prefix reuse is enabled. Add --dflash MODEL_DIR to enable the embedded DSpark towers. Select the bundled BF16 vision head for image inputs.",
       "variant": "vq-q4-k",
       "draft": "none",
       "draft_params": {},
@@ -72,6 +72,7 @@
       "modalities": [
         "text"
       ],
+      "default_vision_head": "none",
       "source": "gguf",
       "revision": "f81ee2e9801fcc58fd51ae75dd827467ffc0b9e5",
       "include": [
@@ -159,6 +160,14 @@
       "requires": "0.3.19",
       "status": "supported",
       "spec_label": ""
+    }
+  },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "DeepSeek-V4.1-Flash.vision.gguf",
+        "bytes": 971066016
+      }
     }
   }
 }

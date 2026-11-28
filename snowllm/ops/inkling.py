@@ -472,7 +472,7 @@ def pack_kquant_experts(raw, fmt, experts, n, k):
 
 
 @operator
-def kquant_expert_linear(x, weight, meta, fmt, ids, plan):
+def kquant_expert_linear(x, weight, meta, fmt, ids, plan, *, slots=None):
     tokens, groups, k = x.shape
     down = k == 1152
     if (k, groups) not in ((2304, 1), (1152, 8)):
@@ -480,6 +480,9 @@ def kquant_expert_linear(x, weight, meta, fmt, ids, plan):
     _chk(x, "Inkling expert inputs", torch.bfloat16)
     _chk(ids, "Inkling expert IDs", torch.int32, tokens, 8)
     quant_bytes, meta_bytes, _ = _kquant_expert_sizes(fmt, 128, 2304, k)
+    if slots is not None:
+        quant_bytes = (quant_bytes - 4) // 128 * slots + 4
+        meta_bytes = meta_bytes // 128 * slots
     _chk(weight, "Inkling expert codes", torch.uint8, quant_bytes)
     _chk(meta, "Inkling expert scale records", torch.uint8, meta_bytes)
     if plan is not None:
@@ -514,7 +517,7 @@ bf16_expert_plan = expert_plan
 
 
 @operator
-def expert_linear(x, weight, scales, ids, prefill=False, plan=None, compact=None):
+def expert_linear(x, weight, scales, ids, prefill=False, plan=None, compact=None, *, plan_experts=None):
     tokens, groups, k = x.shape
     tiled = weight.ndim == 5
     if tiled:
@@ -541,7 +544,7 @@ def expert_linear(x, weight, scales, ids, prefill=False, plan=None, compact=None
     if plan is not None:
         down = groups != 1
         hidden, intermediate = (n, k) if down else (k, n // 2)
-        size = lib.snowllm_inkling_bf16_plan_ints(tokens, experts, topk, hidden, intermediate, prefill)
+        size = lib.snowllm_inkling_bf16_plan_ints(tokens, plan_experts or experts, topk, hidden, intermediate, prefill)
         if not size or (scales is not None and not tiled) or (not down and n != 2 * intermediate) or plan.device != x.device:
             raise SnowLLMError("incompatible Inkling expert plan")
         _chk(plan, "Inkling expert plan", torch.int32, size)

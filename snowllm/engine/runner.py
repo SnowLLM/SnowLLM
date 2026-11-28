@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from bisect import bisect_left
 import contextlib
 import gc
 import time
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple, NoReturn
 
 import torch
 
+from ..errors import CapacityError
 from ..defaults import DEFAULT_GPU_UTIL, DEFAULT_MAX_NUM_SEQS, MAX_NUM_SEQS, DEFAULT_PREFILL_CHUNK
 
 from .. import ops, term
@@ -19,17 +21,13 @@ from ..ops._common import dry_alloc
 from ..models.geometry import DFlashGeometry, DSparkGeometry
 from ..trace import span
 from .host_io import SchedulerInputs
-from .graphs import CapturedGraph, GraphBudget, GraphInputs, capture_graph
+from .graphs import CapturedGraph, ExpertGraph, GraphBudget, GraphInputs, capture_graph
 from .inputs import prefill_batch
 from .resources import DraftWorkspace, ProbeGroup, draft_cache_policy, plan_activations
 from .forward_context import (
     Batch,
     DecodeShape,
 )
-
-
-class CapacityError(SnowLLMError):
-    pass
 
 
 if TYPE_CHECKING:
@@ -45,7 +43,28 @@ class ForwardResult(NamedTuple):
     hidden: torch.Tensor
 
 
+def _reusable_slab_bytes(sizes, segments, device, stream):
+    blocks = {'small': [], 'large': []}
+    for segment in segments:
+        if (segment['device'] == device and segment['stream'] == stream
+                and segment.get('segment_pool_id', (0, 0)) == (0, 0)):
+            blocks[segment['segment_type']].extend(
+                b['size'] for b in segment['blocks'] if b['state'] == 'inactive')
+    for pool in blocks.values():
+        pool.sort()
+    used = 0
+    for size in sizes:
+        # PyTorch's native caching allocator keeps requests up to 1 MiB in a separate pool.
+        pool = blocks['small' if size <= 1 << 20 else 'large']
+        idx = bisect_left(pool, size)
+        if idx < len(pool):
+            pool.pop(idx)
+            used += size
+    return used
+
+
 class BaseRunner:
+    vision_bytes = 0
     host_messages = True
     text_only = False
     defer_model_end = False
@@ -70,6 +89,10 @@ class BaseRunner:
         self.block_size = self._pick_block_size(block_size)
         self.ctx_cap = max_blocks_per_seq * self.block_size
         self.context_capacity = context_capacity
+        visual = getattr(model, 'visual', None)
+        image_budget = getattr(visual, 'request_bytes', None)
+        self.vision_bytes = (image_budget(context_capacity.per_request if context_capacity else self.ctx_cap,
+                                          max_num_seqs) if image_budget else getattr(visual, 'streamed_weight_bytes', 0))
         self.total_kv_blocks = (max_blocks_per_seq if context_capacity is None else
                                 ops.kv_blocks_for(context_capacity.tokens, self.block_size))
         if context_capacity is not None:
@@ -210,17 +233,18 @@ class BaseRunner:
     def _allowance(self, util: float | None = None) -> int:
         free, total = gpu_mem_info()
         return (int(total * (self.gpu_util if util is None else util)) - (total - free)
-                - self.reserve_bytes)
+                - self.reserve_bytes - self.vision_bytes)
 
     def _persistent_capacity(self, required):
         from ..models.placement import ensure_room
         while required > self._allow:
             if not ensure_room(self.model, required - self._allow):
-                from ..memory_report import current
+                from ..memory_report import current, size
+                short = required - self._allow
                 if current() is not None:
-                    current().shortfall(required - self._allow)
-                raise SnowLLMError(f'persistent state and workspace need {required/(1<<30):.2f} GiB; '
-                                   'lower --max-num-seqs/--num-spec or offload more weights')
+                    current().shortfall(short)
+                raise CapacityError(f'the runtime memory budget is short by {size(short)}; '
+                                    'reduce the context or offload more weights', gpu_shortfall=short)
             self._allow = self._allowance()
 
     def ensure_capacity(self, graph_bytes=0):
@@ -248,26 +272,25 @@ class BaseRunner:
         from ..models.placement import ensure_room
         floor = plan.minimum if plan.requested is None else plan.requested
 
+        pool_bytes = plan.bytes_for(floor)
+        required = pool_bytes + plan.snapshot_floor + plan.future_bytes
+
         def allowance():
             room = self._allowance()
-            if not enabled() and not retain_device_cache():
-                # Tensor pools can reuse inactive blocks in segments still held by live weights.
-                device = torch.cuda.current_device()
-                stream = torch.cuda.current_stream().cuda_stream
-                cached = sum(s['total_size'] - s['active_size']
-                    for s in torch.cuda.memory_snapshot()
-                    if s['device'] == device and s['stream'] == stream
-                    and s.get('segment_pool_id', (0, 0)) == (0, 0))
-                room += min(cached, plan.bytes_for(floor))
+            if room >= pool_bytes + plan.future_bytes + max(plan.snapshot_floor, prefix_budget):
+                return room
+            if plan.slab_sizes is not None and not enabled() and not retain_device_cache():
+                room += _reusable_slab_bytes(plan.slab_sizes(floor), torch.cuda.memory_snapshot(),
+                                             torch.cuda.current_device(), torch.cuda.current_stream().cuda_stream)
             return room
 
         while True:
-            shortage = (plan.bytes_for(floor) + plan.snapshot_floor + plan.future_bytes
-                        - allowance())
+            room = allowance()
+            shortage = required - room
             if shortage <= 0 or not ensure_room(self.model, shortage):
                 break
         try:
-            units, snapshots = plan.choose(allowance(), prefix_budget)
+            units, snapshots = plan.choose(room, prefix_budget)
         except ValueError as exc:
             from ..capacity import memory_shortage
             from ..memory_report import current
@@ -275,8 +298,7 @@ class BaseRunner:
                 raise CapacityError(
                     f'{type(self).__name__}: the requested KV pool cannot carry one sequence '
                     f'at max_model_len={self.ctx_cap}, or exceeds the supported pool capacity') from exc
-            room = allowance()
-            missing = max(0, plan.bytes_for(floor) + plan.snapshot_floor + plan.future_bytes - room)
+            missing = max(0, required - room)
             report = current()
             if report is not None:
                 report.shortfall(missing)
@@ -285,7 +307,8 @@ class BaseRunner:
                     lambda n:plan.bytes_for(n)+plan.snapshot_floor+plan.future_bytes<=room,floor-1)
             raise CapacityError(
                 f'{type(self).__name__}: '
-                f'{memory_shortage(missing, target="host" if enabled() else "GPU")}') from exc
+                f'{memory_shortage(missing, target="host" if enabled() else "GPU")}',
+                gpu_shortfall=0 if enabled() else missing) from exc
         future = plan.future_bytes + snapshots * plan.checkpoint_bytes
         prepare_gpu_commit(plan.bytes_for(units) + future)
         return units, snapshots
@@ -370,7 +393,7 @@ class BaseRunner:
         if not self.load_peak_bytes:
             return 0
         return max(0, self._loading_cache_bytes(rows) + self.load_peak_bytes
-                   - self.reserve_bytes - self.fixed_bytes(rows))
+                   - self.reserve_bytes - self.vision_bytes - self.fixed_bytes(rows))
 
     def minimum_bytes(self, rows: int) -> int:
         return self.fixed_bytes(rows) + self._loading_extra(rows)
@@ -695,7 +718,8 @@ class GraphRunner(BaseRunner):
                 walk()
         cur.wait_stream(side)
         torch.cuda.synchronize()
-        g = torch.cuda.CUDAGraph()
+        store = getattr(self.model, "moe_offload_plan", None)
+        g = ExpertGraph(store) if store is not None and store.active else torch.cuda.CUDAGraph()
         with capture_graph(g, pool=self._graph_pool()):
             out = walk()
         torch.cuda.synchronize()

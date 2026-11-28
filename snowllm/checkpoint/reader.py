@@ -11,7 +11,7 @@ import pathlib
 import threading
 import time
 import weakref
-from collections.abc import KeysView
+from collections.abc import KeysView, Mapping
 
 import torch
 
@@ -59,6 +59,26 @@ def _chk_dst(key: str, out: torch.Tensor, nbytes: int, held: str = "") -> None:
         raise SnowLLMError(
             f"{key}: destination is {out.numel() * out.element_size()} bytes "
             f"({tuple(out.shape)} {out.dtype}), file holds {nbytes}{f' ({held})' if held else ''}")
+
+
+class TensorMapping(Mapping):
+    def __init__(self, keys, read):
+        self.keys_set = frozenset(keys)
+        self.read = read
+
+    def __getitem__(self, key):
+        if key not in self.keys_set:
+            raise KeyError(key)
+        return self.read(key)
+
+    def __contains__(self, key):
+        return key in self.keys_set
+
+    def __iter__(self):
+        return iter(self.keys_set)
+
+    def __len__(self):
+        return len(self.keys_set)
 
 
 class Shard:
@@ -131,6 +151,13 @@ class FileReader:
 
     def __exit__(self, *_):
         self.close()
+
+    def read_device(self, path, offset, out):
+        if not self._r or self._host_only or not out.is_cuda or not out.is_contiguous():
+            raise SnowLLMError('device reads require an open device reader and a contiguous GPU buffer')
+        check(lib.snowllm_file_reader_read(self._r, os.fsencode(path), offset, out.nbytes,
+                                           out.data_ptr(), torch.cuda.current_stream().cuda_stream),
+              'read packed device weights')
 
     def readv_host(self, path, offsets, sizes, destinations):
         from ..capacity import reserve_host, release_host
@@ -242,6 +269,14 @@ class Reader(FileReader):
         finally:
             self._cache.clear()
             self._cache = previous
+
+    @contextlib.contextmanager
+    def individual_tensors(self):
+        previous, self._cache_cap = self._cache_cap, 0
+        try:
+            yield
+        finally:
+            self._cache_cap = previous
 
     def _shard(self, key: str) -> Shard:
         if key not in self.weight_map:

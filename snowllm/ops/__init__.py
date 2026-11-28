@@ -23,7 +23,7 @@ from ._common import (
 )
 from .fp4_kv import dsv41_fp4_pack, dsv41_fp4_unpack, dsv41_fp4_row_bytes
 from .flash import flash_prepare_weight
-from .metadata import copy_tensor, copy_from_host, fill_ranges_
+from .metadata import copy_tensor, copy_from_host, fill_ranges_, index_copy
 from .attention_full import (
     paged_attention, paged_attention_prepare, paged_attention_uses_prepared,
     paged_attention_scratch_bytes,
@@ -151,6 +151,8 @@ from .embedding import (
     lm_head_shuffle_weight,
 )
 from .gemm import (
+    project_packed,
+    projection_workspace_bytes,
     gemm_bf16_a,
     gemm_bf16_a2,
     mtp_norm_project,
@@ -229,8 +231,8 @@ from .mtp import (
 )
 from .hyper import (
     HcMixWeights,
-    hc_prepared_bytes,
-    hc_prepared_qkv,
+    HcActivation,
+    hc_mixed_qkv,
     hc_combine_mix,
     hc_combine_mix_workspace_bytes,
     hc_output_project,
@@ -278,6 +280,8 @@ from .norm import (
     rmsnorm_residual,
 )
 from .rope import (
+    base_inv_freq,
+    vision_rope_table,
     dsv4_rope_cos_sin,
     dsv4_rope_tail,
     dsv4_rope_tail_group,
@@ -306,7 +310,7 @@ from .trace import (
     tracing,
 )
 from .vision import (
-    vision_bias_act,
+    vision_bias_act, vision_projection,
     vision_attn,
     vision_attention, vision_attention_tile_map,
     vision_merge_norm,

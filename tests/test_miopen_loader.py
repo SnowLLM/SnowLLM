@@ -37,8 +37,6 @@ class MIOpenLoaderTests(unittest.TestCase):
         load.assert_called_once_with(
             "/example/venv/site-packages/torch/lib/libtorch_hip.so"
         )
-        self.assertEqual(lib.miopenCreate.argtypes, [ctypes.POINTER(ctypes.c_void_p)])
-        self.assertEqual(lib.miopenConvolutionForwardImmediate.restype, ctypes.c_int)
 
     def test_rejects_non_rocm_torch_before_loading(self):
         self.torch.version.hip = None

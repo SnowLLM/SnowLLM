@@ -25,7 +25,10 @@ def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0, *, plan
         selected = [k for k, row in enumerate(r.embed_rows) if lo <= row < hi]
         if selected:
             embed_rows.extend(base + r.embed_rows[k] - lo for k in selected)
-            embeds.append(r.embeds[i64(selected)])
+            if selected[-1] - selected[0] + 1 == len(selected):
+                embeds.append(r.embeds[selected[0]:selected[-1] + 1])
+            else:
+                embeds.append(r.embeds[i64(selected)])
 
     last = [end - 1 for end in cu[1:]]
     lengths = [hi - lo for _, lo, hi in spans]
@@ -50,6 +53,7 @@ def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0, *, plan
         tables = block_tables([r for r, _, _ in spans])
         total, qmap = ops.prefill_q_plan(lengths) if plan_query_tiles else (0, None)
 
+    batch_embeds = torch.cat(embeds) if len(embeds) > 1 else next(iter(embeds), None)
     return Batch(
         input_ids=d_ids, positions=positions, slot_mapping=d_map, block_tables=tables,
         seq_lens=d_lens, is_prefill=True, num_tokens=len(ids), state_indices=d_states,
@@ -57,7 +61,7 @@ def prefill_batch(spans, slots, block_size, inputs=None, prev_context=0, *, plan
         total_q_blocks=total, q_block_map=qmap,
         host_ids=ids, host_seq_lens=lens, host_cu_seqlens=cu,
         need_logits=all(hi == r.prefill_len and not r.replay for r, _, hi in spans),
-        embeds=torch.cat(embeds) if embeds else None,
+        embeds=batch_embeds,
         embed_rows=i64(embed_rows) if embed_rows else None,
         prev_ids=([list(r.prefill_src[max(0, lo - prev_context):lo]) for r, lo, _ in spans]
                   if prev_context else None))

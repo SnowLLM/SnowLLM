@@ -153,7 +153,7 @@ class SafetensorsPlacementTests(unittest.TestCase):
             kv = dict(memory_auto=True, util=1., ctx=128, max_disk_bytes=disk)
             with self.subTest(disk=disk), self.backend(self.runtime + total - 4096), \
                  patch('snowllm.checkpoint.reader.lib.snowllm_file_reader_read') as read:
-                expected = 'max-host-mem' if disk is None else 'disk expert cache backend'
+                expected = 'max-host-mem' if disk is None else 'no routed experts'
                 with self.assertRaisesRegex(loader.SnowLLMError, expected):
                     loader.load(self.root, mtp=False, vision=False, kv=kv)
                 read.assert_not_called()

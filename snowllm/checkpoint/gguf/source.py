@@ -9,7 +9,7 @@ import torch
 from ... import ops
 from ..._capi import SnowLLMError, check, lib
 from ..._platform import release_device_cache
-from ..reader import FileReader, note_bytes
+from ..reader import FileReader, TensorMapping, note_bytes
 from . import GGUF, part_number
 from .sequential import _ACTIVE
 from .files import SIDECARS, models_in, gguf_dir, find_gguf
@@ -63,21 +63,30 @@ def find_dspark_gguf(root: str | pathlib.Path) -> pathlib.Path | None:
     return None
 
 
-def find_mmproj(root: str | pathlib.Path) -> pathlib.Path | None:
+def find_mmproj(root: str | pathlib.Path, selected: str | None = None) -> pathlib.Path | None:
+    if selected is not None:
+        path = pathlib.Path(root) / selected
+        if not path.is_file():
+            raise SnowLLMError(f"selected vision head is missing: {path}")
+        return path
     got = sorted(pathlib.Path(root).glob("mmproj-*.gguf"))
     return got[0] if got else None
 
 
-def vision_state(rd: "GGUFReader") -> dict[str, torch.Tensor]:
+def vision_state(rd: "GGUFReader") -> TensorMapping:
     g = rd.gguf
-    out = {VISION_PREFIX + hf: rd.tensor(name) for hf, name in VISION_TOP.items()}
-    out[VISION_PREFIX + "patch_embed.proj.weight"] = torch.stack(
-        [rd.tensor(VISION_PATCH if i == 0 else f"{VISION_PATCH}.{i}")
-         for i in range(temporal_slices(g))], dim=2)
-    for i in range(int(g.need("{arch}.vision.block_count"))):
+    names = {VISION_PREFIX + hf: name for hf, name in VISION_TOP.items()}
+    patch = VISION_PREFIX + "patch_embed.proj.weight"
+    names[patch] = VISION_PATCH
+    for i in range(int(g.need("clip.vision.block_count"))):
         for hf, name in VISION_BLOCK.items():
-            out[f"{VISION_PREFIX}blocks.{i}.{hf}"] = rd.tensor(f"v.blk.{i}.{name}")
-    return out
+            names[f"{VISION_PREFIX}blocks.{i}.{hf}"] = f"v.blk.{i}.{name}"
+    def read(key):
+        if key == patch:
+            return torch.stack([rd.tensor(VISION_PATCH if i == 0 else f"{VISION_PATCH}.{i}")
+                                for i in range(temporal_slices(g))], dim=2)
+        return rd.tensor(names[key])
+    return TensorMapping(names, read)
 
 
 class GGUFReader(FileReader):
@@ -97,6 +106,9 @@ class GGUFReader(FileReader):
         key = self.path, name
         if dry is not None and reads is not None and reads.recording:
             reads.requests.append((key, tuple(self.gguf.ranges(name))))
+        if out is None:
+            from ...ops.disk_moe import gguf_load_buffer
+            out = gguf_load_buffer(name, t.nbytes)
         if dry is not None and out is None:
             return dry.meta((t.nbytes,), torch.uint8)
         if out is None:

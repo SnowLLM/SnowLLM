@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from ...errors import SnowLLMError
 from . import GGUF
+from . import minicpmv
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerFast
@@ -55,7 +56,7 @@ def tokenizer_json(g: GGUF) -> dict:
         raise SnowLLMError(f"{g.path.name} uses the {model!r} tokenizer; SnowLLM's GGUF reader "
                            f"builds byte-level BPE ('gpt2') tokenizers only")
     pre = str(g.get("tokenizer.ggml.pre", ""))
-    rule = PRE_TOKENIZER.get(pre)
+    rule = PRE_TOKENIZER.get("qwen2" if pre == "qwen35" and minicpmv.is_model(g) else pre)
     if rule is None:
         raise SnowLLMError(
             f"{g.path.name} declares the {pre!r} pre-tokenizer, whose splitting rule SnowLLM does "
@@ -101,7 +102,8 @@ def tokenizer_json(g: GGUF) -> dict:
         "model": {
             "type": "BPE", "dropout": None, "unk_token": None,
             "continuing_subword_prefix": "", "end_of_word_suffix": "",
-            "fuse_unk": False, "byte_fallback": False, "ignore_merges": pre == "inkling2",
+            "fuse_unk": False, "byte_fallback": False,
+            "ignore_merges": pre in ("inkling2", "lfm2") or (pre == "glm4" and g.arch == "glm5-next"),
             "vocab": vocab, "merges": list(g.need("tokenizer.ggml.merges")),
         },
     }
@@ -117,14 +119,12 @@ def build(g: GGUF) -> "PreTrainedTokenizerFast":
         i = g.get(key)
         return None if i is None else tokens[int(i)]
 
-    from .minicpmv import is_model
     extras = {}
-    if is_model(g):
-        from ...models.minicpmv.processing import SPECIAL_TOKENS
-        extras["extra_special_tokens"] = SPECIAL_TOKENS
+    if minicpmv.is_model(g):
+        extras["extra_special_tokens"] = minicpmv.SPECIAL_TOKENS
     cls = PreTrainedTokenizerFast
     if g.get("{arch}.variant") == "v41_flash":
-        from ...models.deepseek_v4.processing import DeepSeekV41Tokenizer
+        from ..tokenizer.deepseek_v41 import DeepSeekV41Tokenizer
         cls = DeepSeekV41Tokenizer
     return cls(
         tokenizer_object=Tokenizer.from_str(json.dumps(tokenizer_json(g))),
@@ -147,7 +147,13 @@ IMAGE_TOKEN = "<|image_pad|>"
 
 def image_token_id(g: GGUF) -> int | None:
     tokens = g.need("tokenizer.ggml.tokens")
-    return {t: i for i, t in enumerate(tokens)}.get(IMAGE_TOKEN)
+    marker = {"inkling2_loop": "<|unused_200054|>", "glm5-next": "<|image|>"}.get(g.arch, IMAGE_TOKEN)
+    if g.arch == "deepseek4" and g.get("{arch}.variant") == "v41_flash":
+        marker = "<｜deepseek_image｜>"
+    try:
+        return tokens.index(marker)
+    except ValueError:
+        return None
 
 
 def stop_token_ids(g: GGUF) -> tuple[int, ...]:

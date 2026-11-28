@@ -43,10 +43,10 @@ class DeepSeek41CacheTests(unittest.TestCase):
         plan = Compression(SimpleNamespace(v41=True), 16, 16, 1, 6, 128,
                            SimpleNamespace(blocks={}), state, {})
         metadata = plan.engram
-        def hashes(first, ids, prefill=True):
+        def hashes(first, ids, prefill=True, runs=()):
             batch = SimpleNamespace(batch_size=1, host_seq_lens=[first + len(ids)],
                                     host_ids=ids, is_prefill=prefill)
-            return tables.hashes(SimpleNamespace(batch=batch, M=len(ids),
+            return tables.hashes(SimpleNamespace(batch=batch, M=len(ids), modality_runs=runs,
                                                   cache=SimpleNamespace(plan=plan)))
         ids = [1, 2, 3, 4, 5, 6, 7]
         expected, _ = tables.hash_tokens(ids)
@@ -64,6 +64,14 @@ class DeepSeek41CacheTests(unittest.TestCase):
         state.load(0, saved)
         self.assertEqual(metadata['recent'][0], (12, 13, 14))
         self.assertIsNone(metadata['pending'][0])
+
+        from snowllm.models.deepseek_v4.image_processing import image_ranges, modality_runs
+        spans = image_ranges([2, 3, 4, 6])
+        self.assertEqual(modality_runs(spans, 3, 7), ((0, 2, True), (2, 3, False), (3, 4, True)))
+        self.assertEqual(hashes(0, ids[:3], runs=modality_runs(spans, 0, 3)), expected[:2] + [None])
+        self.assertEqual(hashes(3, ids[3:], runs=modality_runs(spans, 3, 7)),
+                         [None, None, tables.hash_tokens([ids[5]])[0][0], None])
+        self.assertEqual(hashes(7, [9], False), tables.hash_tokens([9])[0])
 
     def test_snapshot_restores_tail_carries_and_new_page_mapping(self):
         ops.select_geometry(_capi.GEO_DEEPSEEK_V41_FLASH)
@@ -139,6 +147,7 @@ class DeepSeek41CacheTests(unittest.TestCase):
         runner.cache = None
         runner.walker = SimpleNamespace()
         runner.draft_geo, runner.max_num_seqs, runner.T = None, 1, 6
+        runner.draft_window = 0
         runner.max_prefill_tokens, runner.ctx_cap, runner.block_size = 64, position, page
         runner.prefix_memory_ratio = .08
         runner._cache_blocks = lambda: position // page

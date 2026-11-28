@@ -8,15 +8,15 @@ if TYPE_CHECKING:
 
 
 def is_gguf(root: pathlib.Path) -> bool:
-    from .gguf.files import gguf_dir, models_in
+    from ..gguf.files import gguf_dir, models_in
     return not (root / "config.json").exists() and bool(models_in(gguf_dir(root)))
 
 
 def load_tokenizer(root: pathlib.Path) -> "tuple[PreTrainedTokenizerBase, tuple[int, ...]]":
     if is_gguf(root):
-        from .gguf import GGUF
-        from .gguf.files import find_gguf
-        from .gguf.tokenizer import build, stop_token_ids
+        from ..gguf import GGUF
+        from ..gguf.files import find_gguf
+        from ..gguf.tokenizer import build, stop_token_ids
         container = GGUF(find_gguf(root))
         tok = build(container)
         template = root / "chat_template.jinja"

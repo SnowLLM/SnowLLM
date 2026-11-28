@@ -40,6 +40,7 @@ class SelectModel(BaseModel):
 
 class Directory(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    disk_offload_dir: str | None = None
     models_dir: str | None = Field(None, min_length=1)
     models_dirs: list[str] | None = Field(None, min_length=1)
     recipes_url: str | None = None
@@ -51,7 +52,7 @@ class ModelPath(BaseModel):
 
 
 class Pull(BaseModel):
-    recipe: str = Field(min_length=1, pattern=r"^(?:b/)?[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*){0,2}$")
+    recipe: str = Field(min_length=1, pattern=r"^(?:b/)?[A-Za-z0-9][A-Za-z0-9_.-]*(?::[A-Za-z0-9][A-Za-z0-9_.-]*){0,2}(?::vision=[A-Za-z0-9][A-Za-z0-9_.-]*)?$")
 
 
 def storage_bytes(path):
@@ -167,16 +168,29 @@ def create_app(manager: DaemonManager, *, admin_host="127.0.0.1", admin_key=None
                         picks.add(recommended(name, choices, memory).ref)
                     except SnowLLMError:
                         continue
-            rows = []
-            for recipe, recipe_type in recipes.catalogue_for_display(book, url, bundle=bundle):
+            def local_state(recipe):
                 path, state = recipes.local_copy(recipe, roots)
                 path = path or recipe.path(roots[0])
-                rows.append({**recipe.raw, "id": recipe.ref, "type": recipe_type,
-                             "path": str(path), "servable": recipe.servable, "recommended": recipe.ref in picks,
-                             "download_path": str(recipe.path(roots[0])),
-                             "loadable": state == recipes.DOWNLOADED, "partial": state == recipes.INCOMPLETE,
-                             "downloaded": recipes.complete(recipe, path),
-                             "exists": path.is_dir()})
+                return {"id": recipe.ref, "path": str(path), "bytes": recipe.bytes,
+                        "download_path": str(recipe.path(roots[0])),
+                        "loadable": state == recipes.DOWNLOADED, "partial": state == recipes.INCOMPLETE,
+                        "downloaded": recipes.complete(recipe, path), "exists": path.is_dir()}
+
+            rows = []
+            for recipe, recipe_type in recipes.catalogue_for_display(book, url, bundle=bundle):
+                row = {**recipe.raw, **local_state(recipe), "type": recipe_type,
+                       "servable": recipe.servable, "recommended": recipe.ref in picks}
+                heads = recipe.raw.get('vision_heads')
+                if heads and 'vision_base' not in recipe.raw:
+                    options = []
+                    for key in (*heads, 'none'):
+                        if key == recipe.raw['vision_head']:
+                            continue
+                        option = recipes.with_vision(recipe, key)
+                        options.append({**local_state(option), 'vision_head': key,
+                                        'vision_file': option.raw['vision_file'], 'modalities': option.raw['modalities']})
+                    row['vision_options'] = options
+                rows.append(row)
             from ..cli import parser
             from ..defaults import DEFAULT_GPU_UTIL
             cli = parser()

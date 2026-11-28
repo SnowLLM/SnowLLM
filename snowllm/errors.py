@@ -8,6 +8,12 @@ class SnowLLMError(RuntimeError):
     pass
 
 
+class CapacityError(SnowLLMError):
+    def __init__(self, message, *, gpu_shortfall=0):
+        super().__init__(message)
+        self.gpu_shortfall = gpu_shortfall
+
+
 def is_capacity_error(message):
     text = message.casefold()
     return any(part in text for part in (

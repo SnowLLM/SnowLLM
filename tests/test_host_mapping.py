@@ -53,6 +53,24 @@ class MappingTests(unittest.TestCase):
                 _common._register(32)
         owner.close.assert_called_once()
 
+    def test_discarded_load_releases_only_dead_owned_mappings(self):
+        start = ops.host_pinned_bytes()
+        size = _common._host_buffer_size(4096)
+        with ops.host_memory(), _common.capture_host_mappings() as first:
+            weight = ops.empty_bytes(4096)
+            view = weight[1:]
+        with ops.host_memory(), _common.capture_host_mappings() as second:
+            dropped = ops.empty_bytes(4096)
+        del weight, dropped
+        _common.release_unused_host_mappings(first)
+        self.assertTrue(ops.host_mapped(view))
+        self.assertEqual(ops.host_pinned_bytes(), start + 2 * size)
+        _common.release_unused_host_mappings(second)
+        self.assertEqual(ops.host_pinned_bytes(), start + size)
+        del view
+        _common.release_unused_host_mappings(first)
+        self.assertEqual(ops.host_pinned_bytes(), start)
+
     def test_scheduler_slice_offset_is_relative_to_the_gpu_storage(self):
         host = torch.arange(16, dtype=torch.float32)
         base = 0x987600000

@@ -4,7 +4,24 @@ from .operation import operator, geometry_cache
 
 import torch
 
-from ._common import _chk, _p, _stream, check, lib, SnowLLMError
+from ._common import Path, _chk, _p, _stream, check, lib, SnowLLMError
+
+
+def projection_path(rows, path):
+    return Path(lib.snowllm_dsv41_projection_path(rows, path))
+
+
+@operator
+def projection(arena, which, x, weight, quant, out, k, path):
+    rows = x.shape[0]
+    n = out.shape[1]
+    _chk(x, "projection input", torch.bfloat16, rows, k)
+    _chk(out, "projection output", torch.bfloat16, rows, n)
+    need = lib.snowllm_dsv41_projection_workspace_bytes(which, rows, k, quant is not None, path)
+    scratch = arena.flat(need, torch.uint8)
+    fmt, w, meta = (quant.fmt, quant.quant, quant.meta) if quant is not None else (0, weight, None)
+    check(lib.snowllm_dsv41_projection(which, fmt, _p(x), _p(w), _p(meta), _p(out), _p(scratch),
+                                       rows, n, k, path, _stream()), "dsv41_projection")
 
 
 @operator

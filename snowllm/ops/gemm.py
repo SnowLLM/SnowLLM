@@ -6,7 +6,7 @@ import ctypes
 import torch
 
 from .._capi import SnowLLMError, check, lib
-from ._common import _chk, _p, _stream, empty_bytes, empty_shaped, empty_shaped_like
+from ._common import KQuantProjWeight, _chk, _p, _stream, empty_bytes, empty_shaped, empty_shaped_like
 
 
 @operator
@@ -161,6 +161,20 @@ def gemm_kquant_a(fmt: int, a: torch.Tensor, quant: torch.Tensor, meta: torch.Te
     _chk(c, "c", torch.bfloat16 if bf16 else torch.float32, M, N)
     check(lib.snowllm_gemm_kquant_a(fmt, _p(a), _p(quant), _p(meta), _p(c), M, N, K, bf16, _p(ws),
                                     _stream()), "gemm_kquant_a")
+
+
+def projection_workspace_bytes(weight, rows, k):
+    if isinstance(weight, KQuantProjWeight):
+        return gemm_kquant_a_ws_bytes(rows, k)
+    return gemm_bf16_a_ws_bytes(rows, k)
+
+
+def project_packed(x, weight, out, n, k, workspace):
+    rows = x.shape[0]
+    if isinstance(weight, KQuantProjWeight):
+        gemm_kquant_a(weight.fmt, x, weight.quant, weight.meta, out, rows, n, k, workspace)
+    else:
+        gemm_bf16_a(x, weight, out, rows, n, k, workspace)
 
 
 @operator

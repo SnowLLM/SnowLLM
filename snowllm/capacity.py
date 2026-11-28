@@ -6,7 +6,7 @@ import threading
 from fractions import Fraction
 
 from .defaults import DEFAULT_GPU_UTIL
-from .errors import SnowLLMError
+from .errors import CapacityError, SnowLLMError
 
 
 def memory_bytes(value, *, option='memory size', allow_zero=False):
@@ -103,6 +103,7 @@ def placement_options(*, host_alloc=False, device_map='', host_offload=None, dis
                       offload_ratio=None, moe_cache_experts=0, moe_cache_mode='all',
                       max_disk_bytes=None, complete=True):
     from .expert_lru import cache_options
+    from .weight_map import WeightMap
     if not isinstance(host_alloc, bool):
         raise SnowLLMError('host_alloc must be a boolean')
     if host_alloc and (device_map not in ('', 'off', 'none', 'device') or host_offload is not None
@@ -110,11 +111,17 @@ def placement_options(*, host_alloc=False, device_map='', host_offload=None, dis
             or moe_cache_experts or moe_cache_mode != 'all'):
         raise SnowLLMError('--host-alloc is mutually exclusive with host/disk offload, '
                            '--device-map placement and --moe-cache-*')
-    if max_disk_bytes is not None and (moe_cache_experts or device_map not in ('', 'auto')
-            or host_offload is not None or offload_ratio is not None):
-        raise SnowLLMError('--max-disk-offload requires automatic placement; fixed offload/cache settings conflict')
+    explicit = WeightMap.parse(device_map)
+    if explicit and not explicit.disk_experts and (moe_cache_experts or disk_offload):
+        raise SnowLLMError('disk expert placement requires an experts selector assigned to disk in --device-map')
+    if explicit and offload_ratio is not None:
+        raise SnowLLMError('--offload-ratio conflicts with explicit --device-map rules')
     if host_offload is not None:
         host_offload = memory_bytes(host_offload, option='--host-offload', allow_zero=True)
+    if max_disk_bytes is not None and ((explicit is None and device_map not in ('', 'auto'))
+            or host_offload or offload_ratio is not None):
+        raise SnowLLMError('--max-disk-offload requires automatic placement; fixed offload/cache settings conflict')
+    if host_offload is not None:
         if offload_ratio is not None or device_map not in ('', 'auto'):
             raise SnowLLMError('--host-offload is an alternative to --offload-ratio and fixed --device-map')
     if offload_ratio is not None and (
@@ -123,8 +130,9 @@ def placement_options(*, host_alloc=False, device_map='', host_offload=None, dis
             or (complete and device_map in ('', 'off', 'none', 'device'))):
         raise SnowLLMError('--offload-ratio must be in [0, 1] and requires --device-map')
     if complete:
-        disk_offload = cache_options(moe_cache_experts, moe_cache_mode,
-            0 if disk_offload is None and max_disk_bytes is not None else disk_offload)
+        if not moe_cache_experts and disk_offload is None and (max_disk_bytes is not None or explicit and explicit.disk_experts):
+            disk_offload = 0
+        disk_offload = cache_options(moe_cache_experts, moe_cache_mode, disk_offload)
     return host_offload, disk_offload
 
 
@@ -220,8 +228,8 @@ def memory_shortage(nbytes, *, host_help=False, disk_help=False, target='GPU'):
     constraint = 'GPU-bound with the current placement'
     if host_help:
         constraint = 'GPU shortfall; host offload is limited by available host budget/space'
-    return SnowLLMError(
+    return CapacityError(
         f'GPU memory budget is short by {missing} for the configured context/chunk/concurrency; '
         f'{constraint}; '
         'increase --max-gpu-mem if GPU memory is available, '
-        f'{offload}or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens')
+        f'{offload}or reduce --max-model-len, --max-num-seqs or --max-num-batched-tokens', gpu_shortfall=nbytes)

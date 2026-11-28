@@ -90,6 +90,18 @@
       "revision": "3f74bdfa4a1b9deaaa56cc7c1377440ec5095fad"
     }
   },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 907542944
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 904004000
+      }
+    }
+  },
   "variants": {
     "ud-q3-k-xl-ud3.1": {
       "precision": "UD-Q3_K_XL",

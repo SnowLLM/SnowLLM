@@ -23,6 +23,7 @@ def load_gguf_weights(reader, cfg, layers, *, device_map, mtp, fast_draft=False)
     fast_draft = fast_draft and bool(candidate_tiles(1, 1, 200064, cfg["hidden_size"], 256))
     model = InklingTextModel(reader, device_map, fast_draft)
     if not model.embedding.is_meta:
-        with ops.dry_load():
+        from ...ops.disk_moe import planning_copy
+        with ops.dry_load(), planning_copy():
             model.planning_model = InklingTextModel(reader, device_map, fast_draft)
     return model

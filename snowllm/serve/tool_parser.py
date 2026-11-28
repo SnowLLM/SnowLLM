@@ -5,6 +5,7 @@ import ast
 import json
 import math
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 TOOL_OPEN = "<tool_call>"
@@ -12,7 +13,6 @@ TOOL_CLOSE = "</tool_call>"
 DSML_OPEN = "<｜DSML｜tool_calls>"
 LFM_OPEN = "<|tool_call_start|>"
 
-_BLOCK = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.DOTALL)
 _FUNC = re.compile(r"<function=(.*?)>", re.DOTALL)
 _PARAM = re.compile(r"<parameter=(?P<name>.*?)>\n(?P<value>.*?)\n</parameter>", re.DOTALL)
 _DSML_BLOCK = re.compile(r"(<(?:｜DSML｜ ?)?invoke name=.*?)</(?:｜DSML｜ ?)?invoke>", re.DOTALL)
@@ -23,9 +23,8 @@ _DSML_FUNC = re.compile(r"<(?:｜DSML｜ ?)?invoke name=\"(.*?)\">", re.DOTALL)
 _DSML_PARAM = re.compile(r"<(?:｜DSML｜ ?)?parameter name=\"(?P<name>.*?)\" "
                          r"string=\"(?P<string>true|false)\">(?P<value>.*?)"
                          r"</(?:｜DSML｜ ?)?parameter>", re.DOTALL)
-_LFM_BLOCK = re.compile(r"<\|tool_call_start\|>\s*(.*?)\s*<\|tool_call_end\|>", re.DOTALL)
-_BLOCKS = {TOOL_OPEN: _BLOCK, DSML_OPEN: _DSML_BLOCK, "<｜DSML｜ calls>": _DSML_BLOCK,
-           LFM_OPEN: _LFM_BLOCK}
+_CLOSERS = {TOOL_OPEN: TOOL_CLOSE, DSML_OPEN: "</｜DSML｜tool_calls>",
+            "<｜DSML｜ calls>": "</｜DSML｜ calls>", LFM_OPEN: "<|tool_call_end|>"}
 _FORMATS = ((_DSML_FUNC, _DSML_PARAM), (_FUNC, _PARAM), (_TAGGED_FUNC, _TAGGED_PARAM))
 
 
@@ -131,24 +130,28 @@ def _convert(raw: str, typ: str) -> object:
         return raw
 
 
-def _open(text: str) -> tuple[int, re.Pattern]:
-    return min(((text.find(o), b) for o, b in _BLOCKS.items() if o in text), default=(-1, _BLOCK))
-
-
 def _parse_block(body: str, types: dict[str, dict[str, str]] | None) -> ToolCall | None:
+    body = body.strip()
     for func, param in _FORMATS:
-        if m := func.search(body):
+        if m := func.match(body):
             break
     else:
         return None
     name = m.group(1).strip()
     ptypes = (types or {}).get(name, {})
+    rest = body[m.end():].rstrip()
+    if func is _FUNC:
+        rest = rest.removesuffix("</function>")
+    end = 0
     args = {}
-    for p in param.finditer(body):
+    for p in param.finditer(rest):
+        if rest[end:p.start()].strip():
+            return None
+        end = p.end()
         k = p["name"].strip()
         hint = "string" if p.groupdict().get("string") == "true" else ""
         args[k] = _convert(p["value"], ptypes.get(k) or hint)
-    return ToolCall(name, args)
+    return None if rest[end:].strip() else ToolCall(name, args)
 
 
 def _literal(node: ast.AST) -> object:
@@ -167,12 +170,12 @@ def _literal(node: ast.AST) -> object:
 
 
 def _parse_calls(body: str, types: dict[str, dict[str, str]] | None,
-                 block: re.Pattern) -> list[ToolCall]:
+                 opening: str) -> list[ToolCall]:
     try:
-        if block is not _LFM_BLOCK:
+        if opening != LFM_OPEN:
             call = _parse_block(body, types)
             return [call] if call else []
-        body = body.removeprefix(LFM_OPEN).removesuffix("<|tool_call_end|>").strip()
+        body = body.strip()
         expr = ast.parse(body, mode="eval").body
         if not isinstance(expr, ast.List):
             return []
@@ -199,44 +202,60 @@ def _parse_calls(body: str, types: dict[str, dict[str, str]] | None,
 
 
 def parse_tool_calls(text: str, types: dict[str, dict[str, str]] | None) -> tuple[str, list[ToolCall]]:
-    i, block = _open(text)
-    if i < 0:
-        return text, []
-    calls = [c for body in block.findall(text[i:]) for c in _parse_calls(body, types, block)]
-    return text[:i], calls
+    parser = StreamingToolParser(types)
+    visible, calls = parser.push(text)
+    tail, last = parser.finish()
+    return visible + tail, calls + last
 
 
 class StreamingToolParser:
     def __init__(self, types: dict[str, dict[str, str]] | None) -> None:
         self.types = types
         self.buf = ""
-        self.in_tools = False
-        self.block = _BLOCK
+        self.opening = ""
+
+    def events(self, delta: str) -> Iterator[str | ToolCall]:
+        self.buf += delta
+        while self.buf:
+            if not self.opening:
+                i, opening = min(((i, o) for o in _CLOSERS if (i := self.buf.find(o)) >= 0),
+                                 default=(-1, ""))
+                if i < 0:
+                    visible, self.buf = holdback(self.buf, *_CLOSERS)
+                    if visible:
+                        yield visible
+                    return
+                if i:
+                    yield self.buf[:i]
+                self.buf = self.buf[i + len(opening):]
+                self.opening = opening
+            body, close, rest = self.buf.partition(_CLOSERS[self.opening])
+            if self.opening in (TOOL_OPEN, LFM_OPEN):
+                if not close:
+                    return
+                yield from _parse_calls(body, self.types, self.opening)
+            else:
+                end = 0
+                for match in _DSML_BLOCK.finditer(body):
+                    yield from _parse_calls(match.group(1), self.types, self.opening)
+                    end = match.end()
+                if not close:
+                    self.buf = body[end:]
+                    return
+            self.buf, self.opening = rest, ""
 
     def push(self, delta: str) -> tuple[str, list[ToolCall]]:
-        self.buf += delta
-        text = ""
-        if not self.in_tools:
-            i, self.block = _open(self.buf)
-            if i < 0:
-                emit, self.buf = holdback(self.buf, *_BLOCKS)
-                return emit, []
-            text, self.buf, self.in_tools = self.buf[:i], self.buf[i:], True
-        return text, self._drain()
+        text, calls = [], []
+        for event in self.events(delta):
+            if isinstance(event, str):
+                text.append(event)
+            else:
+                calls.append(event)
+        return "".join(text), calls
 
     def finish(self) -> tuple[str, list[ToolCall]]:
-        if not self.in_tools:
-            tail, self.buf = self.buf, ""
-            return tail, []
-        calls = self._drain()
-        if self.buf.strip():
-            calls.extend(_parse_calls(self.buf, self.types, self.block))
-        self.buf = ""
-        return "", calls
-
-    def _drain(self) -> list[ToolCall]:
-        calls = []
-        while m := self.block.search(self.buf):
-            self.buf = self.buf[m.end():]
-            calls.extend(_parse_calls(m.group(1), self.types, self.block))
-        return calls
+        tail, opening = self.buf, self.opening
+        self.buf = self.opening = ""
+        if opening == LFM_OPEN:
+            return "", _parse_calls(tail, self.types, opening)
+        return ("" if opening else tail), []

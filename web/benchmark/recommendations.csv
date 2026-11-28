@@ -23,9 +23,17 @@ LFM2.5-8B-A1B,Q4_K_M,Radeon 780M,DSpark block 9,pg19,8192,8192,256,1269.4,43.38,
 Qwen3.6-35B-A3B,UD-Q4_K_XL,Radeon 8060S,DFlash block 8,pg19,8192,8192,256,4325.6,76.36,1.894,4,256 256 256 256,409600,0.3.25 / kernels 0.3.17.dev5,qwen36-pg19-fixed
 Qwen3.6-35B-A3B,UD-Q4_K_XL,Radeon 8060S,DFlash block 8,pg19,225280,225280,256,1310.0,37.14,171.969,4,256 256 256 256,409600,0.3.25 / kernels 0.3.17.dev5,qwen36-pg19-fixed
 Qwen3.6-35B-A3B,UD-Q4_K_XL,Radeon 8060S,DFlash block 8,file-edit,8192,8192,256,4219.5,206.28,1.941,4,256 256 256 256,16384,0.3.25 / kernels 0.3.17.dev5,qwen36-file-edit-fixed
-GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,MTP k=2,pg19,8192,8211,256,517.1,25.76,15.878,4,,227328,,glm5_3_flash_iq2_xxs_mtp_snowllm
-GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,MTP k=2,pg19,225280,225297,256,480.7,26.79,468.715,4,,227328,,glm5_3_flash_iq2_xxs_mtp_snowllm
-DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,pg19,8192,8192,256,862.6,25.96,9.497,4,,409600,0.3.11,deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http
-DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,pg19,225280,225280,256,631.8,22.28,356.578,4,,409600,0.3.11,deepseek_v4_flash_iq2_xxs_400k_adaptive_snowllm_http
+DeepSeek-V4.1-Flash,VQ + Q4_K,Radeon 8060S,Adaptive DSpark block 5,pg19,8192,8192,256,875.3,22.33,9.359,4,256 256 256 256,226304,0.4.0.dev3,deepseek_v4_1_flash_1017_vq_q4_k_dspark_adaptive_pg19_gfx1151_20261128
+DeepSeek-V4.1-Flash,VQ + Q4_K,Radeon 8060S,Adaptive DSpark block 5,pg19,225280,225280,256,763.5,19.78,295.066,4,256 256 256 256,226304,0.4.0.dev3,deepseek_v4_1_flash_1017_vq_q4_k_dspark_adaptive_pg19_gfx1151_20261128
+DeepSeek-V4.1-Flash,VQ + Q4_K,Radeon 8060S,Adaptive DSpark block 5,file-edit,8192,8192,1024,913.8,41.56,8.964,4,291 291 291 291,226304,0.4.0.dev3,deepseek_v4_1_flash_1017_vq_q4_k_dspark_adaptive_file_edit_gfx1151_20261128
+DeepSeek-V4.1-Flash,VQ + Q4_K,Radeon 8060S,Adaptive DSpark block 5,file-edit,225280,225280,1024,787.4,37.83,286.118,4,291 291 291 291,226304,0.4.0.dev3,deepseek_v4_1_flash_1017_vq_q4_k_dspark_adaptive_file_edit_gfx1151_20261128
+GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,Adaptive MTP (up to 2),pg19,8192,8192,256,546.5,25.29,14.991,4,256 256 256 256,227328,0.4.0.dev3,glm5_3_flash_iq2_xxs_mtp_adaptive_pg19_gfx1151_20261128
+GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,Adaptive MTP (up to 2),pg19,225280,225280,256,497.7,26.79,452.630,4,256 256 256 256,227328,0.4.0.dev3,glm5_3_flash_iq2_xxs_mtp_adaptive_pg19_gfx1151_20261128
+GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,Adaptive MTP (up to 2),file-edit,8192,8192,1024,548.1,31.90,14.946,4,920 589 971 838,227328,0.4.0.dev3,glm5_3_flash_iq2_xxs_mtp_adaptive_file_edit_gfx1151_20261128
+GLM-5.3-Flash,UD-IQ2_XXS,Radeon 8060S,Adaptive MTP (up to 2),file-edit,225280,225280,1024,496.8,29.89,453.445,4,668 1024 742 706,227328,0.4.0.dev3,glm5_3_flash_iq2_xxs_mtp_adaptive_file_edit_gfx1151_20261128
+DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,pg19,8192,8192,256,878.0,25.74,9.331,4,205 221 256 256,409600,0.4.0.dev3,deepseek_v4_flash_0731_iq2_xxs_dspark_adaptive_pg19_gfx1151_20261128
+DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,pg19,225280,225280,256,638.5,21.86,352.833,4,71 52 59 44,409600,0.4.0.dev3,deepseek_v4_flash_0731_iq2_xxs_dspark_adaptive_pg19_gfx1151_20261128
+DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,file-edit,8192,8192,1024,872.0,46.91,9.394,4,291 291 291 291,409600,0.4.0.dev3,deepseek_v4_flash_0731_iq2_xxs_dspark_adaptive_file_edit_gfx1151_20261128
+DeepSeek-V4-Flash,IQ2_XXS,Radeon 8060S,Adaptive DSpark block 5,file-edit,225280,225280,1024,651.7,38.33,345.672,4,291 291 291 291,409600,0.4.0.dev3,deepseek_v4_flash_0731_iq2_xxs_dspark_adaptive_file_edit_gfx1151_20261128
 Qwen3.6-35B-A3B,UD-Q4_K_XL,Radeon 8060S,MTP k=2,pg19,8192,8209,256,3806.5,83.84,2.157,4,,,,qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm
 Qwen3.6-35B-A3B,UD-Q4_K_XL,Radeon 8060S,MTP k=2,pg19,225280,225297,256,1244.0,33.59,181.111,4,,,,qwen3_6_35b_a3b_q4_k_xl_mtp_snowllm

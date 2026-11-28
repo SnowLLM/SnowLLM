@@ -62,6 +62,22 @@
       "revision": "8f33b98937c6031bb49e713dee3e8e185aafd26f"
     }
   },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 931146304
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 927607360
+      },
+      "F32": {
+        "file": "mmproj-F32.gguf",
+        "bytes": 1842940480
+      }
+    }
+  },
   "variants": {
     "fp8": {
       "precision": "FP8",

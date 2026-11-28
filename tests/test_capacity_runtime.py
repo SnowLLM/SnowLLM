@@ -99,6 +99,7 @@ def main():
         shared._want_blocks, shared.prefix_memory_ratio = None, 0.
         shared.plan_activations = True
         shared._cache_bytes = lambda n: n*16
+        shared.resources = SimpleNamespace(cache=SimpleNamespace(slab_sizes=lambda n: (n*16,)))
         for slots in (1, 4, 16):
             shared.max_num_seqs = slots
             plan = shared._pool_plan(0)

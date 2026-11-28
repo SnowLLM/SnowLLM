@@ -109,7 +109,7 @@ def _moe(rd, p, cfg, dmap, i):
         shared_gu = ops.moe_kquant_shuffle_gate_up(gate, up, sfmt, shared)
         name = p+"ffn_down_shexp.weight"
         shared_down = ops.moe_kquant_shuffle_down(rd.raw(name), ops.KQUANT_FORMATS[rd.gguf[name].quant.name], shared)
-    return MoE(router, gate_up, down, shared_gu, shared_down)
+    return MoE(router, gate_up, down, shared_gu, shared_down).bind_disk(i)
 
 
 def _sparse(rd, p, cfg, dmap, layer):

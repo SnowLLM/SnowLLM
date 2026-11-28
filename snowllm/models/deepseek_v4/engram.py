@@ -91,7 +91,14 @@ class Tables:
         if first and state["next"][0] != first:
             raise SnowLLMError("Engram history is discontinuous")
         ids = b.host_ids if b.host_ids is not None else b.input_ids.tolist()
-        hashes, recent = self.hash_tokens(ids, previous)
+        hashes, recent = [], previous
+        for lo, hi, image in getattr(ctx, 'modality_runs', ()) or ((0, len(ids), False),):
+            if image:
+                hashes.extend([None] * (hi-lo))
+                recent = ()
+            else:
+                group, recent = self.hash_tokens(ids[lo:hi], recent)
+                hashes.extend(group)
         if not b.is_prefill and ctx.M > 1:
             state["pending"][0] = (first, tuple(previous),
                                     tuple(self.constants["token_map"][token] for token in ids))
@@ -110,10 +117,15 @@ class Engram(nn.Module):
         with a.frame():
             raw = a.new(ctx.M * 24, 264, dtype=torch.uint8)
             if ctx.engram_hashes is not None:
-                ids = [row for token in ctx.engram_hashes for row in token[self.layer]]
-                data = self.tables.tables[self.layer].read(ids)
-                ops.copy_from_host(raw, data)
+                for lo, hi, image in getattr(ctx, 'modality_runs', ()) or ((0, ctx.M, False),):
+                    if image:
+                        raw[lo*24:hi*24].zero_()
+                    else:
+                        ids = [row for token in ctx.engram_hashes[lo:hi] for row in token[self.layer]]
+                        ops.copy_from_host(raw[lo*24:hi*24], self.tables.tables[self.layer].read(ids))
             embeddings = a.new(ctx.M, 6144)
             native.engram_unpack(raw, embeddings)
             projected = self.projection(ctx, embeddings)
-            native.engram_gate(streams, projected, self.gate_weight, streams, ctx.eps)
+            for lo, hi, image in getattr(ctx, 'modality_runs', ()) or ((0, ctx.M, False),):
+                if not image:
+                    native.engram_gate(streams[lo:hi], projected[lo:hi], self.gate_weight, streams[lo:hi], ctx.eps)

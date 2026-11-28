@@ -72,6 +72,38 @@
         "max_num_batched_tokens": 8192,
         "kv_cache_dtype": "bf16"
       }
+    },
+    "ud-q4-k-m-vision": {
+      "summary": "Inkling-2-Mini UD-Q4_K_M with image input, the BF16 vision projector and a Q8_0 DSpark draft.",
+      "variant": "ud-q4-k-m-vision",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "dflash_adaptive": true,
+        "mtp_prompt_lookup": true
+      },
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 4096,
+        "kv_cache_dtype": "bf16"
+      }
+    },
+    "ud-q8-k-xl-vision": {
+      "summary": "Inkling-2-Mini UD-Q8_K_XL with image input, the BF16 vision projector and a Q8_0 DSpark draft.",
+      "variant": "ud-q8-k-xl-vision",
+      "draft": "dspark",
+      "draft_params": {
+        "dflash_block": 8,
+        "dflash_adaptive": true,
+        "mtp_prompt_lookup": true
+      },
+      "inference": {
+        "max_model_len": 32768,
+        "max_num_seqs": 1,
+        "max_num_batched_tokens": 4096,
+        "kv_cache_dtype": "bf16"
+      }
     }
   },
   "sources": {
@@ -85,6 +117,22 @@
       "include": [
         "dspark-Inkling-2-Mini-Q8_0.gguf"
       ]
+    }
+  },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 641805760
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 639348160
+      },
+      "F32": {
+        "file": "mmproj-F32.gguf",
+        "bytes": 1273048512
+      }
     }
   },
   "variants": {
@@ -118,6 +166,42 @@
       "download_bytes": {
         "dspark": 23371342848,
         "none": 22867452896
+      }
+    },
+    "ud-q4-k-m-vision": {
+      "precision": "UD-Q4_K_M",
+      "dir": "Inkling-2-Mini-UD-Q4_K_M-Vision",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "include": [
+        "Inkling-2-Mini-UD-Q4_K_M.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "download_bytes": {
+        "dspark": 17756240320,
+        "none": 17252350368
+      }
+    },
+    "ud-q8-k-xl-vision": {
+      "precision": "UD-Q8_K_XL",
+      "dir": "Inkling-2-Mini-UD-Q8_K_XL-Vision",
+      "modalities": [
+        "text",
+        "image"
+      ],
+      "source": "gguf",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "include": [
+        "Inkling-2-Mini-UD-Q8_K_XL.gguf",
+        "mmproj-BF16.gguf"
+      ],
+      "download_bytes": {
+        "dspark": 24013148608,
+        "none": 23509258656
       }
     }
   },
@@ -190,6 +274,22 @@
       "preset": "ud-q8-k-xl-none",
       "requires": "0.3.26",
       "spec_label": "none"
+    },
+    "inkling-2-mini-ud-q4-k-m-vision": {
+      "preset": "ud-q4-k-m-vision",
+      "defaults": {
+        "mtp_tool_draft": null
+      },
+      "requires": "0.4.0",
+      "spec_label": "DSpark"
+    },
+    "inkling-2-mini-ud-q8-k-xl-vision": {
+      "preset": "ud-q8-k-xl-vision",
+      "defaults": {
+        "mtp_tool_draft": null
+      },
+      "requires": "0.4.0",
+      "spec_label": "DSpark"
     }
   }
 }

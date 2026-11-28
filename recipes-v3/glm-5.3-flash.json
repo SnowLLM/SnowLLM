@@ -18,8 +18,8 @@
   },
   "presets": {
     "ud-iq2-xxs-mtp": {
-      "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with adaptive MTP (up to 2 draft tokens).",
-      "note": "Vision is not supported. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
+      "summary": "GLM-5.3-Flash in UD-IQ2_XXS with adaptive MTP (up to 2 draft tokens).",
+      "note": "Select a BF16 or F16 vision head for image inputs. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
       "variant": "ud-iq2-xxs",
       "draft": "mtp",
       "draft_params": {
@@ -36,8 +36,8 @@
       }
     },
     "ud-iq2-xxs-none": {
-      "summary": "Text-only GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
-      "note": "Vision is not supported. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
+      "summary": "GLM-5.3-Flash in UD-IQ2_XXS with speculative decoding disabled.",
+      "note": "Select a BF16 or F16 vision head for image inputs. Defaults to one request and a 227328-token context limit. Host offload may use up to 75% of system RAM; the planner chooses the required amount.",
       "variant": "ud-iq2-xxs",
       "draft": "none",
       "draft_params": {},
@@ -134,6 +134,18 @@
       "priority": 148,
       "requires": "0.3.14",
       "spec_label": "none"
+    }
+  },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 1164010176
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 1128047296
+      }
     }
   }
 }

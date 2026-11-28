@@ -24,7 +24,7 @@ class VisionLinear(NamedTuple):
             padded = torch.zeros(np, kp, dtype=torch.bfloat16, device=weight.device)
             padded[:n, :k].copy_(weight)
             weight = padded
-        if np != n:
+        if np != n and bias is not None:
             padded = torch.zeros(np, dtype=torch.bfloat16, device=bias.device)
             padded[:n].copy_(bias)
             bias = padded
@@ -78,3 +78,51 @@ class VisionBlock:
         if arena is not None:ff = arena.new(m,self.fc1.n)
         self.fc1.forward(ln, ff, scratch, act=self.activation)
         self.fc2.forward(ff, x, scratch, residual=x)
+
+
+def check_vision_room(required):
+    from .. import capacity, host_alloc
+    from .._platform import device_memory_snapshot, release_device_cache
+
+    def available():
+        if host_alloc.enabled():
+            return host_alloc.memory_info()[0]
+        memory = device_memory_snapshot()
+        return memory.allowance(capacity.budget.gpu_limit(memory.total))
+
+    room = available()
+    if required > room:
+        release_device_cache()
+        room = available()
+        if required > room:
+            raise ValueError(f"image encoding needs {required} bytes, with {max(0, room)} available")
+
+
+class ResidentVisionWeights:
+    @staticmethod
+    def linear(read, bias, *, pad=True):
+        return VisionLinear.pack(read(), bias, pad=pad)
+
+    @staticmethod
+    def table(read):
+        return read()
+
+
+RESIDENT_VISION = ResidentVisionWeights()
+
+
+def position_weights(table, arena):
+    return table if isinstance(table, torch.Tensor) else table.materialize(arena)
+
+
+def execute_vision(arena, key, rows, walk, streamed, admit=check_vision_room):
+    if not streamed:
+        return arena.execute(key, rows, walk, admit=admit)
+    from ..checkpoint.reader import FileReader
+    from .._platform import release_device_cache
+    try:
+        with FileReader(1, 1 << 20, 2) as arena.vision_reader:
+            return arena.execute(key, rows, walk, admit=admit)
+    finally:
+        arena.release()
+        release_device_cache()

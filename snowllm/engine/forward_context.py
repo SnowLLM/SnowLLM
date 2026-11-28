@@ -83,6 +83,7 @@ class Batch:
     ced_keep: int = 0
     swa_start: int = 0
     v41_microbatches: int = 0
+    image_ranges: tuple = ()
 
     @property
     def batch_size(self) -> int:
@@ -200,7 +201,6 @@ class Qwen4ExpContext(ForwardContext):
     qsa_job_row: torch.Tensor | None = None
     qsa: QsaStep | None = None
     hc_xn: torch.Tensor | None = None
-    hc_prepared: torch.Tensor | None = None
     xn_live: bool = False
 
     def open(self) -> None:
@@ -250,6 +250,8 @@ class Glm5NextContext(ForwardContext):
         self.begin_plan(required=self.require_plan)
         self.embedded, self.sparse = prepare_embedding(
             self.batch,self.embedding_weight,self.max_pools,self.next_ids,self.arena)
+        if self.next_ids is None and self.batch.embeds is not None:
+            ops.index_copy(self.embedded, 0, self.batch.embed_rows, self.batch.embeds)
 
     def workspace(self, n: int) -> None:
         if self.arena is None or not self.plan_workspace:
@@ -260,6 +262,7 @@ class Glm5NextContext(ForwardContext):
 
 @dataclass
 class Dsv4Context(ForwardContext):
+    modality_runs: tuple = ()
     cache: object = None
     geo: object = None
     decode_max_m: int = 1
@@ -267,13 +270,16 @@ class Dsv4Context(ForwardContext):
     pre_head: torch.Tensor | None = None
     rot: dict | None = None
 
-    banks: tuple[torch.Tensor, torch.Tensor] | None = None
+    banks: tuple[torch.Tensor, torch.Tensor | None] | None = None
     hidden: torch.Tensor | None = None
 
     def open(self) -> None:
         self.begin_plan()
         a, t, g = self.arena, self.M, self.geo
-        self.banks = (a.new(t, g.hc_mult, g.hidden), a.new(t, g.hc_mult, g.hidden))
+        trace = ops.tracing()
+        plan = trace if trace is not None else a.planner.active
+        transient = self.batch.ced_stage == "encoder" and getattr(plan, "lifetimes", None) == "uses"
+        self.banks = (a.new(t, g.hc_mult, g.hidden), None if transient else a.new(t, g.hc_mult, g.hidden))
         self.hidden = (None if self.batch.ced_stage == "replay" or getattr(g, "v41", False) else
                        self.embedded if self.embedded is not None else a.new(t, g.hidden))
 
@@ -300,12 +306,17 @@ class Dsv4Walker:
         if b.ced_stage == "encoder":
             b.ced_keep = cache.plan.ced.retained(b)
         path = (ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE) if path is None else path
-        return Dsv4Context(
+        ctx = Dsv4Context(
             batch=b, M=b.input_ids.numel(), eps=stack.geo.eps,
             path=path,
             arena=self.arena, plan_key=self.plan_key(b, tag, embedded, geo=stack.geo, path=path),
             cache=cache, geo=stack.geo, decode_max_m=self.decode_max_m, embedded=embedded,
             pre_head=pre_head, taps=self.taps, tap_at=self.tap_at)
+        if b.image_ranges:
+            from ..models.deepseek_v4.image_processing import modality_runs
+            end = b.host_seq_lens[0]
+            ctx.modality_runs = modality_runs(b.image_ranges, end-ctx.M, end)
+        return ctx
 
     def bare_context(self, stack: object, rows: int) -> Dsv4Context:
         return Dsv4Context(batch=None, M=rows, eps=stack.geo.eps, path=ops.Path.DECODE,
@@ -315,12 +326,13 @@ class Dsv4Walker:
     def plan_key(self, b: Batch, tag: tuple = PLAN_MAIN,
                  embedded: torch.Tensor | None = None, *, geo=None, path=None) -> tuple:
         tiles = ()
+        projection = None
         projection_reuse = False
         path = (ops.Path.PREFILL if b.is_prefill else ops.Path.DECODE) if path is None else path
         if getattr(geo, "v41", False):
             from ..models.deepseek_v4.v41 import output_projection_plan
             rows = b.input_ids.numel()
-            projection_reuse = output_projection_plan(rows, path, rows * geo.q_dim * 2)[2]
+            projection, _, projection_reuse = output_projection_plan(rows, path, rows * geo.q_dim * 2)
         if getattr(b, "v41_microbatches", 0):
             from ..models.deepseek_v4.v41 import index_score_tile_rows
             rows = b.input_ids.numel()
@@ -329,7 +341,7 @@ class Dsv4Walker:
         return (tag, b.inplace, b.is_prefill, path, b.last_row is not None, embedded is not None,
                 b.split, tuple(sorted(self.tap_at)),
                 b.input_ids.numel() == 1,
-                b.input_ids.numel() <= 16,
+                projection,
                 0 if b.is_prefill else attention_scratch_bytes(b.input_ids.numel(), True),
                 ops.dsv4_projection_plan(b.input_ids.numel(),self.decode_max_m).path,
                 getattr(b, "v41_microbatches", 0),
@@ -341,14 +353,17 @@ class Dsv4Walker:
                        int(pl.keep_carry is not None),int(pl.keep_new is not None))
                       for _, pl in sorted(b.plans.items())))
 
-    def plan_widths(self, widest: int) -> tuple:
+    def plan_widths(self, widest: int, *, v41=False) -> tuple:
         cap = self.decode_max_m
         got = [1]
         if widest > 1:
             got.append(min(widest, cap))
         if widest > cap:
             got.append(widest)
-        return tuple(got)
+        if v41:
+            from .._capi import lib
+            got.append(min(widest, lib.snowllm_dsv41_projection_decode_rows()))
+        return tuple(sorted(set(got)))
 
     def plan_for(self, stack: object, ctx: Dsv4Context, after: int = 0) -> None:
         planner = self.arena.planner

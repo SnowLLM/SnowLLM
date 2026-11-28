@@ -103,7 +103,7 @@ class Dsv4Runner(GraphRunner):
             requested=self._cache_blocks()*self.block_size,
             checkpoint_bytes=(self.resources.checkpoint_bytes() + self._draft_checkpoint_bytes()
                               if self.prefix_memory_ratio else 0),
-            future_bytes=graph_bytes, minimum_snapshots=2*self.max_num_seqs)
+            future_bytes=graph_bytes, minimum_snapshots=2*self.max_num_seqs, slab_sizes=self.resources.cache.slab_sizes)
 
     def _allocate_pools(self, tokens):
         self.tokens = tokens
@@ -164,7 +164,7 @@ class Dsv4Runner(GraphRunner):
 
     @contextlib.contextmanager
     def _activation_scope(self, chunk):
-        widths = self.walker.plan_widths(self.max_num_seqs * self.T)
+        widths = self.walker.plan_widths(self.max_num_seqs * self.T, v41=self.geo.v41)
         with self._probe_cache(chunk, self.DECODE_PHASE_STEPS * sum(widths) + 1) as cache:
             yield ActivationReservation(self._activation_groups(cache, chunk, widths),
                                         extra_bytes=self._arena_after())
@@ -238,6 +238,13 @@ class Dsv4Runner(GraphRunner):
         for r in batch:
             self.cache.plan.commit(r.slot, r.num_cached)
 
+    def prefill_batch(self, spans, slots):
+        batch = super().prefill_batch(spans, slots)
+        if self.geo.v41 and spans[0][0].embed_rows:
+            from ..models.deepseek_v4.image_processing import image_ranges
+            batch.image_ranges = image_ranges(spans[0][0].embed_rows)
+        return batch
+
     def _prepare_batch(self, b: Batch) -> tuple:
         firsts, lens, slots = self._spans(b)
         n = sum(lens)
@@ -252,6 +259,7 @@ class Dsv4Runner(GraphRunner):
         db.host_ids = b.host_ids
         if self.geo.v41 and b.is_prefill:
             db.ced_stage = "encoder"
+            db.embeds, db.embed_rows, db.image_ranges = b.embeds, b.embed_rows, b.image_ranges
         if b.is_prefill:
             return db, None
         return db, (len(lens), n, db.total_q_blocks,

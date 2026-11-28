@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-import mmap
 import bisect
+import contextlib
+import mmap
+import os
 import pathlib
 import re
 import struct
@@ -187,6 +189,7 @@ class GGUF:
             self._ends.append((self._ends[-1] if self._ends else 0) + p.stat().st_size)
         self.kv: dict = {}
         self.tensors: dict[str, Tensor] = {}
+        self._vq_layouts = {}
         self.data_start: list[int] = []
         self._part: dict[str, int] = {}
         for i, p in enumerate(self.parts[:1] if self.byte_ranges else self.parts):
@@ -297,6 +300,29 @@ class GGUF:
                 raise SnowLLMError(f"{path.name}: truncated tensor {name}")
             result.extend(data)
         return bytes(result)
+
+    def vq_layout(self, name):
+        from ..vq import VQBlob
+        if name not in self._vq_layouts:
+            files = {}
+            with contextlib.ExitStack() as opened:
+                def read(offset, count):
+                    parts = []
+                    for path, at, size in self.ranges(name, offset, count):
+                        if path not in files:
+                            file = opened.enter_context(path.open('rb', buffering=0))
+                            if hasattr(os, 'posix_fadvise'):
+                                try:
+                                    os.posix_fadvise(file.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+                                except OSError:
+                                    pass
+                            files[path] = file
+                        file = files[path]
+                        file.seek(at)
+                        parts.append(file.read(size))
+                    return b''.join(parts)
+                self._vq_layouts[name] = VQBlob.read(read, self[name].nbytes)
+        return self._vq_layouts[name]
 
     def __contains__(self, name: str) -> bool:
         return name in self.tensors

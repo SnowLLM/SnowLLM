@@ -37,6 +37,11 @@ def prepare(model: object, processor: object, messages: list[dict], images: list
             **template_kwargs: object) -> dict:
     if images and model.visual is None:
         raise ValueError("this checkpoint carries no vision tower, so it cannot answer about an image")
+    if images and getattr(model, "multimodal_config", {}).get("model_type") == "inkling2_loop":
+        from .inkling2.processing import prepare as inkling_prepare
+        return inkling_prepare(model, processor, messages, images, **template_kwargs)
+    if images and hasattr(model.visual, "prepare_images"):
+        return model.visual.prepare_images(processor, messages, images, model.image_token_id, **template_kwargs)
     if images and getattr(model, "multimodal_type", None) == "minicpmv4_7":
         from .minicpmv.processing import prepare as mini_prepare
         return mini_prepare(model, processor, messages, images, **template_kwargs)

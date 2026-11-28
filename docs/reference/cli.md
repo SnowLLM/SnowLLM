@@ -45,12 +45,12 @@ snowllm b/qwen3.8-flash-next:ud-q3-k-xl-ud3.1:DFlash2@san-digital --dflash-block
 | `--max-gpu-mem` | `0.9` | GPU memory ceiling: fraction (`0.9`) or capacity (`20GB`, `20GiB`). |
 | `--max-host-mem` | Unset; no automatic host weight offload | Host buffer ceiling: fraction or capacity; explicitly enables automatic host weight offload. Without a configured ceiling, host buffers are constrained by available RAM and platform mapping limits. |
 | `--host-alloc` | Disabled | Allocate GPU tensors with mapped `hipHostMalloc` memory. Weights, KV, workspace and temporary tensors use host RAM; excludes host/disk offload. |
-| `--device-map` | No offload | Offload model weights to host RAM: `off`, `auto`, `all` or groups such as `experts:20`. |
+| `--device-map` | `auto` | Use GPU, host and disk budgets in priority order. Override destinations by group, for example `*=gpu,experts[12]=host,experts[14-40]=disk`. [Layer selectors](../guides/memory-management#layer-placement) |
 | `--offload-ratio` | Unset | Host-resident fraction of total final weight bytes, from 0 to 1. Enable offload with `--device-map auto`. Placement rounds to supported weight groups/layers. |
-| `--host-offload` | Unset | Move at least SIZE of model weights to host memory, e.g. `8GiB`, rounded to weight groups. Independent of disk savings; `0` disables host offload. Alternative to `--offload-ratio` or a fixed `--device-map`. |
+| `--host-offload` | Legacy | Move at least SIZE of model weights to host memory, e.g. `8GiB`, rounded to weight groups. Independent of disk savings; `0` disables host offload. Alternative to `--offload-ratio` or a fixed `--device-map`. |
 | `--max-disk-offload` | Unset | Maximum expert weights automatically offloaded to disk; does not limit cache file sizes. |
-| `--moe-cache-experts` | `0` | DeepSeek V4 Flash: keep N routed experts per non-hash layer in an LRU cache, 1–256. Hash layers and shared experts stay on GPU; misses read from GGUF. `0` disables caching. Target forwards run eager. |
-| `--moe-cache-mode` | `all` | `all` caches gate/up and down together. `down` keeps all routed gate/up on GPU and caches N down experts per non-hash layer, overlapping down I/O with gate/up computation. `auto` selects within an equivalent `all` GPU cache budget. Use with `--moe-cache-experts` or `--max-disk-offload`. |
+| `--disk-offload-gpu-cache-experts` | `0` | Keep N routed expert slots in each eligible MoE layer. Use at least the router top-k. The native disk proxy supports decode graphs with dynamic expert routing. |
+| `--moe-cache-mode` | `all` | Cache gate/up and down together (`all`), only down (`down`), or select by GPU budget (`auto`). VQ stores all three matrices together and supports `all` and `auto`. |
 | `--prefix-memory-ratio` | `0.08` | Prefix snapshot memory budget as a fraction of base cache memory. |
 | `--num-kv-blocks` | Unset | Set the KV cache block count manually. |
 
@@ -69,15 +69,7 @@ Explicit command-line allocation/offload choices override conflicting recipe def
 snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
 ```
 
-Planning includes expert cache weights, GPU staging and host pinned I/O buffers. Hash layers and shared experts stay on the GPU; other layers use uniform LRU capacity. The ceiling counts expert weight bytes in their actual layout, rather than net GPU savings or cache file sizes.
-`--moe-cache-mode` supports `all`, `down` and `auto`. A manual `--moe-cache-experts` count is mutually exclusive with the automatic disk ceiling.
-
-`--moe-cache-mode auto` interprets N as the equivalent `all` GPU budget for expert weights and I/O staging.
-When offloading more than zero and at most 1/16 of routed expert pairs, it prefers resident gate/up and computes
-how many down experts fit that same allocation budget; otherwise it uses `all`.
-For this IQ2_XXS checkpoint, N=250 selects `down=242`, while N=192 selects `all=192`.
-Startup logs show the selected mode and capacity. This is a heuristic from the DeepSeek V4 Flash
-dual-NVMe DIRECT I/O sweep, with no runtime profiling; optimality on other quantizations and storage has not been established.
+A fixed slot count must also fit any configured disk ceiling. The previous spelling `--moe-cache-experts` remains available. Where the requested budget allows it, `auto` keeps gate/up resident. DeepSeek V4 non-VQ also accepts fewer slots than top-k.
 
 Memory ceilings are limits, not allocation targets. Context defaults to 409600 tokens and prefill chunks to 8192 tokens; recipes may provide explicit defaults. The CLI does not calculate or replace context, utilization or an explicit offload ratio. Automatic placement uses GPU, then explicitly enabled host/disk budgets without changing the workload. See [memory management](../guides/memory-management.md).
 
@@ -116,6 +108,8 @@ These are planning ceilings, not OS-enforced allocation quotas. Allocator and gr
 | Option | Default | Description |
 | --- | --- | --- |
 | `--limit-mm-per-prompt` | `4` | Images one request may carry. |
+| `--vision-head` | Recipe selection or automatic | Load a specific GGUF projector from the model directory, or use `none` for text-only inference. |
+| `--vision-placement {auto,gpu,disk}` | `auto` | Place the selected visual encoder on the GPU or stream its packed weights from disk during image encoding. Auto streams chat projectors and keeps the MinerU encoder on the GPU. |
 | `--allow-image-urls` | Off | Allow fetching HTTP(S) images; data URLs always work. |
 
 ## Diagnostics
@@ -135,7 +129,7 @@ also enable profiling endpoints. See the [curl profiling example](../integration
 ## Expert disk cache
 
 Set `SNOWLLM_MOE_CACHE_DIRS` to one or more directories when using
-`--moe-cache-experts` or `--max-disk-offload`. Separate directories with `:` on Linux or `;` on Windows:
+`--disk-offload-gpu-cache-experts` or `--max-disk-offload`. Separate directories with `:` on Linux or `;` on Windows:
 
 ::: code-group
 
@@ -148,6 +142,10 @@ $env:SNOWLLM_MOE_CACHE_DIRS = 'D:\SnowLLM\moe;E:\SnowLLM\moe'
 ```
 
 :::
+
+At load time, standard experts are written to process-private temporary files under `~/.cache/snowllm/experts` or the configured directories, distributed by layer. Allow disk space for all routed experts of each cached layer in the selected mode. VQ reads directly from the original GGUF, including split files.
+
+**DeepSeek V4 non-VQ persistent striped cache**. Setting the directories for this model selects the following compatibility path.
 
 Missing records are built from GGUF on first use. Later loads reuse the pre-shuffled quantized
 planes, skipping GPU weight shuffling while retaining the final copy into the LRU slot.

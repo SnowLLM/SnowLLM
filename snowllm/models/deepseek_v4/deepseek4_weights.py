@@ -106,8 +106,6 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
     if cache_store is not None and layer not in cache_store.specs:
         cache_store = None
     if p + "ffn_exps_vq.blob" in rd.gguf:
-        if cache_store is not None:
-            raise SnowLLMError("VQ MoE does not support the expert LRU cache yet")
         from .vq_moe import load
         return load(rd, p, geo, norm, dmap, layer)
     fmt = {n: rd.gguf[p + n].quant.name for n in
@@ -149,8 +147,9 @@ def _moe(rd: GGUFReader, p: str, geo: DeepSeekV4Geometry, hashed: bool, norm: RM
         tid2eid = rd.raw(p + "ffn_gate_tid2eid.weight").view(torch.int32).reshape(
             -1, geo.moe_topk).contiguous()
     result = MoE(router_w, gate_up, down, shared_gate_up, shared_down, norm, geo, tid2eid)
-    result.cache = cached if cache_store is not None else None
-    return result
+    if cache_store is not None:
+        result.backend = cached
+    return result.bind_disk(layer)
 
 
 def _routed_gate_up(rd, p, fmt, kq, e):
@@ -273,9 +272,22 @@ def load(rd: GGUFReader, geo: DeepSeekV4Geometry, progress: Progress = None,
          device_map: placement.DeviceMap | None = None, moe_cache_experts: int = 0,
          moe_cache_mode: str = 'all', disk_offload: int | None = None
          ) -> DeepSeekV4ForCausalLM:
+    if (moe_cache_experts or disk_offload) and any(
+            name.endswith("ffn_exps_vq.blob") for name in rd.gguf.tensors):
+        from ...ops.disk_moe import Catalog, Store, building
+        catalog = Catalog()
+        with ops.dry_load(), building(catalog):
+            load(rd, geo, None, embed, head, device_map)
+        store = Store(catalog, device_map, geo.moe_topk, moe_cache_mode, moe_cache_experts, disk_offload)
+        try:
+            with building(store):
+                model = load(rd, geo, progress, embed, head, device_map)
+            model.moe_offload_plan = store
+            return model
+        except BaseException:
+            store.close()
+            raise
     if geo.v41:
-        if moe_cache_experts or disk_offload:
-            raise SnowLLMError("V4.1 VQ weights do not support expert LRU or disk offload yet")
         from .v41 import load as load_v41
         return load_v41(rd, geo, progress, device_map)
     if geo.tie_word_embeddings:

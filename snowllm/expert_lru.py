@@ -6,11 +6,11 @@ def cache_options(capacity, mode, offload):
     from .capacity import memory_bytes
     from .errors import SnowLLMError
     if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
-        raise SnowLLMError('moe_cache_experts must be a nonnegative integer')
+        raise SnowLLMError('--disk-offload-gpu-cache-experts must be a nonnegative integer')
     if offload is not None:
         offload = memory_bytes(offload, option='disk cache target', allow_zero=True)
         if capacity:
-            raise SnowLLMError('a disk cache target and --moe-cache-experts are alternatives')
+            raise SnowLLMError('a disk cache target and --disk-offload-gpu-cache-experts are alternatives')
     if mode not in ('all', 'down', 'auto') or (mode != 'all' and not capacity and offload is None):
         raise SnowLLMError('moe_cache_mode must be all, or down/auto with an MoE cache size')
     return offload

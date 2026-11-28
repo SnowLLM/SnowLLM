@@ -151,16 +151,17 @@ class Qwen4ExpRunner(QwenRunner):
             yield ActivationProbe(mtp_tail.HEAD_PLAN, decode,
                 lambda: self.mtp_draft(self._mtp_input(decode), selected.input_ids, selected),
                 lifetimes='uses' if self.plan_activations else 'references')
-        if chunk < 8192 or not mtp_tail.available(self.model.mtp) or self.kv_int8:
+        rows = mtp_tail.supported_rows(self.model.mtp, 1, self.kv_int8)
+        if not rows or chunk < rows:
             return
-        total,qmap=ops.prefill_q_plan([8192])
-        batch=synthetic_batch([8192],self.max_blocks_per_seq,
-            state_indices=[0],has_state=[0],last_row=[8191],is_prefill=True,
+        total,qmap=ops.prefill_q_plan([rows])
+        batch=synthetic_batch([rows],self.max_blocks_per_seq,
+            state_indices=[0],has_state=[0],last_row=[rows - 1],is_prefill=True,
             need_logits=True,total_q_blocks=total,q_block_map=qmap)
         def walk():
             with mtp_tail.planning():
-                return self.mtp_draft(self._mtp_input(8192),batch.input_ids,batch)
-        yield ActivationProbe(mtp_tail.PLAN,8192,walk,
+                return self.mtp_draft(self._mtp_input(rows),batch.input_ids,batch)
+        yield ActivationProbe(mtp_tail.PLAN,rows,walk,
             lifetimes='uses' if self.plan_activations else 'references')
 
     def _ctx(self, b: Batch, plan_key: tuple = PLAN_MAIN) -> Qwen4ExpContext:

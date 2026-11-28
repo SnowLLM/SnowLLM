@@ -4,7 +4,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Iterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Iterable, Iterator
 from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, TypeVar
@@ -182,100 +182,105 @@ class Finish:
 
 async def _run(
     prompt: list[int], req: Common, mm: dict | None = None, *, native_tools: dict | None = None,
-) -> AsyncIterator[tuple[str, Request, tool_parser.ToolCall | None]]:
+) -> AsyncIterator[tuple[str | ContentDelta | ReasoningDelta, Request, tool_parser.ToolCall | None]]:
     eng = serving().engine
     tok = serving().tokenizer
     at = stops(req)
     channels = (getattr(getattr(serving(), "model", None), "chat_channels", None)
                 if not isinstance(req, CompletionRequest) else None)
     decode = partial(tok.decode, skip_special_tokens=True) if req.skip_special_tokens else tok.decode
-    committed = ""
     in_thinking = False
 
     r = eng.submit(prompt, params(req, max_new(req, len(prompt))),
                    rope_factor=resolve_alias(req.model)[1].factor, **(mm or {}))
     stop_ids = eng.engine.stop_token_ids
     out: list[int] = []
-    sent = cut = ""
-    seen = False
+    prefix = text = ""
+    sent = 0
+
+    def pending(final: bool):
+        nonlocal sent
+        if not final and text.endswith("\uFFFD"):
+            return "", False
+        cut, hit = _cut(text, at)
+        visible = cut if final or hit else tool_parser.holdback(cut, *at)[0]
+        delta = visible[sent:]
+        sent += len(delta)
+        if hit:
+            r.stop_sequence = next(s for s in at if s and text.find(s) == len(cut))
+            r.finish_reason = "stop"
+            eng.abort(r)
+        if channels and delta:
+            return (ReasoningDelta(delta) if in_thinking else ContentDelta(delta)), hit
+        return delta, hit
+
     stream = eng.stream(r)
     if native_tools is not None:
         stream = tool_parser.inkling_tool_frames(stream, channels, serving().model.tool_invoke_id,
                                                   decode, native_tools, at)
     async for t in stream:
-        if isinstance(t, tool_parser.ToolCall):
-            if len(cut) > len(sent):
-                yield cut[len(sent):], r, None
-            yield "", r, t
-            committed = cut = sent = ""
-            out.clear()
-            seen = True
+        call = isinstance(t, tool_parser.ToolCall)
+        if not call and t in stop_ids:
             continue
-        if t in stop_ids:
-            continue
-        if channels and t in channels:
-            committed += decode(out)
-            out.clear()
-            channel = channels[t]
-            if channel == "thinking" and not in_thinking:
-                committed += THINK_OPEN
-            elif in_thinking and channel in ("end", "text"):
-                committed += THINK_CLOSE
-            in_thinking = channel == "thinking"
-        else:
+        channel = channels.get(t) if channels and not call else None
+        boundary = call or channel is not None
+        if not boundary:
             out.append(t)
-        text = committed + decode(out)
-        if text.endswith("�"):
-            continue
-        cut, hit = _cut(text, at)
-        vis = cut if hit else tool_parser.holdback(cut, *at)[0]
-        if len(vis) > len(sent):
-            yield vis[len(sent):], r, None
-            seen = True
-            sent = vis
+            text = prefix + decode(out)
+        switch_channel = channel is not None and in_thinking != (channel == "thinking")
+        delta, hit = pending(final=call or switch_channel)
+        if delta or hit:
+            yield delta, r, None
         if hit:
-            r.stop_sequence = next(s for s in at if s and text.find(s) == len(cut))
-            r.finish_reason = "stop"
-            eng.abort(r)
-            break
-    if len(cut) > len(sent) or not seen:
-        yield cut[len(sent):], r, None
+            return
+        if boundary:
+            if call:
+                yield "", r, t
+            in_thinking = channel == "thinking"
+            out.clear()
+            # A stop string can straddle consecutive frames in the same channel.
+            prefix = text[sent:]
+            text, sent = prefix, 0
+    delta, _ = pending(final=True)
+    yield delta, r, None
 
 
 async def generate(prompt: list[int], req: Common, *, reasoning: bool,
                    types: dict | None, mm: dict | None = None) -> AsyncIterator[object]:
     model = getattr(serving(), "model", None)
     split = ReasoningSplitter(reasoning, detect_open=not isinstance(req, CompletionRequest)
-                              and (serving().think_open_id is not None or
-                                   getattr(model, "chat_channels", None)))
+                              and serving().think_open_id is not None)
     native_tools = types if getattr(model, "tool_invoke_id", None) is not None else None
     tp = tool_parser.StreamingToolParser(types) if types is not None and native_tools is None else None
     idx = 0
     r: Request | None = None
 
-    def emit_split(vis: str, calls: Sequence[tool_parser.ToolCall]) -> Iterator[object]:
+    def emit(events: Iterable[str | tool_parser.ToolCall]) -> Iterator[ContentDelta | ToolCallDone]:
         nonlocal idx
-        if vis:
-            yield ContentDelta(vis)
-        for c in calls:
+        for event in events:
+            if isinstance(event, str):
+                if event:
+                    yield ContentDelta(event)
+                continue
             try:
-                arguments = json.dumps(c.arguments, ensure_ascii=False, allow_nan=False)
+                arguments = json.dumps(event.arguments, ensure_ascii=False, allow_nan=False)
             except (TypeError, ValueError, RecursionError):
                 continue
-            yield ToolCallDone(idx, new_id("call"), c.name, arguments)
+            yield ToolCallDone(idx, new_id("call"), event.name, arguments)
             idx += 1
 
-    def emit_content(ct: str) -> Iterator[object]:
-        if not ct:
-            return
-        yield from emit_split(*(tp.push(ct) if tp else (ct, ())))
+    def emit_content(text: str):
+        return emit(tp.events(text) if tp else (text,))
 
     async for text, r, call in _run(prompt, req, mm, native_tools=native_tools):
         if call is not None:
-            for event in emit_split("", [call]):
+            for event in emit((call,)):
                 yield event
             continue
-        rc, ct = split.push(text)
+        if isinstance(text, ReasoningDelta):
+            yield text
+            continue
+        rc, ct = ("", text.text) if isinstance(text, ContentDelta) else split.push(text)
         if rc:
             yield ReasoningDelta(rc)
         for ev in emit_content(ct):
@@ -286,7 +291,8 @@ async def generate(prompt: list[int], req: Common, *, reasoning: bool,
     for ev in emit_content(ct):
         yield ev
     if tp is not None:
-        for ev in emit_split(*tp.finish()):
+        tail, calls = tp.finish()
+        for ev in emit((tail, *calls)):
             yield ev
 
     fr = (r.finish_reason if r else "stop") or "stop"
@@ -381,17 +387,21 @@ def _system_prefix_length(messages: list[dict], kwargs: dict, tools: list[dict] 
                 min(len(prompt), len(ids)))
 
 
-def _load_image(url: str) -> "Image.Image":
+def _load_image(url: str, preserve_mode: bool = False) -> "Image.Image":
     import base64
     import io
 
     from PIL import Image
 
+    def decode(data):
+        with Image.open(io.BytesIO(data)) as image:
+            return image.copy() if preserve_mode else image.convert("RGB")
+
     if url.startswith("data:"):
         import binascii
         _, _, payload = url.partition(",")
         try:
-            return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGB")
+            return decode(base64.b64decode(payload))
         except (binascii.Error, ValueError, OSError) as exc:
             raise HTTPException(400, "could not decode image data") from exc
     if not serving().allow_image_urls:
@@ -399,10 +409,10 @@ def _load_image(url: str) -> "Image.Image":
                                  "server with --allow-image-urls")
     import urllib.request
     with urllib.request.urlopen(url, timeout=10) as f:
-        return Image.open(io.BytesIO(f.read())).convert("RGB")
+        return decode(f.read())
 
 
-def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
+def _split_images(messages: list[dict], preserve_mode: bool = False) -> tuple[list[dict], list]:
     out, images = [], []
     for m in messages:
         content = m.get("content")
@@ -412,7 +422,7 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
         parts = []
         for part in content:
             if part.get("type") == "image_url":
-                images.append(_load_image(part["image_url"]["url"]))
+                images.append(_load_image(part["image_url"]["url"], preserve_mode))
                 parts.append({"type": "image"})
             else:
                 parts.append(part)
@@ -421,10 +431,12 @@ def _split_images(messages: list[dict]) -> tuple[list[dict], list]:
 
 
 def _developer_as_system(messages: list[dict], model_type: str | None) -> list[dict]:
-    if model_type not in ("inkling2_loop", "minicpmv4_7") or not any(m["role"] == "developer" for m in messages):
+    if model_type not in ("inkling2_loop", "minicpmv4_7", "glm5_next", "deepseek_v4", "deepseek_v41"):
+        return messages
+    if not any(m["role"] == "developer" for m in messages):
         return messages
     normalized = [{**m, "role": "system"} if m["role"] == "developer" else m for m in messages]
-    if model_type == "inkling2_loop":
+    if model_type != "minicpmv4_7":
         return normalized
     # MiniCPM's template accepts a single leading system message.
     instructions = [m.get("content") or "" for m in normalized if m["role"] == "system"]
@@ -448,7 +460,7 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
                                  f"--limit-mm-per-prompt ({st.limit_mm_per_prompt})")
     model_type = getattr(getattr(st, "model", None), "multimodal_config", {}).get("model_type")
     messages = _developer_as_system(messages, model_type)
-    msgs, images = _split_images(messages)
+    msgs, images = _split_images(messages, preserve_mode=model_type in ("inkling2_loop", "glm5_next"))
     if not images:
         prompt = chat_prompt(msgs, kwargs, tools)
         system_len = _system_prefix_length(msgs, kwargs, tools, prompt)
@@ -459,7 +471,7 @@ def prompt_with_images(messages: list[dict], kwargs: dict,
                                      "images")
         try:
             mm = multimodal.prepare(st.model, st.processor, msgs, images, tools=tools, **kwargs)
-        except ValueError as exc:
+        except (ValueError, TemplateError) as exc:
             raise HTTPException(400, str(exc)) from exc
         prompt = mm.pop("prompt")
     engine = getattr(st.engine, 'engine', None)

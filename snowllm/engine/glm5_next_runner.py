@@ -20,7 +20,6 @@ from .forward_context import Glm5NextContext
 class Glm5NextRunner(GraphRunner):
     spec_decoder_type = Glm5NextSpecDecoder
     tunable_rope = False
-    text_only = True
     slots_per_request = 1
 
     def _configure(self):
@@ -86,7 +85,7 @@ class Glm5NextRunner(GraphRunner):
             future += max(0, self.act_bytes_for(self.max_prefill_tokens) - self.ws.nbytes)
         return PoolPlan(self._cache_bytes, self.max_blocks_per_seq, requested=self._cache_blocks(),
                         checkpoint_bytes=self.resources.checkpoints.bytes_for(1) if self.prefix_memory_ratio else 0,
-                        future_bytes=future, minimum_snapshots=2*self.max_num_seqs)
+                        future_bytes=future, minimum_snapshots=2*self.max_num_seqs, slab_sizes=self.resources.cache.slab_sizes)
 
     def _allocate_pools(self, blocks):
         self.num_kv_blocks = blocks

@@ -25,20 +25,14 @@ class InklingDraft(DFlashDraft):
         d.rope_cos_sin(positions, self.inv_freq, cos, sin)
         with self.arena.frame():
             kv = self.arena.new(rows, 2*g.kv_dim)
-            need = max((ops.gemm_kquant_a_ws_bytes if isinstance(w["ctx_kv"],ops.KQuantProjWeight)
-                        else ops.gemm_bf16_a_ws_bytes)(rows,g.hidden) for w in self.w["layers"])
-            scratch = self.arena.workspace(need)
+            sizes = [ops.projection_workspace_bytes(w["ctx_kv"], rows, g.hidden)
+                     for w in self.w["layers"]]
+            scratch = self.arena.workspace(max(sizes))
             for layer,(w,(kc,vc)) in enumerate(zip(self.w["layers"], self.pools)):
                 with self.arena.frame():
                     feat = draft_mix(taps, w["mix"], w["ctx_norm"], self.eps)
                     weight = w["ctx_kv"]
-                    if isinstance(weight,ops.KQuantProjWeight):
-                        size = ops.gemm_kquant_a_ws_bytes(rows,g.hidden)
-                        ops.gemm_kquant_a(weight.fmt,feat,weight.quant,weight.meta,kv,
-                                          rows,2*g.kv_dim,g.hidden,scratch[:size])
-                    else:
-                        size = ops.gemm_bf16_a_ws_bytes(rows,g.hidden)
-                        ops.gemm_bf16_a(feat,weight,kv,rows,2*g.kv_dim,g.hidden,scratch[:size])
+                    ops.project_packed(feat, weight, kv, 2 * g.kv_dim, g.hidden, scratch[:sizes[layer]])
                     d.norm_rope_store(kv, None, w["ctx_k_norm"], cos, sin, None, kc, vc,
                                       local_slots if g.sliding(layer) and local_slots is not None else slots,
                                       self.eps, self.block_size, layer=0)

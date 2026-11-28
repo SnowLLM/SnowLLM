@@ -14,7 +14,7 @@ def moe_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     ne, I, H = gate.shape
     _chk(gate, "moe gate", torch.bfloat16, ne, I, H)
     _chk(up, "moe up", torch.bfloat16, ne, I, H)
-    out = empty(ne, 2 * I, H, dtype=torch.bfloat16, device="cuda")
+    out = empty_shaped((ne, 2 * I, H), torch.bfloat16)
     check(lib.snowllm_moe_shuffle_gate_up(_p(gate), _p(up), _p(out), ne, _stream()),
           "moe_shuffle_gate_up")
     return out
@@ -137,8 +137,9 @@ def kquant_gguf_bytes(fmt: int, rows: int, k: int) -> int:
 @operator
 def moe_kquant_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor, fmt: int,
                                num_experts: int) -> KQuantExpertWeight:
-    quant = empty_bytes(lib.snowllm_moe_kquant_gate_up_quant_bytes(fmt, num_experts))
-    meta = empty_bytes(lib.snowllm_moe_kquant_gate_up_meta_bytes(fmt, num_experts))
+    from .disk_moe import packed_buffer
+    quant = packed_buffer('gate_up', 'quant', num_experts, lib.snowllm_moe_kquant_gate_up_quant_bytes(fmt, num_experts))
+    meta = packed_buffer('gate_up', 'meta', num_experts, lib.snowllm_moe_kquant_gate_up_meta_bytes(fmt, num_experts))
     check(lib.snowllm_moe_kquant_shuffle_gate_up(fmt, _p(gate), _p(up), _p(quant), _p(meta),
                                                  num_experts, _stream()),
           "moe_kquant_shuffle_gate_up")
@@ -148,13 +149,14 @@ def moe_kquant_shuffle_gate_up(gate: torch.Tensor, up: torch.Tensor, fmt: int,
 @operator
 def moe_kquant_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> KQuantExpertWeight:
+    from .disk_moe import packed_buffer
     if fmt in (21, 23):
         g = build_geometry()
         want = kquant_gguf_bytes(fmt, g.hidden, g.moe_inter) * num_experts
         if down.numel() != want:
             raise SnowLLMError(f'quantized MoE down needs {want} GGUF source bytes at K={g.moe_inter}')
-    quant = empty_bytes(lib.snowllm_moe_kquant_down_quant_bytes(fmt, num_experts))
-    meta = empty_bytes(lib.snowllm_moe_kquant_down_meta_bytes(fmt, num_experts))
+    quant = packed_buffer('down', 'quant', num_experts, lib.snowllm_moe_kquant_down_quant_bytes(fmt, num_experts))
+    meta = packed_buffer('down', 'meta', num_experts, lib.snowllm_moe_kquant_down_meta_bytes(fmt, num_experts))
     check(lib.snowllm_moe_kquant_shuffle_down(fmt, _p(down), _p(quant), _p(meta), num_experts,
                                               _stream()), "moe_kquant_shuffle_down")
     return KQuantExpertWeight(quant, meta, fmt)
@@ -199,10 +201,11 @@ class LowBitExpertWeight:
 @operator
 def moe_lowbit_shuffle_gate_up(gate_up: torch.Tensor, fmt: int,
                                num_experts: int) -> LowBitExpertWeight:
-    p0 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
-    p1 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p1_bytes(fmt, num_experts))
+    from .disk_moe import packed_buffer
+    p0 = packed_buffer('gate_up', 'p0', num_experts, lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
+    p1 = packed_buffer('gate_up', 'p1', num_experts, lib.snowllm_moe_lowbit_gate_up_p1_bytes(fmt, num_experts))
     n2 = lib.snowllm_moe_lowbit_gate_up_p2_bytes(fmt, num_experts)
-    p2 = empty_bytes(n2) if n2 else None
+    p2 = packed_buffer('gate_up', 'p2', num_experts, n2) if n2 else None
     check(lib.snowllm_moe_lowbit_shuffle_gate_up_fused(fmt, _p(gate_up), _p(p0), _p(p1), _p(p2),
                                                        num_experts, _stream()),
           "moe_lowbit_shuffle_gate_up")
@@ -212,10 +215,11 @@ def moe_lowbit_shuffle_gate_up(gate_up: torch.Tensor, fmt: int,
 @operator
 def moe_lowbit_shuffle_gate_up_split(gate: torch.Tensor, up: torch.Tensor, fmt: int,
                                      num_experts: int) -> LowBitExpertWeight:
-    p0 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
-    p1 = empty_bytes(lib.snowllm_moe_lowbit_gate_up_p1_bytes(fmt, num_experts))
+    from .disk_moe import packed_buffer
+    p0 = packed_buffer('gate_up', 'p0', num_experts, lib.snowllm_moe_lowbit_gate_up_p0_bytes(fmt, num_experts))
+    p1 = packed_buffer('gate_up', 'p1', num_experts, lib.snowllm_moe_lowbit_gate_up_p1_bytes(fmt, num_experts))
     n2 = lib.snowllm_moe_lowbit_gate_up_p2_bytes(fmt, num_experts)
-    p2 = empty_bytes(n2) if n2 else None
+    p2 = packed_buffer('gate_up', 'p2', num_experts, n2) if n2 else None
     check(lib.snowllm_moe_lowbit_shuffle_gate_up(fmt, _p(gate), _p(up), _p(p0), _p(p1), _p(p2),
                                                  num_experts, _stream()),
           "moe_lowbit_shuffle_gate_up_split")
@@ -225,15 +229,16 @@ def moe_lowbit_shuffle_gate_up_split(gate: torch.Tensor, up: torch.Tensor, fmt: 
 @operator
 def moe_lowbit_shuffle_down(down: torch.Tensor, fmt: int,
                             num_experts: int) -> LowBitExpertWeight:
+    from .disk_moe import packed_buffer
     if fmt == IQ3_S:
         g = build_geometry()
         want = kquant_gguf_bytes(21, g.hidden, g.moe_inter) * num_experts
         if down.numel() != want:
             raise SnowLLMError(f'IQ3_S MoE down needs {want} GGUF source bytes at K={g.moe_inter}')
-    p0 = empty_bytes(lib.snowllm_moe_lowbit_down_p0_bytes(fmt, num_experts))
-    p1 = empty_bytes(lib.snowllm_moe_lowbit_down_p1_bytes(fmt, num_experts))
+    p0 = packed_buffer('down', 'p0', num_experts, lib.snowllm_moe_lowbit_down_p0_bytes(fmt, num_experts))
+    p1 = packed_buffer('down', 'p1', num_experts, lib.snowllm_moe_lowbit_down_p1_bytes(fmt, num_experts))
     n2 = lib.snowllm_moe_lowbit_down_p2_bytes(fmt, num_experts)
-    p2 = empty_bytes(n2) if n2 else None
+    p2 = packed_buffer('down', 'p2', num_experts, n2) if n2 else None
     check(lib.snowllm_moe_lowbit_shuffle_down(fmt, _p(down), _p(p0), _p(p1), _p(p2), num_experts,
                                               _stream()), "moe_lowbit_shuffle_down")
     return LowBitExpertWeight(p0, p1, p2, lib.snowllm_moe_lowbit_down_stride(num_experts), fmt)

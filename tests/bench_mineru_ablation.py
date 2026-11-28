@@ -62,40 +62,10 @@ def ablation(mode):
                 VisionModel, "execute_plan", lambda self, key, rows, walk, **kw: walk()
             ))
 
-        @operator
-        def general_conv(x, weight, bias, stride, padding, groups, scale, shift, act):
-            from snowllm.ops.miopen import convolution
-
-            spatial = tuple(
-                (n + 2 * p - k) // s + 1
-                for n, p, k, s in zip(x.shape[2:], padding, weight.shape[2:], stride)
-            )
-            out = op.empty((x.shape[0], weight.shape[0], *spatial),
-                           dtype=x.dtype, device=x.device)
-            x = op.dense(x)
-            plan = convolution(tuple(x.shape), tuple(weight.shape), tuple(out.shape),
-                               x.dtype, stride, padding, (1, 1), groups, False,
-                               torch.cuda.current_device())
-            arena = op.active_arena()
-            with arena.frame() if arena is not None else contextlib.nullcontext():
-                workspace = op.empty((plan.workspace,), dtype=torch.uint8, device=x.device)
-                if out.device.type != "meta":
-                    plan(x, weight, out, workspace)
-            if bias is not None:
-                out = op.add(out, bias[None, :, None, None])
-            names = {0: None, 4: "relu", 5: "silu", 2: "gelu", 9: "sigmoid"}
-            return op.activation(out, names.get(act, act), scale, shift)
-
-        if "pointwise" in off:
-            def pointwise(x, weight, bias=None, scale=None, shift=None, act=0, config=0):
-                return general_conv(x, weight, bias, (1, 1), (0, 0), 1, scale, shift, act)
-            stack.enter_context(patch.object(op, "pointwise_f32", pointwise))
-        if "depthwise" in off:
-            def depthwise(x, weight, bias=None, scale=None, shift=None, stride=1, act=0):
-                padding = tuple(k // 2 for k in weight.shape[2:])
-                return general_conv(x, weight, bias, (stride, stride), padding,
-                                    x.shape[1], scale, shift, act)
-            stack.enter_context(patch.object(op, "depthwise_conv", depthwise))
+        if off & {"pointwise", "depthwise"}:
+            from functools import partial
+            stack.enter_context(patch.object(op, "convolution", partial(
+                op.convolution, _allow_pointwise="pointwise" not in off, _allow_depthwise="depthwise" not in off)))
         if "half" in off:
             stack.enter_context(patch.object(
                 DecodeLinear, "__call__", lambda self, x: op.linear(x, self.weight, self.bias)

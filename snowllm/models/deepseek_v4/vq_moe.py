@@ -5,43 +5,49 @@ from torch import nn
 import torch
 
 from ... import ops
-from ..._capi import SnowLLMError, lib
-from ...checkpoint.vq import VQBlob
-from ...ops.vq_moe import VQExpertWeight, fused_moe_vq, vq_moe_workspace_bytes
+from ..._capi import SnowLLMError
+from ...ops.vq_moe import VQExpertWeight, execute_vq, normalized_supported, resident_vq, vq_moe_workspace_bytes
 from .. import placement
 from ..geometry import V41_MOE_CHUNK
 
 
 class VQMoE(nn.Module):
     def __init__(self, router, bias, experts, shared_gate, shared_up, shared_down, norm,
-                 *, topk=6, scale=1.5, limit=10.0, normalize=True, chunk_size=0):
+                 *, topk=6, scale=1.5, limit=10.0, normalize=True, chunk_size=0, backend=resident_vq):
         super().__init__()
         self.router, self.bias, self.experts = router, bias, experts
         self.shared_gate, self.shared_up, self.shared_down = shared_gate, shared_up, shared_down
         self.norm = norm
         self.topk, self.scale, self.limit, self.normalize = topk, scale, limit, normalize
         self.chunk_size = chunk_size
+        self.backend = backend
+
+    @property
+    def cache(self):
+        return None if self.backend is resident_vq else self.backend
 
     def forward(self, ctx, folded):
         cur = self.norm(ctx, folded, folded)
         out = ctx.arena.new(cur.shape[0], self.experts.layout.hidden)
         if not cur.shape[0]:
             return out
-        chunk = self.chunk_size or cur.shape[0]
-        for lo in range(0, cur.shape[0], chunk):
-            hi = min(lo + chunk, cur.shape[0])
-            with ctx.arena.frame():
-                workspace = ctx.arena.flat(
-                    vq_moe_workspace_bytes(hi - lo, self.experts, self.topk), torch.uint8)
-                fused_moe_vq(cur[lo:hi], self.router, self.bias, self.experts, self.shared_gate,
-                             self.shared_up, self.shared_down, out[lo:hi], workspace, topk=self.topk,
-                             scale=self.scale, limit=self.limit, normalize=self.normalize)
+        chunk = self.backend.chunk_rows(self.chunk_size or len(cur))
+        runs = getattr(ctx, 'modality_runs', ()) or ((0, len(cur), False),)
+        parts = [(start, min(start + chunk, hi), image) for lo, hi, image in runs
+                 for start in range(lo, hi, chunk)]
+        widths = {end - start for start, end, _ in parts}
+        with ctx.arena.frame():
+            size = max(vq_moe_workspace_bytes(n, self.experts, self.topk) for n in widths)
+            workspace = ctx.arena.flat(size, torch.uint8)
+            for start, end, image in parts:
+                bias = self.vision_bias if image else self.bias
+                execute_vq(self.backend, cur[start:end], self.router, bias, self.experts, self.shared_gate,
+                           self.shared_up, self.shared_down, out[start:end], workspace, topk=self.topk,
+                           scale=self.scale, limit=self.limit, normalize=self.normalize)
         return out
 
 
 def load(rd, prefix, geo, norm, dmap=None, layer=None):
-    if not hasattr(lib, "snowllm_vq_moe"):
-        raise SnowLLMError("this kernel library has no VQ MoE support; rebuild SnowLLM-Kernels")
     if geo.scoring_func not in ("sqrtsoftplus", "sqrt_softplus"):
         raise SnowLLMError("VQ MoE currently requires sqrt(softplus) routing")
     if geo.moe_num_shared != 1 or geo.is_hashed(layer or 0):
@@ -58,7 +64,7 @@ def load(rd, prefix, geo, norm, dmap=None, layer=None):
     g = rd.gguf
     if g[name].quant.name != "VQ":
         raise SnowLLMError(f"{name} is not stored as a VQ blob")
-    layout = VQBlob.read(lambda offset, count: g.read(name, offset, count), g[name].nbytes)
+    layout = g.vq_layout(name)
     if (layout.hidden, layout.intermediate, layout.experts) != (
             geo.hidden, geo.moe_inter, geo.moe_num_experts):
         raise SnowLLMError(f"{name} dimensions disagree with the model configuration")
@@ -68,12 +74,11 @@ def load(rd, prefix, geo, norm, dmap=None, layer=None):
         return dst.copy_(rd.tensor(name, dtype).reshape(shape))
 
     with placement.place(dmap, "experts" if getattr(geo, "v41", False) else "experts.gate_up", layer):
-        blob = ops.empty_bytes(layout.nbytes)
-        rd.raw(name, out=blob)
+        from ...ops.disk_moe import vq_blob
+        blob, layout, cache = vq_blob(rd, name, layout, layer)
     normalized_book = None
     with placement.place(dmap, "dense", layer):
-        if (hasattr(lib, "snowllm_vq_moe_normalized") and getattr(geo, "v41", False)
-                and (layout.hidden, layout.intermediate) == (5120, 2304)):
+        if normalized_supported(layout):
             book = layout.normalized_codebook(lambda offset, count: g.read(name, offset, count))
             if book is not None:
                 normalized_book = ops.empty_bytes(len(book))
@@ -89,4 +94,5 @@ def load(rd, prefix, geo, norm, dmap=None, layer=None):
     return VQMoE(router, bias, VQExpertWeight(blob, layout, normalized_book), gate, up, down, norm,
                  topk=geo.moe_topk, scale=geo.routed_scaling_factor,
                  limit=geo.swiglu_limit, normalize=geo.norm_topk_prob,
-                 chunk_size=V41_MOE_CHUNK if getattr(geo, "v41", False) else 0)
+                 chunk_size=V41_MOE_CHUNK if getattr(geo, "v41", False) else 0,
+                 backend=cache or resident_vq)

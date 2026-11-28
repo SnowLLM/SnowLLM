@@ -26,11 +26,7 @@ def pack_kquant(raw, fmt, n, k, row0=0):
 
 
 def project(ctx, x, weight, out, n, k, quant=None):
-    m = x.shape[0]
+    packed = weight if quant is None else quant
     with ctx.arena.frame():
-        need = ops.gemm_kquant_a_ws_bytes(m, k) if quant else ops.gemm_bf16_a_ws_bytes(m, k)
-        workspace = ctx.arena.flat(need, torch.uint8)
-        if quant:
-            ops.gemm_kquant_a(quant.fmt, x, quant.quant, quant.meta, out, m, n, k, workspace)
-        else:
-            ops.gemm_bf16_a(x, weight, out, m, n, k, workspace)
+        need = ops.projection_workspace_bytes(packed, x.shape[0], k)
+        ops.project_packed(x, packed, out, n, k, ctx.arena.flat(need, torch.uint8))

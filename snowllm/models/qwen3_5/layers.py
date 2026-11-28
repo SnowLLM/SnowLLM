@@ -5,6 +5,7 @@
 import torch
 from torch import nn
 
+from ..moe import StandardMoE
 from ... import ops
 from ...ops.allocation import active_arena
 from ...engine.forward_context import ForwardContext
@@ -163,30 +164,43 @@ class GatedDeltaNet(nn.Module):
                                   self.retain if b.roll_forward else None, *norm)
 
 
-class FusedMoE(nn.Module):
+class FusedMoE(StandardMoE):
     def __init__(self, router_w: torch.Tensor, gate_up_w: ExpertWeight, down_w: ExpertWeight,
                  gate_up_scale: torch.Tensor | None = None,
                  down_scale: torch.Tensor | None = None,
                  shared_gate_up_w: SharedWeight | None = None,
                  shared_down_w: SharedWeight | None = None) -> None:
-        super().__init__()
-        self.router_w, self.gate_up_w, self.down_w = router_w, gate_up_w, down_w
-        self.gate_up_scale, self.down_scale = gate_up_scale, down_scale
-        self.shared_gate_up_w, self.shared_down_w = shared_gate_up_w, shared_down_w
+        super().__init__(router_w, gate_up_w, down_w, shared_gate_up_w, shared_down_w,
+                         gate_up_scale, down_scale)
+
+    gate_up_w = StandardMoE.gate_up
+    down_w = StandardMoE.down
+
+    @property
+    def shared_gate_up_w(self):
+        return self.shared_gate_up
+
+    @property
+    def shared_down_w(self):
+        return self.shared_down
+
+    @property
+    def gate_up_scale(self):
+        return self.backend.gate_scale
+
+    @property
+    def down_scale(self):
+        return self.backend.down_scale
 
     def forward(self, ctx: ForwardContext, x: torch.Tensor, out: torch.Tensor,
                 norm: tuple = ()) -> None:
         with ctx.arena.frame():
-            ws = ctx.arena.flat(ops.moe_workspace_bytes(ctx.M), torch.uint8)
+            ws = ctx.arena.flat(self.backend.workspace_bytes(ctx.M), torch.uint8)
             if norm:
-                residual,gamma,hidden_row=norm
-                ops.inference_moe_norm(x,residual,gamma,ctx.eps,hidden_row,self.router_w,
-                    self.gate_up_w,self.down_w,self.shared_gate_up_w,self.shared_down_w,out,ws,
-                    self.gate_up_scale,self.down_scale)
+                self.backend.forward_norm(x, *norm, ctx.eps, self.router_w, self.shared_gate_up,
+                                          self.shared_down, out, ws)
             else:
-                ops.inference_moe(x,self.router_w,self.gate_up_w,self.down_w,self.shared_gate_up_w,
-                                  self.shared_down_w,out,ws,self.gate_up_scale,self.down_scale)
-
+                self.backend.forward(x, self.router_w, self.shared_gate_up, self.shared_down, out, ws)
 
 
 class DenseMLP(nn.Module):

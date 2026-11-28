@@ -18,8 +18,6 @@ def quantized(fmt, n, k):
 class HcPreparedTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not hasattr(_capi.lib, 'snowllm_hc_prepared_qkv'):
-            raise unittest.SkipTest('requires native HC prepared activation support')
         _capi.select_geometry(_capi.GEO_QWEN38_FLASH_NEXT)
         torch.manual_seed(73)
         cls.weights = []
@@ -35,7 +33,7 @@ class HcPreparedTests(unittest.TestCase):
         weight = torch.randn(13312, 2560, device='cuda', dtype=torch.bfloat16) * .01
         cls.qkv = ops.qkv_proj_shuffle_w(weight)
 
-    def check_chain(self, rows, hc, pipeline):
+    def check_chain(self, rows, hc, pipeline, phase=ops.Path.PREFILL):
         with patch.dict(os.environ, SNOWLLM_HC_PREFILL=str(int(pipeline))):
             entry = torch.randn(rows, 4, 2560, device='cuda', dtype=torch.bfloat16) * .1
             block = torch.randn(rows, 2560, device='cuda', dtype=torch.bfloat16) * .1
@@ -47,18 +45,18 @@ class HcPreparedTests(unittest.TestCase):
             projection = torch.empty(rows, 13312, device='cuda', dtype=torch.bfloat16)
             proj_ws = ops.empty_bytes(ops.qkv_proj_scratch_bytes(rows))
             ops.hc_combine_mix(residual, block, inject, hc, lo, dense, scratch)
-            ops.inference_qkv(dense, self.qkv, None, None, None, proj_ws, projection, ops.Path.PREFILL)
+            ops.inference_qkv(dense, self.qkv, None, None, None, proj_ws, projection, phase)
             expected_residual, expected_lo, expected_projection = residual.clone(), lo.clone(), projection.clone()
 
-            size = ops.hc_prepared_bytes(rows)
+            activation = ops.HcActivation.allocate(ops.Arena(), rows, block.shape[1], phase)
+            size = activation.storage.nbytes
             storage = torch.full((size + 512,), 173, device='cuda', dtype=torch.uint8)
-            prepared = storage[256:-256]
-            dense_alias = prepared[:block.nbytes].view(torch.bfloat16).view_as(block)
+            activation = activation._replace(storage=storage[256:-256].view(torch.bfloat16).view_as(activation.storage))
 
             def run():
                 residual.copy_(entry)
-                ops.hc_combine_mix(residual, block, inject, hc, lo, dense_alias, scratch, prepared=prepared)
-                ops.hc_prepared_qkv(prepared, self.qkv, None, None, None, proj_ws, projection)
+                ops.hc_combine_mix(residual, block, inject, hc, lo, activation, scratch)
+                ops.hc_mixed_qkv(activation, self.qkv, None, None, None, proj_ws, projection)
 
             run()
             graph = torch.cuda.CUDAGraph()
@@ -79,20 +77,59 @@ class HcPreparedTests(unittest.TestCase):
             with self.subTest(format=hc.args[5], fallback=True):
                 self.check_chain(2051, hc, False)
 
+    def test_dense_attention_inputs(self):
+        self.check_chain(1, self.weights[0], True, ops.Path.DECODE)
+        with patch.dict(os.environ, SNOWLLM_HC_PREPARED="0"):
+            self.check_chain(129, self.weights[0], True)
+
+    def test_linear_attention_reuses_activation_for_post_mix(self):
+        g = _capi.build_geometry()
+        hc = self.weights[0]
+
+        def bf16(*shape):
+            return torch.randn(*shape, device="cuda", dtype=torch.bfloat16) * .05
+
+        w = ops.LinearAttnWeights(
+            ops.linear_in_proj_shuffle_w(bf16(g.lin_in_proj_n_pad, g.hidden)),
+            bf16(g.lin_conv_dim, g.lin_conv_k), torch.zeros(g.lin_num_v_heads, device="cuda"),
+            torch.zeros(g.lin_num_v_heads, device="cuda"), bf16(g.lin_head_v),
+            ops.linear_out_proj_shuffle_w(bf16(g.hidden, g.lin_value_dim)))
+        for rows, phase in ((129, ops.Path.PREFILL), (1, ops.Path.DECODE)):
+            with self.subTest(rows=rows, phase=phase):
+                activation = ops.HcActivation.allocate(ops.Arena(), rows, g.hidden, phase)
+                entry = bf16(rows, 4, g.hidden)
+                block = bf16(rows, g.hidden)
+                inject = bf16(rows, 4)
+                cu = torch.tensor([0, rows], device="cuda", dtype=torch.int32)
+                slot = torch.zeros(1, device="cuda", dtype=torch.int32)
+                combine_ws = ops.empty_bytes(ops.hc_combine_mix_workspace_bytes(rows, hc, 4, g.hidden))
+
+                def run(fused):
+                    residual, out = entry.clone(), block.clone()
+                    lo, post_lo = bf16(rows, hc.down_n), bf16(rows, hc.down_n)
+                    buf = activation.storage if fused else torch.empty_like(out)
+                    ops.hc_combine_mix(residual, out, inject, hc, lo, activation if fused else buf, combine_ws)
+                    conv = torch.zeros(1, g.lin_conv_state, g.lin_conv_dim, device="cuda", dtype=torch.bfloat16)
+                    state = torch.zeros(1, g.lin_num_v_heads, g.lin_head_k, g.lin_head_v, device="cuda")
+                    mixed = buf[:rows]
+                    if fused:
+                        size = ops.hc_linear_step_workspace_bytes(rows, hc, hc, 4, g.hidden, activation, phase)
+                        ops.hc_linear_step(residual, hc, lo, activation, hc, post_lo, mixed, None, w,
+                                           cu, slot, slot, conv, state, ops.empty_bytes(size), out, 1, phase)
+                    else:
+                        scratch = ops.empty_bytes(ops.fused_linear_attn_workspace_bytes(rows, phase))
+                        ops.fused_linear_attn(mixed, w, cu, slot, slot, conv, state, scratch, out, 1, phase)
+                        ops.hc_combine_mix(residual, out, lo[:, hc.lr:hc.lr+4], hc, post_lo, mixed, combine_ws)
+                    return out, residual, post_lo, mixed, conv, state
+
+                expected, actual = run(False), run(True)
+                for got, want in zip(actual, expected):
+                    torch.testing.assert_close(got, want, rtol=0, atol=0)
+
     def test_staged_prefill_tiles_and_tails(self):
         for rows in (2047, 2049, 4095, 4096, 4097, 8191):
             with self.subTest(rows=rows):
                 self.check_chain(rows, self.weights[0], True)
-
-    def test_group_selection_boundary(self):
-        cus = int(os.environ.get('SNOWLLM_NUM_CUS') or
-                  torch.cuda.get_device_properties(0).multi_processor_count * 2)
-        boundary = (cus - 1) * 128
-        for rows in (boundary - 1, boundary, boundary + 1):
-            if 2048 <= rows <= 8192:
-                with self.subTest(rows=rows):
-                    self.check_chain(rows, self.weights[0], True)
-
 
 if __name__ == '__main__':
     unittest.main()

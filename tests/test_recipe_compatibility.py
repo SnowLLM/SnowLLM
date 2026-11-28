@@ -21,6 +21,58 @@ def recipe(**updates):
 
 
 class RecipeCompatibilityTests(unittest.TestCase):
+    def test_vision_selection_reuses_weights_and_loads_exact_projector(self):
+        from snowllm import cli
+        book = recipes.catalogue(bundle=True)
+        ink = recipes.find('b/inkling-2-mini:ud-q4-k-m-dspark', book)
+        mini = recipes.find('b/minicpm-v-4.7-35b-a3b:q4-k-m-dspark', book)
+        glm = recipes.find('b/glm-5.3-flash:ud-iq2-xxs-mtp', book)
+        for base, key, filename, delta in (
+            (glm, 'bf16', 'mmproj-BF16.gguf', 1164010176),
+            (glm, 'f16', 'mmproj-F16.gguf', 1128047296),
+            (ink, 'bf16', 'mmproj-BF16.gguf', 641805760),
+            (mini, 'f16-4x', 'mmproj-model-f16-4x.gguf', 910491648 - 1119575840),
+            (mini, 'none', None, -1119575840),
+        ):
+            with self.subTest(key=key):
+                ref = base.ref + ':vision=' + key
+                chosen = recipes.find(ref, book)
+                self.assertEqual(chosen.ref, ref)
+                self.assertEqual((chosen.dir, chosen.spec, chosen.defaults), (base.dir, base.spec, base.defaults))
+                self.assertEqual(chosen.bytes, base.bytes + delta)
+                self.assertEqual(chosen.sources[0].include, [p for p in base.sources[0].include if not p.startswith('mmproj-')])
+                self.assertEqual([vars(s) for s in chosen.sources[1:len(base.sources)]], [vars(s) for s in base.sources[1:]])
+                if filename:
+                    source = chosen.sources[-1]
+                    self.assertEqual((source.repo, source.revision, source.subdir, source.include),
+                                     (base.repo, base.revision, 'vision', [filename]))
+                self.assertEqual('image' in chosen.raw['modalities'], bool(filename))
+                with patch.object(recipes, 'locate', return_value=(Path('/example'), chosen)):
+                    _, args, _, _ = cli.prepare([ref])
+                    self.assertEqual(args.vision_head, 'vision/' + filename if filename else 'none')
+        ds = recipes.find('b/deepseek-v4.1-flash-1017:vq-q4-k-dspark', book)
+        self.assertEqual(ds.raw['vision_file'], 'none')
+        vision = recipes.find(ds.ref + ':vision=bf16', book)
+        self.assertEqual(vision.raw['vision_file'], 'DeepSeek-V4.1-Flash.vision.gguf')
+        self.assertEqual(vision.bytes, ds.bytes)
+        self.assertEqual(recipes.source_digest(vision), recipes.source_digest(ds))
+        with self.assertRaisesRegex(SnowLLMError, 'no vision head'):
+            recipes.find('b/qwen3.8-flash-next:q4-fast:none:vision=bf16', book)
+        alias = recipes.find('b/inkling-2-mini-ud-q4-k-m-dspark:vision=bf16', book)
+        self.assertEqual(alias.dir, ink.dir)
+        self.assertEqual(alias.raw['vision_file'], 'vision/mmproj-BF16.gguf')
+
+    def test_old_official_catalogue_inherits_heads_only_for_matching_sources(self):
+        model = json.loads((ROOT / 'recipes-v3/inkling-2-mini.json').read_text())
+        del model['vision_heads']
+        ref = 'inkling-2-mini:ud-q4-k-m-dspark:vision=f16'
+        book = recipes._catalogue({'models': [model]}, recipes.CATALOGUE_URL)
+        self.assertEqual(recipes.find(ref, book).raw['vision_file'], 'vision/mmproj-F16.gguf')
+        model['variants']['ud-q4-k-m']['revision'] = 'c' * 40
+        book = recipes._catalogue({'models': [model]}, recipes.CATALOGUE_URL)
+        with self.assertRaisesRegex(SnowLLMError, 'no vision head'):
+            recipes.find(ref, book)
+
     def test_dflash_block_accepts_integers_in_the_verification_range(self):
         from snowllm.hub.model_recipes import validate_parameter
         model = json.loads((ROOT / 'recipes-v3/qwen3.8-flash-next.json').read_text())
@@ -130,7 +182,13 @@ class RecipeCompatibilityTests(unittest.TestCase):
         with self.assertRaisesRegex(SnowLLMError, 'system RAM'):
             recipes.find('qwen3.8-flash-next', book, memory_gib=32)
         presets = [r for r in book if 'preset' in r.raw and r.spec != 'none']
-        self.assertEqual(len(presets), 20)
+        self.assertEqual(len(presets), 22)
+        for quant in ('ud-q4-k-m', 'ud-q8-k-xl'):
+            vision = recipes.find(f'inkling-2-mini:{quant}-vision', book)
+            text = recipes.find(f'inkling-2-mini:{quant}-dspark', book)
+            self.assertEqual(vision.raw['modalities'], ['text', 'image'])
+            self.assertEqual(vision.sources[0].include, [*text.sources[0].include, 'mmproj-BF16.gguf'])
+            self.assertEqual(vision.bytes - text.bytes, 641805760)
         for r in presets:
             self.assertTrue(r.defaults['mtp_prompt_lookup'] and r.defaults['mtp_tool_draft'], r.id)
             self.assertTrue(any(r.defaults.get(k) for k in ('dspark_adaptive', 'dflash_adaptive', 'mtp_adaptive')), r.id)

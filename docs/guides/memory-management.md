@@ -152,9 +152,11 @@ snowllm MODEL --max-gpu-mem 0.9 --max-disk-offload 80GB
 
 `80GB` is a ceiling: only the required amount is offloaded. It limits offloaded weights, not disk cache file size; GPU expert caches and read buffers still need runtime memory.
 
-By default, weights are read directly from the model files. Set `SNOWLLM_MOE_CACHE_DIRS` to use additional disk cache directories for preprocessed expert weights. Missing records are built on first use and reused afterward.
+With automatic placement and a disk ceiling, a measured GPU shortfall during engine startup triggers a reload. SnowLLM logs the missing bytes, releases the previous weights and reduces the per-layer GPU expert cache within the host and disk ceilings. An explicit expert slot count keeps the cache size fixed.
 
-Specify directories on multiple SSDs for parallel reads. Separate paths with `:` on Linux or `;` on Windows.
+Qwen MoE, MiniCPM-V 4.7, GLM, DeepSeek V4/V4.1, Inkling 2 and LFM2.5 can all offload routed experts. VQ reads from its GGUF. Other formats write process-private expert files during loading under `~/.cache/snowllm/experts`. Allow disk space for all experts of the selected projections. Shared experts stay resident. Disk offload also supports decode graph replay.
+
+Use `SNOWLLM_MOE_CACHE_DIRS` to choose cache locations. The general backend distributes layers across directories. DeepSeek V4 non-VQ also supports a persistent striped cache. Separate paths with `:` on Linux or `;` on Windows.
 
 ::: code-group
 
@@ -176,7 +178,76 @@ snowllm MODEL --max-disk-offload 80GB
 Manual placement requires an understanding of weight groups, memory use and offload behavior. Incorrect settings can cause memory shortages or lower performance. Automatic placement is generally recommended.
 :::
 
-Use `--device-map` to select weights for host memory. Other weights remain on the GPU, where computation still runs.
+Normally the three memory limits are sufficient. Automatic placement keeps weights on GPU first, then uses the permitted host budget, then streams eligible routed experts from disk. To override destinations, use a weight map.
+
+```bash
+snowllm MODEL --max-gpu-mem 64GiB --max-host-mem 16GiB --max-disk-offload 32GiB
+snowllm MODEL --device-map '*=gpu,head=host,experts=disk' --max-host-mem 16GiB --max-disk-offload 32GiB
+```
+
+Unlisted weights stay on GPU. `head=host` places the output head in host RAM. `experts=disk` allows routed experts to be streamed from disk. With a disk ceiling, the planner sizes the GPU cache for the measured shortfall. An explicit disk assignment alone uses the router top-k as the per-layer GPU cache size. Set `--disk-offload-gpu-cache-experts N` to fix the number of experts cached per layer on GPU. Configured ceilings still apply.
+
+### Place weights by layer {#layer-placement}
+
+Write each rule as `group-selector=destination`. The destination can be `gpu`, `host`, or `disk`. Disk placement supports the routed expert group `experts`. The same layer selectors work for each destination.
+
+| Selection | Host RAM | Disk |
+| --- | --- | --- |
+| All eligible expert layers | `experts=host` | `experts=disk` |
+| Zero-based layer 12 | `experts[12]=host` | `experts[12]=disk` |
+| Layers 14 through 40, inclusive | `experts[14-40]=host` | `experts[14-40]=disk` |
+| Up to two eligible layers | `experts:2=host` | `experts:2=disk` |
+
+A group can span several destinations. The loader assigns exact IDs and ranges first, then applies `:N` rules in input order. Each count selects from the remaining eligible layers by descending group weight size, breaking ties by ascending layer index. A whole-group rule receives the remaining eligible layers. Overlapping explicit ranges and explicit IDs unavailable at the destination raise an error.
+
+```bash
+snowllm MODEL --device-map '*=gpu,experts[12]=host,experts[14-40]=disk'
+```
+
+#### Measured memory with image inputs
+
+Use `--vision-placement disk` to keep large visual projections in the packed disk cache. Image encoding reads the tensors used by the current batch. Measured cache sizes for Inkling 2 Mini BF16, MiniCPM-V 4.7 F16, Qwen3.6-27B BF16 and MinerU-4.1 BF16 were 606.5, 1060.4, 883.7 and 1261.9 MiB respectively. Text-only requests skip these reads. Keeping the head on GPU with `--vision-placement gpu` avoids the per-batch reads.
+
+On a Radeon 8060S configured with 96 GiB of GPU memory, the following single-request configurations served HTTP requests with `--max-host-mem 16GiB`. The health endpoint reported `disk_offloaded_weight_bytes=0` for all three. The two models with vision enabled identified the colors in both one-image and two-image requests.
+
+| Model | Context / prefill chunk | Host weights | Device use at readiness | GPU budget |
+| --- | ---: | ---: | ---: | ---: |
+| DeepSeek V4 Flash 0731 IQ2_XXS + adaptive DSpark (text) | 409600 / 8192 | 2.15 GiB | 91.02 GiB | 95% |
+| GLM-5.3-Flash UD-IQ2_XXS + adaptive MTP 2, F16 projector | 227328 / 8192 | 13.78 GiB | 89.26 GiB | 95% |
+| DeepSeek V4.1 Flash 1017 VQ/Q4_K + adaptive DSpark, BF16 projector | 226304 / 8192 | 15.70 GiB | 95.66 GiB | 96 GiB |
+
+For the last row use `snowllm b/deepseek-v4.1-flash-1017:vq-q4-k-dspark:vision=bf16 --max-host-mem 16GiB --device-map auto --max-gpu-mem 96GiB --max-model-len 226304 --max-num-batched-tokens 8192`. All three rows use automatic weight placement. V4.1 processed 16384 uncached input tokens in two prefill steps and read its Engram tables from local SSD. The host weight column excludes temporary loading buffers and the HTTP client.
+
+DeepSeek-V4.1 and GLM-5.3-Flash stream the selected vision head from a local packed cache. In the following runs, both models answered text, single-image and two-image requests with a 16 GiB host ceiling, a 768-token context, one concurrent request, eager execution and prefix caching disabled. Each text request read zero vision cache bytes. Two 112 × 112 images fit in one group and required the same number of vision cache bytes as a single image.
+
+| Model | Vision weights resident on GPU | Vision cache read per image group | Text expert placement | Device memory used at readiness / GPU ceiling |
+| --- | ---: | ---: | --- | ---: |
+| GLM-5.3-Flash UD-IQ2_XXS + MTP 2, F16 head | 754 KiB | 1,074.5 MiB | Automatic, 6.07 GiB of host weights, no disk experts | 91.71 / 92 GiB |
+| DeepSeek-V4.1-Flash-1017 VQ/Q4_K + adaptive DSpark, BF16 head | 498 KiB | 925.25 MiB | 316 of 384 experts cached on GPU per layer, 40 disk-backed layers | 92.00 / 94 GiB |
+
+The DeepSeek resident figure includes its image routing biases. The startup budget for image activations, streamed projections and output embeddings was 144.1 MiB for DeepSeek (prefill chunk 128) and 133.9 MiB for GLM (prefill chunk 32). Device memory at readiness includes the text model, allocator and driver. The 16 GiB host ceiling alone did not guarantee a disk-free DeepSeek startup at the 94 GiB GPU ceiling.
+
+On the test machine, encoding one 112 × 112 image took 206 ms with streaming and 123 ms with resident projections for DeepSeek, and 169 ms and 52 ms respectively for GLM. These are medians of three synchronized encoder calls after one warmup with the packed cache already built. Image preprocessing and text generation are outside the timing window.
+
+The following measurements used the earlier GPU-resident vision heads. Both manual placements served single-image and two-image requests in eager mode with a 768-token context, one concurrent request, `--prefix-memory-ratio 0`, a 4 GiB host ceiling, and a 32 GiB disk offload ceiling. Each disk-backed layer kept 240 expert slots on GPU.
+
+| Model and vision head | Host layer | Disk layers | Prefill chunk | Device memory used at readiness / GPU ceiling |
+| --- | --- | --- | ---: | ---: |
+| GLM-5.3-Flash UD-IQ2_XXS, F16 vision, MTP 2 | 12 | 14–40 | 32 | 87.48 / 92 GiB |
+| DeepSeek-V4.1-Flash-1017 VQ/Q4_K, BF16 vision, DSpark | 12 | 14–30 | 128 | 92.53 / 94 GiB |
+
+DeepSeek had 1.47 GiB of headroom in this configuration. Check the startup plan again when increasing context, concurrency, or the per-request image limit.
+
+With the same models, vision heads, context and prefill chunks, `--device-map auto --max-disk-offload 32GiB` lets the planner choose the per-layer GPU expert cache. Both automatic placements served single-image and two-image requests. Device memory use was measured at readiness.
+
+| Model | GPU slots / experts per layer | Disk-backed layers | Host weights / host ceiling | Device memory used / GPU ceiling |
+| --- | ---: | ---: | ---: | ---: |
+| GLM-5.3-Flash + MTP 2 | 261 / 288 | 43 | 0.80 / 1 GiB | 90.78 / 92 GiB |
+| DeepSeek-V4.1 + adaptive DSpark, block 5 | 333 / 384 | 39 | 3.79 / 4 GiB | 93.84 / 94 GiB |
+
+DeepSeek initially selected 335 slots per layer. Startup checks measured GPU shortfalls of about 140 MiB and 147 MiB. The planner reduced the slot count to 334 and then to 333.
+
+#### Host-only shorthand
 
 For example, place one layer's expert down projections in host memory:
 
@@ -193,4 +264,4 @@ snowllm MODEL --device-map experts.down:1 --max-host-mem 32GB
 
 The number after `:` is a layer count, not a layer index. SnowLLM selects layers from largest to smallest by the weight size of that group. `--max-host-mem` still limits host memory use; loading fails if the selected weights do not fit.
 
-A fixed-group `--device-map` cannot be combined with `--host-alloc` or `--max-disk-offload`.
+The legacy host-only group shorthand cannot be combined with `--host-alloc` or `--max-disk-offload`.

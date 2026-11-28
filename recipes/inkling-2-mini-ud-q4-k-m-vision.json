@@ -1,0 +1,43 @@
+{
+  "id": "inkling-2-mini-ud-q4-k-m-vision",
+  "type": "inkling",
+  "model": "Inkling-2-Mini",
+  "family": "Inkling",
+  "modalities": [
+    "text",
+    "image"
+  ],
+  "precision": "UD-Q4_K_M",
+  "dir": "Inkling-2-Mini-UD-Q4_K_M-Vision",
+  "bytes": 17756240320,
+  "repo": "unsloth/Inkling-2-Mini-GGUF",
+  "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+  "include": [
+    "Inkling-2-Mini-UD-Q4_K_M.gguf",
+    "mmproj-BF16.gguf"
+  ],
+  "spec": "DSpark",
+  "requires": "0.4.0",
+  "summary": "Inkling-2-Mini UD-Q4_K_M with image input, the BF16 vision projector and a Q8_0 DSpark draft.",
+  "serve_as": "Inkling-2-Mini",
+  "defaults": {
+    "max_num_seqs": 1,
+    "kv_cache_dtype": "bf16",
+    "dflash": "@model/dspark",
+    "dflash_block": 8,
+    "dflash_adaptive": true,
+    "mtp_prompt_lookup": true,
+    "max_model_len": 32768,
+    "max_num_batched_tokens": 4096
+  },
+  "sources": [
+    {
+      "repo": "unsloth/Inkling-2-Mini-GGUF",
+      "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+      "subdir": "dspark",
+      "include": [
+        "dspark-Inkling-2-Mini-Q8_0.gguf"
+      ]
+    }
+  ]
+}

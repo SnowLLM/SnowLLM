@@ -95,6 +95,23 @@ def expand(model):
                    defaults={k: value for k, value in defaults.items() if value is not None})
         raw.update({k: preset[k] for k in ('summary', 'note') if k in preset})
         raw.update({k: alias[k] for k in ('priority', 'status', 'requires') if k in alias})
+        heads = model.get('vision_heads', {}).get(v.get('source'))
+        if heads:
+            for key, head in heads.items():
+                if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', key) or key.casefold() == 'none'
+                        or not re.fullmatch(r'(?:mmproj-[\w.-]+|[\w.-]+\.vision)\.gguf', head['file']) or head['bytes'] <= 0):
+                    raise ValueError(f"{variant} has an invalid vision head {key!r}")
+            selected = [key for key, head in heads.items() if head['file'] in raw['include']]
+            if 'default_vision_head' in v:
+                default = v['default_vision_head']
+                if default != 'none' and default not in selected:
+                    raise ValueError(f"{variant} must download its default vision head {default!r}")
+                selected = [] if default == 'none' else [default]
+            if len(selected) != int('image' in v['modalities']):
+                raise ValueError(f"{variant} must include its declared default vision head")
+            raw['vision_head'] = selected[0] if selected else 'none'
+            raw['vision_file'] = heads[selected[0]]['file'] if selected else 'none'
+            raw['vision_heads'] = heads
         return raw
 
     for name, preset in presets.items():

@@ -33,7 +33,7 @@ class ServerState:
     engine: AsyncEngine
     tokenizer: PreTrainedTokenizerBase
     model: nn.Module
-    processor: ProcessorMixin | None
+    processor: ProcessorMixin | PreTrainedTokenizerBase | None
 
     model_name: str
     aliases: Mapping[str, Alias]

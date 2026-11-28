@@ -6,7 +6,7 @@
   <title>SnowLLM</title>
   <link rel="icon" href="/ui/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/ui/style.css?v=7">
-  <script type="module" src="/ui/app.js?v=11"></script>
+  <script type="module" src="/ui/app.js?v=12"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -103,6 +103,8 @@
         <fieldset class="preset-overrides">
           <legend data-field="override-title" data-i18n="Preset overrides" hidden>Preset overrides</legend>
           <div data-field="precision-row" hidden><label data-for="load-precision" data-i18n="Weight precision">Weight precision</label><select data-field="load-precision"></select></div>
+          <div data-field="vision-row" hidden><label data-for="vision-head" data-i18n="Vision head">Vision head</label><select data-field="vision-head"></select></div>
+          <div data-field="vision-placement-row" hidden><label data-for="vision-placement" data-i18n="Vision weight placement">Vision weight placement</label><select data-field="vision-placement"><option value="" data-i18n="Model default">Model default</option><option value="disk" data-i18n="Stream from disk">Stream from disk</option><option value="gpu" data-i18n="Keep on GPU">Keep on GPU</option></select></div>
           <details class="advanced" open>
             <summary><span data-i18n="Speculative decoding">Speculative decoding</span></summary>
             <div class="load-advanced-fields">
@@ -118,6 +120,8 @@
               <div><label data-for="max-num-batched-tokens" data-i18n="Prefill chunk size">Prefill chunk size</label><input data-field="max-num-batched-tokens"></div>
               <div><label data-for="kv-type" data-i18n="KV cache precision">KV cache precision</label><select data-field="kv-type"><option value=""></option><option value="bf16">BF16</option><option value="int8">INT8</option><option value="auto">Auto</option></select></div>
               <div><label data-for="gpu-budget" data-i18n="GPU memory limit">GPU memory limit</label><input data-field="gpu-budget"></div>
+              <div><label data-for="host-budget" data-i18n="Host memory limit">Host memory limit</label><input data-field="host-budget"></div>
+              <div><label data-for="disk-budget" data-i18n="Disk offload limit">Disk offload limit</label><input data-field="disk-budget"></div>
             </div>
           </details>
           <details class="advanced">
@@ -125,6 +129,10 @@
             <div class="load-advanced-fields">
               <label data-for="load-id" data-i18n="Model ID (optional)">Model ID (optional)</label>
               <input data-field="load-id" maxlength="256" placeholder="Defaults to the model name" data-i18n-placeholder="Defaults to the model name">
+              <label data-for="weight-map" data-i18n="Weight placement">Weight placement</label>
+              <input data-field="weight-map" placeholder="auto">
+              <label data-for="disk-expert-slots" data-i18n="GPU-cached experts per disk-offloaded layer">GPU-cached experts per disk-offloaded layer</label>
+              <input data-field="disk-expert-slots" type="number" min="0" step="1">
               <label data-for="extra-options" data-i18n="Additional options">Additional options</label>
               <textarea data-field="extra-options" rows="2" placeholder='--device-map auto --dflash "/path/to/drafter"'></textarea>
               <p class="field-hint" data-i18n="GPU memory limits and allocation mode are shared by models targeting GPU.">GPU memory limits and allocation mode are shared by models targeting GPU.</p>
@@ -301,6 +309,16 @@
       <div class="page-heading"><div><h1><span data-i18n="Settings">Settings</span></h1></div></div>
       <article class="panel settings-panel"><label for="language"><span data-i18n="Language">Language</span></label><select id="language"><option value="auto" data-i18n="Browser default">Browser default</option><option value="en">English</option><option value="zh_CN">简体中文</option></select></article>
       <article class="panel settings-panel"><div class="panel-heading"><div><h2><span data-i18n="Model storage">Model storage</span></h2></div></div><p class="field-hint"><span data-i18n="Configuration:">Configuration:</span><code id="config-file"></code></p><form id="storage-form"><label for="models-dir"><span data-i18n="Model directory">Model directory</span></label><div class="input-action"><textarea id="models-dir" rows="3" required placeholder="/path/to/models&#10;/path/to/archive"></textarea><button id="browse-storage" type="button" class="button secondary"><span data-i18n="Browse">Browse</span></button><button id="add-storage" type="button" class="button secondary"><span data-i18n="Add directory">Add directory</span></button></div><p class="field-hint"><span data-i18n="One directory per line. Downloads use the first; models are read from all directories.">One directory per line. Downloads use the first; models are read from all directories.</span></p><div id="storage-override" class="banner" hidden></div><div class="storage-summary"><div><span><span data-i18n="Available space">Available space</span></span><strong id="disk-free">—</strong></div><div><span><span data-i18n="Configuration source">Configuration source</span></span><strong id="config-source">—</strong></div></div><div class="settings-footer"><p><span data-i18n="Existing models are not moved.">Existing models are not moved.</span></p><button class="button primary" type="submit"><span data-i18n="Save directory">Save directory</span></button></div></form></article>
+      <article class="panel settings-panel">
+        <h2 data-i18n="Disk offload">Disk offload</h2>
+        <form id="offload-dir-form">
+          <label for="offload-dir" data-i18n="Cache directory">Cache directory</label>
+          <div class="input-action"><input id="offload-dir" placeholder="Default cache location" data-i18n-placeholder="Default cache location"><button id="browse-offload" type="button" class="button secondary" data-i18n="Browse">Browse</button></div>
+          <p class="field-hint" data-i18n="Used for MoE expert files and streamed vision weights on the next model load. Clear to restore the default.">Used for MoE expert files and streamed vision weights on the next model load. Clear to restore the default.</p>
+          <div id="offload-override" class="banner" hidden></div>
+          <div class="settings-footer"><button type="submit" class="button primary" data-i18n="Save directory">Save directory</button></div>
+        </form>
+      </article>
       <article class="panel settings-panel"><h2><span data-i18n="Recipe catalogue">Recipe catalogue</span></h2><form id="recipes-settings-form"><label for="recipes-url"><span data-i18n="URL or JSON file">URL or JSON file</span></label><input id="recipes-url" placeholder="https://snowllm.dev/recipe-v3.json"><div id="recipes-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save catalogue">Save catalogue</span></button></div></form></article>
       <article class="panel settings-panel"><details><summary><span data-i18n="Developer settings">Developer settings</span></summary><form id="library-settings-form"><label for="library-path"><span data-i18n="Custom kernel library">Custom kernel library</span></label><input id="library-path" placeholder="Bundled kernels (default)" data-i18n-placeholder="Bundled kernels (default)"><div id="library-override" class="banner" hidden></div><div class="settings-footer"><button class="button primary" type="submit"><span data-i18n="Save library">Save library</span></button></div></form></details></article>
       <article class="panel settings-panel"><h2><span data-i18n="Local API">Local API</span></h2><label for="api-url">OpenAI Chat Completions</label><div class="input-action"><input id="api-url" aria-label="OpenAI Chat Completions base URL" readonly><button data-copy-api="api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/chat/completions</code></p><label for="responses-api-url">OpenAI Responses</label><div class="input-action"><input id="responses-api-url" aria-label="OpenAI Responses base URL" readonly><button data-copy-api="responses-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/responses</code></p><label for="anthropic-api-url">Anthropic Messages</label><div class="input-action"><input id="anthropic-api-url" aria-label="Anthropic Messages base URL" readonly><button data-copy-api="anthropic-api-url" class="button secondary"><span data-i18n="Copy">Copy</span></button></div><p class="field-hint"><code>POST /v1/messages</code></p></article>

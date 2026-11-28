@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the SnowLLM project
 
-from .operation import operator
+from .operation import operator, workspace_capacity
 import ctypes
 import math
 
@@ -19,36 +19,64 @@ class _Config(ctypes.Structure):
                     ("normalize", ctypes.c_int)]
 
 
+def normalized_supported(layout):
+    return bool(lib.snowllm_vq_moe_normalized_supported(
+        layout.hidden, layout.intermediate, layout.matrices[0].codewords))
+
+
 class VQExpertWeight:
     def __init__(self, blob: torch.Tensor, layout: VQBlob,
                  normalized_book: torch.Tensor | None = None) -> None:
         _chk(blob, "VQ blob", torch.uint8, layout.nbytes)
         if normalized_book is not None:
             _chk(normalized_book, "VQ normalized codebook", torch.uint8, 8192 * 8)
-            if (layout.matrices[0].codewords != 8192
-                    or (layout.hidden, layout.intermediate) != (5120, 2304)):
-                raise SnowLLMError("normalized VQ Decode requires a 13-bit 5120/2304 codebook")
+            if not normalized_supported(layout):
+                raise SnowLLMError("normalized VQ codebook is unsupported for this geometry")
         self.blob, self.layout, self.normalized_book = blob, layout, normalized_book
 
 
 @operator
 def vq_moe_workspace_bytes(rows: int, weight: VQExpertWeight, topk: int) -> int:
-    if not hasattr(lib, "snowllm_vq_moe"):
-        raise SnowLLMError("this kernel library has no VQ MoE support; rebuild SnowLLM-Kernels")
     if not isinstance(rows, int) or rows < 0 or not isinstance(topk, int):
         raise SnowLLMError("VQ MoE rows and topk must be non-negative integers")
     layout = weight.layout
     query = (lib.snowllm_vq_moe_normalized_workspace_bytes
-             if weight.normalized_book is not None and hasattr(lib, "snowllm_vq_moe_normalized")
+             if weight.normalized_book is not None
              else lib.snowllm_vq_moe_workspace_bytes)
-    need = query(max(1, rows), layout.hidden, layout.intermediate, layout.experts, topk)
+    shape = (layout.hidden, layout.intermediate, layout.experts, topk)
+    need = workspace_capacity(('vq_moe', weight.normalized_book is not None, *shape), max(1, rows),
+                              lambda width: query(width, *shape))
     if need == 0:
         raise SnowLLMError("unsupported VQ MoE shape or topk")
     return need if rows else 0
 
 
-@operator
+class ResidentVQMoE:
+    @staticmethod
+    def chunk_rows(rows):
+        return rows
+
+    @staticmethod
+    def launch(config, args, book):
+        launch = lib.snowllm_vq_moe_normalized if book is not None else lib.snowllm_vq_moe
+        tail = (_p(book), _stream()) if book is not None else (_stream(),)
+        check(launch(ctypes.byref(config), *args, *tail), "vq_moe")
+
+
+resident_vq = ResidentVQMoE()
+
+
 def fused_moe_vq(hidden: torch.Tensor, router: torch.Tensor, bias: torch.Tensor | None,
+                 experts: VQExpertWeight, shared_gate: torch.Tensor, shared_up: torch.Tensor,
+                 shared_down: torch.Tensor, out: torch.Tensor, workspace: torch.Tensor,
+                 *, topk: int = 6, scale: float = 1.5, limit: float = 10.0,
+                 normalize: bool = True, cache=None) -> None:
+    execute_vq(cache or resident_vq, hidden, router, bias, experts, shared_gate, shared_up,
+               shared_down, out, workspace, topk=topk, scale=scale, limit=limit, normalize=normalize)
+
+
+@operator
+def execute_vq(backend, hidden: torch.Tensor, router: torch.Tensor, bias: torch.Tensor | None,
                  experts: VQExpertWeight, shared_gate: torch.Tensor, shared_up: torch.Tensor,
                  shared_down: torch.Tensor, out: torch.Tensor, workspace: torch.Tensor,
                  *, topk: int = 6, scale: float = 1.5, limit: float = 10.0,
@@ -82,9 +110,6 @@ def fused_moe_vq(hidden: torch.Tensor, router: torch.Tensor, bias: torch.Tensor 
     if rows == 0:
         return
     config = _Config(rows, g.hidden, g.intermediate, g.experts, topk, scale, limit, normalize)
-    normalized = experts.normalized_book is not None and hasattr(lib, "snowllm_vq_moe_normalized")
-    launch = lib.snowllm_vq_moe_normalized if normalized else lib.snowllm_vq_moe
-    tail = (_p(experts.normalized_book), _stream()) if normalized else (_stream(),)
-    check(launch(ctypes.byref(config), _p(experts.blob), _p(router), _p(bias),
-                 _p(shared_gate), _p(shared_up), _p(shared_down), _p(hidden),
-                 _p(out), _p(workspace), workspace.nbytes, *tail), "vq_moe")
+    args = (_p(experts.blob), _p(router), _p(bias), _p(shared_gate), _p(shared_up), _p(shared_down),
+            _p(hidden), _p(out), _p(workspace), workspace.nbytes)
+    backend.launch(config, args, experts.normalized_book)

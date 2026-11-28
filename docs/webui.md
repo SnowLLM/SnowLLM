@@ -33,6 +33,14 @@ snowllm unload
 - **Chat:** each browser-local session keeps its model, draft and sampling settings. Switch, export or delete conversations in the sidebar. In smaller windows, open **History** in the chat header. Replies keep generating when you switch sessions and can be stopped individually. Retry from the last message after a failure or interruption. Regeneration keeps the previous answer until a replacement finishes. Use the **Thinking** dropdown below the message input to choose a mode supported by the model. Open **Settings** in the chat header for sampling and response metrics.
 - **Language:** English and Simplified Chinese follow the browser language; select manually in Settings.
 
+In **Settings → Disk offload**, enter a directory on the server or use **Browse**. The next model load writes expert files under `experts/` and packed vision weights under `vision/`. Clear the field to restore the defaults. Existing files stay in their original location. V4.1 reads its Engram tables from the model directory. If set, `SNOWLLM_MOE_CACHE_DIRS` takes precedence for experts. The disk budget and vision placement are selected in the load dialog.
+
+GGUF recipes with selectable projectors show a **Vision head** menu on the model card and in the load dialog. The card updates its download size and local availability for the selected head. Choose **Off** for text-only inference. Heads already on disk stay available, and switching heads reuses the target and draft weights in the same recipe directory.
+
+The **Vision weight placement** menu in the load dialog controls the selected encoder. Choose **Stream from disk** to release its projection buffers between image requests, or **Keep on GPU** to reuse resident weights across requests. **Model default** streams chat encoders and keeps the MinerU VLM encoder on the GPU. The equivalent option is `--vision-placement auto|disk|gpu`.
+
+For example, run `snowllm pull b/inkling-2-mini:ud-q4-k-m-dspark:vision=bf16` to download the bundled recipe with its BF16 projector, then `snowllm load b/inkling-2-mini:ud-q4-k-m-dspark:vision=bf16` to load it.
+
 Conversations and UI preferences stay in the current browser. The UI needs no external frontend service; model downloads need network access unless configured locally.
 
 Deletion requires confirmation. Loaded models, their drafters and symlinks are protected; stop downloads before deleting files.
@@ -77,6 +85,10 @@ as `snowllm webui load|unload|default`.
 When unloading, wait for the model's requests to finish or interrupt them. If one model fails to load, other loaded models remain available.
 
 GPU models share the memory limit set during the first load. New models use the remaining space; context length and other settings can be set separately. Select GPU for now; NPU is not yet available.
+
+Under **Inference settings → Disk offload limit**, enter a capacity such as `16GiB` to allow the loader to offload MoE expert weights as needed. Leave it blank to inherit the default. Models on the same GPU worker share this limit.
+
+Under **Advanced settings → Weight placement**, enter the same map as the CLI, for example `*=gpu,experts[12]=host,experts[14-40]=disk`. Enter it without shell quotes. **GPU-cached experts per disk-offloaded layer** fixes how many expert slots each disk-backed layer keeps on GPU. Leave the fields blank to inherit the recipe and planner settings. [Place weights by layer](./guides/memory-management#layer-placement)
 
 ## Service addresses {#service-addresses}
 

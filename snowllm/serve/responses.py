@@ -93,14 +93,14 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
     def flush() -> None:
         nonlocal pending
         if pending is not None:
+            pending.setdefault("content", "")
             msgs.append(pending)
             pending = None
 
     def assistant() -> dict:
         nonlocal pending
-        if pending is None or pending.get("role") != "assistant":
-            flush()
-            pending = {"role": "assistant", "content": ""}
+        if pending is None:
+            pending = {"role": "assistant"}
         return pending
 
     for item in inp:
@@ -109,6 +109,8 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
             role = item.get("role", "user")
             content = _content_of(item.get("content"))
             if role == "assistant":
+                if pending is not None and "content" in pending:
+                    flush()
                 assistant()["content"] = content
             else:
                 flush()
@@ -125,6 +127,7 @@ def _input_to_messages(inp: str | list[dict], instructions: str | None) -> list[
             msgs.append({"role": "tool", "content": _content_of(item.get("output")),
                          "tool_call_id": item.get("call_id")})
         elif typ == "reasoning":
+            flush()
             assistant()["reasoning_content"] = _reasoning_text(item)
     flush()
     return msgs

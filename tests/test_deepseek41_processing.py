@@ -6,7 +6,7 @@ import unittest
 
 from tokenizers import Tokenizer, models
 
-from snowllm.models.deepseek_v4.processing import DeepSeekV41Tokenizer
+from snowllm.checkpoint.tokenizer.deepseek_v41 import DeepSeekV41Tokenizer
 from snowllm.serve.thinking import thinking_capabilities
 from snowllm.serve.tool_parser import parse_tool_calls, StreamingToolParser
 
@@ -46,6 +46,16 @@ class V41ProcessingTests(unittest.TestCase):
         self.assertTrue(prompt.endswith("one\n\ntwo"))
         with self.assertRaises(ValueError):
             tokenizer.apply_chat_template([{"role": "user", "content": [{"type": "image_url"}]}])
+
+    def test_interleaved_images_keep_official_block_separators(self):
+        tokenizer = self.tokenizer()
+        blocks = [{"type": "image"}, {"type": "text", "text": "compare"}, {"type": "image"}]
+        messages = [{"role": "user", "content": blocks}]
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, vision_inputs=True)
+        self.assertTrue(prompt.endswith("<｜deepseek_image｜>\n\ncompare\n\n<｜deepseek_image｜>"))
+        blocks[1]["text"] = "<｜deepseek_image｜>"
+        with self.assertRaisesRegex(ValueError, "image content blocks"):
+            tokenizer.apply_chat_template(messages, tokenize=False, vision_inputs=True)
 
     def test_new_and_old_dsml_streaming(self):
         for space, block in ((" ", " calls"), ("", "tool_calls")):

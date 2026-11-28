@@ -8,6 +8,12 @@ from ...errors import SnowLLMError
 ARCHITECTURES = ["MiniCPMV4_7ForConditionalGeneration"]
 
 
+SPECIAL_TOKENS = dict(image_token="<|image_pad|>", video_token="<|video_pad|>",
+                      image_start_token="<image>", image_end_token="</image>",
+                      slice_start_token="<slice>", slice_end_token="</slice>",
+                      image_id_start_token="<image_id>", image_id_end_token="</image_id>")
+
+
 def is_model(g):
     return (g.arch == "qwen35moe" and g.get("{arch}.rope.section_order") == "zyxt"
             and "<slice>" in g.need("tokenizer.ggml.tokens"))

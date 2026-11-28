@@ -69,6 +69,18 @@
       ]
     }
   },
+  "vision_heads": {
+    "gguf": {
+      "BF16": {
+        "file": "mmproj-BF16.gguf",
+        "bytes": 931146432
+      },
+      "F16": {
+        "file": "mmproj-F16.gguf",
+        "bytes": 927607488
+      }
+    }
+  },
   "variants": {
     "ud-q4-k-xl": {
       "precision": "UD-Q4_K_XL",

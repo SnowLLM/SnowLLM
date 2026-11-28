@@ -60,7 +60,7 @@ class Qwen3_5Model(nn.Module):
         with span("embed+rope"):
             self.embed_tokens(b.input_ids, residual)
             if b.embeds is not None:
-                residual[b.embed_rows] = b.embeds
+                ops.index_copy(residual, 0, b.embed_rows, b.embeds)
             ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True, mscale=ctx.mscale)
 
         n = len(self.layers)

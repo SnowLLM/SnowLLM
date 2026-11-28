@@ -38,21 +38,16 @@ class Qwen4ExpModel(nn.Module):
                 hidden = ctx.arena.new(ctx.M, self.geo.hidden)
                 self.embed_tokens(b.input_ids, hidden)
                 if b.embeds is not None:
-                    hidden[b.embed_rows] = b.embeds
+                    ops.index_copy(hidden, 0, b.embed_rows, b.embeds)
                 ops.dsv4_hc_broadcast(hidden, streams)
                 ops.rope_cos_sin(b.positions, self.inv_freq, ctx.cos, ctx.sin, mrope=True,
                                  mscale=ctx.mscale)
 
-            prepared_bytes = (ops.hc_prepared_bytes(ctx.M)
-                              if b.is_prefill and self.geo.hidden == 2560 else 0)
-            ctx.hc_prepared = ctx.arena.new(prepared_bytes,dtype=torch.uint8) if prepared_bytes else None
-            # Attention consumes prepared input before the post-attention mixer writes dense input for MoE.
-            mixed = (ctx.hc_prepared[:ctx.M*self.geo.hidden*2].view(torch.bfloat16).view(ctx.M,self.geo.hidden)
-                     if prepared_bytes else ctx.arena.new(ctx.M,self.geo.hidden))
+            activation = ops.HcActivation.allocate(ctx.arena, ctx.M, self.geo.hidden, ctx.path)
             lo = ctx.arena.new(ctx.M*self.hc_columns)
-            prepared = False
+            input_ready = False
             for i, layer in enumerate(self.layers):
-                prepared = layer(ctx,streams,mixed,lo,prepared)
+                input_ready = layer(ctx,streams,activation,lo,input_ready)
                 # The drafter reads completed layer outputs averaged over the residual streams.
                 ctx.tap_streams(streams, i)
 

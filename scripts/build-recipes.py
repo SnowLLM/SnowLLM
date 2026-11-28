@@ -93,7 +93,7 @@ def load(path: pathlib.Path) -> dict | None:
     if not isinstance(r.get("defaults", {}), dict):
         complain(path, "has a defaults that is not an object")
     for k in (r.get("defaults") or {}):
-        if k not in SETTABLE:
+        if k not in SETTABLE and k != 'disk_offload_gpu_cache_experts':
             complain(path, f"sets {k!r} in defaults, which is not a recipe's to set. "
                            f"One of: {', '.join(SETTABLE)}")
         elif k in ("mtp_adaptive", "mtp_prompt_lookup", "mtp_tool_draft", "dflash_adaptive") and (

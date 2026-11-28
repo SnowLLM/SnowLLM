@@ -3,6 +3,7 @@
 
 from .operation import operator
 from .allocation import empty
+from .norm import _layernorm
 import torch
 
 from .._capi import SnowLLMError, check, lib
@@ -25,13 +26,9 @@ SUPPORTED_LN_HIDDEN = _supported("vision_supported_ln_hidden")
 @operator
 def vision_layernorm(x: torch.Tensor, gamma: torch.Tensor, beta: torch.Tensor,
                      out: torch.Tensor, eps: float) -> None:
-    M, H = x.shape
-    _chk(x, "x", torch.bfloat16, M, H)
-    _chk(gamma, "gamma", torch.bfloat16, H)
-    _chk(beta, "beta", torch.bfloat16, H)
-    _chk(out, "out", torch.bfloat16, M, H)
-    check(lib.snowllm_vision_layernorm(_p(x), _p(gamma), _p(beta), _p(out), M, H, eps, _stream()),
-          "vision_layernorm")
+    shape = x.shape
+    rows, width = shape
+    _layernorm(x, gamma, beta, out, shape, rows, width, eps)
 
 
 vision_gemm_scratch_bytes = _passthru("vision_gemm_scratch_bytes")
@@ -41,6 +38,19 @@ def vision_gemm_workspace_bytes(M, N, K):
         ("vision_gemm", N, K), M,
         lambda rows: lib.snowllm_vision_gemm_workspace_bytes(rows, N, K),
     )
+
+
+@operator
+def vision_projection(arena, x, weight, bias, out, m, n, k):
+    from .operation import workspace_capacity
+    _chk(x, "projection input", torch.bfloat16, m, k)
+    _chk(out, "projection output", torch.bfloat16, m, n)
+    has_bias = bias is not None
+    need = workspace_capacity(("vision_projection", n, k, has_bias), m,
+                              lambda rows: lib.snowllm_vision_projection_workspace_bytes(rows, n, k, has_bias))
+    scratch = arena.workspace(need)
+    check(lib.snowllm_vision_projection(_p(x), _p(weight), _p(bias), _p(out), _p(scratch),
+                                        m, n, k, _stream()), "vision_projection")
 
 
 @operator

@@ -8,8 +8,8 @@ import zipfile
 
 SENSITIVE = {
     'credential': rb'(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{30,}|'
-                  rb'hf_[A-Za-z0-9]{25,}|sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{24,}|'
-                  rb'(?:AKIA|ASIA)[A-Z0-9]{16}|'
+                  rb'hf_[A-Za-z0-9]{25,}|(?:sk-(?:proj-|svcacct-)|(?<![A-Za-z0-9])sk-)[A-Za-z0-9_-]{24,}|'
+                  rb'pypi-[A-Za-z0-9_-]{32,}|(?:AKIA|ASIA)[A-Z0-9]{16}|'
                   rb'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----)',
     'personal path': rb'(?:/home/[^/\s]+/|/Users/[^/\s]+/|[A-Za-z]:\\Users\\[^\\\s]+\\)',
     'credential URL': rb'https?://[^\s/:@]{2,}:[^\s/@]{4,}@',
@@ -42,7 +42,7 @@ def check(wheel, root=None):
                            name.startswith('snowllm/hub/bundle/') and name.endswith('.json') or
                            name.startswith('snowllm/daemon/static/') and path.suffix in {
                                '.html', '.css', '.js', '.svg', '.json'} or
-                           name == 'snowllm/models/deepseek_v4/LICENSE-DeepSeek.txt' or
+                           name == 'snowllm/checkpoint/tokenizer/LICENSE-DeepSeek.txt' or
                            name == 'snowllm/benchmark/data/pg19_context_bench.txt')
                 if any(part in {'internal', 'experiments', 'scratchpad', '__pycache__', '.git',
                                 'csrc', 'include', 'tests'} for part in path.parts):

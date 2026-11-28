@@ -174,7 +174,7 @@ except OSError as exc:
     raise SnowLLMError(f"cannot load kernel library {_lib_path}: {exc}") from exc
 _lib_path = lib._name
 
-ABI_VERSION = 90
+ABI_VERSION = 95
 
 
 def _check_abi() -> int:
@@ -183,10 +183,9 @@ def _check_abi() -> int:
         got = lib.snowllm_abi_version()
     except AttributeError:
         got = 0
-    # ABI 89 reads the unchanged HC step prefix and keeps the dense activation path.
-    if got not in (89, ABI_VERSION):
+    if got != ABI_VERSION:
         raise SnowLLMError(
-            f"ABI mismatch: this snowllm expects 89 or {ABI_VERSION}, "
+            f"ABI mismatch: this snowllm expects {ABI_VERSION}, "
             f"{_lib_path} provides {got or 'no version at all'}. Rebuild the one that is stale."
         )
     return got
@@ -716,6 +715,26 @@ _SIGS += [
     ("snowllm_glm_sparse_attention", c_int, [P]*15+[c_int]*5+[c_float,c_int64,S]),
     ("snowllm_glm_hc_norm_proj", c_int, [P]*4+[c_int,c_float,S]),
 ]
+_SIGS += [
+    ("snowllm_gather_embedding_q4_k", c_int, [P]*3 + [c_int64]*3 + [S]),
+    ("snowllm_mtp_tail_rows", c_int64, [c_int64, c_int]),
+    ("snowllm_dsv41_projection_decode_rows", c_int64, []),
+    ("snowllm_dsv41_projection_workspace_bytes", c_int64, [c_int, c_int64, c_int64, c_int, c_int]),
+    ("snowllm_dsv41_projection", c_int, [c_int]*2 + [P]*5 + [c_int64]*3 + [c_int, S]),
+    ("snowllm_dsv41_projection_path", c_int, [c_int64, c_int]),
+    ("snowllm_vision_projection_workspace_bytes", c_int64, [c_int64]*3 + [c_int]),
+    ("snowllm_vision_projection", c_int, [P]*5 + [c_int64]*3 + [S]),
+    ("snowllm_auxiliary_gemm_half_preferred", c_int, [c_int64]*3),
+    ("snowllm_auxiliary_transpose_preferred", c_int, [P, P, c_int]),
+    ("snowllm_convolution_plan", c_char_p, [P]*5),
+    ("snowllm_convolution_execute", c_char_p, [P]*8 + [S]),
+    ("snowllm_convolution_destroy", None, [P]),
+    ("snowllm_vq_moe_normalized_supported", c_int, [c_int64]*3),
+    ("snowllm_vq_moe_workspace_bytes", c_int64, [c_int64]*5),
+    ("snowllm_vq_moe_normalized_workspace_bytes", c_int64, [c_int64]*5),
+    ("snowllm_vq_moe_normalized", c_int, [P]*10 + [c_int64, P, S]),
+    ("snowllm_vq_moe", c_int, [P]*10 + [c_int64, S]),
+]
 _SIGS += [sig for sig in (
     # Allocator callbacks accept stream pointers but are not kernel launches.
     ("snowllm_host_alloc", P, [c_int64, c_int, P]),
@@ -724,7 +743,6 @@ _SIGS += [sig for sig in (
     ("snowllm_host_set_limit", c_int, [c_int64]),
     ("snowllm_host_contains", c_int, [P]),
     ("snowllm_use_host_alloc", None, [c_int]),
-    ("snowllm_gather_embedding_q4_k", c_int, [P]*3 + [c_int64]*3 + [S]),
     ("snowllm_qwen4exp_qsa_produce_snapshot_scaled", c_int,
      [P, c_int64] + [P]*12 + [c_int64]*5 + [c_float, P, c_int64, S]),
     ("snowllm_file_reader_readv", c_int, [P]*5 + [c_int64, S]),
@@ -733,10 +751,19 @@ _SIGS += [sig for sig in (
     ("snowllm_file_reader_readv_host", c_int, [P]*5 + [c_int64]),
     ("snowllm_file_reader_read_rows_host", c_int,
      [P, P, P, c_int64, c_int64, P, P, c_int64, P, c_int64]),
-    ("snowllm_vq_moe_workspace_bytes", c_int64, [c_int64]*5),
-    ("snowllm_vq_moe_normalized_workspace_bytes", c_int64, [c_int64]*5),
-    ("snowllm_vq_moe_normalized", c_int, [P]*10 + [c_int64, P, S]),
-    ("snowllm_vq_moe", c_int, [P]*10 + [c_int64, S]),
+    ("snowllm_disk_proxy_graph_buffers", c_int, [P, P, c_int, P]),
+    ("snowllm_disk_proxy_graph_status", c_int, [P]),
+    ("snowllm_disk_weight_plane", c_int, [c_int]*3 + [c_int64]*4 + [P]),
+    ("snowllm_disk_proxy_create", P, [c_int, c_int, P, P, c_int64, P, P, c_int64, P]),
+    ("snowllm_disk_proxy_layer", c_int, [P, P, P, c_int, P, c_int, P, c_int, c_int64]),
+    ("snowllm_disk_proxy_overflow", c_int, [P, c_int, P, c_int, c_int, P]),
+    ("snowllm_disk_proxy_submit", c_int, [P, c_int, c_int, c_int, S]),
+    ("snowllm_disk_proxy_stats", c_int, [P, c_int, P, P]),
+    ("snowllm_disk_proxy_destroy", None, [P]),
+    ("snowllm_moe_disk_batch_rows", c_int64, [P]),
+    ("snowllm_moe_disk_batch", c_int, [P, c_int] + [P]*9 + [c_int64, c_int64, S]),
+    ("snowllm_moe_disk_execute", c_int, [P]*5 + [c_int64, c_int64, c_int, S]),
+    ("snowllm_vq_moe_disk", c_int, [P]*10 + [c_int64, P, P, c_int, S]),
     ("snowllm_moe_cache_route", c_int, [P]*6 + [c_int64, S]),
     ("snowllm_moe_cache_gate_up", c_int, [P]*3 + [c_int64, S]),
     ("snowllm_moe_cache_down", c_int, [P]*4 + [c_int64, c_int64, c_int, S]),
@@ -754,11 +781,9 @@ if hasattr(lib, "snowllm_dsv41_attention_split"):
                   ("snowllm_dsv41_attention_split", c_int,
                    [P]*11+[c_int64]+[c_int]*5+[P, c_int64, S])))
 
-if hasattr(lib, "snowllm_rmsnorm_residual_rounded"):
-    _SIGS.append(("snowllm_rmsnorm_residual_rounded", c_int, [P,P,P,P,c_int64,c_int64,c_float,S]))
+_SIGS.append(("snowllm_rmsnorm_residual_rounded", c_int, [P,P,P,P,c_int64,c_int64,c_float,S]))
 
-if hasattr(lib, "snowllm_rmsnorm_rows_rounded_supported"):
-    _SIGS.append(("snowllm_rmsnorm_rows_rounded_supported", c_int, [c_int64,c_int]))
+_SIGS.append(("snowllm_rmsnorm_rows_rounded_supported", c_int, [c_int64,c_int]))
 
 if hasattr(lib, "snowllm_lfm2_qkv_project"):
     _SIGS.extend((("snowllm_lfm2_qkv_workspace_bytes", c_int64, [c_int,c_int]),
@@ -912,13 +937,12 @@ if hasattr(lib, 'snowllm_hc_combine_mix'):
         ('snowllm_hc_output_project_workspace_bytes', c_int64, [P,c_int,c_int]),
         ('snowllm_hc_output_project', c_int, [P,P,P,c_int64]+[P]*4+[c_int,P,P,c_int64,c_int,c_int,S]),
         ('snowllm_hc_linear_step_workspace_bytes', c_int64, [P,c_int64,c_int,c_int]),
-        ('snowllm_hc_linear_step', c_int, [P,P,c_int64]+_linear_args),
+        ('snowllm_hc_linear_step', c_int, [P,P,c_int64,c_int64]+_linear_args),
     ))
-if hasattr(lib, 'snowllm_hc_prepared_bytes'):
-    _SIGS.extend((
-        ('snowllm_hc_prepared_bytes', c_int64, [c_int64]),
-        ('snowllm_hc_prepared_qkv', c_int, [P,P,c_int64,P,P,c_int64,P,P,S]),
-    ))
+_SIGS.extend((
+    ('snowllm_hc_activation_plan', c_int, [c_int64,c_int64,c_int,P]),
+    ('snowllm_hc_mixed_qkv', c_int, [P,P,c_int64,P,P,c_int64,c_int,P,P,S]),
+))
 if hasattr(lib, 'snowllm_kquant_supported'):
     _SIGS.append(('snowllm_kquant_supported', c_int, [c_int]))
 if hasattr(lib, 'snowllm_flash_prepare_weight'):
@@ -926,8 +950,7 @@ if hasattr(lib, 'snowllm_flash_prepare_weight'):
         ('snowllm_flash_layout_bytes', c_int64, [c_int]*3+[c_int64]*2),
         ('snowllm_flash_prepare_weight', c_int, [c_int]*2+[P]*4+[c_int64]*2+[S]),
     ))
-if hasattr(lib,'snowllm_attention_projection_rows'):
-    _SIGS.append(('snowllm_attention_projection_rows',c_int,[P,c_int64,c_int64,P,c_int,c_int64,P,S]))
+_SIGS.append(('snowllm_attention_projection_rows',c_int,[P,c_int64,c_int64,P,c_int,c_int64,P,S]))
 if hasattr(lib, 'snowllm_mtp_norm_project'):
     _SIGS.append(('snowllm_mtp_norm_project', c_int, [P]*5+[c_int64,c_int64,c_int,c_float,S]))
 if hasattr(lib,'snowllm_mtp_norm_project_step'):

@@ -182,7 +182,7 @@ def load_moe(w: object, lp: str, geo: Qwen4ExpGeometry,
     with placement.place(dmap, "shared", layer):
         shared_gate_up, shared_down = _shared(w, p)
     return FusedMoE(router_w, gate_up, down, shared_gate_up_w=shared_gate_up,
-                    shared_down_w=shared_down)
+                    shared_down_w=shared_down).bind_disk(layer)
 
 
 def _indexer(w: object, lp: str, geo: Qwen4ExpGeometry, qkv: object) -> QsaIndexer:

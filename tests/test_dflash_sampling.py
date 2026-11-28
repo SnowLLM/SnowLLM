@@ -239,6 +239,8 @@ def target_probabilities(ck):
     rows = [Request([1, 2], SamplingParams(temperature=t, top_k=k, top_p=p))
             for t, k, p in ((0., 1, 1.), (.65, 20, .95), (1.3, 0, .8), (1., 3, .5))]
     logits = torch.randn(4, 67, device="cuda")
+    logits[0].fill_(-20.)
+    logits[0, [7, 65]] = 3.
     p = torch.empty(4 * 67, device="cuda")
     ids = torch.empty(4 * 67, dtype=torch.int64, device="cuda")
     values, indices = sampler.probabilities(logits, rows, p, ids)
@@ -261,6 +263,14 @@ def target_probabilities(ck):
     sampler._uniform = lambda n: uniform[:n]
     ck.exact("target probabilities and ordinary sampling use the same row parameters",
              sampler.sample(logits.clone(), rows), expected_tokens)
+    # Softmax rounds these scores to a tie, but the logits have a unique maximum.
+    logits[0].zero_()
+    logits[0, 65] = 1e-9
+    values, indices = sampler.probabilities(logits, rows, p, ids)
+    ck("greedy verification uses the logit maximum before softmax",
+       indices[0, 0].item() == 65 and values[0, 0].item() == 1 and not values[0, 1:].any().item())
+    ck("mixed-batch greedy sampling uses the same maximum",
+       sampler.sample(logits, rows)[0].item() == 65)
 
 
 def main():

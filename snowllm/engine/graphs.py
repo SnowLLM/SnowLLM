@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import contextlib
 import functools
+from contextvars import ContextVar
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -10,6 +11,54 @@ from .. import ops, term
 from .._capi import SnowLLMError
 from .._platform import gpu_mem_info, device_mem_info, release_device_cache, retain_device_cache
 from .host_io import HostArena, copy_message, host_view
+
+
+_expert_capture = ContextVar('expert_capture', default=None)
+
+
+class ExpertGraph:
+    def __init__(self, store):
+        self.store = store
+        self.steps = []
+
+    def _begin_segment(self):
+        self.segment = torch.cuda.CUDAGraph()
+        self.segment.capture_begin(pool=self.pool, capture_error_mode=self.mode)
+
+    def capture_begin(self, pool, capture_error_mode="global"):
+        self.pool, self.mode = pool, capture_error_mode
+        self._begin_segment()
+        self.token = _expert_capture.set(self)
+
+    def _end_segment(self):
+        self.segment.capture_end()
+        self.steps.append(self.segment.replay)
+
+    def boundary(self, run):
+        # Routing IDs become available on replay, after the preceding GPU segment.
+        self._end_segment()
+        self.steps.append(run)
+        self._begin_segment()
+
+    def capture_end(self):
+        try:
+            self._end_segment()
+        finally:
+            _expert_capture.reset(self.token)
+
+    def replay(self):
+        execute = getattr(self.store, 'execution', contextlib.nullcontext)
+        with execute():
+            for run in self.steps:
+                run()
+            if getattr(self.store, 'graph_native', False):
+                torch.cuda.current_stream().synchronize()
+                self.store.check_graph()
+
+
+def expert_capture(store):
+    graph = _expert_capture.get()
+    return graph if graph is not None and graph.store is store else None
 
 
 @functools.cache

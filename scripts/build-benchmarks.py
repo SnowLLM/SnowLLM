@@ -178,6 +178,14 @@ ARMS = {
         ("SnowLLM", "MiniCPM-V 4.7 35B-A3B Q4_K_M", "DSpark block 8, adaptive, HTTP"),
 }
 
+for stem, model, method in (
+    ("glm5_3_flash_iq2_xxs_mtp_adaptive", "GLM-5.3-Flash UD-IQ2_XXS", "Adaptive MTP (up to 2)"),
+    ("deepseek_v4_flash_0731_iq2_xxs_dspark_adaptive", "DeepSeek-V4-Flash-0731 IQ2_XXS", "Adaptive DSpark block 5"),
+    ("deepseek_v4_1_flash_1017_vq_q4_k_dspark_adaptive", "DeepSeek-V4.1-Flash-1017 VQ + Q4_K", "Adaptive DSpark block 5"),
+):
+    for workload, title in (("pg19", "PG-19"), ("file_edit", "File-edit")):
+        ARMS[f"{stem}_{workload}_gfx1151_20261128"] = ("SnowLLM", model, f"{title} · {method}")
+
 for quant, precision in (("q3_k_xl", "UD-Q3_K_XL"), ("iq4_xs", "UD-IQ4_XS")):
     for method, spec in (("none", "None"), ("mtp_adaptive", "Adaptive MTP (up to 7)"),
                          ("dflash2_incoai", "DFlash2@incoai (adaptive, block ≤8)"),

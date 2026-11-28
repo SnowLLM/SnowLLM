@@ -58,7 +58,8 @@ def record_memory(r, kv, *, weights, host_weights, load_peak, room):
     workspace = r.act_bytes_for(r.max_prefill_tokens) + fixed_workspace
     aux = auxiliary_bytes(r, kv)
     fixed = r.fixed_bytes(r.max_prefill_tokens)
-    other = fixed - cache - plan.snapshot_floor - linear - fixed_workspace + aux
+    vision = getattr(r, 'vision_bytes', 0)
+    other = fixed - cache - plan.snapshot_floor - linear - fixed_workspace + aux - vision
     snapshots = plan.minimum_snapshots if plan.checkpoint_bytes else 0
     resident = int(kv.get('draft_weight_bytes', kv.get('draft_resident', kv.get('reserve'))) or 0)
     snapshot_each = plan.checkpoint_bytes
@@ -72,12 +73,14 @@ def record_memory(r, kv, *, weights, host_weights, load_peak, room):
         host_weights=host_weights, cache=cache, cache_100k=cache_100k, linear=linear,
         snapshot_each=snapshot_each, cache_snapshot_each=cache_snapshot_each, fixed_workspace=fixed_workspace,
         other=other, snapshots=snapshot_bytes, snapshot_count=snapshots, workspace=workspace,
-        total=weights + resident + cache + linear + other + snapshot_bytes + workspace,
+        total=weights + resident + cache + linear + other + snapshot_bytes + workspace + vision,
         load_peak=load_peak, load_room=room, room=room)
     capacity = getattr(r, 'context_capacity', None)
     if capacity is not None:
         report.values['per_request'] = capacity.per_request
     report.values['weights'] += resident
+    if vision:
+        report.values['vision_bytes'] = vision
     from ..host_alloc import enabled
     report.values['allocation'] = 'host' if enabled() else 'GPU'
 
@@ -123,4 +126,4 @@ def auxiliary_bytes(r, kv):
             inv, _ = yarn_rope_table(r.model.config, capacity.rope_factor,
                                     orig_max_pos=capacity.original)
             inv = inv.cuda()
-        return dry.device
+        return dry.device + getattr(r, 'vision_bytes', 0)

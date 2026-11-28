@@ -5,7 +5,8 @@ There is no standard thinking-level field in model config.json. Read template
 expressions instead of maintaining a model-name registry. Only advertise values
 that the template both names and accepts when rendering a user message.
 """
-from jinja2 import Environment, TemplateError, nodes
+from jinja2 import TemplateError, nodes
+from transformers.utils.chat_template_utils import _compile_jinja_template
 
 
 def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
@@ -17,14 +18,16 @@ def thinking_capabilities(tokenizer, *, required: bool = False) -> dict:
     result = {"switch": False, "levels": [], "source": "chat_template"}
     try:
         template = tokenizer.get_chat_template()
-        tree = Environment(extensions=["jinja2.ext.loopcontrols"]).parse(template)
+        tree = _compile_jinja_template(template).environment.parse(template)
     except (ValueError, TypeError, TemplateError, AttributeError):
         return result
 
     effort_names = {"reasoning_effort"}
 
     def effort(node):
-        if isinstance(node, nodes.Filter) and node.name == "default":
+        if isinstance(node, nodes.CondExpr) and isinstance(node.expr2, nodes.Const):
+            return effort(node.expr1)
+        if isinstance(node, nodes.Filter) and node.name in ("default", "trim", "lower"):
             return effort(node.node)
         return isinstance(node, nodes.Name) and node.name in effort_names
 
